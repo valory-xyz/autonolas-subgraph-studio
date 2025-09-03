@@ -54,6 +54,14 @@ export const STAKING_FACTORY = Address.fromString("0xa45E64d13A30a51b91ae0eb182e
 // Service configuration
 export const OPTIMUS_AGENT_ID = BigInt.fromI32(40)
 
+// Excluded service IDs - these are testing agents
+export const EXCLUDED_SERVICE_IDS: BigInt[] = [
+  BigInt.fromI32(29),
+  BigInt.fromI32(37),
+  BigInt.fromI32(56),
+  BigInt.fromI32(58)
+]
+
 // Whitelisted tokens array (for easy iteration)
 export const WHITELISTED_TOKENS: string[] = [
   USDC_NATIVE.toHexString(),

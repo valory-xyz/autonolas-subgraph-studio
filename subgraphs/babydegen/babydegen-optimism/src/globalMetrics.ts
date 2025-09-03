@@ -77,7 +77,7 @@ export function getAllAgentSnapshots(dayTimestamp: BigInt): AgentPortfolioSnapsh
   for (let i = 0; i < serviceRegistry.serviceAddresses.length; i++) {
     let serviceAddress = serviceRegistry.serviceAddresses[i];
     let snapshotId = serviceAddress.toHexString() + "-" + dayTimestamp.toString();
-    let snapshot = AgentPortfolioSnapshot.load(Bytes.fromHexString(snapshotId));
+    let snapshot = AgentPortfolioSnapshot.load(Bytes.fromUTF8(snapshotId));
     
     if (snapshot) {
       snapshots.push(snapshot);
@@ -102,7 +102,7 @@ export function getPreviousGlobal(currentTimestamp: BigInt): Global | null {
   let previousTimestamp = currentTimestamp.minus(BigInt.fromI32(86400)); // 86400 seconds = 24 hours
   let previousGlobalId = previousTimestamp.toString();
   
-  return Global.load(Bytes.fromHexString(previousGlobalId));
+  return Global.load(Bytes.fromUTF8(previousGlobalId));
 }
 
 /**
@@ -157,7 +157,7 @@ export function updateGlobalEntity(
   block: ethereum.Block
 ): void {
   let globalId = block.timestamp.toString();
-  let global = new Global(Bytes.fromHexString(globalId));
+  let global = new Global(Bytes.fromUTF8(globalId));
   
   // Set population metrics
   global.medianPopulationROI = medianROI;

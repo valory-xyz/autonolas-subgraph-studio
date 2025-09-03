@@ -9,8 +9,18 @@ import {
 } from "../../../../generated/schema"
 import { Safe } from "../../../../generated/templates"
 import { BigInt, Bytes, store, log, Address } from "@graphprotocol/graph-ts"
-import { OPTIMUS_AGENT_ID } from "./constants"
+import { OPTIMUS_AGENT_ID, EXCLUDED_SERVICE_IDS } from "./constants"
 import { registerServiceForSnapshots } from "./portfolioScheduler"
+
+// Helper function to check if a service ID should be excluded from tracking
+function isServiceExcluded(serviceId: BigInt): boolean {
+  for (let i = 0; i < EXCLUDED_SERVICE_IDS.length; i++) {
+    if (serviceId.equals(EXCLUDED_SERVICE_IDS[i])) {
+      return true
+    }
+  }
+  return false
+}
 
 export function handleRegisterInstance(event: RegisterInstance): void {
   // Filter for Optimus agents only
@@ -18,8 +28,14 @@ export function handleRegisterInstance(event: RegisterInstance): void {
     return
   }
   
-  
   let serviceId = event.params.serviceId
+  
+  // Check if this service ID should be excluded from tracking
+  if (isServiceExcluded(serviceId)) {
+    log.info("SERVICE REGISTRY: Skipping excluded service ID {}", [serviceId.toString()])
+    return
+  }
+  
   let tempId = Bytes.fromUTF8(serviceId.toString())
   
   // Always overwrite with latest registration
@@ -55,6 +71,12 @@ export function handleRegisterInstance(event: RegisterInstance): void {
 export function handleCreateMultisigWithAgents(event: CreateMultisigWithAgents): void {
   let serviceId = event.params.serviceId
   let multisig = event.params.multisig
+  
+  // Check if this service ID should be excluded from tracking
+  if (isServiceExcluded(serviceId)) {
+    log.info("SERVICE REGISTRY: Skipping multisig creation for excluded service ID {}", [serviceId.toString()])
+    return
+  }
   
   let tempId = Bytes.fromUTF8(serviceId.toString())
   
