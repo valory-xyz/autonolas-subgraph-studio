@@ -219,3 +219,25 @@ type ServiceRegistry @entity(immutable: false) {
   id: Bytes!                    # "registry" - singleton
   serviceAddresses: [Bytes!]!   # Array of all service addresses
 }
+
+# Global population-level metrics entity
+type Global @entity(immutable: true) {
+  id: Bytes!                        # "<timestamp>" for daily snapshots
+  
+  # Population Metrics
+  medianPopulationROI: BigDecimal!  # Median of all agent ROI values
+  medianPopulationAPR: BigDecimal!  # Median of all agent APR values
+  
+  # 7-Day Simple Moving Averages
+  sma7dROI: BigDecimal!             # 7-day SMA of median population ROI
+  sma7dAPR: BigDecimal!             # 7-day SMA of median population APR
+  
+  # Metadata
+  timestamp: BigInt!                # UTC midnight timestamp
+  block: BigInt!                    # Block number when calculated
+  totalAgents: Int!                 # Number of agents included in calculation
+  
+  # Historical Data (for SMA calculation)
+  historicalMedianROI: [BigDecimal!]!  # Last 7 days of median ROI values
+  historicalMedianAPR: [BigDecimal!]!  # Last 7 days of median APR values
+}

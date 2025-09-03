@@ -1,6 +1,6 @@
 import { Address, BigDecimal, BigInt, ethereum, Bytes, log } from "@graphprotocol/graph-ts"
 import { NonfungiblePositionManager } from "../../../../generated/VeloNFTManager/NonfungiblePositionManager"
-import { VelodromeCLPool }            from "../../../../generated/templates/VeloCLPool/VelodromeCLPool"
+import { VelodromeCLPool }            from "../../../../generated/VeloNFTManager/VelodromeCLPool"
 import { VelodromeCLFactory }         from "../../../../generated/VeloNFTManager/VelodromeCLFactory"
 // import { VeloCLPool }                 from "../../../../generated/templates" // Removed - using snapshot approach instead of real-time tracking
 import { LiquidityAmounts }           from "./libraries/LiquidityAmounts"

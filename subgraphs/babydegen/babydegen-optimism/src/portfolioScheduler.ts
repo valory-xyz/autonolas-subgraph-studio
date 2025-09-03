@@ -1,6 +1,7 @@
 import { ethereum, BigInt, Bytes, Address, log } from "@graphprotocol/graph-ts"
 import { Service, ServiceRegistry, AgentPortfolio } from "../generated/schema"
 import { calculatePortfolioMetrics } from "./helpers"
+import { calculateGlobalMetrics } from "./globalMetrics"
 
 /**
  * Portfolio Scheduler
@@ -76,6 +77,7 @@ function checkServicesForSnapshot(block: ethereum.Block): void {
   }
   
   let serviceAddresses = registry.serviceAddresses
+  let snapshotsCreated = false
   
   for (let i = 0; i < serviceAddresses.length; i++) {
     let serviceAddress = serviceAddresses[i]
@@ -89,7 +91,14 @@ function checkServicesForSnapshot(block: ethereum.Block): void {
       
       // Update snapshot tracking in portfolio
       updateSnapshotTracking(serviceAddress, block)
+      
+      snapshotsCreated = true
     }
+  }
+  
+  // After all agent snapshots are created, calculate global metrics
+  if (snapshotsCreated) {
+    calculateGlobalMetrics(block)
   }
 }
 
