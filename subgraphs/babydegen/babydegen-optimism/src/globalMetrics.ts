@@ -53,8 +53,16 @@ export function calculateMedian(values: BigDecimal[]): BigDecimal {
  * @param historicalValues Array of historical daily values (up to 7 days)
  * @returns 7-day SMA as BigDecimal
  */
-export function calculateSMA(historicalValues: BigDecimal[]): BigDecimal {
+export function calculate7DaysSMA(historicalValues: BigDecimal[]): BigDecimal {
   if (historicalValues.length == 0) {
+    return BigDecimal.zero();
+  }
+  
+  // Add validation for 7-day limit
+  if (historicalValues.length > 7) {
+    log.error("Historical values array exceeds 7 days: {} days provided", [
+      historicalValues.length.toString()
+    ]);
     return BigDecimal.zero();
   }
   
@@ -249,8 +257,8 @@ export function calculateGlobalMetrics(block: ethereum.Block): void {
   let updatedHistoricalAPR = updatedHistorical[1];
   
   // Calculate 7-day simple moving averages
-  let sma7dROI = calculateSMA(updatedHistoricalROI);
-  let sma7dAPR = calculateSMA(updatedHistoricalAPR);
+  let sma7dROI = calculate7DaysSMA(updatedHistoricalROI);
+  let sma7dAPR = calculate7DaysSMA(updatedHistoricalAPR);
   
   // Create and save PopulationMetrics entity
   updatePopulationMetricsEntity(
