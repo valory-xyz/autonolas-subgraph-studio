@@ -220,8 +220,8 @@ type ServiceRegistry @entity(immutable: false) {
   serviceAddresses: [Bytes!]!   # Array of all service addresses
 }
 
-# Global population-level metrics entity
-type Global @entity(immutable: true) {
+# Population-level metrics entity for daily snapshots
+type PopulationMetrics @entity(immutable: true) {
   id: Bytes!                        # "<timestamp>" for daily snapshots
   
   # Population Metrics
