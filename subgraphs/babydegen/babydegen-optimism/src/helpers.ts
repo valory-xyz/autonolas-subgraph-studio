@@ -81,9 +81,22 @@ export function calculatePortfolioMetrics(
     let profit = finalValue.minus(initialValue)
     roi = profit.div(initialValue).times(BigDecimal.fromString("100"))
     
-    // APR calculation - only if we have a first trading timestamp
-    if (portfolio.firstTradingTimestamp.gt(BigInt.zero())) {
-      let secondsSinceStart = block.timestamp.minus(portfolio.firstTradingTimestamp)
+    // APR calculation - use first trading timestamp or fallback to service creation
+    let timestampForAPR = portfolio.firstTradingTimestamp
+    
+    // Fallback: If no trading activity, use service creation timestamp
+    if (timestampForAPR.equals(BigInt.zero())) {
+      let serviceEntity = Service.load(serviceSafe)
+      if (serviceEntity != null && serviceEntity.latestRegistrationTimestamp.gt(BigInt.zero())) {
+        timestampForAPR = serviceEntity.latestRegistrationTimestamp
+        log.info("PORTFOLIO: Using service registration timestamp for APR calculation - agent: {}", [
+          serviceSafe.toHexString()
+        ])
+      }
+    }
+    
+    if (timestampForAPR.gt(BigInt.zero())) {
+      let secondsSinceStart = block.timestamp.minus(timestampForAPR)
       let daysSinceStart = secondsSinceStart.toBigDecimal().div(BigDecimal.fromString("86400"))
       
       if (daysSinceStart.gt(BigDecimal.zero())) {
