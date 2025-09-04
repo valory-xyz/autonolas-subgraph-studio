@@ -188,6 +188,14 @@ export function updateDailyPopulationMetricEntity(
   // Use day timestamp (UTC midnight) for entity ID to ensure one entity per day
   let dayTimestamp = getDayTimestamp(block.timestamp);
   let globalId = dayTimestamp.toString();
+  
+  // Check if entity already exists for this day to prevent duplicates
+  let existingEntity = DailyPopulationMetric.load(Bytes.fromUTF8(globalId));
+  if (existingEntity != null) {
+    log.info("DailyPopulationMetric already exists for day {}, skipping creation", [dayTimestamp.toString()]);
+    return;
+  }
+  
   let dailyPopulationMetric = new DailyPopulationMetric(Bytes.fromUTF8(globalId));
   
   // Set population metrics
