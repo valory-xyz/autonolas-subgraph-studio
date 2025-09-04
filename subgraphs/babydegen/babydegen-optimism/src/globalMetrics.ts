@@ -1,5 +1,5 @@
 import { BigDecimal, BigInt, Bytes, ethereum, log } from "@graphprotocol/graph-ts";
-import { PopulationMetrics, AgentPortfolioSnapshot, ServiceRegistry } from "../generated/schema";
+import { DailyPopulationMetric, AgentPortfolioSnapshot, ServiceRegistry } from "../generated/schema";
 
 /**
  * Gets the timestamp for the start of the day (UTC midnight) for a given timestamp
@@ -111,16 +111,16 @@ export function getAllAgentSnapshots(dayTimestamp: BigInt): AgentPortfolioSnapsh
 }
 
 /**
- * Get previous PopulationMetrics entity to access historical data
+ * Get previous DailyPopulationMetric entity to access historical data
  * @param currentDayTimestamp Current day timestamp (UTC midnight)
- * @returns Previous PopulationMetrics entity or null if not found
+ * @returns Previous DailyPopulationMetric entity or null if not found
  */
-export function getPreviousPopulationMetrics(currentDayTimestamp: BigInt): PopulationMetrics | null {
+export function getPreviousDailyPopulationMetric(currentDayTimestamp: BigInt): DailyPopulationMetric | null {
   // Calculate previous day timestamp (24 hours ago)
   let previousTimestamp = currentDayTimestamp.minus(BigInt.fromI32(86400)); // 86400 seconds = 24 hours
   let previousGlobalId = previousTimestamp.toString();
   
-  return PopulationMetrics.load(Bytes.fromUTF8(previousGlobalId));
+  return DailyPopulationMetric.load(Bytes.fromUTF8(previousGlobalId));
 }
 
 /**
@@ -153,7 +153,7 @@ export function updateHistoricalArrays(
 }
 
 /**
- * Create or update PopulationMetrics entity with calculated metrics
+ * Create or update DailyPopulationMetric entity with calculated metrics
  * @param medianROI Calculated median ROI
  * @param medianAPR Calculated median APR
  * @param sma7dROI Calculated 7-day SMA ROI
@@ -163,7 +163,7 @@ export function updateHistoricalArrays(
  * @param totalAgents Number of agents included in calculation
  * @param block Current block
  */
-export function updatePopulationMetricsEntity(
+export function updateDailyPopulationMetricEntity(
   medianROI: BigDecimal,
   medianAPR: BigDecimal,
   sma7dROI: BigDecimal,
@@ -176,28 +176,28 @@ export function updatePopulationMetricsEntity(
   // Use day timestamp (UTC midnight) for entity ID to ensure one entity per day
   let dayTimestamp = getDayTimestamp(block.timestamp);
   let globalId = dayTimestamp.toString();
-  let populationMetrics = new PopulationMetrics(Bytes.fromUTF8(globalId));
+  let dailyPopulationMetric = new DailyPopulationMetric(Bytes.fromUTF8(globalId));
   
   // Set population metrics
-  populationMetrics.medianPopulationROI = medianROI;
-  populationMetrics.medianPopulationAPR = medianAPR;
+  dailyPopulationMetric.medianPopulationROI = medianROI;
+  dailyPopulationMetric.medianPopulationAPR = medianAPR;
   
   // Set 7-day simple moving averages
-  populationMetrics.sma7dROI = sma7dROI;
-  populationMetrics.sma7dAPR = sma7dAPR;
+  dailyPopulationMetric.sma7dROI = sma7dROI;
+  dailyPopulationMetric.sma7dAPR = sma7dAPR;
   
   // Set metadata
-  populationMetrics.timestamp = dayTimestamp; // Use day timestamp for consistency
-  populationMetrics.block = block.number;
-  populationMetrics.totalAgents = totalAgents as i32;
+  dailyPopulationMetric.timestamp = dayTimestamp; // Use day timestamp for consistency
+  dailyPopulationMetric.block = block.number;
+  dailyPopulationMetric.totalAgents = totalAgents as i32;
   
   // Set historical data
-  populationMetrics.historicalMedianROI = historicalROI;
-  populationMetrics.historicalMedianAPR = historicalAPR;
+  dailyPopulationMetric.historicalMedianROI = historicalROI;
+  dailyPopulationMetric.historicalMedianAPR = historicalAPR;
   
-  populationMetrics.save();
+  dailyPopulationMetric.save();
   
-  log.info("Created PopulationMetrics entity for day timestamp {} with {} agents, median ROI: {}, median APR: {}", [
+  log.info("Created DailyPopulationMetric entity for day timestamp {} with {} agents, median ROI: {}, median APR: {}", [
     dayTimestamp.toString(),
     totalAgents.toString(),
     medianROI.toString(),
@@ -241,14 +241,14 @@ export function calculateGlobalMetrics(block: ethereum.Block): void {
   let medianROI = calculateMedian(roiValues);
   let medianAPR = calculateMedian(aprValues);
   
-  // Get previous PopulationMetrics entity for historical data using day timestamp
-  let previousPopulationMetrics = getPreviousPopulationMetrics(dayTimestamp);
+  // Get previous DailyPopulationMetric entity for historical data using day timestamp
+  let previousDailyPopulationMetric = getPreviousDailyPopulationMetric(dayTimestamp);
   let historicalROI: BigDecimal[] = [];
   let historicalAPR: BigDecimal[] = [];
   
-  if (previousPopulationMetrics) {
-    historicalROI = previousPopulationMetrics.historicalMedianROI;
-    historicalAPR = previousPopulationMetrics.historicalMedianAPR;
+  if (previousDailyPopulationMetric) {
+    historicalROI = previousDailyPopulationMetric.historicalMedianROI;
+    historicalAPR = previousDailyPopulationMetric.historicalMedianAPR;
   }
   
   // Update historical arrays with new median values
@@ -260,8 +260,8 @@ export function calculateGlobalMetrics(block: ethereum.Block): void {
   let sma7dROI = calculate7DaysSMA(updatedHistoricalROI);
   let sma7dAPR = calculate7DaysSMA(updatedHistoricalAPR);
   
-  // Create and save PopulationMetrics entity
-  updatePopulationMetricsEntity(
+  // Create and save DailyPopulationMetric entity
+  updateDailyPopulationMetricEntity(
     medianROI,
     medianAPR,
     sma7dROI,

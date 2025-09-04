@@ -102,10 +102,11 @@ Agent token balance tracking:
 
 ### Population Analytics Entities
 
-#### `Global`
-Population-level metrics calculated daily:
-- **medianPopulationROI**: Median ROI across all agents
-- **medianPopulationAPR**: Median APR across all agents
+#### `DailyPopulationMetric`
+Daily population-level metrics calculated at UTC midnight:
+- **id**: "<dayTimestamp>" for daily snapshots (UTC midnight)
+- **medianPopulationROI**: Median ROI across all agents for that day
+- **medianPopulationAPR**: Median APR across all agents for that day
 - **sma7dROI**: 7-day simple moving average of median ROI
 - **sma7dAPR**: 7-day simple moving average of median APR
 - **totalAgents**: Number of agents included in calculation
@@ -133,7 +134,7 @@ Multi-source pricing with Chainlink integration and DEX fallbacks for comprehens
 ### Latest Population Metrics
 ```graphql
 {
-  globals(first: 1, orderBy: timestamp, orderDirection: desc) {
+  dailyPopulationMetrics(first: 1, orderBy: timestamp, orderDirection: desc) {
     medianPopulationROI
     medianPopulationAPR
     sma7dROI
@@ -147,7 +148,7 @@ Multi-source pricing with Chainlink integration and DEX fallbacks for comprehens
 ### Population Trend Analysis
 ```graphql
 {
-  globals(
+  dailyPopulationMetrics(
     first: 30
     orderBy: timestamp
     orderDirection: desc
