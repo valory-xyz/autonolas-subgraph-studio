@@ -1,5 +1,5 @@
 import { BigDecimal, BigInt, Bytes, ethereum, log } from "@graphprotocol/graph-ts";
-import { DailyPopulationMetric, AgentPortfolioSnapshot, ServiceRegistry } from "../generated/schema";
+import { DailyPopulationMetric, AgentPortfolioSnapshot, ServiceRegistry, AgentPortfolio } from "../generated/schema";
 
 /**
  * Gets the timestamp for the start of the day (UTC midnight) for a given timestamp
@@ -76,12 +76,13 @@ export function calculate7DaysSMA(historicalValues: BigDecimal[]): BigDecimal {
 }
 
 /**
- * Get all agent portfolio snapshots for a specific day timestamp
- * @param dayTimestamp UTC midnight timestamp for the day
- * @returns Array of AgentPortfolioSnapshot entities
+ * Get all agent portfolio snapshots for a specific day
+ * @param block Current ethereum block
+ * @returns Array of AgentPortfolioSnapshot entities for the day
  */
-export function getAllAgentSnapshots(dayTimestamp: BigInt): AgentPortfolioSnapshot[] {
+export function getAllAgentSnapshotsForDay(block: ethereum.Block): AgentPortfolioSnapshot[] {
   let snapshots: AgentPortfolioSnapshot[] = [];
+  let dayTimestamp = getDayTimestamp(block.timestamp);
   
   // Load all services from the registry
   let registryId = Bytes.fromUTF8("registry");
@@ -91,18 +92,29 @@ export function getAllAgentSnapshots(dayTimestamp: BigInt): AgentPortfolioSnapsh
     return snapshots;
   }
   
-  // For each service, try to load its snapshot for this day
+  // For each service, look for snapshots created on this day
   for (let i = 0; i < serviceRegistry.serviceAddresses.length; i++) {
     let serviceAddress = serviceRegistry.serviceAddresses[i];
-    let snapshotId = serviceAddress.toHexString() + "-" + dayTimestamp.toString();
-    let snapshot = AgentPortfolioSnapshot.load(Bytes.fromUTF8(snapshotId));
     
-    if (snapshot) {
-      snapshots.push(snapshot);
+    // Query all snapshots for this service and filter by day
+    // Since we don't know the exact block timestamp, we need to find snapshots within the day
+    let portfolio = AgentPortfolio.load(serviceAddress);
+    if (portfolio && portfolio.lastSnapshotTimestamp.gt(BigInt.zero())) {
+      let snapshotDayTimestamp = getDayTimestamp(portfolio.lastSnapshotTimestamp);
+      
+      // If the last snapshot was taken on this day, load it
+      if (snapshotDayTimestamp.equals(dayTimestamp)) {
+        let snapshotId = serviceAddress.toHexString() + "-" + portfolio.lastSnapshotTimestamp.toString();
+        let snapshot = AgentPortfolioSnapshot.load(Bytes.fromUTF8(snapshotId));
+        
+        if (snapshot) {
+          snapshots.push(snapshot);
+        }
+      }
     }
   }
   
-  log.info("Found {} agent snapshots for timestamp {}", [
+  log.info("Found {} agent snapshots for day timestamp {}", [
     snapshots.length.toString(),
     dayTimestamp.toString()
   ]);
@@ -219,7 +231,7 @@ export function calculateGlobalMetrics(block: ethereum.Block): void {
   let dayTimestamp = getDayTimestamp(block.timestamp);
   
   // Get all agent snapshots for this day
-  let snapshots = getAllAgentSnapshots(dayTimestamp);
+  let snapshots = getAllAgentSnapshotsForDay(block);
   
   if (snapshots.length == 0) {
     log.warning("No agent snapshots found for population metrics calculation at day timestamp {}", [
