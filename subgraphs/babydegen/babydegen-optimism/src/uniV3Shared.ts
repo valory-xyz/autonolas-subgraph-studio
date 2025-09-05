@@ -22,6 +22,13 @@ function convertTokenAmount(amount: BigInt, tokenAddress: Address): BigDecimal {
   return amount.toBigDecimal().div(divisor)
 }
 
+// Create or get Uniswap V3 position ID (consistent with Velodrome V2 pattern)
+export function getUniV3PositionId(userAddress: Address, tokenId: BigInt): Bytes {
+  // For Uniswap V3, we use user-tokenId combination as position ID
+  const positionId = userAddress.toHex() + "-" + tokenId.toString()
+  return Bytes.fromUTF8(positionId)
+}
+
 // Helper function to derive pool address from position data with caching
 function getUniV3PoolAddress(token0: Address, token1: Address, fee: i32, tokenId: BigInt | null = null): Address {
   // Try cache first if we have a tokenId
@@ -143,14 +150,13 @@ export function refreshUniV3PositionWithEventAmounts(
   const eventUsd1 = eventAmount1Human.times(token1Price)
   const eventUsd = eventUsd0.plus(eventUsd1)
 
-  // write ProtocolPosition - use actual NFT owner and event amounts for entry
-  const idString = nftOwner.toHex() + "-" + tokenId.toString()
-  const id = Bytes.fromUTF8(idString)
-  let pp = ProtocolPosition.load(id)
+  // write ProtocolPosition - use consistent ID pattern like Velodrome V2
+  const positionId = getUniV3PositionId(nftOwner, tokenId)
+  let pp = ProtocolPosition.load(positionId)
   const isNewPosition = pp == null
   
   if (pp == null) {
-    pp = new ProtocolPosition(id)
+    pp = new ProtocolPosition(positionId)
     pp.agent = nftOwner
     pp.protocol = "uniswap-v3"
     pp.pool = poolAddress
@@ -167,9 +173,12 @@ export function refreshUniV3PositionWithEventAmounts(
         service.positionIds = []
       }
       let positionIds = service.positionIds
-      positionIds.push(idString)
-      service.positionIds = positionIds
-      service.save()
+      let positionIdString = positionId.toString()  // Get original string before hex encoding
+      if (positionIds.indexOf(positionIdString) == -1) {
+        positionIds.push(positionIdString)
+        service.positionIds = positionIds
+        service.save()
+      }
       
       // Update first trading timestamp
       updateFirstTradingTimestamp(nftOwner, block.timestamp)
@@ -249,10 +258,9 @@ export function refreshUniV3PositionWithExitAmounts(
   
   const data = dataResult.value
   
-  // Load existing position
-  const idString = nftOwner.toHex() + "-" + tokenId.toString()
-  const id = Bytes.fromUTF8(idString)
-  let pp = ProtocolPosition.load(id)
+  // Load existing position using consistent ID pattern
+  const positionId = getUniV3PositionId(nftOwner, tokenId)
+  let pp = ProtocolPosition.load(positionId)
   
   if (pp == null) {
     log.error("UNISWAP V3: Position {} not found for exit processing", [tokenId.toString()])
@@ -326,10 +334,9 @@ export function refreshUniV3Position(tokenId: BigInt, block: ethereum.Block, txH
     return
   }
 
-  // Early check - don't process closed positions
-  const idString = nftOwner.toHex() + "-" + tokenId.toString()
-  const id = Bytes.fromUTF8(idString)
-  let position = ProtocolPosition.load(id)
+  // Early check - don't process closed positions using consistent ID pattern
+  const positionId = getUniV3PositionId(nftOwner, tokenId)
+  let position = ProtocolPosition.load(positionId)
   
   if (position && !position.isActive) {
     return
@@ -386,12 +393,12 @@ export function refreshUniV3Position(tokenId: BigInt, block: ethereum.Block, txH
   const usd1 = amount1Human.times(token1Price)
   const usd = usd0.plus(usd1)
 
-  // write ProtocolPosition - use actual NFT owner
-  let pp = ProtocolPosition.load(id)
+  // write ProtocolPosition - use consistent ID pattern
+  let pp = ProtocolPosition.load(positionId)
   const isNewPosition = pp == null
   
   if (pp == null) {
-    pp = new ProtocolPosition(id)
+    pp = new ProtocolPosition(positionId)
     pp.agent = nftOwner
     pp.protocol = "uniswap-v3"
     pp.pool = poolAddress
@@ -408,9 +415,12 @@ export function refreshUniV3Position(tokenId: BigInt, block: ethereum.Block, txH
         service.positionIds = []
       }
       let positionIds = service.positionIds
-      positionIds.push(idString)
-      service.positionIds = positionIds
-      service.save()
+      let positionIdString = positionId.toString()  // Get original string before hex encoding
+      if (positionIds.indexOf(positionIdString) == -1) {
+        positionIds.push(positionIdString)
+        service.positionIds = positionIds
+        service.save()
+      }
       
       // Update first trading timestamp
       updateFirstTradingTimestamp(nftOwner, block.timestamp)

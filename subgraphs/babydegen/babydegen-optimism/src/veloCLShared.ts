@@ -21,6 +21,13 @@ function convertTokenAmount(amount: BigInt, tokenAddress: Address): BigDecimal {
   return amount.toBigDecimal().div(divisor)
 }
 
+// Create or get Velodrome CL position ID (consistent with Velodrome V2 pattern)
+export function getVeloCLPositionId(userAddress: Address, tokenId: BigInt): Bytes {
+  // For Velodrome CL, we use user-tokenId combination as position ID
+  const positionId = userAddress.toHex() + "-" + tokenId.toString()
+  return Bytes.fromUTF8(positionId)
+}
+
 // Helper function to derive pool address from position data with caching
 function getPoolAddress(token0: Address, token1: Address, tickSpacing: i32, tokenId: BigInt | null = null): Address {
   // Try cache first if we have a tokenId
@@ -146,14 +153,13 @@ export function refreshVeloCLPositionWithEventAmounts(
   const eventUsd1 = eventAmount1Human.times(token1Price)
   const eventUsd = eventUsd0.plus(eventUsd1)
 
-  // write ProtocolPosition - use actual NFT owner and event amounts for entry
-  const idString = nftOwner.toHex() + "-" + tokenId.toString()
-  const id = Bytes.fromUTF8(idString)
-  let pp = ProtocolPosition.load(id)
+  // write ProtocolPosition - use consistent ID pattern like Velodrome V2
+  const positionId = getVeloCLPositionId(nftOwner, tokenId)
+  let pp = ProtocolPosition.load(positionId)
   const isNewPosition = pp == null
   
   if (pp == null) {
-    pp = new ProtocolPosition(id)
+    pp = new ProtocolPosition(positionId)
     pp.agent = nftOwner
     pp.service = nftOwner // Link to service
     pp.protocol = "velodrome-cl"
@@ -168,9 +174,12 @@ export function refreshVeloCLPositionWithEventAmounts(
         service.positionIds = []
       }
       let positionIds = service.positionIds
-      positionIds.push(idString)
-      service.positionIds = positionIds
-      service.save()
+      let positionIdString = positionId.toString()  // Get original string before hex encoding
+      if (positionIds.indexOf(positionIdString) == -1) {
+        positionIds.push(positionIdString)
+        service.positionIds = positionIds
+        service.save()
+      }
       
       // Update first trading timestamp
       updateFirstTradingTimestamp(nftOwner, block.timestamp)
@@ -273,10 +282,9 @@ export function refreshVeloCLPositionWithExitAmounts(
   
   const data = dataResult.value
   
-  // Load existing position
-  const idString = nftOwner.toHex() + "-" + tokenId.toString()
-  const id = Bytes.fromUTF8(idString)
-  let pp = ProtocolPosition.load(id)
+  // Load existing position using consistent ID pattern
+  const positionId = getVeloCLPositionId(nftOwner, tokenId)
+  let pp = ProtocolPosition.load(positionId)
   
   if (pp == null) {
     return
@@ -346,10 +354,9 @@ export function refreshVeloCLPosition(tokenId: BigInt, block: ethereum.Block, tx
     return
   }
 
-  // Early check - don't process closed positions
-  const idString = nftOwner.toHex() + "-" + tokenId.toString()
-  const id = Bytes.fromUTF8(idString)
-  let position = ProtocolPosition.load(id)
+  // Early check - don't process closed positions using consistent ID pattern
+  const positionId = getVeloCLPositionId(nftOwner, tokenId)
+  let position = ProtocolPosition.load(positionId)
   
   if (position && !position.isActive) {
     return
@@ -404,12 +411,12 @@ export function refreshVeloCLPosition(tokenId: BigInt, block: ethereum.Block, tx
   const usd1 = amount1Human.times(token1Price)
   const usd  = usd0.plus(usd1)
 
-  // write ProtocolPosition - use actual NFT owner, not position data owner
-  let pp = ProtocolPosition.load(id)
+  // write ProtocolPosition - use consistent ID pattern
+  let pp = ProtocolPosition.load(positionId)
   const isNewPosition = pp == null
   
   if (pp == null) {
-    pp = new ProtocolPosition(id)
+    pp = new ProtocolPosition(positionId)
     pp.agent    = nftOwner
     pp.service  = nftOwner // Link to service
     pp.protocol = "velodrome-cl"
@@ -424,9 +431,12 @@ export function refreshVeloCLPosition(tokenId: BigInt, block: ethereum.Block, tx
         service.positionIds = []
       }
       let positionIds = service.positionIds
-      positionIds.push(idString)
-      service.positionIds = positionIds
-      service.save()
+      let positionIdString = positionId.toString()  // Get original string before hex encoding
+      if (positionIds.indexOf(positionIdString) == -1) {
+        positionIds.push(positionIdString)
+        service.positionIds = positionIds
+        service.save()
+      }
       
       // Update first trading timestamp
       updateFirstTradingTimestamp(nftOwner, block.timestamp)
