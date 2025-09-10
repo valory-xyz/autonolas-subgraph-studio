@@ -184,13 +184,6 @@ export function createSwapTransaction(
   
   // Add swap to flattened buffer for deterministic association
   addSwapToBuffer(agent, timestamp, swapId, swap.slippageUSD)
-  
-  log.info("SWAP: Created SwapTransaction {} for agent {} - slippage: {} USD ({}%)", [
-    swapId.toHexString(),
-    agent.toHexString(),
-    swap.slippageUSD.toString(),
-    swap.slippagePercentage.toString()
-  ])
 }
 
 // Add swap to flattened buffer for later association
@@ -232,12 +225,6 @@ function addSwapToBuffer(agent: Address, timestamp: BigInt, swapId: Bytes, slipp
   buffer.totalSlippageUSD = buffer.totalSlippageUSD.plus(slippageUSD)
   buffer.lastUpdated = timestamp
   buffer.save()
-  
-  log.info("SWAP BUFFER: Added swap {} to buffer {} - total slippage: {} USD", [
-    swapId.toHexString(),
-    bufferId.toHexString(),
-    buffer.totalSlippageUSD.toString()
-  ])
 }
 
 /**

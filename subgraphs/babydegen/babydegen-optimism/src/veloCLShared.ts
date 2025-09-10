@@ -282,11 +282,6 @@ export function refreshVeloCLPositionWithEventAmounts(
         pp.swapSlippageUSD = totalSlippage
         pp.totalCostsUSD = pp.swapSlippageUSD
         pp.investmentUSD = pp.entryAmountUSD.plus(pp.totalCostsUSD)
-        
-        log.info("SWAP ASSOCIATION: Position {} consumed swaps with total slippage: {} USD", [
-          pp.id.toHexString(),
-          totalSlippage.toString()
-        ])
       }
     }
     
