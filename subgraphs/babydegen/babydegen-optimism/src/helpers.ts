@@ -8,6 +8,7 @@ import {
 } from "../generated/schema"
 import { calculateUninvestedValue, updateFundingBalance } from "./tokenBalances"
 import { getServiceByAgent } from "./config"
+import { calculateActualROI, aggregateClosedPositionMetrics } from "./roiCalculation"
 
 // Use the single source of truth for funding balance updates
 export function updateFunding(
@@ -107,14 +108,49 @@ export function calculatePortfolioMetrics(
     }
   }
   
+  // Calculate new position-based ROI from closed positions
+  let actualROI = calculateActualROI(serviceSafe)
+  let aggregates = aggregateClosedPositionMetrics(serviceSafe)
+  
+  // Calculate APR from actual ROI (position-based)
+  let actualAPR = BigDecimal.zero()
+  if (actualROI.gt(BigDecimal.zero())) {
+    let timestampForAPR = portfolio.firstTradingTimestamp
+    
+    // Fallback: If no trading activity, use service creation timestamp
+    if (timestampForAPR.equals(BigInt.zero())) {
+      let serviceEntity = Service.load(serviceSafe)
+      if (serviceEntity != null && serviceEntity.latestRegistrationTimestamp.gt(BigInt.zero())) {
+        timestampForAPR = serviceEntity.latestRegistrationTimestamp
+      }
+    }
+    
+    if (timestampForAPR.gt(BigInt.zero())) {
+      let secondsSinceStart = block.timestamp.minus(timestampForAPR)
+      let daysSinceStart = secondsSinceStart.toBigDecimal().div(BigDecimal.fromString("86400"))
+      
+      if (daysSinceStart.gt(BigDecimal.zero())) {
+        // APR = actual_roi * (365 / days_invested)
+        let annualizationFactor = BigDecimal.fromString("365").div(daysSinceStart)
+        actualAPR = actualROI.times(annualizationFactor)
+      }
+    }
+  }
+  
   // Update portfolio
   portfolio.finalValue = finalValue
   portfolio.initialValue = initialValue  
   portfolio.positionsValue = positionsValue
   portfolio.uninvestedValue = uninvestedValue
-  portfolio.roi = roi
-  portfolio.apr = apr
+  portfolio.projected_roi = roi  // Current portfolio-based calculation (unrealized PnL)
+  portfolio.roi = actualROI  //Position-based ROI from closed positions
+  portfolio.apr = actualAPR  // APR calculated from actual ROI
   portfolio.lastUpdated = block.timestamp
+  
+  // Update aggregation fields
+  portfolio.totalInvestments = aggregates.totalInvestments
+  portfolio.totalGrossGains = aggregates.totalGrossGains
+  portfolio.totalCosts = aggregates.totalCosts
   
   // Count positions
   let activeCount = 0
@@ -233,7 +269,7 @@ function createPortfolioSnapshot(portfolio: AgentPortfolio, block: ethereum.Bloc
   snapshot.uninvestedValue = portfolio.uninvestedValue
   
   // Copy performance metrics
-  snapshot.roi = portfolio.roi
+  snapshot.roi = portfolio.roi  // Use position-based ROI for snapshots
   snapshot.apr = portfolio.apr
   
   // Metadata
@@ -266,7 +302,11 @@ export function ensureAgentPortfolio(serviceSafe: Address, timestamp: BigInt): A
     portfolio.initialValue = BigDecimal.zero()
     portfolio.positionsValue = BigDecimal.zero()
     portfolio.uninvestedValue = BigDecimal.zero()
-    portfolio.roi = BigDecimal.zero()
+    portfolio.projected_roi = BigDecimal.zero()
+    portfolio.roi = BigDecimal.zero()  // Position-based ROI
+    portfolio.totalInvestments = BigDecimal.zero()
+    portfolio.totalGrossGains = BigDecimal.zero()
+    portfolio.totalCosts = BigDecimal.zero()
     portfolio.apr = BigDecimal.zero()
     portfolio.lastUpdated = timestamp
     portfolio.save()

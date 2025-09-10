@@ -578,11 +578,17 @@ dataSources:
       language: wasm/assemblyscript
       entities:
         - TokenBalance
+        - SwapTransaction
+        - SwapToEntryAssociation
       abis:
         - name: LiFiDiamond
           file: ../../../abis/defi/LiFiDiamond.json
         - name: AggregatorV3Interface
           file: ../../../abis/oracles/AggregatorV3Interface.json
+        - name: VelodromeCLPool
+          file: ../../../abis/defi/VelodromeCLPool.json
+        - name: VelodromeV2Pool
+          file: ../../../abis/defi/VelodromeV2Pool.json
       eventHandlers:
         - event: LiFiGenericSwapCompleted(indexed bytes32,string,string,address,address,address,uint256,uint256)
           handler: handleLiFiGenericSwapCompleted

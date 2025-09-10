@@ -1,53 +1,8 @@
 import { Address, BigInt, ethereum, Bytes } from "@graphprotocol/graph-ts"
 import { getServiceByAgent } from "./config"
 import { updateETHBalance } from "./tokenBalances"
-
-// Define the event structure manually since we can't import from the generated code yet
-class LiFiGenericSwapCompletedEvent extends ethereum.Event {
-  get params(): LiFiGenericSwapCompletedParams {
-    return new LiFiGenericSwapCompletedParams(this);
-  }
-}
-
-class LiFiGenericSwapCompletedParams {
-  _event: ethereum.Event;
-
-  constructor(event: ethereum.Event) {
-    this._event = event;
-  }
-
-  get transactionId(): Bytes {
-    return this._event.parameters[0].value.toBytes();
-  }
-
-  get integrator(): string {
-    return this._event.parameters[1].value.toString();
-  }
-
-  get referrer(): string {
-    return this._event.parameters[2].value.toString();
-  }
-
-  get receiver(): Address {
-    return this._event.parameters[3].value.toAddress();
-  }
-
-  get fromAssetId(): Address {
-    return this._event.parameters[4].value.toAddress();
-  }
-
-  get toAssetId(): Address {
-    return this._event.parameters[5].value.toAddress();
-  }
-
-  get fromAmount(): BigInt {
-    return this._event.parameters[6].value.toBigInt();
-  }
-
-  get toAmount(): BigInt {
-    return this._event.parameters[7].value.toBigInt();
-  }
-}
+import { createSwapTransaction } from "./swapTracking"
+import { LiFiGenericSwapCompleted } from "../generated/LiFiDiamond/LiFiDiamond"
 
 /**
  * Handler for LiFiGenericSwapCompleted events
@@ -56,17 +11,17 @@ class LiFiGenericSwapCompletedParams {
  * - Only processes events where the receiver is a service safe
  * - Handles ETH outflows when fromAssetId is the zero address
  * - Handles ETH inflows when toAssetId is the zero address
+ * - Creates SwapTransaction entities for slippage tracking
  */
-export function handleLiFiGenericSwapCompleted(event: LiFiGenericSwapCompletedEvent): void {
+export function handleLiFiGenericSwapCompleted(event: LiFiGenericSwapCompleted): void {
   const integrator = event.params.integrator
   const receiver = event.params.receiver
   const fromAssetId = event.params.fromAssetId
   const toAssetId = event.params.toAssetId
   const fromAmount = event.params.fromAmount
   const toAmount = event.params.toAmount
+  const transactionId = event.params.transactionId
   const txHash = event.transaction.hash.toHexString()
-
-  // Removed detailed swap logging to improve performance
 
   // Filter 1: Check if integrator is "valory"
   if (integrator != "valory") {
@@ -78,6 +33,20 @@ export function handleLiFiGenericSwapCompleted(event: LiFiGenericSwapCompletedEv
   if (service === null) {
     return
   }
+
+  // Create SwapTransaction entity for tracking and association
+  createSwapTransaction(
+    receiver,                    // agent
+    transactionId,              // LiFi transaction ID
+    event.transaction.hash,     // transaction hash
+    event.block.timestamp,      // timestamp
+    event.block.number,         // block number
+    fromAssetId,                // input token
+    toAssetId,                  // output token
+    fromAmount,                 // input amount
+    toAmount,                   // output amount
+    event.logIndex              // log index for unique ID
+  )
 
   // Handle ETH outflows (fromAssetId is zero address - ETH)
   if (fromAssetId.equals(Address.zero())) {

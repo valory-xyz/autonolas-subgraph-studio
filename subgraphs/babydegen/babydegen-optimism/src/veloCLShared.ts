@@ -5,7 +5,7 @@ import { VelodromeCLFactory }         from "../../../../generated/VeloNFTManager
 // import { VeloCLPool }                 from "../../../../generated/templates" // Removed - using snapshot approach instead of real-time tracking
 import { LiquidityAmounts }           from "./libraries/LiquidityAmounts"
 import { TickMath }                   from "./libraries/TickMath"
-import { ProtocolPosition, Service }  from "../../../../generated/schema"
+import { ProtocolPosition, Service, AgentSwapBuffer }  from "../generated/schema"
 import { getUsd, refreshPortfolio }   from "./common"
 import { addAgentNFTToPool, removeAgentNFTFromPool, getCachedPoolAddress, cachePoolAddress } from "./poolIndexCache"
 import { getTokenPriceUSD } from "./priceDiscovery"
@@ -13,6 +13,8 @@ import { VELO_MANAGER, VELO_FACTORY } from "./constants"
 import { isServiceAgent, getServiceByAgent } from "./config"
 import { updateFirstTradingTimestamp } from "./helpers"
 import { getTokenDecimals, getTokenSymbol } from "./tokenUtils"
+import { initializePositionCosts } from "./roiCalculation"
+import { searchAndAssociateRecentSwaps } from "./swapTracking"
 
 // Helper function to convert token amount from wei to human readable
 function convertTokenAmount(amount: BigInt, tokenAddress: Address): BigDecimal {
@@ -213,8 +215,80 @@ export function refreshVeloCLPositionWithEventAmounts(
     pp.token0Symbol = getTokenSymbol(data.value2)
     pp.token1Symbol = getTokenSymbol(data.value3)
     
+    // Initialize cost tracking for new position
+    initializePositionCosts(pp)
+    
     // Save entry data first with all required fields set
     pp.save()
+    
+    // INLINE SWAP ASSOCIATION: All entity operations must be inline to avoid compiler crash
+    const bufferId = nftOwner
+    let buffer = AgentSwapBuffer.load(bufferId)
+    
+    if (buffer) {
+      // Check buckets sequentially (most recent first) - all inline
+      let consumedSwaps = ""
+      let totalSlippage = BigDecimal.zero()
+      
+      if (buffer.bucket0Swaps != "") {
+        consumedSwaps = buffer.bucket0Swaps
+        // Simple slippage parsing inline
+        let swaps = buffer.bucket0Swaps.split(",")
+        for (let i = 0; i < swaps.length; i++) {
+          let parts = swaps[i].split(":")
+          if (parts.length == 2) {
+            totalSlippage = totalSlippage.plus(BigDecimal.fromString(parts[1]))
+          }
+        }
+        buffer.bucket0Swaps = ""
+      } else if (buffer.bucket1Swaps != "") {
+        consumedSwaps = buffer.bucket1Swaps
+        let swaps = buffer.bucket1Swaps.split(",")
+        for (let i = 0; i < swaps.length; i++) {
+          let parts = swaps[i].split(":")
+          if (parts.length == 2) {
+            totalSlippage = totalSlippage.plus(BigDecimal.fromString(parts[1]))
+          }
+        }
+        buffer.bucket1Swaps = ""
+      } else if (buffer.bucket2Swaps != "") {
+        consumedSwaps = buffer.bucket2Swaps
+        let swaps = buffer.bucket2Swaps.split(",")
+        for (let i = 0; i < swaps.length; i++) {
+          let parts = swaps[i].split(":")
+          if (parts.length == 2) {
+            totalSlippage = totalSlippage.plus(BigDecimal.fromString(parts[1]))
+          }
+        }
+        buffer.bucket2Swaps = ""
+      } else if (buffer.bucket3Swaps != "") {
+        consumedSwaps = buffer.bucket3Swaps
+        let swaps = buffer.bucket3Swaps.split(",")
+        for (let i = 0; i < swaps.length; i++) {
+          let parts = swaps[i].split(":")
+          if (parts.length == 2) {
+            totalSlippage = totalSlippage.plus(BigDecimal.fromString(parts[1]))
+          }
+        }
+        buffer.bucket3Swaps = ""
+      }
+      
+      if (consumedSwaps != "") {
+        // Found and consumed swaps - update costs inline
+        buffer.totalSlippageUSD = buffer.totalSlippageUSD.minus(totalSlippage)
+        buffer.save()
+        
+        // Update position costs inline
+        pp.swapSlippageUSD = totalSlippage
+        pp.totalCostsUSD = pp.swapSlippageUSD
+        pp.investmentUSD = pp.entryAmountUSD.plus(pp.totalCostsUSD)
+        
+        log.info("SWAP ASSOCIATION: Position {} consumed swaps with total slippage: {} USD", [
+          pp.id.toHexString(),
+          totalSlippage.toString()
+        ])
+      }
+    }
     
     // Then call refreshVeloCLPosition to get more accurate current amounts
     refreshVeloCLPosition(tokenId, block, txHash) // This will update current amounts and save the entity again
