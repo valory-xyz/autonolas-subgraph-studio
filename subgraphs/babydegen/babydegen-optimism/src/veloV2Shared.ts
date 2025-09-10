@@ -3,10 +3,11 @@ import {
   BigDecimal, 
   Address, 
   Bytes,
-  ethereum
+  ethereum,
+  log
 } from "@graphprotocol/graph-ts"
 
-import { ProtocolPosition, Service } from "../../../../generated/schema"
+import { ProtocolPosition, Service, AgentSwapBuffer } from "../generated/schema"
 import { VelodromeV2Pool } from "../../../../generated/templates/VeloV2Pool/VelodromeV2Pool"
 import { VeloV2Pool as VeloV2PoolTemplate } from "../../../../generated/templates"
 import { getTokenPriceUSD } from "./priceDiscovery"
@@ -172,7 +173,9 @@ export function refreshVeloV2PositionWithEventAmounts(
   const eventUsd = eventUsd0.plus(eventUsd1)
   
   // Check if this is the first time adding liquidity (new position)
-  if (pp.entryAmountUSD.equals(BigDecimal.zero()) && pp.entryTimestamp.equals(BigInt.zero())) {
+  const isFirstMint = pp.entryAmountUSD.equals(BigDecimal.zero()) && pp.entryTimestamp.equals(BigInt.zero())
+  
+  if (isFirstMint) {
     // This is the FIRST Mint event for a new position - set initial entry amounts
     pp.entryTxHash = txHash
     pp.entryTimestamp = block.timestamp
@@ -181,6 +184,78 @@ export function refreshVeloV2PositionWithEventAmounts(
     pp.entryAmount1 = eventAmount1Human
     pp.entryAmount1USD = eventUsd1
     pp.entryAmountUSD = eventUsd
+    
+    // Save the entry amounts first
+    pp.save()
+    
+    // INLINE SWAP ASSOCIATION for new positions: All entity operations must be inline to avoid compiler crash
+    const bufferId = userAddress
+    let buffer = AgentSwapBuffer.load(bufferId)
+    
+    if (buffer) {
+      // Check buckets sequentially (most recent first) - all inline
+      let consumedSwaps = ""
+      let totalSlippage = BigDecimal.zero()
+      
+      if (buffer.bucket0Swaps != "") {
+        consumedSwaps = buffer.bucket0Swaps
+        // Simple slippage parsing inline
+        let swaps = buffer.bucket0Swaps.split(",")
+        for (let i = 0; i < swaps.length; i++) {
+          let parts = swaps[i].split(":")
+          if (parts.length == 2) {
+            totalSlippage = totalSlippage.plus(BigDecimal.fromString(parts[1]))
+          }
+        }
+        buffer.bucket0Swaps = ""
+      } else if (buffer.bucket1Swaps != "") {
+        consumedSwaps = buffer.bucket1Swaps
+        let swaps = buffer.bucket1Swaps.split(",")
+        for (let i = 0; i < swaps.length; i++) {
+          let parts = swaps[i].split(":")
+          if (parts.length == 2) {
+            totalSlippage = totalSlippage.plus(BigDecimal.fromString(parts[1]))
+          }
+        }
+        buffer.bucket1Swaps = ""
+      } else if (buffer.bucket2Swaps != "") {
+        consumedSwaps = buffer.bucket2Swaps
+        let swaps = buffer.bucket2Swaps.split(",")
+        for (let i = 0; i < swaps.length; i++) {
+          let parts = swaps[i].split(":")
+          if (parts.length == 2) {
+            totalSlippage = totalSlippage.plus(BigDecimal.fromString(parts[1]))
+          }
+        }
+        buffer.bucket2Swaps = ""
+      } else if (buffer.bucket3Swaps != "") {
+        consumedSwaps = buffer.bucket3Swaps
+        let swaps = buffer.bucket3Swaps.split(",")
+        for (let i = 0; i < swaps.length; i++) {
+          let parts = swaps[i].split(":")
+          if (parts.length == 2) {
+            totalSlippage = totalSlippage.plus(BigDecimal.fromString(parts[1]))
+          }
+        }
+        buffer.bucket3Swaps = ""
+      }
+      
+      if (consumedSwaps != "") {
+        // Found and consumed swaps - update costs inline
+        buffer.totalSlippageUSD = buffer.totalSlippageUSD.minus(totalSlippage)
+        buffer.save()
+        
+        // Update position costs inline
+        pp.swapSlippageUSD = totalSlippage
+        pp.totalCostsUSD = pp.swapSlippageUSD
+        pp.investmentUSD = pp.entryAmountUSD.plus(pp.totalCostsUSD)
+        
+        log.info("SWAP ASSOCIATION: Position {} consumed swaps with total slippage: {} USD", [
+          pp.id.toHexString(),
+          totalSlippage.toString()
+        ])
+      }
+    }
   } else {
     // This is a subsequent Mint event - add to existing entry amounts
     pp.entryAmount0 = pp.entryAmount0.plus(eventAmount0Human)
@@ -188,10 +263,10 @@ export function refreshVeloV2PositionWithEventAmounts(
     pp.entryAmount1 = pp.entryAmount1.plus(eventAmount1Human)
     pp.entryAmount1USD = pp.entryAmount1USD.plus(eventUsd1)
     pp.entryAmountUSD = pp.entryAmountUSD.plus(eventUsd)
+    
+    // Save the updated entry amounts
+    pp.save()
   }
-  
-  // Save the updated entry amounts first
-  pp.save()
   
   // Update current amounts by calling the regular refresh function
   refreshVeloV2Position(userAddress, poolAddress, block, txHash)
