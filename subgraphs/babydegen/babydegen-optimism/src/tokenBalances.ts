@@ -6,7 +6,7 @@ import { getServiceByAgent } from "./config"
 import { isFundingSource } from "./common"
 import { getTokenPriceUSD } from "./priceDiscovery"
 import { WETH, WHITELISTED_TOKENS, USDC_NATIVE, USDC_BRIDGED } from "./constants"
-import { ensureAgentPortfolio } from "./helpers"
+import { ensureAgentPortfolio, calculatePortfolioMetrics } from "./helpers"
 
 // NOTE: This subgraph is configured to track USDC Native and ETH transfers for funding balance calculations.
 // While all token transfers are tracked for token balance purposes, only USDC Native and ETH flows affect
@@ -172,6 +172,12 @@ export function handleERC20Transfer(event: TransferEvent): void {
   let toService = getServiceByAgent(to)
   if (toService != null) {
     updateTokenBalance(to, tokenAddress, value, true, event.block)
+    
+    // ALWAYS ensure portfolio exists and is updated for ANY token activity
+    ensureAgentPortfolio(to, event.block.timestamp)
+    
+    // Trigger portfolio recalculation for any token balance change
+    calculatePortfolioMetrics(to, event.block)
     
     // Check if sender is a valid funding source
     let isValidSource = isFundingSource(from, to, event.block, event.transaction.hash.toHexString())
