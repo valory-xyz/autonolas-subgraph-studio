@@ -11,10 +11,9 @@ import { addAgentNFTToPool, removeAgentNFTFromPool, getCachedPoolAddress, cacheP
 import { getTokenPriceUSD } from "./priceDiscovery"
 import { VELO_MANAGER, VELO_FACTORY } from "./constants"
 import { isServiceAgent, getServiceByAgent } from "./config"
-import { updateFirstTradingTimestamp } from "./helpers"
+import { updateFirstTradingTimestamp, parseTotalSlippageFromBucket, associateSwapsWithPosition } from "./helpers"
 import { getTokenDecimals, getTokenSymbol } from "./tokenUtils"
 import { initializePositionCosts } from "./roiCalculation"
-import { searchAndAssociateRecentSwaps } from "./swapTracking"
 
 // Helper function to convert token amount from wei to human readable
 function convertTokenAmount(amount: BigInt, tokenAddress: Address): BigDecimal {
@@ -216,74 +215,25 @@ export function refreshVeloCLPositionWithEventAmounts(
     pp.token1Symbol = getTokenSymbol(data.value3)
     
     // Initialize cost tracking for new position
-    initializePositionCosts(pp)
+    pp.totalCostsUSD = BigDecimal.zero()
+    pp.swapSlippageUSD = BigDecimal.zero()
+    pp.investmentUSD = BigDecimal.zero()
+    pp.grossGainUSD = BigDecimal.zero()
+    pp.netGainUSD = BigDecimal.zero()
+    pp.positionROI = BigDecimal.zero()
+    
+    // Use centralized swap association logic
+    let totalSlippageUSD = associateSwapsWithPosition(nftOwner, block)
+    
+    // Update position costs if any swaps were associated
+    if (totalSlippageUSD.gt(BigDecimal.zero())) {
+      pp.swapSlippageUSD = totalSlippageUSD
+      pp.totalCostsUSD = totalSlippageUSD
+      pp.investmentUSD = eventUsd.plus(totalSlippageUSD)
+    }
     
     // Save entry data first with all required fields set
     pp.save()
-    
-    // INLINE SWAP ASSOCIATION: All entity operations must be inline to avoid compiler crash
-    const bufferId = nftOwner
-    let buffer = AgentSwapBuffer.load(bufferId)
-    
-    if (buffer) {
-      // Check buckets sequentially (most recent first) - all inline
-      let consumedSwaps = ""
-      let totalSlippage = BigDecimal.zero()
-      
-      if (buffer.bucket0Swaps != "") {
-        consumedSwaps = buffer.bucket0Swaps
-        // Simple slippage parsing inline
-        let swaps = buffer.bucket0Swaps.split(",")
-        for (let i = 0; i < swaps.length; i++) {
-          let parts = swaps[i].split(":")
-          if (parts.length == 2) {
-            totalSlippage = totalSlippage.plus(BigDecimal.fromString(parts[1]))
-          }
-        }
-        buffer.bucket0Swaps = ""
-      } else if (buffer.bucket1Swaps != "") {
-        consumedSwaps = buffer.bucket1Swaps
-        let swaps = buffer.bucket1Swaps.split(",")
-        for (let i = 0; i < swaps.length; i++) {
-          let parts = swaps[i].split(":")
-          if (parts.length == 2) {
-            totalSlippage = totalSlippage.plus(BigDecimal.fromString(parts[1]))
-          }
-        }
-        buffer.bucket1Swaps = ""
-      } else if (buffer.bucket2Swaps != "") {
-        consumedSwaps = buffer.bucket2Swaps
-        let swaps = buffer.bucket2Swaps.split(",")
-        for (let i = 0; i < swaps.length; i++) {
-          let parts = swaps[i].split(":")
-          if (parts.length == 2) {
-            totalSlippage = totalSlippage.plus(BigDecimal.fromString(parts[1]))
-          }
-        }
-        buffer.bucket2Swaps = ""
-      } else if (buffer.bucket3Swaps != "") {
-        consumedSwaps = buffer.bucket3Swaps
-        let swaps = buffer.bucket3Swaps.split(",")
-        for (let i = 0; i < swaps.length; i++) {
-          let parts = swaps[i].split(":")
-          if (parts.length == 2) {
-            totalSlippage = totalSlippage.plus(BigDecimal.fromString(parts[1]))
-          }
-        }
-        buffer.bucket3Swaps = ""
-      }
-      
-      if (consumedSwaps != "") {
-        // Found and consumed swaps - update costs inline
-        buffer.totalSlippageUSD = buffer.totalSlippageUSD.minus(totalSlippage)
-        buffer.save()
-        
-        // Update position costs inline
-        pp.swapSlippageUSD = totalSlippage
-        pp.totalCostsUSD = pp.swapSlippageUSD
-        pp.investmentUSD = pp.entryAmountUSD.plus(pp.totalCostsUSD)
-      }
-    }
     
     // Then call refreshVeloCLPosition to get more accurate current amounts
     refreshVeloCLPosition(tokenId, block, txHash) // This will update current amounts and save the entity again
@@ -516,7 +466,20 @@ export function refreshVeloCLPosition(tokenId: BigInt, block: ethereum.Block, tx
     pp.tickUpper = tickUpper
     pp.tickSpacing = data.value4
     
-    // CRITICAL FIX: Initialize entry data for new positions
+    // CRITICAL FIX: Set ALL required fields BEFORE calling initializePositionCosts
+    // Set current state fields first
+    pp.usdCurrent = usd
+    pp.token0     = data.value2
+    pp.token0Symbol = getTokenSymbol(data.value2)
+    pp.amount0    = amount0Human
+    pp.amount0USD = usd0
+    pp.token1     = data.value3
+    pp.token1Symbol = getTokenSymbol(data.value3)
+    pp.amount1    = amount1Human
+    pp.amount1USD = usd1
+    pp.liquidity  = data.value7
+    
+    // Initialize entry data for new positions
     // Entry amounts will be set by refreshVeloCLPositionWithEventAmounts
     // But we need to capture the initial transaction data
     pp.entryTxHash = txHash
@@ -526,6 +489,9 @@ export function refreshVeloCLPosition(tokenId: BigInt, block: ethereum.Block, tx
     pp.entryAmount1 = BigDecimal.zero()
     pp.entryAmount1USD = BigDecimal.zero()
     pp.entryAmountUSD = BigDecimal.zero()
+    
+    // Initialize cost tracking for new position (AFTER all required fields are set)
+    initializePositionCosts(pp)
     
     // Entry amounts will be set by event processing
   }

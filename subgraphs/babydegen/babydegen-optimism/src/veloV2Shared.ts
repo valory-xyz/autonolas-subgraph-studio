@@ -14,6 +14,7 @@ import { getTokenPriceUSD } from "./priceDiscovery"
 import { getServiceByAgent } from "./config"
 import { updateFirstTradingTimestamp } from "./helpers"
 import { getTokenDecimals, getTokenSymbol } from "./tokenUtils"
+import { initializePositionCosts } from "./roiCalculation"
 
 // VelodromeV2 Router address on Optimism
 const VELODROME_V2_ROUTER = Address.fromString("0xa062ae8a9c5e11aaa026fc2670b0d65ccc8b2858")
@@ -93,7 +94,26 @@ export function refreshVeloV2PositionWithEventAmounts(
       updateFirstTradingTimestamp(userAddress, block.timestamp)
     }
     
-    // Initialize all required fields
+    // Get pool metadata FIRST
+    const poolContract = VelodromeV2Pool.bind(poolAddress)
+    
+    const token0Result = poolContract.try_token0()
+    const token1Result = poolContract.try_token1()
+    const stableResult = poolContract.try_stable()
+    
+    if (!token0Result.reverted && !token1Result.reverted) {
+      pp.token0 = token0Result.value
+      pp.token1 = token1Result.value
+      pp.token0Symbol = getTokenSymbol(token0Result.value)
+      pp.token1Symbol = getTokenSymbol(token1Result.value)
+      
+      // Set fee based on pool type (stable vs volatile)
+      if (!stableResult.reverted) {
+        pp.fee = stableResult.value ? 5 : 30 // 0.05% for stable, 0.30% for volatile
+      }
+    }
+    
+    // Initialize ALL required fields BEFORE calling initializePositionCosts
     pp.usdCurrent = BigDecimal.zero()
     pp.amount0 = BigDecimal.zero()
     pp.amount0USD = BigDecimal.zero()
@@ -114,26 +134,9 @@ export function refreshVeloV2PositionWithEventAmounts(
     pp.tickLower = 0
     pp.tickUpper = 0
     pp.tickSpacing = 0 // Not applicable for VelodromeV2
-    pp.fee = 0 // Will be set based on pool type
     
-    // Get pool metadata
-    const poolContract = VelodromeV2Pool.bind(poolAddress)
-    
-    const token0Result = poolContract.try_token0()
-    const token1Result = poolContract.try_token1()
-    const stableResult = poolContract.try_stable()
-    
-    if (!token0Result.reverted && !token1Result.reverted) {
-      pp.token0 = token0Result.value
-      pp.token1 = token1Result.value
-      pp.token0Symbol = getTokenSymbol(token0Result.value)
-      pp.token1Symbol = getTokenSymbol(token1Result.value)
-      
-      // Set fee based on pool type (stable vs volatile)
-      if (!stableResult.reverted) {
-        pp.fee = stableResult.value ? 5 : 30 // 0.05% for stable, 0.30% for volatile
-      }
-    }
+    // Initialize cost tracking for new position (AFTER all required fields are set)
+    initializePositionCosts(pp)
   }
   
   // Get pool metadata if not already set
@@ -312,7 +315,28 @@ export function refreshVeloV2Position(
       updateFirstTradingTimestamp(userAddress, block.timestamp)
     }
     
-    // Initialize all required fields
+    // Get pool metadata for new position FIRST
+    const poolContract = VelodromeV2Pool.bind(poolAddress)
+    
+    const token0Result = poolContract.try_token0()
+    const token1Result = poolContract.try_token1()
+    const stableResult = poolContract.try_stable()
+    
+    if (!token0Result.reverted && !token1Result.reverted) {
+      pp.token0 = token0Result.value
+      pp.token1 = token1Result.value
+      pp.token0Symbol = getTokenSymbol(token0Result.value)
+      pp.token1Symbol = getTokenSymbol(token1Result.value)
+      
+      // Set fee based on pool type (stable vs volatile)
+      if (!stableResult.reverted) {
+        pp.fee = stableResult.value ? 5 : 30 // 0.05% for stable, 0.30% for volatile
+      }
+    } else {
+      return
+    }
+    
+    // Initialize ALL required fields BEFORE calling initializePositionCosts
     pp.usdCurrent = BigDecimal.zero()
     pp.amount0 = BigDecimal.zero()
     pp.amount0USD = BigDecimal.zero()
@@ -333,28 +357,9 @@ export function refreshVeloV2Position(
     pp.tickLower = 0
     pp.tickUpper = 0
     pp.tickSpacing = 0 // Not applicable for VelodromeV2
-    pp.fee = 0 // Will be set based on pool type
     
-    // Get pool metadata for new position
-    const poolContract = VelodromeV2Pool.bind(poolAddress)
-    
-    const token0Result = poolContract.try_token0()
-    const token1Result = poolContract.try_token1()
-    const stableResult = poolContract.try_stable()
-    
-    if (!token0Result.reverted && !token1Result.reverted) {
-      pp.token0 = token0Result.value
-      pp.token1 = token1Result.value
-      pp.token0Symbol = getTokenSymbol(token0Result.value)
-      pp.token1Symbol = getTokenSymbol(token1Result.value)
-      
-      // Set fee based on pool type (stable vs volatile)
-      if (!stableResult.reverted) {
-        pp.fee = stableResult.value ? 5 : 30 // 0.05% for stable, 0.30% for volatile
-      }
-    } else {
-      return
-    }
+    // Initialize cost tracking for new position (AFTER all required fields are set)
+    initializePositionCosts(pp)
   }
   
   const poolContract = VelodromeV2Pool.bind(poolAddress)

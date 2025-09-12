@@ -160,7 +160,7 @@ type AgentPortfolio @entity(immutable: false) {
   uninvestedValue: BigDecimal!  # Token balances in safe
   
   # Performance Metrics (ENHANCED)
-  projected_roi: BigDecimal!    # Current ROI calculation (portfolio-based unrealized PnL)
+  projectRoi: BigDecimal!       # Current ROI calculation (portfolio-based unrealized PnL)
   roi: BigDecimal!              # NEW: Position-based ROI from closed positions (actual ROI)
   apr: BigDecimal!              # Annualized Percentage Return (calculated from roi)
   

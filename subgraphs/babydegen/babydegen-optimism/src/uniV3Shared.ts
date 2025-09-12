@@ -200,7 +200,19 @@ export function refreshUniV3PositionWithEventAmounts(
     pp.entryAmount1USD = eventUsd1       // Use actual event amount
     pp.entryAmountUSD = eventUsd
     
-    // Initialize cost tracking for new position
+    // Set additional required fields to ensure they are not null
+    pp.usdCurrent = eventUsd
+    pp.amount0 = eventAmount0Human
+    pp.amount1 = eventAmount1Human
+    pp.amount0USD = eventUsd0
+    pp.amount1USD = eventUsd1
+    pp.token0 = data.value2
+    pp.token1 = data.value3
+    pp.token0Symbol = getTokenSymbol(data.value2)
+    pp.token1Symbol = getTokenSymbol(data.value3)
+    pp.liquidity = data.value7
+    
+    // Initialize cost tracking for new position (AFTER all required fields are set)
     initializePositionCosts(pp)
     
     // Save entry data first
@@ -501,7 +513,20 @@ export function refreshUniV3Position(tokenId: BigInt, block: ethereum.Block, txH
     pp.tickUpper = tickUpper
     pp.fee = data.value4 // Uniswap V3 uses fee (500, 3000, 10000)
     
-    // CRITICAL FIX: Initialize entry data for new positions
+    // CRITICAL FIX: Set ALL required fields BEFORE calling initializePositionCosts
+    // Set current state fields first
+    pp.usdCurrent = usd
+    pp.token0 = data.value2
+    pp.token0Symbol = getTokenSymbol(data.value2)
+    pp.amount0 = amount0Human
+    pp.amount0USD = usd0
+    pp.token1 = data.value3
+    pp.token1Symbol = getTokenSymbol(data.value3)
+    pp.amount1 = amount1Human
+    pp.amount1USD = usd1
+    pp.liquidity = data.value7
+    
+    // Initialize entry data for new positions
     // Entry amounts will be set by refreshUniV3PositionWithEventAmounts
     // But we need to capture the initial transaction data
     pp.entryTxHash = txHash
@@ -511,6 +536,9 @@ export function refreshUniV3Position(tokenId: BigInt, block: ethereum.Block, txH
     pp.entryAmount1 = BigDecimal.zero()
     pp.entryAmount1USD = BigDecimal.zero()
     pp.entryAmountUSD = BigDecimal.zero()
+    
+    // Initialize cost tracking for new position (AFTER all required fields are set)
+    initializePositionCosts(pp)
     
   }
   // For existing positions, DO NOT overwrite entry data - it should be set by refreshUniV3PositionWithEventAmounts

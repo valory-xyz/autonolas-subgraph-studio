@@ -17,6 +17,7 @@ import {
 
 import { getTokenPriceUSD } from "./priceDiscovery"
 import { getTokenDecimals } from "./tokenUtils"
+import { WETH } from "./constants"
 
 // Constants
 const ASSOCIATION_WINDOW = BigInt.fromI32(1200) // 20 minutes in seconds
@@ -31,30 +32,15 @@ function toHumanAmount(amount: BigInt, decimals: i32): BigDecimal {
   return amount.toBigDecimal().div(divisor.toBigDecimal())
 }
 
-// Check if a token is a stablecoin (Optimism network stablecoins)
-function isStablecoin(tokenAddress: Address): boolean {
-  let tokenHex = tokenAddress.toHexString().toLowerCase()
-  
-  // Optimism stablecoins - direct comparison to avoid array iteration issues
-  if (tokenHex == "0x0b2c639c533813f4aa9d7837caf62653d097ff85") return true // USDC Native
-  if (tokenHex == "0x7f5c764cbc14f9669b88837ca1490cca17c31607") return true // USDC Bridged
-  if (tokenHex == "0x94b008aa00579c1307b0ef2c499ad98a8ce58e58") return true // USDT
-  if (tokenHex == "0xda10009cbd5d07dd0cecc66161fc93d7c9000da1") return true // DAI
-  if (tokenHex == "0xc40f949f8a4e094d1b49a23ea9241d289b7b2819") return true // LUSD
-  if (tokenHex == "0x8ae125e8653821e851f12a49f7765db9a9ce7384") return true // DOLA
-  
-  return false
-}
-
-// Get token decimals with fallback
+// Get token decimals with fallback - use the proper tokenUtils function
 function getTokenDecimalsWithFallback(tokenAddress: Address): i32 {
-  // For stablecoins, use 6 decimals
-  if (isStablecoin(tokenAddress)) {
-    return 6
+  // For ETH (zero address), use 18 decimals
+  if (tokenAddress.equals(Address.zero())) {
+    return 18
   }
   
-  // For other tokens, use 18 decimals (most common)
-  return 18
+  // Use the proper getTokenDecimals function from tokenUtils
+  return getTokenDecimals(tokenAddress)
 }
 
 // Calculate expected output amount for slippage calculation
@@ -64,9 +50,13 @@ function calculateExpectedOutput(
   toToken: Address,
   timestamp: BigInt
 ): BigDecimal {
+  // Handle ETH (zero address) by mapping to WETH for price lookup
+  let fromTokenForPrice = fromToken.equals(Address.zero()) ? WETH : fromToken
+  let toTokenForPrice = toToken.equals(Address.zero()) ? WETH : toToken
+  
   // Get token prices
-  let fromPrice = getTokenPriceUSD(fromToken, timestamp, false)
-  let toPrice = getTokenPriceUSD(toToken, timestamp, false)
+  let fromPrice = getTokenPriceUSD(fromTokenForPrice, timestamp, false)
+  let toPrice = getTokenPriceUSD(toTokenForPrice, timestamp, false)
   
   if (fromPrice.equals(BigDecimal.zero()) || toPrice.equals(BigDecimal.zero())) {
     return BigDecimal.zero()
@@ -92,9 +82,9 @@ function getBucketIndex(timestamp: BigInt): BigInt {
 }
 
 // Helper function to create swap data string for storage
-function createSwapDataString(swapId: Bytes, slippageUSD: BigDecimal): string {
-  // Simple format: "swapId:slippage"
-  return swapId.toHexString() + ":" + slippageUSD.toString()
+function createSwapDataString(swapId: Bytes, slippageUSD: BigDecimal, timestamp: BigInt, expiresAt: BigInt): string {
+  // Mode format: "timestamp,swapId,slippage,expiresAt"
+  return timestamp.toString() + "," + swapId.toHexString() + "," + slippageUSD.toString() + "," + expiresAt.toString()
 }
 
 // Helper function to parse total slippage from bucket string
@@ -105,12 +95,16 @@ function parseTotalSlippageFromBucket(bucketSwaps: string): BigDecimal {
   
   let totalSlippage = BigDecimal.zero()
   
-  // Simple parsing: split by comma, then by colon
-  let swaps = bucketSwaps.split(",")
-  for (let i = 0; i < swaps.length; i++) {
-    let parts = swaps[i].split(":")
-    if (parts.length == 2) {
-      let slippage = BigDecimal.fromString(parts[1])
+  // Mode format parsing: split by pipe, then by comma
+  let swapEntries = bucketSwaps.split("|")
+  for (let i = 0; i < swapEntries.length; i++) {
+    let entry = swapEntries[i]
+    if (entry == "") continue
+    
+    let parts = entry.split(",")
+    if (parts.length >= 3) {
+      // parts[2] is the slippage value in format: timestamp,swapId,slippage,expiresAt
+      let slippage = BigDecimal.fromString(parts[2])
       totalSlippage = totalSlippage.plus(slippage)
     }
   }
@@ -156,8 +150,12 @@ export function createSwapTransaction(
   let fromAmountHuman = toHumanAmount(fromAmount, fromDecimals)
   let toAmountHuman = toHumanAmount(toAmount, toDecimals)
   
-  let fromPrice = getTokenPriceUSD(fromAssetId, timestamp, false)
-  let toPrice = getTokenPriceUSD(toAssetId, timestamp, false)
+  // Handle ETH (zero address) by mapping to WETH for price lookup
+  let fromTokenForPrice = fromAssetId.equals(Address.zero()) ? WETH : fromAssetId
+  let toTokenForPrice = toAssetId.equals(Address.zero()) ? WETH : toAssetId
+  
+  let fromPrice = getTokenPriceUSD(fromTokenForPrice, timestamp, false)
+  let toPrice = getTokenPriceUSD(toTokenForPrice, timestamp, false)
   
   swap.fromAmountUSD = fromPrice.times(fromAmountHuman)
   swap.toAmountUSD = toPrice.times(toAmountHuman)
@@ -183,11 +181,11 @@ export function createSwapTransaction(
   swap.save()
   
   // Add swap to flattened buffer for deterministic association
-  addSwapToBuffer(agent, timestamp, swapId, swap.slippageUSD)
+  addSwapToBuffer(agent, timestamp, swapId, swap.slippageUSD, swap.expiresAt)
 }
 
-// Add swap to flattened buffer for later association
-function addSwapToBuffer(agent: Address, timestamp: BigInt, swapId: Bytes, slippageUSD: BigDecimal): void {
+// Add swap to flattened buffer for later association (Mode format)
+function addSwapToBuffer(agent: Address, timestamp: BigInt, swapId: Bytes, slippageUSD: BigDecimal, expiresAt: BigInt): void {
   const bufferId = agent
   
   let buffer = AgentSwapBuffer.load(bufferId)
@@ -214,12 +212,12 @@ function addSwapToBuffer(agent: Address, timestamp: BigInt, swapId: Bytes, slipp
     buffer.currentBucketIndex = newBucketIndex
   }
   
-  // Add swap to current bucket (bucket0)
-  const swapData = createSwapDataString(swapId, slippageUSD)
+  // Add swap to current bucket (bucket0) - use Mode format with pipe separator
+  const swapData = createSwapDataString(swapId, slippageUSD, timestamp, expiresAt)
   if (buffer.bucket0Swaps == "") {
     buffer.bucket0Swaps = swapData
   } else {
-    buffer.bucket0Swaps = buffer.bucket0Swaps + "," + swapData
+    buffer.bucket0Swaps = buffer.bucket0Swaps + "|" + swapData
   }
   
   buffer.totalSlippageUSD = buffer.totalSlippageUSD.plus(slippageUSD)
