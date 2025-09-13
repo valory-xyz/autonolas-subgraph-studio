@@ -11,6 +11,8 @@ import { Safe } from "../../../../generated/templates"
 import { BigInt, Bytes, store, log, Address } from "@graphprotocol/graph-ts"
 import { OPTIMUS_AGENT_ID, EXCLUDED_SERVICE_IDS } from "./constants"
 import { registerServiceForSnapshots } from "./portfolioScheduler"
+import { ensureAgentPortfolio } from "./helpers"
+import { getEthUsd } from "./common"
 
 // Helper function to check if a service ID should be excluded from tracking
 function isServiceExcluded(serviceId: BigInt): boolean {
@@ -134,6 +136,16 @@ export function handleCreateMultisigWithAgents(event: CreateMultisigWithAgents):
   serviceIndex.currentServiceSafe = multisig
   serviceIndex.save()
   
+  // NEW: Set firstTradingTimestamp to registration timestamp if no funding exists
+  let portfolio = ensureAgentPortfolio(multisig, event.block.timestamp)
+  if (portfolio.firstTradingTimestamp.equals(BigInt.zero())) {
+    // No funding has occurred yet - use registration timestamp as fallback
+    portfolio.firstTradingTimestamp = event.block.timestamp
+    
+    // Capture ETH price at registration time as fallback
+    portfolio.firstFundingEthPrice = getEthUsd(event.block)
+    portfolio.save()
+  }
   
   // Register service for portfolio snapshots
   registerServiceForSnapshots(multisig)
@@ -141,7 +153,6 @@ export function handleCreateMultisigWithAgents(event: CreateMultisigWithAgents):
   // Create Safe datasource instance to track ETH transfers for service safe
   Safe.create(multisig)
   
-  // NEW: Also create Safe datasource for the operator safe to track ETH inflows
-  
+  //Also create Safe datasource for the operator safe to track ETH inflows
   Safe.create(Address.fromBytes(registration.operatorSafe)) // Dynamic operator safe tracking
 }

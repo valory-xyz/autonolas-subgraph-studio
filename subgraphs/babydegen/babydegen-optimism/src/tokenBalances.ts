@@ -3,10 +3,31 @@ import { TokenBalance, Service, FundingBalance } from "../../../../generated/sch
 import { Transfer as TransferEvent } from "../../../../generated/USDC_Native/ERC20"
 import { TOKENS } from "./tokenConfig"
 import { getServiceByAgent } from "./config"
-import { isFundingSource } from "./common"
+import { isFundingSource, getEthUsd } from "./common"
 import { getTokenPriceUSD } from "./priceDiscovery"
 import { WETH, WHITELISTED_TOKENS, USDC_NATIVE, USDC_BRIDGED } from "./constants"
 import { ensureAgentPortfolio, calculatePortfolioMetrics } from "./helpers"
+
+// Helper function to create block from timestamp for ETH price lookup
+function createBlockFromTimestamp(timestamp: BigInt): ethereum.Block {
+  return new ethereum.Block(
+    Bytes.empty(),
+    Bytes.empty(),
+    Bytes.empty(),
+    Address.zero(),
+    Bytes.empty(),
+    Bytes.empty(),
+    Bytes.empty(),
+    BigInt.zero(),
+    BigInt.zero(),
+    BigInt.zero(),
+    timestamp,
+    BigInt.zero(),
+    BigInt.zero(),
+    BigInt.zero(),
+    BigInt.zero()
+  )
+}
 
 // NOTE: This subgraph is configured to track USDC Native and ETH transfers for funding balance calculations.
 // While all token transfers are tracked for token balance purposes, only USDC Native and ETH flows affect
@@ -254,7 +275,6 @@ export function updateFundingBalance(
     fb.totalOutUsd = BigDecimal.zero()
     fb.netUsd = BigDecimal.zero()
     fb.firstInTimestamp = ts
-    
   }
   
   let oldTotalIn = fb.totalInUsd
@@ -262,6 +282,20 @@ export function updateFundingBalance(
   
   if (deposit) {
     fb.totalInUsd = fb.totalInUsd.plus(usd)
+    
+    // NEW: Set firstTradingTimestamp and capture ETH price on first funding
+    if (oldTotalIn.equals(BigDecimal.zero())) {
+      // This is the first funding - update portfolio
+      let portfolio = ensureAgentPortfolio(serviceSafe, ts)
+      if (portfolio.firstTradingTimestamp.equals(BigInt.zero())) {
+        portfolio.firstTradingTimestamp = ts
+        
+        // Capture ETH price at first funding
+        let block = createBlockFromTimestamp(ts)
+        portfolio.firstFundingEthPrice = getEthUsd(block)
+        portfolio.save()
+      }
+    }
   } else {
     fb.totalOutUsd = fb.totalOutUsd.plus(usd)
   }

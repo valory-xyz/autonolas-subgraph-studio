@@ -299,6 +299,18 @@ function getPriceFromSource(
     }
   }
   
+  if (sourceType == "balancer_v2") {
+    // For Balancer V2 weighted pools
+    let price = getBalancerPrice(
+      Address.fromBytes(token.id),
+      sourceConfig.address,
+      sourceConfig.pairToken!
+    )
+    if (price.gt(BigDecimal.fromString("0")) && isValidPriceResult(price, token.symbol)) {
+      return new PriceResult(price, baseConfidence, "balancer_v2")
+    }
+  }
+  
   return new PriceResult(BigDecimal.fromString("0"), BigDecimal.fromString("0"), "unsupported")
 }
 
@@ -370,5 +382,6 @@ import {
   getChainlinkPrice,
   getUniswapV3Price,
   getVelodromePrice,
-  getVelodromeV2Price
+  getVelodromeV2Price,
+  getBalancerPrice
 } from "./priceAdapters"

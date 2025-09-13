@@ -5,11 +5,119 @@ import {
   AgentPortfolioSnapshot,
   ProtocolPosition,
   Service,
-  AgentSwapBuffer
-} from "../generated/schema"
+  AgentSwapBuffer,
+  SwapTransaction
+} from "../../../../generated/schema"
 import { calculateUninvestedValue, updateFundingBalance } from "./tokenBalances"
 import { getServiceByAgent } from "./config"
 import { calculateActualROI, aggregateClosedPositionMetrics } from "./roiCalculation"
+import { getEthUsd } from "./common"
+
+// ETH-adjusted metrics calculation class
+class EthAdjustedMetrics {
+  ethAdjustedActualROI: BigDecimal
+  ethAdjustedProjectedROI: BigDecimal
+  ethAdjustedActualAPR: BigDecimal
+  ethAdjustedProjectedAPR: BigDecimal
+  currentEthPrice: BigDecimal
+  firstFundingEthPrice: BigDecimal
+  ethDelta: BigDecimal
+  
+  constructor(
+    ethAdjustedActualROI: BigDecimal,
+    ethAdjustedProjectedROI: BigDecimal,
+    ethAdjustedActualAPR: BigDecimal,
+    ethAdjustedProjectedAPR: BigDecimal,
+    currentEthPrice: BigDecimal,
+    firstFundingEthPrice: BigDecimal,
+    ethDelta: BigDecimal
+  ) {
+    this.ethAdjustedActualROI = ethAdjustedActualROI
+    this.ethAdjustedProjectedROI = ethAdjustedProjectedROI
+    this.ethAdjustedActualAPR = ethAdjustedActualAPR
+    this.ethAdjustedProjectedAPR = ethAdjustedProjectedAPR
+    this.currentEthPrice = currentEthPrice
+    this.firstFundingEthPrice = firstFundingEthPrice
+    this.ethDelta = ethDelta
+  }
+}
+
+// Helper function to create block from timestamp for ETH price lookup
+function createBlockFromTimestamp(timestamp: BigInt): ethereum.Block {
+  return new ethereum.Block(
+    Bytes.empty(),
+    Bytes.empty(),
+    Bytes.empty(),
+    Address.zero(),
+    Bytes.empty(),
+    Bytes.empty(),
+    Bytes.empty(),
+    BigInt.zero(),
+    BigInt.zero(),
+    BigInt.zero(),
+    timestamp,
+    BigInt.zero(),
+    BigInt.zero(),
+    BigInt.zero(),
+    BigInt.zero()
+  )
+}
+
+// Calculate ETH-adjusted metrics using the core formula
+function calculateEthAdjustedMetrics(
+  portfolio: AgentPortfolio,
+  actualROI: BigDecimal,
+  projectedROI: BigDecimal,
+  actualAPR: BigDecimal,
+  projectedAPR: BigDecimal,
+  block: ethereum.Block
+): EthAdjustedMetrics {
+  // Get current ETH price
+  let currentEthPrice = getEthUsd(block)
+  
+  // Get first funding ETH price (should be set when first funding occurs)
+  let firstFundingEthPrice = portfolio.firstFundingEthPrice
+  
+  // Calculate ETH delta: ((ETH_f/ETH_i)-1)*100
+  let ethDelta = BigDecimal.zero()
+  if (firstFundingEthPrice.gt(BigDecimal.zero())) {
+    ethDelta = currentEthPrice.div(firstFundingEthPrice)
+      .minus(BigDecimal.fromString("1"))
+      .times(BigDecimal.fromString("100"))
+  }
+  
+  // Calculate ETH-adjusted ROI: ROI - ETHdelta
+  let ethAdjustedActualROI = actualROI.minus(ethDelta)
+  let ethAdjustedProjectedROI = projectedROI.minus(ethDelta)
+  
+  // CORRECTED: Calculate ETH-adjusted APR from ETH-adjusted ROI (not directly from ETH delta)
+  // Get the time period for APR calculation
+  let timestampForAPR = portfolio.firstTradingTimestamp
+  let ethAdjustedActualAPR = BigDecimal.zero()
+  let ethAdjustedProjectedAPR = BigDecimal.zero()
+  
+  if (timestampForAPR.gt(BigInt.zero())) {
+    let secondsSinceStart = block.timestamp.minus(timestampForAPR)
+    let daysSinceStart = secondsSinceStart.toBigDecimal().div(BigDecimal.fromString("86400"))
+    
+    if (daysSinceStart.gt(BigDecimal.zero())) {
+      // APR = ETH-adjusted ROI * (365 / days_invested)
+      let annualizationFactor = BigDecimal.fromString("365").div(daysSinceStart)
+      ethAdjustedActualAPR = ethAdjustedActualROI.times(annualizationFactor)
+      ethAdjustedProjectedAPR = ethAdjustedProjectedROI.times(annualizationFactor)
+    }
+  }
+  
+  return new EthAdjustedMetrics(
+    ethAdjustedActualROI,
+    ethAdjustedProjectedROI,
+    ethAdjustedActualAPR,
+    ethAdjustedProjectedAPR,
+    currentEthPrice,
+    firstFundingEthPrice,
+    ethDelta
+  )
+}
 
 // Use the single source of truth for funding balance updates
 export function updateFunding(
@@ -138,15 +246,50 @@ export function calculatePortfolioMetrics(
     }
   }
   
-  // Update portfolio
+  // NEW: Ensure firstTradingTimestamp fallback to registration if no funding
+  if (portfolio.firstTradingTimestamp.equals(BigInt.zero())) {
+    let serviceEntity = Service.load(serviceSafe)
+    if (serviceEntity != null && serviceEntity.latestRegistrationTimestamp.gt(BigInt.zero())) {
+      portfolio.firstTradingTimestamp = serviceEntity.latestRegistrationTimestamp
+      
+      // Capture ETH price at registration time as fallback
+      let registrationBlock = createBlockFromTimestamp(serviceEntity.latestRegistrationTimestamp)
+      portfolio.firstFundingEthPrice = getEthUsd(registrationBlock)
+    }
+  }
+  
+  // NEW: Calculate ETH-adjusted metrics
+  let ethAdjustedMetrics = calculateEthAdjustedMetrics(
+    portfolio,
+    actualROI,
+    roi,  // projectedROI (portfolio-based)
+    actualAPR,
+    apr,  // projectedAPR (portfolio-based)
+    block
+  )
+  
+  // Update portfolio with standard values
   portfolio.finalValue = finalValue
   portfolio.initialValue = initialValue  
   portfolio.positionsValue = positionsValue
   portfolio.uninvestedValue = uninvestedValue
-  portfolio.projectRoi = roi  // Current portfolio-based calculation (unrealized PnL)
+  portfolio.projectedRoi = roi  // Current portfolio-based calculation (unrealized PnL)
   portfolio.roi = actualROI  //Position-based ROI from closed positions
   portfolio.apr = actualAPR  // APR calculated from actual ROI
+  portfolio.projectedAPR = apr  // APR calculated from projected ROI
   portfolio.lastUpdated = block.timestamp
+  
+  // Update portfolio with ETH-adjusted values
+  portfolio.ethAdjustedRoi = ethAdjustedMetrics.ethAdjustedActualROI
+  portfolio.ethAdjustedApr = ethAdjustedMetrics.ethAdjustedActualAPR
+  portfolio.ethAdjustedProjectedRoi = ethAdjustedMetrics.ethAdjustedProjectedROI
+  portfolio.ethAdjustedProjectedApr = ethAdjustedMetrics.ethAdjustedProjectedAPR
+  portfolio.currentEthPrice = ethAdjustedMetrics.currentEthPrice
+  
+  // firstFundingEthPrice is set in updateFundingBalance or registration fallback
+  if (portfolio.firstFundingEthPrice.equals(BigDecimal.zero())) {
+    portfolio.firstFundingEthPrice = ethAdjustedMetrics.currentEthPrice
+  }
   
   // Update aggregation fields
   portfolio.totalInvestments = aggregates.totalInvestments
@@ -254,7 +397,6 @@ function calculatePositionsValue(serviceSafe: Address): BigDecimal {
   return totalValue
 }
 
-
 // Create a portfolio snapshot
 function createPortfolioSnapshot(portfolio: AgentPortfolio, block: ethereum.Block): void {
   let snapshotId = portfolio.id.toHexString() + "-" + block.timestamp.toString()
@@ -272,6 +414,13 @@ function createPortfolioSnapshot(portfolio: AgentPortfolio, block: ethereum.Bloc
   // Copy performance metrics
   snapshot.roi = portfolio.roi  // Use position-based ROI for snapshots
   snapshot.apr = portfolio.apr
+  snapshot.projectedAPR = portfolio.projectedAPR
+  
+  // NEW: Copy ETH-adjusted metrics
+  snapshot.ethAdjustedRoi = portfolio.ethAdjustedRoi
+  snapshot.ethAdjustedApr = portfolio.ethAdjustedApr
+  snapshot.ethAdjustedProjectedRoi = portfolio.ethAdjustedProjectedRoi
+  snapshot.ethAdjustedProjectedApr = portfolio.ethAdjustedProjectedApr
   
   // Metadata
   snapshot.timestamp = block.timestamp
@@ -279,10 +428,15 @@ function createPortfolioSnapshot(portfolio: AgentPortfolio, block: ethereum.Bloc
   snapshot.totalPositions = portfolio.totalPositions
   snapshot.totalClosedPositions = portfolio.totalClosedPositions
   
-  // Note: Position IDs can be retrieved through the Service entity's positionIds field
-  // We don't duplicate them in the snapshot to avoid compilation issues
+  // Initialize positionIds as empty array to avoid null issues
+  snapshot.positionIds = []
   
   snapshot.save()
+  
+  // Update portfolio snapshot tracking
+  portfolio.lastSnapshotTimestamp = block.timestamp
+  portfolio.lastSnapshotBlock = block.number
+  portfolio.save()
 }
 
 // Ensure AgentPortfolio exists, create if it doesn't
@@ -303,12 +457,24 @@ export function ensureAgentPortfolio(serviceSafe: Address, timestamp: BigInt): A
     portfolio.initialValue = BigDecimal.zero()
     portfolio.positionsValue = BigDecimal.zero()
     portfolio.uninvestedValue = BigDecimal.zero()
-    portfolio.projectRoi = BigDecimal.zero()
+    portfolio.projectedRoi = BigDecimal.zero()
     portfolio.roi = BigDecimal.zero()  // Position-based ROI
     portfolio.totalInvestments = BigDecimal.zero()
     portfolio.totalGrossGains = BigDecimal.zero()
     portfolio.totalCosts = BigDecimal.zero()
     portfolio.apr = BigDecimal.zero()
+    portfolio.projectedAPR = BigDecimal.zero()  // NEW: Initialize projected APR
+    
+    // Initialize ETH-adjusted performance metrics
+    portfolio.ethAdjustedRoi = BigDecimal.zero()
+    portfolio.ethAdjustedApr = BigDecimal.zero()
+    portfolio.ethAdjustedProjectedRoi = BigDecimal.zero()
+    portfolio.ethAdjustedProjectedApr = BigDecimal.zero()
+    
+    // Initialize ETH price tracking
+    portfolio.firstFundingEthPrice = BigDecimal.zero()
+    portfolio.currentEthPrice = BigDecimal.zero()
+    
     portfolio.lastUpdated = timestamp
     portfolio.save()
   }
@@ -351,7 +517,6 @@ export function parseTotalSlippageFromBucket(bucketSwaps: string): BigDecimal {
   return totalSlippage
 }
 
-// Centralized swap association logic to avoid code duplication (Mode version)
 export function associateSwapsWithPosition(
   userAddress: Address, 
   block: ethereum.Block
@@ -364,9 +529,8 @@ export function associateSwapsWithPosition(
   
   let totalSlippageUSD = BigDecimal.zero()
   let currentTime = block.timestamp
-  let associationWindow = BigInt.fromI32(1200) // 20 minutes
+  let associationWindow = BigInt.fromI32(1200)
   
-  // Check buckets sequentially and consume swaps within association window
   let bucketsToCheck = [buffer.bucket0Swaps, buffer.bucket1Swaps, buffer.bucket2Swaps, buffer.bucket3Swaps]
   let updatedBuckets: string[] = ["", "", "", ""]
   
@@ -391,34 +555,49 @@ export function associateSwapsWithPosition(
         let expiresAtStr = parts[3]
         let expiresAt = BigInt.fromString(expiresAtStr)
         
-        // Check if swap is within association window and not expired
         if (currentTime.minus(swapTimestamp).le(associationWindow) && currentTime.le(expiresAt)) {
-          // Collect associated swaps
           associatedSwaps.push(entry)
         } else {
-          // Keep swap in buffer (not associated or expired)
           remainingSwaps.push(entry)
         }
       }
     }
     
-    // Use centralized function to calculate total slippage from associated swaps
     if (associatedSwaps.length > 0) {
       let associatedBucketData = associatedSwaps.join("|")
       let bucketSlippage = parseTotalSlippageFromBucket(associatedBucketData)
       totalSlippageUSD = totalSlippageUSD.plus(bucketSlippage)
+      
+      for (let j = 0; j < associatedSwaps.length; j++) {
+        let swapEntry = associatedSwaps[j]
+        let swapParts = swapEntry.split(",")
+        if (swapParts.length >= 5) {
+          let swapId = swapParts[4]
+          let swapTransaction = SwapTransaction.load(Bytes.fromHexString(swapId))
+          if (swapTransaction != null) {
+            swapTransaction.isAssociated = true
+            swapTransaction.save()
+            log.info("SWAP ASSOCIATION: Marked swap {} as associated for agent {}", [
+              swapId,
+              userAddress.toHexString()
+            ])
+          }
+        }
+      }
     }
     
-    // Update bucket with remaining swaps
     updatedBuckets[bucketIdx] = remainingSwaps.join("|")
   }
   
-  // Update buffer with remaining swaps
   buffer.bucket0Swaps = updatedBuckets[0]
   buffer.bucket1Swaps = updatedBuckets[1]
   buffer.bucket2Swaps = updatedBuckets[2]
   buffer.bucket3Swaps = updatedBuckets[3]
   buffer.save()
+  
+  if (totalSlippageUSD.lt(BigDecimal.zero())) {
+    totalSlippageUSD = BigDecimal.zero()
+  }
   
   return totalSlippageUSD
 }

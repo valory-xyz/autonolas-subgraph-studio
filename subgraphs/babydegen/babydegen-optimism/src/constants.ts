@@ -54,6 +54,9 @@ export const STAKING_FACTORY = Address.fromString("0xa45E64d13A30a51b91ae0eb182e
 // Service configuration
 export const OPTIMUS_AGENT_ID = BigInt.fromI32(40)
 
+// Balancer V2 configuration
+export const BALANCER_VAULT = Address.fromString("0xBA12222222228d8Ba445958a75a0704d566BF2C8")
+
 // Excluded service IDs - these are testing agents
 export const EXCLUDED_SERVICE_IDS: BigInt[] = [
   BigInt.fromI32(29),
