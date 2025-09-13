@@ -68,9 +68,8 @@ export function calculatePositionROI(position: ProtocolPosition): BigDecimal {
   let investment = position.entryAmountUSD.plus(position.totalCostsUSD)
   
   if (investment.gt(BigDecimal.zero())) {
-    // CORRECTED FORMULAS:
-    // grossGainUSD = exitAmount - entryAmountUSD (gain before costs)
-    let grossGainUSD = position.exitAmountUSD!.minus(position.entryAmountUSD)
+    // grossGainUSD = exitAmount
+    let grossGainUSD = position.exitAmountUSD!
     
     // netGainUSD = exitAmount - investmentUSD (gain after all costs including slippage)
     let netGainUSD = position.exitAmountUSD!.minus(investment)
@@ -79,8 +78,8 @@ export function calculatePositionROI(position: ProtocolPosition): BigDecimal {
     let positionROI = netGainUSD.div(investment).times(BigDecimal.fromString("100"))
     
     position.investmentUSD = investment
-    position.grossGainUSD = grossGainUSD
-    position.netGainUSD = netGainUSD
+    position.grossGainUSD = grossGainUSD  // Total amount received
+    position.netGainUSD = netGainUSD      // Actual profit/loss
     position.positionROI = positionROI
     position.save()
     

@@ -111,8 +111,8 @@ type ProtocolPosition @entity(immutable: false) {
   
   # Position ROI (for closed positions)
   investmentUSD: BigDecimal!        # entryAmountUSD + totalCostsUSD
-  grossGainUSD: BigDecimal!         # exitAmountUSD - entryAmountUSD (gain before costs)
-  netGainUSD: BigDecimal!           # exitAmountUSD - investmentUSD (gain after costs)
+  grossGainUSD: BigDecimal!         # exitAmountUSD (total amount received)
+  netGainUSD: BigDecimal!           # exitAmountUSD - investmentUSD (actual profit/loss)
   positionROI: BigDecimal!          # netGainUSD / investmentUSD * 100
 }
 
