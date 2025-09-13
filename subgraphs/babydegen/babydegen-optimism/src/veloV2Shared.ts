@@ -7,14 +7,14 @@ import {
   log
 } from "@graphprotocol/graph-ts"
 
-import { ProtocolPosition, Service, AgentSwapBuffer } from "../generated/schema"
+import { ProtocolPosition, Service, AgentSwapBuffer } from "../../../../generated/schema"
 import { VelodromeV2Pool } from "../../../../generated/templates/VeloV2Pool/VelodromeV2Pool"
 import { VeloV2Pool as VeloV2PoolTemplate } from "../../../../generated/templates"
 import { getTokenPriceUSD } from "./priceDiscovery"
 import { getServiceByAgent } from "./config"
-import { updateFirstTradingTimestamp } from "./helpers"
+import { parseTotalSlippageFromBucket, associateSwapsWithPosition } from "./helpers"
 import { getTokenDecimals, getTokenSymbol } from "./tokenUtils"
-import { initializePositionCosts } from "./roiCalculation"
+import { calculatePositionROI } from "./roiCalculation"
 
 // VelodromeV2 Router address on Optimism
 const VELODROME_V2_ROUTER = Address.fromString("0xa062ae8a9c5e11aaa026fc2670b0d65ccc8b2858")
@@ -90,8 +90,7 @@ export function refreshVeloV2PositionWithEventAmounts(
         serviceEntity.save()
       }
       
-      // Update first trading timestamp
-      updateFirstTradingTimestamp(userAddress, block.timestamp)
+      // NOTE: firstTradingTimestamp now represents funding time, not position creation
     }
     
     // Get pool metadata FIRST
@@ -135,8 +134,13 @@ export function refreshVeloV2PositionWithEventAmounts(
     pp.tickUpper = 0
     pp.tickSpacing = 0 // Not applicable for VelodromeV2
     
-    // Initialize cost tracking for new position (AFTER all required fields are set)
-    initializePositionCosts(pp)
+    // Initialize cost tracking for new position
+    pp.totalCostsUSD = BigDecimal.zero()
+    pp.swapSlippageUSD = BigDecimal.zero()
+    pp.investmentUSD = BigDecimal.zero()
+    pp.grossGainUSD = BigDecimal.zero()
+    pp.netGainUSD = BigDecimal.zero()
+    pp.positionROI = BigDecimal.zero()
   }
   
   // Get pool metadata if not already set
@@ -188,72 +192,21 @@ export function refreshVeloV2PositionWithEventAmounts(
     pp.entryAmount1USD = eventUsd1
     pp.entryAmountUSD = eventUsd
     
+    // Use centralized swap association logic
+    let totalSlippageUSD = associateSwapsWithPosition(userAddress, block)
+    
+    // Handle negative slippage by setting to 0 (no cost reduction)
+    if (totalSlippageUSD.lt(BigDecimal.zero())) {
+      totalSlippageUSD = BigDecimal.zero()
+    }
+    
+    // Always update costs (even if zero after negative adjustment)
+    pp.swapSlippageUSD = totalSlippageUSD
+    pp.totalCostsUSD = totalSlippageUSD
+    pp.investmentUSD = eventUsd.plus(totalSlippageUSD)
+    
     // Save the entry amounts first
     pp.save()
-    
-    // INLINE SWAP ASSOCIATION for new positions: All entity operations must be inline to avoid compiler crash
-    const bufferId = userAddress
-    let buffer = AgentSwapBuffer.load(bufferId)
-    
-    if (buffer) {
-      // Check buckets sequentially (most recent first) - all inline
-      let consumedSwaps = ""
-      let totalSlippage = BigDecimal.zero()
-      
-      if (buffer.bucket0Swaps != "") {
-        consumedSwaps = buffer.bucket0Swaps
-        // Simple slippage parsing inline
-        let swaps = buffer.bucket0Swaps.split(",")
-        for (let i = 0; i < swaps.length; i++) {
-          let parts = swaps[i].split(":")
-          if (parts.length == 2) {
-            totalSlippage = totalSlippage.plus(BigDecimal.fromString(parts[1]))
-          }
-        }
-        buffer.bucket0Swaps = ""
-      } else if (buffer.bucket1Swaps != "") {
-        consumedSwaps = buffer.bucket1Swaps
-        let swaps = buffer.bucket1Swaps.split(",")
-        for (let i = 0; i < swaps.length; i++) {
-          let parts = swaps[i].split(":")
-          if (parts.length == 2) {
-            totalSlippage = totalSlippage.plus(BigDecimal.fromString(parts[1]))
-          }
-        }
-        buffer.bucket1Swaps = ""
-      } else if (buffer.bucket2Swaps != "") {
-        consumedSwaps = buffer.bucket2Swaps
-        let swaps = buffer.bucket2Swaps.split(",")
-        for (let i = 0; i < swaps.length; i++) {
-          let parts = swaps[i].split(":")
-          if (parts.length == 2) {
-            totalSlippage = totalSlippage.plus(BigDecimal.fromString(parts[1]))
-          }
-        }
-        buffer.bucket2Swaps = ""
-      } else if (buffer.bucket3Swaps != "") {
-        consumedSwaps = buffer.bucket3Swaps
-        let swaps = buffer.bucket3Swaps.split(",")
-        for (let i = 0; i < swaps.length; i++) {
-          let parts = swaps[i].split(":")
-          if (parts.length == 2) {
-            totalSlippage = totalSlippage.plus(BigDecimal.fromString(parts[1]))
-          }
-        }
-        buffer.bucket3Swaps = ""
-      }
-      
-      if (consumedSwaps != "") {
-        // Found and consumed swaps - update costs inline
-        buffer.totalSlippageUSD = buffer.totalSlippageUSD.minus(totalSlippage)
-        buffer.save()
-        
-        // Update position costs inline
-        pp.swapSlippageUSD = totalSlippage
-        pp.totalCostsUSD = pp.swapSlippageUSD
-        pp.investmentUSD = pp.entryAmountUSD.plus(pp.totalCostsUSD)
-      }
-    }
   } else {
     // This is a subsequent Mint event - add to existing entry amounts
     pp.entryAmount0 = pp.entryAmount0.plus(eventAmount0Human)
@@ -311,8 +264,7 @@ export function refreshVeloV2Position(
         serviceEntity.save()
       }
       
-      // Update first trading timestamp
-      updateFirstTradingTimestamp(userAddress, block.timestamp)
+      // NOTE: firstTradingTimestamp now represents funding time, not position creation
     }
     
     // Get pool metadata for new position FIRST
@@ -358,8 +310,13 @@ export function refreshVeloV2Position(
     pp.tickUpper = 0
     pp.tickSpacing = 0 // Not applicable for VelodromeV2
     
-    // Initialize cost tracking for new position (AFTER all required fields are set)
-    initializePositionCosts(pp)
+    // Initialize cost tracking for new position
+    pp.totalCostsUSD = BigDecimal.zero()
+    pp.swapSlippageUSD = BigDecimal.zero()
+    pp.investmentUSD = BigDecimal.zero()
+    pp.grossGainUSD = BigDecimal.zero()
+    pp.netGainUSD = BigDecimal.zero()
+    pp.positionROI = BigDecimal.zero()
   }
   
   const poolContract = VelodromeV2Pool.bind(poolAddress)
@@ -383,7 +340,10 @@ export function refreshVeloV2Position(
   if (userBalance.equals(BigInt.zero())) {
     pp.isActive = false
     
-    // No fallback mechanism for exit data - we'll rely on Burn events only
+    // FIXED: Calculate position ROI when position closes (if exit data exists)
+    if (pp.exitAmountUSD && pp.exitAmountUSD!.gt(BigDecimal.zero())) {
+      calculatePositionROI(pp)
+    }
     
     // Zero out current amounts
     pp.usdCurrent = BigDecimal.zero()
@@ -427,6 +387,19 @@ export function refreshVeloV2Position(
       pp.entryAmount1 = pp.amount1!
       pp.entryAmount1USD = pp.amount1USD
       pp.entryAmountUSD = pp.usdCurrent
+      
+      // Use centralized swap association logic for new positions
+      let totalSlippageUSD = associateSwapsWithPosition(userAddress, block)
+      
+      // Handle negative slippage by setting to 0 (no cost reduction)
+      if (totalSlippageUSD.lt(BigDecimal.zero())) {
+        totalSlippageUSD = BigDecimal.zero()
+      }
+      
+      // Always update costs (even if zero after negative adjustment)
+      pp.swapSlippageUSD = totalSlippageUSD
+      pp.totalCostsUSD = totalSlippageUSD
+      pp.investmentUSD = pp.entryAmountUSD.plus(totalSlippageUSD)
     }
   }
   
@@ -479,8 +452,8 @@ export function refreshVeloV2PositionWithBurnAmounts(
   pp.exitAmount1USD = eventUsd1
   pp.exitAmountUSD = eventUsd
   
-  // Calculate PnL
-  const pnlUSD = pp.exitAmountUSD!.minus(pp.entryAmountUSD)
+  //Calculate position ROI when position has exit data
+  calculatePositionROI(pp)
   
   // Save and refresh current state
   pp.save()

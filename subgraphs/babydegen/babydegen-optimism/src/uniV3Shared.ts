@@ -6,16 +6,15 @@ import { UniswapV3Factory } from "../../../../generated/UniV3NFTManager/UniswapV
 // import { UniV3Pool } from "../../../../generated/templates" // Removed - using snapshot approach instead of real-time tracking
 import { LiquidityAmounts } from "./libraries/LiquidityAmounts"
 import { TickMath } from "./libraries/TickMath"
-import { ProtocolPosition, Service, AgentSwapBuffer } from "../generated/schema"
+import { ProtocolPosition, Service, AgentSwapBuffer } from "../../../../generated/schema"
 import { refreshPortfolio } from "./common"
 import { addAgentNFTToPool, removeAgentNFTFromPool, getCachedPoolAddress, cachePoolAddress } from "./poolIndexCache"
 import { getTokenPriceUSD } from "./priceDiscovery"
 import { UNI_V3_MANAGER, UNI_V3_FACTORY } from "./constants"
 import { isServiceAgent, getServiceByAgent } from "./config"
 import { getTokenDecimals, getTokenSymbol } from "./tokenUtils"
-import { updateFirstTradingTimestamp } from "./helpers"
-import { initializePositionCosts } from "./roiCalculation"
-import { searchAndAssociateRecentSwaps } from "./swapTracking"
+import { parseTotalSlippageFromBucket, associateSwapsWithPosition } from "./helpers"
+import { calculatePositionROI } from "./roiCalculation"
 
 // Helper function to convert token amount from wei to human readable
 function convertTokenAmount(amount: BigInt, tokenAddress: Address): BigDecimal {
@@ -147,7 +146,6 @@ export function refreshUniV3PositionWithEventAmounts(
   const eventAmount0Human = convertTokenAmount(eventAmount0, data.value2) // token0
   const eventAmount1Human = convertTokenAmount(eventAmount1, data.value3) // token1
   
-  
   const eventUsd0 = eventAmount0Human.times(token0Price)
   const eventUsd1 = eventAmount1Human.times(token1Price)
   const eventUsd = eventUsd0.plus(eventUsd1)
@@ -182,8 +180,7 @@ export function refreshUniV3PositionWithEventAmounts(
         service.save()
       }
       
-      // Update first trading timestamp
-      updateFirstTradingTimestamp(nftOwner, block.timestamp)
+      // NOTE: firstTradingTimestamp now represents funding time, not position creation
     }
     
     // Set static position metadata
@@ -212,75 +209,29 @@ export function refreshUniV3PositionWithEventAmounts(
     pp.token1Symbol = getTokenSymbol(data.value3)
     pp.liquidity = data.value7
     
-    // Initialize cost tracking for new position (AFTER all required fields are set)
-    initializePositionCosts(pp)
+    // Initialize cost tracking for new position
+    pp.totalCostsUSD = BigDecimal.zero()
+    pp.swapSlippageUSD = BigDecimal.zero()
+    pp.investmentUSD = BigDecimal.zero()
+    pp.grossGainUSD = BigDecimal.zero()
+    pp.netGainUSD = BigDecimal.zero()
+    pp.positionROI = BigDecimal.zero()
+    
+    // Use centralized swap association logic
+    let totalSlippageUSD = associateSwapsWithPosition(nftOwner, block)
+    
+    // Handle negative slippage by setting to 0 (no cost reduction)
+    if (totalSlippageUSD.lt(BigDecimal.zero())) {
+      totalSlippageUSD = BigDecimal.zero()
+    }
+    
+    // Always update costs (even if zero after negative adjustment)
+    pp.swapSlippageUSD = totalSlippageUSD
+    pp.totalCostsUSD = totalSlippageUSD
+    pp.investmentUSD = eventUsd.plus(totalSlippageUSD)
     
     // Save entry data first
     pp.save()
-    
-    // INLINE SWAP ASSOCIATION: All entity operations must be inline to avoid compiler crash
-    const bufferId = nftOwner
-    let buffer = AgentSwapBuffer.load(bufferId)
-    
-    if (buffer) {
-      // Check buckets sequentially (most recent first) - all inline
-      let consumedSwaps = ""
-      let totalSlippage = BigDecimal.zero()
-      
-      if (buffer.bucket0Swaps != "") {
-        consumedSwaps = buffer.bucket0Swaps
-        // Simple slippage parsing inline
-        let swaps = buffer.bucket0Swaps.split(",")
-        for (let i = 0; i < swaps.length; i++) {
-          let parts = swaps[i].split(":")
-          if (parts.length == 2) {
-            totalSlippage = totalSlippage.plus(BigDecimal.fromString(parts[1]))
-          }
-        }
-        buffer.bucket0Swaps = ""
-      } else if (buffer.bucket1Swaps != "") {
-        consumedSwaps = buffer.bucket1Swaps
-        let swaps = buffer.bucket1Swaps.split(",")
-        for (let i = 0; i < swaps.length; i++) {
-          let parts = swaps[i].split(":")
-          if (parts.length == 2) {
-            totalSlippage = totalSlippage.plus(BigDecimal.fromString(parts[1]))
-          }
-        }
-        buffer.bucket1Swaps = ""
-      } else if (buffer.bucket2Swaps != "") {
-        consumedSwaps = buffer.bucket2Swaps
-        let swaps = buffer.bucket2Swaps.split(",")
-        for (let i = 0; i < swaps.length; i++) {
-          let parts = swaps[i].split(":")
-          if (parts.length == 2) {
-            totalSlippage = totalSlippage.plus(BigDecimal.fromString(parts[1]))
-          }
-        }
-        buffer.bucket2Swaps = ""
-      } else if (buffer.bucket3Swaps != "") {
-        consumedSwaps = buffer.bucket3Swaps
-        let swaps = buffer.bucket3Swaps.split(",")
-        for (let i = 0; i < swaps.length; i++) {
-          let parts = swaps[i].split(":")
-          if (parts.length == 2) {
-            totalSlippage = totalSlippage.plus(BigDecimal.fromString(parts[1]))
-          }
-        }
-        buffer.bucket3Swaps = ""
-      }
-      
-      if (consumedSwaps != "") {
-        // Found and consumed swaps - update costs inline
-        buffer.totalSlippageUSD = buffer.totalSlippageUSD.minus(totalSlippage)
-        buffer.save()
-        
-        // Update position costs inline
-        pp.swapSlippageUSD = totalSlippage
-        pp.totalCostsUSD = pp.swapSlippageUSD
-        pp.investmentUSD = pp.entryAmountUSD.plus(pp.totalCostsUSD)
-      }
-    }
     
     // For new positions, calculate current amounts using liquidity math (not event amounts)
     // Call refreshUniV3Position to get current calculated amounts
@@ -295,7 +246,6 @@ export function refreshUniV3PositionWithEventAmounts(
     pp.entryAmount1 = pp.entryAmount1.plus(eventAmount1Human)
     pp.entryAmount1USD = pp.entryAmount1USD.plus(eventUsd1)
     pp.entryAmountUSD = pp.entryAmountUSD.plus(eventUsd)
-    
     
     // Save the updated entry amounts first
     pp.save()
@@ -385,6 +335,8 @@ export function refreshUniV3PositionWithExitAmounts(
     pp.usdCurrent = BigDecimal.zero()
     pp.liquidity = BigInt.zero()
     
+    // FIXED: Calculate position ROI when position closes
+    calculatePositionROI(pp)
     
     // Remove from cache
     const poolAddress = getUniV3PoolAddress(data.value2, data.value3, data.value4, tokenId)
@@ -462,7 +414,6 @@ export function refreshUniV3Position(tokenId: BigInt, block: ethereum.Block, txH
   const amounts = LiquidityAmounts.getAmountsForLiquidity(
                     slot0.value0, sqrtPa, sqrtPb, data.value7)
 
-
   // USD pricing
   const token0Price = getTokenPriceUSD(data.value2, block.timestamp, false)
   const token1Price = getTokenPriceUSD(data.value3, block.timestamp, false)
@@ -504,8 +455,7 @@ export function refreshUniV3Position(tokenId: BigInt, block: ethereum.Block, txH
         service.save()
       }
       
-      // Update first trading timestamp
-      updateFirstTradingTimestamp(nftOwner, block.timestamp)
+      // NOTE: firstTradingTimestamp now represents funding time, not position creation
     }
     
     // Set static position metadata
@@ -537,11 +487,14 @@ export function refreshUniV3Position(tokenId: BigInt, block: ethereum.Block, txH
     pp.entryAmount1USD = BigDecimal.zero()
     pp.entryAmountUSD = BigDecimal.zero()
     
-    // Initialize cost tracking for new position (AFTER all required fields are set)
-    initializePositionCosts(pp)
-    
+    // Initialize cost tracking for new position
+    pp.totalCostsUSD = BigDecimal.zero()
+    pp.swapSlippageUSD = BigDecimal.zero()
+    pp.investmentUSD = BigDecimal.zero()
+    pp.grossGainUSD = BigDecimal.zero()
+    pp.netGainUSD = BigDecimal.zero()
+    pp.positionROI = BigDecimal.zero()
   }
-  // For existing positions, DO NOT overwrite entry data - it should be set by refreshUniV3PositionWithEventAmounts
   
   // Update current state (for both new and existing positions)
   pp.usdCurrent = usd
@@ -565,6 +518,9 @@ export function refreshUniV3Position(tokenId: BigInt, block: ethereum.Block, txH
     pp.exitAmount1 = amount1Human
     pp.exitAmount1USD = usd1
     pp.exitAmountUSD = usd
+    
+    //Calculate position ROI when position closes
+    calculatePositionROI(pp)
     
     // Remove from cache to prevent future swap updates
     removeAgentNFTFromPool("uniswap-v3", poolAddress, tokenId)

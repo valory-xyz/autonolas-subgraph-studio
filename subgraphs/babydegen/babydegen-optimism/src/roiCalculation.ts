@@ -1,5 +1,5 @@
 import { BigDecimal, BigInt, Address, Bytes, log } from "@graphprotocol/graph-ts"
-import { ProtocolPosition, AgentPortfolio, Service } from "../generated/schema"
+import { ProtocolPosition, AgentPortfolio, Service } from "../../../../generated/schema"
 import { getServiceByAgent } from "./config"
 
 /**
@@ -13,9 +13,9 @@ export function calculateActualROI(agent: Address): BigDecimal {
     return BigDecimal.zero()
   }
   
-  let totalInvestments = BigDecimal.zero()  // Sum of (entryAmountUSD + costs)
-  let totalGrossGains = BigDecimal.zero()   // Sum of exitAmountUSD
-  let totalCosts = BigDecimal.zero()        // Sum of all costs
+  let totalInvestments = BigDecimal.zero()  // Sum of Ii (entry amounts only)
+  let totalGrossGains = BigDecimal.zero()   // Sum of Gi (exit amounts)
+  let totalCosts = BigDecimal.zero()        // Sum of Ci (costs only)
   
   // Iterate through all positions
   let positionIds = service.positionIds
@@ -24,21 +24,18 @@ export function calculateActualROI(agent: Address): BigDecimal {
     let position = loadPosition(positionIdString)
     
     if (position != null && !position.isActive) {  // Only closed positions
-      // Investment = entry amount + costs
-      let investment = position.entryAmountUSD.plus(position.totalCostsUSD)
-      totalInvestments = totalInvestments.plus(investment)
+      // CORRECTED: Separate investments and costs (no double counting)
+      totalInvestments = totalInvestments.plus(position.entryAmountUSD)  // Ii
+      totalCosts = totalCosts.plus(position.totalCostsUSD)              // Ci
       
-      // Gross gains = exit amount (only available for closed positions)
+      // Gross gains = exit amount
       if (position.exitAmountUSD) {
-        totalGrossGains = totalGrossGains.plus(position.exitAmountUSD!)
+        totalGrossGains = totalGrossGains.plus(position.exitAmountUSD!)  // Gi
       }
-      
-      // Costs
-      totalCosts = totalCosts.plus(position.totalCostsUSD)
     }
   }
   
-  // Calculate actual ROI: (Gains - Investments - Costs) / (Investments + Costs)
+  // CORRECTED FORMULA: (G1+G2+G3 - I1-I2-I3 - C1-C2-C3) / (I1+I2+I3 + C1+C2+C3)
   let totalInvestmentPlusCosts = totalInvestments.plus(totalCosts)
   
   if (totalInvestmentPlusCosts.gt(BigDecimal.zero())) {
@@ -71,15 +68,19 @@ export function calculatePositionROI(position: ProtocolPosition): BigDecimal {
   let investment = position.entryAmountUSD.plus(position.totalCostsUSD)
   
   if (investment.gt(BigDecimal.zero())) {
-    // Net gain = gross gain - investment
-    let grossGain = position.exitAmountUSD!
-    let netGain = grossGain.minus(investment)
-    let positionROI = netGain.div(investment).times(BigDecimal.fromString("100"))
+    // CORRECTED FORMULAS:
+    // grossGainUSD = exitAmount - entryAmountUSD (gain before costs)
+    let grossGainUSD = position.exitAmountUSD!.minus(position.entryAmountUSD)
     
-    // Update position fields
+    // netGainUSD = exitAmount - investmentUSD (gain after all costs including slippage)
+    let netGainUSD = position.exitAmountUSD!.minus(investment)
+    
+    // Position ROI = netGainUSD / investmentUSD * 100
+    let positionROI = netGainUSD.div(investment).times(BigDecimal.fromString("100"))
+    
     position.investmentUSD = investment
-    position.grossGainUSD = grossGain
-    position.netGainUSD = netGain
+    position.grossGainUSD = grossGainUSD
+    position.netGainUSD = netGainUSD
     position.positionROI = positionROI
     position.save()
     
@@ -141,7 +142,7 @@ export function updatePositionCosts(position: ProtocolPosition, additionalCosts:
 export function initializePositionCosts(position: ProtocolPosition): void {
   position.totalCostsUSD = BigDecimal.zero()
   position.swapSlippageUSD = BigDecimal.zero()
-  position.investmentUSD = position.entryAmountUSD  // Will be updated when costs are added
+  position.investmentUSD = position.entryAmountUSD
   position.grossGainUSD = BigDecimal.zero()
   position.netGainUSD = BigDecimal.zero()
   position.positionROI = BigDecimal.zero()

@@ -13,7 +13,7 @@ import {
   ProtocolPosition,
   Service,
   AgentSwapBuffer
-} from "../generated/schema"
+} from "../../../../generated/schema"
 
 import { getTokenPriceUSD } from "./priceDiscovery"
 import { getTokenDecimals } from "./tokenUtils"
@@ -82,9 +82,9 @@ function getBucketIndex(timestamp: BigInt): BigInt {
 }
 
 // Helper function to create swap data string for storage
-function createSwapDataString(swapId: Bytes, slippageUSD: BigDecimal, timestamp: BigInt, expiresAt: BigInt): string {
-  // Mode format: "timestamp,swapId,slippage,expiresAt"
-  return timestamp.toString() + "," + swapId.toHexString() + "," + slippageUSD.toString() + "," + expiresAt.toString()
+// Format: "timestamp,swapIdHex,slippage,expiresAt,swapIdHex" (matches Mode protocol parsing expectations)
+function createSwapDataString(timestamp: BigInt, swapId: Bytes, slippageUSD: BigDecimal, expiresAt: BigInt): string {
+  return timestamp.toString() + "," + swapId.toHexString() + "," + slippageUSD.toString() + "," + expiresAt.toString() + "," + swapId.toHexString()
 }
 
 // Helper function to parse total slippage from bucket string
@@ -175,7 +175,6 @@ export function createSwapTransaction(
   
   // Initialize association status
   swap.isAssociated = false
-  swap.associatedPosition = null
   swap.expiresAt = timestamp.plus(ASSOCIATION_WINDOW)
   
   swap.save()
@@ -213,7 +212,7 @@ function addSwapToBuffer(agent: Address, timestamp: BigInt, swapId: Bytes, slipp
   }
   
   // Add swap to current bucket (bucket0) - use Mode format with pipe separator
-  const swapData = createSwapDataString(swapId, slippageUSD, timestamp, expiresAt)
+  const swapData = createSwapDataString(timestamp, swapId, slippageUSD, expiresAt)
   if (buffer.bucket0Swaps == "") {
     buffer.bucket0Swaps = swapData
   } else {
@@ -293,7 +292,6 @@ export function searchAndAssociateRecentSwaps(position: ProtocolPosition): void 
 export function associateSwapWithPosition(swap: SwapTransaction, position: ProtocolPosition): void {
   // Update swap
   swap.isAssociated = true
-  swap.associatedPosition = position.id
   swap.save()
   
   // Create or update association

@@ -1,9 +1,11 @@
-import { Address, BigDecimal, BigInt, ethereum } from "@graphprotocol/graph-ts"
+import { Address, BigDecimal, BigInt, ethereum, Bytes } from "@graphprotocol/graph-ts"
 import { VelodromeCLPool } from "../../../../generated/VeloNFTManager/VelodromeCLPool"
 import { VelodromeV2Pool } from "../../../../generated/templates/VeloV2Pool/VelodromeV2Pool"
 import { AggregatorV3Interface } from "../../../../generated/templates/Safe/AggregatorV3Interface"
+import { BalancerV2WeightedPool } from "../../../../generated/BalancerVault/BalancerV2WeightedPool"
+import { BalancerV2Vault } from "../../../../generated/BalancerVault/BalancerV2Vault"
 import { getTokenConfig } from "./tokenConfig"
-import { USDC_NATIVE, USDT, DAI, LUSD, DOLA, WETH, Q96 } from "./constants"
+import { USDC_NATIVE, USDT, DAI, LUSD, DOLA, WETH, Q96, BALANCER_VAULT } from "./constants"
 
 // Chainlink price adapter with validation
 export function getChainlinkPrice(feedAddress: Address, blockTimestamp: BigInt = BigInt.fromI32(0)): BigDecimal {
@@ -119,6 +121,87 @@ export function getVelodromePrice(
 ): BigDecimal {
   // Use same logic as Uniswap V3 since Velodrome CL uses similar interface
   return getUniswapV3Price(token, poolAddress, pairToken, 0)
+}
+
+// Balancer V2 price adapter for weighted pools
+export function getBalancerPrice(
+  token: Address,
+  poolAddress: Address,
+  pairToken: Address
+): BigDecimal {
+  
+  const poolContract = BalancerV2WeightedPool.bind(poolAddress)
+  const vaultContract = BalancerV2Vault.bind(BALANCER_VAULT)
+  
+  // Get pool ID
+  const poolIdResult = poolContract.try_getPoolId()
+  if (poolIdResult.reverted) {
+    return BigDecimal.fromString("0")
+  }
+  
+  const poolId = poolIdResult.value
+  
+  // Get pool tokens and balances
+  const poolTokensResult = vaultContract.try_getPoolTokens(poolId)
+  if (poolTokensResult.reverted) {
+    return BigDecimal.fromString("0")
+  }
+  
+  const poolTokens = poolTokensResult.value.value0
+  const poolBalances = poolTokensResult.value.value1
+  
+  // Find token indices
+  let tokenIndex = -1
+  let pairTokenIndex = -1
+  
+  for (let i = 0; i < poolTokens.length; i++) {
+    if (poolTokens[i].equals(token)) {
+      tokenIndex = i
+    }
+    if (poolTokens[i].equals(pairToken)) {
+      pairTokenIndex = i
+    }
+  }
+  
+  if (tokenIndex == -1 || pairTokenIndex == -1) {
+    return BigDecimal.fromString("0")
+  }
+  
+  // Get token decimals
+  let targetTokenConfig = getTokenConfig(token)
+  let pairTokenConfig = getTokenConfig(pairToken)
+  
+  if (targetTokenConfig == null || pairTokenConfig == null) {
+    return BigDecimal.fromString("0")
+  }
+  
+  // Calculate price based on pool balances
+  const tokenBalance = poolBalances[tokenIndex]
+  const pairTokenBalance = poolBalances[pairTokenIndex]
+  
+  if (tokenBalance.equals(BigInt.zero())) {
+    return BigDecimal.fromString("0")
+  }
+  
+  // Convert to human readable amounts
+  const tokenDecimals = targetTokenConfig.decimals
+  const pairTokenDecimals = pairTokenConfig.decimals
+  
+  const tokenBalanceHuman = tokenBalance.toBigDecimal().div(
+    BigDecimal.fromString("1e" + tokenDecimals.toString())
+  )
+  const pairTokenBalanceHuman = pairTokenBalance.toBigDecimal().div(
+    BigDecimal.fromString("1e" + pairTokenDecimals.toString())
+  )
+  
+  // Price = pairTokenBalance / tokenBalance
+  const rawPrice = pairTokenBalanceHuman.div(tokenBalanceHuman)
+  
+  // Get pair token price
+  let pairPrice = getPairTokenPrice(pairToken, BigInt.fromI32(0))
+  let finalPrice = rawPrice.times(pairPrice)
+  
+  return finalPrice
 }
 
 // Helper functions
