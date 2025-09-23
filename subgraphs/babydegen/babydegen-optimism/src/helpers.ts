@@ -169,9 +169,9 @@ export function calculatePortfolioMetrics(
   // Ensure portfolio exists (replaces the existing if/else logic)
   let portfolio = ensureAgentPortfolio(serviceSafe, block.timestamp)
   
-  // 1. Get initial investment from FundingBalance
+  // 1. Get initial investment from FundingBalance (use totalInUsd to preserve baseline)
   let fundingBalance = FundingBalance.load(serviceSafe as Bytes)
-  let initialValue = fundingBalance ? fundingBalance.netUsd : BigDecimal.zero()
+  let initialValue = fundingBalance ? fundingBalance.totalInUsd : BigDecimal.zero()
   
   // 2. Calculate total positions value
   let positionsValue = calculatePositionsValue(serviceSafe)
@@ -179,8 +179,11 @@ export function calculatePortfolioMetrics(
   // 3. Calculate uninvested funds
   let uninvestedValue = calculateUninvestedValue(serviceSafe)
   
-  // 4. Calculate total portfolio value (positions + uninvested)
-  let finalValue = positionsValue.plus(uninvestedValue)
+  // 4. Get total withdrawn amount
+  let totalWithdrawn = fundingBalance ? fundingBalance.totalWithdrawnUsd : BigDecimal.zero()
+  
+  // 5. Calculate total portfolio value (positions + uninvested + withdrawn)
+  let finalValue = positionsValue.plus(uninvestedValue).plus(totalWithdrawn)
   
   // 5. Calculate ROI and APR
   let roi = BigDecimal.zero()
@@ -399,6 +402,16 @@ function calculatePositionsValue(serviceSafe: Address): BigDecimal {
 
 // Create a portfolio snapshot
 function createPortfolioSnapshot(portfolio: AgentPortfolio, block: ethereum.Block): void {
+  // Check if agent has at least 2 total positions (active + closed)
+  let totalPositions = portfolio.totalPositions + portfolio.totalClosedPositions
+  if (totalPositions < 2) {
+    log.info("SNAPSHOT: Skipping snapshot for agent {} - only {} total positions (minimum 2 required)", [
+      portfolio.service.toHexString(),
+      totalPositions.toString()
+    ])
+    return
+  }
+  
   let snapshotId = portfolio.id.toHexString() + "-" + block.timestamp.toString()
   let snapshot = new AgentPortfolioSnapshot(Bytes.fromUTF8(snapshotId))
   
@@ -438,6 +451,11 @@ function createPortfolioSnapshot(portfolio: AgentPortfolio, block: ethereum.Bloc
   portfolio.lastSnapshotTimestamp = block.timestamp
   portfolio.lastSnapshotBlock = block.number
   portfolio.save()
+  
+  log.info("SNAPSHOT: Created snapshot for agent {} with {} total positions", [
+    portfolio.service.toHexString(),
+    totalPositions.toString()
+  ])
 }
 
 // Ensure AgentPortfolio exists, create if it doesn't

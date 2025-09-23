@@ -51,6 +51,7 @@ type FundingBalance @entity(immutable: false) {
   service: Service              # Link to service
   totalInUsd: BigDecimal!
   totalOutUsd: BigDecimal!
+  totalWithdrawnUsd: BigDecimal!  # NEW: Track USDC withdrawals to EOAs separately
   netUsd: BigDecimal!
   firstInTimestamp: BigInt!
   lastChangeTs: BigInt!

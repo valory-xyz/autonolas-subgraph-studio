@@ -242,9 +242,9 @@ export function handleERC20Transfer(event: TransferEvent): void {
         let tokenPrice = getTokenPriceUSD(tokenAddress, event.block.timestamp, false)
         let usdValue = amountDecimal.times(tokenPrice)
         
-        
-        // Update funding balance
-        updateFundingBalance(from, usdValue, false, event.block.timestamp)
+        // NEW LOGIC: Track as withdrawal instead of reducing funding
+        // This preserves initial value while tracking total extracted value
+        updateWithdrawalBalance(from, usdValue, event.block.timestamp)
       }
     } else {
       // Calculate USD value for non-USDC tokens for logging purposes only
@@ -273,6 +273,7 @@ export function updateFundingBalance(
     fb.service = serviceSafe
     fb.totalInUsd = BigDecimal.zero()
     fb.totalOutUsd = BigDecimal.zero()
+    fb.totalWithdrawnUsd = BigDecimal.zero()  // Initialize new field
     fb.netUsd = BigDecimal.zero()
     fb.firstInTimestamp = ts
   }
@@ -305,5 +306,39 @@ export function updateFundingBalance(
   fb.save()
   
   // Ensure AgentPortfolio exists when funding balance is updated
+  ensureAgentPortfolio(serviceSafe, ts)
+}
+
+// NEW: Helper function to update withdrawal tracking separately (for EOA withdrawals)
+export function updateWithdrawalBalance(
+  serviceSafe: Address,
+  usd: BigDecimal,
+  ts: BigInt
+): void {
+  let id = serviceSafe as Bytes
+  let fb = FundingBalance.load(id)
+  
+  if (!fb) {
+    fb = new FundingBalance(id)
+    fb.service = serviceSafe
+    fb.totalInUsd = BigDecimal.zero()
+    fb.totalOutUsd = BigDecimal.zero()
+    fb.totalWithdrawnUsd = BigDecimal.zero()
+    fb.netUsd = BigDecimal.zero()
+    fb.firstInTimestamp = ts
+  }
+  
+  // Track withdrawal separately without affecting netUsd
+  fb.totalWithdrawnUsd = fb.totalWithdrawnUsd.plus(usd)
+  fb.lastChangeTs = ts
+  fb.save()
+  
+  log.info("WITHDRAWAL: Tracked {} USD withdrawal for agent {} - total withdrawn: {}", [
+    usd.toString(),
+    serviceSafe.toHexString(),
+    fb.totalWithdrawnUsd.toString()
+  ])
+  
+  // Ensure AgentPortfolio exists when withdrawal is tracked
   ensureAgentPortfolio(serviceSafe, ts)
 }
