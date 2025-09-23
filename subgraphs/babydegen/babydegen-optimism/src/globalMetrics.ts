@@ -177,10 +177,10 @@ export function updateHistoricalArrays(
 }
 
 /**
- * Update projected APR historical array with new median value, maintaining 7-day window
- * @param historicalProjectedAPR Current historical projected APR array
- * @param newMedianProjectedAPR New median projected APR to add
- * @returns Updated historical projected APR array
+ * Update projected unrealised PnL historical array with new median value, maintaining 7-day window
+ * @param historicalProjectedAPR Current historical projected unrealised PnL array
+ * @param newMedianProjectedAPR New median projected unrealised PnL to add
+ * @returns Updated historical projected unrealised PnL array
  */
 export function updateProjectedAPRHistoricalArray(
   historicalProjectedAPR: BigDecimal[],
@@ -264,7 +264,7 @@ export function updateHistoricalArraysEthAdjusted(
 export function updateDailyPopulationMetricEntity(
   medianROI: BigDecimal,
   medianAPR: BigDecimal,
-  medianProjectedAPR: BigDecimal,
+  medianProjectedUnrealisedPnL: BigDecimal,
   sma7dROI: BigDecimal,
   sma7dAPR: BigDecimal,
   sma7dProjectedAPR: BigDecimal,
@@ -290,12 +290,14 @@ export function updateDailyPopulationMetricEntity(
   // Set population metrics
   dailyPopulationMetric.medianPopulationROI = medianROI;
   dailyPopulationMetric.medianPopulationAPR = medianAPR;
-  dailyPopulationMetric.medianProjectedAPR = medianProjectedAPR;
+  dailyPopulationMetric.medianUnrealisedPnL = medianProjectedUnrealisedPnL;
+  dailyPopulationMetric.medianProjectedUnrealisedPnL = medianProjectedUnrealisedPnL;
   
   // Set 7-day simple moving averages
   dailyPopulationMetric.sma7dROI = sma7dROI;
   dailyPopulationMetric.sma7dAPR = sma7dAPR;
-  dailyPopulationMetric.sma7dProjectedAPR = sma7dProjectedAPR;
+  dailyPopulationMetric.sma7dUnrealisedPnL = sma7dProjectedAPR;
+  dailyPopulationMetric.sma7dProjectedUnrealisedPnL = sma7dProjectedAPR;
   
   // Set metadata
   dailyPopulationMetric.timestamp = dayTimestamp; // Use day timestamp for consistency
@@ -305,16 +307,17 @@ export function updateDailyPopulationMetricEntity(
   // Set historical data
   dailyPopulationMetric.historicalMedianROI = historicalROI;
   dailyPopulationMetric.historicalMedianAPR = historicalAPR;
-  dailyPopulationMetric.historicalMedianProjectedAPR = historicalProjectedAPR;
+  dailyPopulationMetric.historicalMedianUnrealisedPnL = historicalProjectedAPR;
+  dailyPopulationMetric.historicalMedianProjectedUnrealisedPnL = historicalProjectedAPR;
   
   dailyPopulationMetric.save();
   
-  log.info("Created DailyPopulationMetric entity for day timestamp {} with {} agents, median ROI: {}, median APR: {}, median projected APR: {}", [
+  log.info("Created DailyPopulationMetric entity for day timestamp {} with {} agents, median ROI: {}, median APR: {}, median projected unrealised PnL: {}", [
     dayTimestamp.toString(),
     totalAgents.toString(),
     medianROI.toString(),
     medianAPR.toString(),
-    medianProjectedAPR.toString()
+    medianProjectedUnrealisedPnL.toString()
   ]);
 }
 
@@ -324,25 +327,28 @@ export function updateDailyPopulationMetricEntity(
 export function updateDailyPopulationMetricEntityWithEthAdjusted(
   medianROI: BigDecimal,
   medianAPR: BigDecimal,
-  medianProjectedAPR: BigDecimal,
+  medianUnrealisedPnL: BigDecimal,
+  medianProjectedUnrealisedPnL: BigDecimal,
   sma7dROI: BigDecimal,
   sma7dAPR: BigDecimal,
-  sma7dProjectedAPR: BigDecimal,
+  sma7dUnrealisedPnL: BigDecimal,
+  sma7dProjectedUnrealisedPnL: BigDecimal,
   historicalROI: BigDecimal[],
   historicalAPR: BigDecimal[],
-  historicalProjectedAPR: BigDecimal[],
+  historicalUnrealisedPnL: BigDecimal[],
+  historicalProjectedUnrealisedPnL: BigDecimal[],
   medianEthAdjustedROI: BigDecimal,
   medianEthAdjustedAPR: BigDecimal,
-  medianEthAdjustedProjectedROI: BigDecimal,
-  medianEthAdjustedProjectedAPR: BigDecimal,
+  medianEthAdjustedUnrealisedPnL: BigDecimal,
+  medianEthAdjustedProjectedUnrealisedPnL: BigDecimal,
   sma7dEthAdjustedROI: BigDecimal,
   sma7dEthAdjustedAPR: BigDecimal,
-  sma7dEthAdjustedProjectedROI: BigDecimal,
-  sma7dEthAdjustedProjectedAPR: BigDecimal,
+  sma7dEthAdjustedUnrealisedPnL: BigDecimal,
+  sma7dEthAdjustedProjectedUnrealisedPnL: BigDecimal,
   historicalEthAdjustedROI: BigDecimal[],
   historicalEthAdjustedAPR: BigDecimal[],
-  historicalEthAdjustedProjectedROI: BigDecimal[],
-  historicalEthAdjustedProjectedAPR: BigDecimal[],
+  historicalEthAdjustedUnrealisedPnL: BigDecimal[],
+  historicalEthAdjustedProjectedUnrealisedPnL: BigDecimal[],
   totalAgents: number,
   block: ethereum.Block
 ): void {
@@ -362,24 +368,26 @@ export function updateDailyPopulationMetricEntityWithEthAdjusted(
   // Set population metrics
   dailyPopulationMetric.medianPopulationROI = medianROI;
   dailyPopulationMetric.medianPopulationAPR = medianAPR;
-  dailyPopulationMetric.medianProjectedAPR = medianProjectedAPR;
+  dailyPopulationMetric.medianUnrealisedPnL = medianUnrealisedPnL;
+  dailyPopulationMetric.medianProjectedUnrealisedPnL = medianProjectedUnrealisedPnL;
   
   // NEW: Set ETH-adjusted population metrics
   dailyPopulationMetric.medianEthAdjustedROI = medianEthAdjustedROI;
   dailyPopulationMetric.medianEthAdjustedAPR = medianEthAdjustedAPR;
-  dailyPopulationMetric.medianEthAdjustedProjectedROI = medianEthAdjustedProjectedROI;
-  dailyPopulationMetric.medianEthAdjustedProjectedAPR = medianEthAdjustedProjectedAPR;
+  dailyPopulationMetric.medianEthAdjustedUnrealisedPnL = medianEthAdjustedUnrealisedPnL;
+  dailyPopulationMetric.medianEthAdjustedProjectedUnrealisedPnL = medianEthAdjustedProjectedUnrealisedPnL;
   
   // Set 7-day simple moving averages
   dailyPopulationMetric.sma7dROI = sma7dROI;
   dailyPopulationMetric.sma7dAPR = sma7dAPR;
-  dailyPopulationMetric.sma7dProjectedAPR = sma7dProjectedAPR;
+  dailyPopulationMetric.sma7dUnrealisedPnL = sma7dUnrealisedPnL;
+  dailyPopulationMetric.sma7dProjectedUnrealisedPnL = sma7dProjectedUnrealisedPnL;
   
   // NEW: Set ETH-adjusted 7-day SMAs
   dailyPopulationMetric.sma7dEthAdjustedROI = sma7dEthAdjustedROI;
   dailyPopulationMetric.sma7dEthAdjustedAPR = sma7dEthAdjustedAPR;
-  dailyPopulationMetric.sma7dEthAdjustedProjectedROI = sma7dEthAdjustedProjectedROI;
-  dailyPopulationMetric.sma7dEthAdjustedProjectedAPR = sma7dEthAdjustedProjectedAPR;
+  dailyPopulationMetric.sma7dEthAdjustedUnrealisedPnL = sma7dEthAdjustedUnrealisedPnL;
+  dailyPopulationMetric.sma7dEthAdjustedProjectedUnrealisedPnL = sma7dEthAdjustedProjectedUnrealisedPnL;
   
   // Set metadata
   dailyPopulationMetric.timestamp = dayTimestamp; // Use day timestamp for consistency
@@ -389,22 +397,23 @@ export function updateDailyPopulationMetricEntityWithEthAdjusted(
   // Set historical data
   dailyPopulationMetric.historicalMedianROI = historicalROI;
   dailyPopulationMetric.historicalMedianAPR = historicalAPR;
-  dailyPopulationMetric.historicalMedianProjectedAPR = historicalProjectedAPR;
+  dailyPopulationMetric.historicalMedianUnrealisedPnL = historicalUnrealisedPnL;
+  dailyPopulationMetric.historicalMedianProjectedUnrealisedPnL = historicalProjectedUnrealisedPnL;
   
   // NEW: Set ETH-adjusted historical data
   dailyPopulationMetric.historicalMedianEthAdjustedROI = historicalEthAdjustedROI;
   dailyPopulationMetric.historicalMedianEthAdjustedAPR = historicalEthAdjustedAPR;
-  dailyPopulationMetric.historicalMedianEthAdjustedProjectedROI = historicalEthAdjustedProjectedROI;
-  dailyPopulationMetric.historicalMedianEthAdjustedProjectedAPR = historicalEthAdjustedProjectedAPR;
+  dailyPopulationMetric.historicalMedianEthAdjustedUnrealisedPnL = historicalEthAdjustedUnrealisedPnL;
+  dailyPopulationMetric.historicalMedianEthAdjustedProjectedUnrealisedPnL = historicalEthAdjustedProjectedUnrealisedPnL;
   
   dailyPopulationMetric.save();
   
-  log.info("Created DailyPopulationMetric entity for day timestamp {} with {} agents, median ROI: {}, median APR: {}, median projected APR: {}, ETH-adjusted ROI: {}, ETH-adjusted APR: {}", [
+  log.info("Created DailyPopulationMetric entity for day timestamp {} with {} agents, median ROI: {}, median APR: {}, median projected unrealised PnL: {}, ETH-adjusted ROI: {}, ETH-adjusted APR: {}", [
     dayTimestamp.toString(),
     totalAgents.toString(),
     medianROI.toString(),
     medianAPR.toString(),
-    medianProjectedAPR.toString(),
+    medianProjectedUnrealisedPnL.toString(),
     medianEthAdjustedROI.toString(),
     medianEthAdjustedAPR.toString()
   ]);
@@ -433,11 +442,11 @@ export function calculateGlobalMetrics(block: ethereum.Block): void {
     return;
   }
   
-  // Extract values from snapshots with selective filtering for projected ROI
+  // Extract values from snapshots with selective filtering for unrealised PnL
   let roiValues: BigDecimal[] = [];
   let aprValues: BigDecimal[] = [];
-  let projectedROIValues: BigDecimal[] = [];
-  let projectedAPRValues: BigDecimal[] = [];
+  let unrealisedPnLValues: BigDecimal[] = [];
+  let projectedUnrealisedPnLValues: BigDecimal[] = [];
   
   // NEW: Extract ETH-adjusted values from snapshots with selective filtering
   let ethAdjustedRoiValues: BigDecimal[] = [];
@@ -469,13 +478,13 @@ export function calculateGlobalMetrics(block: ethereum.Block): void {
         snapshot.finalValue.toString()
       ]);
     } else {
-      // Only include in projected ROI calculations if not excluded
-      // Calculate projected ROI from projected APR (since schema doesn't have projectedRoi field)
-      let projectedROI = snapshot.ethAdjustedProjectedRoi; // Use the existing projected ROI field
-      projectedROIValues.push(projectedROI);
-      projectedAPRValues.push(snapshot.projectedAPR);
-      ethAdjustedProjectedRoiValues.push(snapshot.ethAdjustedProjectedRoi);
-      ethAdjustedProjectedAprValues.push(snapshot.ethAdjustedProjectedApr);
+      // Only include in unrealised PnL calculations if not excluded
+      // Use the unrealised PnL fields
+      let unrealisedPnL = snapshot.unrealisedPnL; // Use unrealised PnL
+      unrealisedPnLValues.push(unrealisedPnL);
+      projectedUnrealisedPnLValues.push(snapshot.projectedUnrealisedPnL);
+      ethAdjustedProjectedRoiValues.push(snapshot.ethAdjustedUnrealisedPnL);
+      ethAdjustedProjectedAprValues.push(snapshot.ethAdjustedProjectedUnrealisedPnL);
     }
   }
   
@@ -490,8 +499,8 @@ export function calculateGlobalMetrics(block: ethereum.Block): void {
   // Calculate median values
   let medianROI = calculateMedian(roiValues);
   let medianAPR = calculateMedian(aprValues);
-  let medianProjectedROI = calculateMedian(projectedROIValues);
-  let medianProjectedAPR = calculateMedian(projectedAPRValues);
+  let medianUnrealisedPnL = calculateMedian(unrealisedPnLValues);
+  let medianProjectedUnrealisedPnL = calculateMedian(projectedUnrealisedPnLValues);
   
   // Calculate medians for ETH-adjusted metrics
   let medianEthAdjustedROI = calculateMedian(ethAdjustedRoiValues);
@@ -514,13 +523,13 @@ export function calculateGlobalMetrics(block: ethereum.Block): void {
   if (previousDailyPopulationMetric) {
     historicalROI = previousDailyPopulationMetric.historicalMedianROI;
     historicalAPR = previousDailyPopulationMetric.historicalMedianAPR;
-    historicalProjectedAPR = previousDailyPopulationMetric.historicalMedianProjectedAPR;
+    historicalProjectedAPR = previousDailyPopulationMetric.historicalMedianProjectedUnrealisedPnL;
     
     // NEW: Load ETH-adjusted historical data
     historicalEthAdjustedROI = previousDailyPopulationMetric.historicalMedianEthAdjustedROI;
     historicalEthAdjustedAPR = previousDailyPopulationMetric.historicalMedianEthAdjustedAPR;
-    historicalEthAdjustedProjectedROI = previousDailyPopulationMetric.historicalMedianEthAdjustedProjectedROI;
-    historicalEthAdjustedProjectedAPR = previousDailyPopulationMetric.historicalMedianEthAdjustedProjectedAPR;
+    historicalEthAdjustedProjectedROI = previousDailyPopulationMetric.historicalMedianEthAdjustedUnrealisedPnL;
+    historicalEthAdjustedProjectedAPR = previousDailyPopulationMetric.historicalMedianEthAdjustedProjectedUnrealisedPnL;
   }
   
   // Update historical arrays with new median values
@@ -528,8 +537,8 @@ export function calculateGlobalMetrics(block: ethereum.Block): void {
   let updatedHistoricalROI = updatedHistorical[0];
   let updatedHistoricalAPR = updatedHistorical[1];
   
-  // Update projected APR historical array
-  let updatedHistoricalProjectedAPR = updateProjectedAPRHistoricalArray(historicalProjectedAPR, medianProjectedAPR);
+  // Update projected unrealised PnL historical array
+  let updatedHistoricalProjectedAPR = updateProjectedAPRHistoricalArray(historicalProjectedAPR, medianProjectedUnrealisedPnL);
   
   // NEW: Update historical arrays with ETH-adjusted values
   let updatedHistoricalEthAdjusted = updateHistoricalArraysEthAdjusted(
@@ -554,16 +563,23 @@ export function calculateGlobalMetrics(block: ethereum.Block): void {
   let sma7dEthAdjustedProjectedROI = calculate7DaysSMA(updatedHistoricalEthAdjusted[2]);
   let sma7dEthAdjustedProjectedAPR = calculate7DaysSMA(updatedHistoricalEthAdjusted[3]);
   
+  // Calculate 7-day SMAs for unrealised PnL metrics
+  let sma7dUnrealisedPnL = calculate7DaysSMA(updatedHistoricalProjectedAPR);
+  let sma7dProjectedUnrealisedPnL = calculate7DaysSMA(updatedHistoricalProjectedAPR);
+  
   // Create and save DailyPopulationMetric entity with ETH-adjusted metrics
   updateDailyPopulationMetricEntityWithEthAdjusted(
     medianROI,
     medianAPR,
-    medianProjectedAPR,
+    medianUnrealisedPnL,
+    medianProjectedUnrealisedPnL,
     sma7dROI,
     sma7dAPR,
-    sma7dProjectedAPR,
+    sma7dUnrealisedPnL,
+    sma7dProjectedUnrealisedPnL,
     updatedHistoricalROI,
     updatedHistoricalAPR,
+    updatedHistoricalProjectedAPR,
     updatedHistoricalProjectedAPR,
     medianEthAdjustedROI,
     medianEthAdjustedAPR,

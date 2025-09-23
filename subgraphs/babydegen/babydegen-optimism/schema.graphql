@@ -160,16 +160,16 @@ type AgentPortfolio @entity(immutable: false) {
   uninvestedValue: BigDecimal!  # Token balances in safe
   
   # Performance Metrics (ENHANCED)
-  projectedRoi: BigDecimal!     # Current ROI calculation (portfolio-based unrealized PnL)
-  roi: BigDecimal!              # NEW: Position-based ROI from closed positions (actual ROI)
+  unrealisedPnL: BigDecimal!    # Current ROI calculation (portfolio-based unrealized PnL)
+  roi: BigDecimal!              # Position-based ROI from closed positions (actual ROI)
   apr: BigDecimal!              # Annualized Percentage Return (calculated from roi)
-  projectedAPR: BigDecimal!     # NEW: APR calculated from projectedRoi (portfolio-based)
+  projectedUnrealisedPnL: BigDecimal!  # APR calculated from unrealisedPnL (portfolio-based)
   
   # ETH-adjusted performance metrics
   ethAdjustedRoi: BigDecimal!              # ETH-adjusted actual ROI
   ethAdjustedApr: BigDecimal!              # ETH-adjusted actual APR  
-  ethAdjustedProjectedRoi: BigDecimal!     # ETH-adjusted projected ROI
-  ethAdjustedProjectedApr: BigDecimal!     # ETH-adjusted projected APR
+  ethAdjustedUnrealisedPnL: BigDecimal!    # ETH-adjusted unrealised PnL
+  ethAdjustedProjectedUnrealisedPnL: BigDecimal!  # ETH-adjusted projected unrealised PnL
 
   # ETH price tracking
   firstFundingEthPrice: BigDecimal!        # ETH price at first funding
@@ -205,13 +205,14 @@ type AgentPortfolioSnapshot @entity(immutable: true) {
   # Performance at Snapshot
   roi: BigDecimal!              
   apr: BigDecimal!              
-  projectedAPR: BigDecimal!     # NEW: APR from projectedRoi at snapshot time
+  unrealisedPnL: BigDecimal!    # Unrealised PnL at snapshot time
+  projectedUnrealisedPnL: BigDecimal!  # Projected unrealised PnL at snapshot time
   
   # ETH-adjusted metrics for historical snapshots
   ethAdjustedRoi: BigDecimal!
   ethAdjustedApr: BigDecimal!
-  ethAdjustedProjectedRoi: BigDecimal!
-  ethAdjustedProjectedApr: BigDecimal!
+  ethAdjustedUnrealisedPnL: BigDecimal!
+  ethAdjustedProjectedUnrealisedPnL: BigDecimal!
   
   # Metadata
   timestamp: BigInt!            # When snapshot was taken
@@ -261,24 +262,26 @@ type DailyPopulationMetric @entity(immutable: true) {
   # Population Metrics
   medianPopulationROI: BigDecimal!  # Median of all agent ROI values
   medianPopulationAPR: BigDecimal!  # Median of all agent APR values
-  medianProjectedAPR: BigDecimal!   # NEW: Median of all agent projectedAPR values
+  medianUnrealisedPnL: BigDecimal!  # Median of all agent unrealised PnL values
+  medianProjectedUnrealisedPnL: BigDecimal!  # Median of all agent projected unrealised PnL values
   
   # ETH-adjusted population metrics
   medianEthAdjustedROI: BigDecimal!        # Median ETH-adjusted actual ROI
   medianEthAdjustedAPR: BigDecimal!        # Median ETH-adjusted actual APR
-  medianEthAdjustedProjectedROI: BigDecimal!   # Median ETH-adjusted projected ROI
-  medianEthAdjustedProjectedAPR: BigDecimal!   # Median ETH-adjusted projected APR
+  medianEthAdjustedUnrealisedPnL: BigDecimal!   # Median ETH-adjusted unrealised PnL
+  medianEthAdjustedProjectedUnrealisedPnL: BigDecimal!   # Median ETH-adjusted projected unrealised PnL
   
   # 7-Day Simple Moving Averages
   sma7dROI: BigDecimal!             # 7-day SMA of median population ROI
   sma7dAPR: BigDecimal!             # 7-day SMA of median population APR
-  sma7dProjectedAPR: BigDecimal!    # NEW: 7-day SMA of median projected APR
+  sma7dUnrealisedPnL: BigDecimal!   # 7-day SMA of median unrealised PnL
+  sma7dProjectedUnrealisedPnL: BigDecimal!  # 7-day SMA of median projected unrealised PnL
   
   # 7-day Simple Moving Averages for ETH-adjusted metrics
   sma7dEthAdjustedROI: BigDecimal!
   sma7dEthAdjustedAPR: BigDecimal!
-  sma7dEthAdjustedProjectedROI: BigDecimal!
-  sma7dEthAdjustedProjectedAPR: BigDecimal!
+  sma7dEthAdjustedUnrealisedPnL: BigDecimal!
+  sma7dEthAdjustedProjectedUnrealisedPnL: BigDecimal!
   
   # Metadata
   timestamp: BigInt!                # UTC midnight timestamp
@@ -288,13 +291,14 @@ type DailyPopulationMetric @entity(immutable: true) {
   # Historical Data (for SMA calculation)
   historicalMedianROI: [BigDecimal!]!  # Last 7 days of median ROI values
   historicalMedianAPR: [BigDecimal!]!  # Last 7 days of median APR values
-  historicalMedianProjectedAPR: [BigDecimal!]!  # NEW: Last 7 days of median projected APR values
+  historicalMedianUnrealisedPnL: [BigDecimal!]!  # Last 7 days of median unrealised PnL values
+  historicalMedianProjectedUnrealisedPnL: [BigDecimal!]!  # Last 7 days of median projected unrealised PnL values
   
   # Historical arrays for ETH-adjusted SMA calculations
   historicalMedianEthAdjustedROI: [BigDecimal!]!
   historicalMedianEthAdjustedAPR: [BigDecimal!]!
-  historicalMedianEthAdjustedProjectedROI: [BigDecimal!]!
-  historicalMedianEthAdjustedProjectedAPR: [BigDecimal!]!
+  historicalMedianEthAdjustedUnrealisedPnL: [BigDecimal!]!
+  historicalMedianEthAdjustedProjectedUnrealisedPnL: [BigDecimal!]!
 }
 
 # Swap transaction tracking
