@@ -16,26 +16,26 @@ import { getEthUsd } from "./common"
 // ETH-adjusted metrics calculation class
 class EthAdjustedMetrics {
   ethAdjustedActualROI: BigDecimal
-  ethAdjustedProjectedROI: BigDecimal
+  ethAdjustedUnrealisedPnL: BigDecimal
   ethAdjustedActualAPR: BigDecimal
-  ethAdjustedProjectedAPR: BigDecimal
+  ethAdjustedProjectedUnrealisedPnL: BigDecimal
   currentEthPrice: BigDecimal
   firstFundingEthPrice: BigDecimal
   ethDelta: BigDecimal
   
   constructor(
     ethAdjustedActualROI: BigDecimal,
-    ethAdjustedProjectedROI: BigDecimal,
+    ethAdjustedUnrealisedPnL: BigDecimal,
     ethAdjustedActualAPR: BigDecimal,
-    ethAdjustedProjectedAPR: BigDecimal,
+    ethAdjustedProjectedUnrealisedPnL: BigDecimal,
     currentEthPrice: BigDecimal,
     firstFundingEthPrice: BigDecimal,
     ethDelta: BigDecimal
   ) {
     this.ethAdjustedActualROI = ethAdjustedActualROI
-    this.ethAdjustedProjectedROI = ethAdjustedProjectedROI
+    this.ethAdjustedUnrealisedPnL = ethAdjustedUnrealisedPnL
     this.ethAdjustedActualAPR = ethAdjustedActualAPR
-    this.ethAdjustedProjectedAPR = ethAdjustedProjectedAPR
+    this.ethAdjustedProjectedUnrealisedPnL = ethAdjustedProjectedUnrealisedPnL
     this.currentEthPrice = currentEthPrice
     this.firstFundingEthPrice = firstFundingEthPrice
     this.ethDelta = ethDelta
@@ -67,9 +67,9 @@ function createBlockFromTimestamp(timestamp: BigInt): ethereum.Block {
 function calculateEthAdjustedMetrics(
   portfolio: AgentPortfolio,
   actualROI: BigDecimal,
-  projectedROI: BigDecimal,
+  unrealisedPnL: BigDecimal,
   actualAPR: BigDecimal,
-  projectedAPR: BigDecimal,
+  projectedUnrealisedPnL: BigDecimal,
   block: ethereum.Block
 ): EthAdjustedMetrics {
   // Get current ETH price
@@ -88,13 +88,13 @@ function calculateEthAdjustedMetrics(
   
   // Calculate ETH-adjusted ROI: ROI - ETHdelta
   let ethAdjustedActualROI = actualROI.minus(ethDelta)
-  let ethAdjustedProjectedROI = projectedROI.minus(ethDelta)
+  let ethAdjustedUnrealisedPnL = unrealisedPnL.minus(ethDelta)
   
   // CORRECTED: Calculate ETH-adjusted APR from ETH-adjusted ROI (not directly from ETH delta)
   // Get the time period for APR calculation
   let timestampForAPR = portfolio.firstTradingTimestamp
   let ethAdjustedActualAPR = BigDecimal.zero()
-  let ethAdjustedProjectedAPR = BigDecimal.zero()
+  let ethAdjustedProjectedUnrealisedPnL = BigDecimal.zero()
   
   if (timestampForAPR.gt(BigInt.zero())) {
     let secondsSinceStart = block.timestamp.minus(timestampForAPR)
@@ -104,15 +104,15 @@ function calculateEthAdjustedMetrics(
       // APR = ETH-adjusted ROI * (365 / days_invested)
       let annualizationFactor = BigDecimal.fromString("365").div(daysSinceStart)
       ethAdjustedActualAPR = ethAdjustedActualROI.times(annualizationFactor)
-      ethAdjustedProjectedAPR = ethAdjustedProjectedROI.times(annualizationFactor)
+      ethAdjustedProjectedUnrealisedPnL = ethAdjustedUnrealisedPnL.times(annualizationFactor)
     }
   }
   
   return new EthAdjustedMetrics(
     ethAdjustedActualROI,
-    ethAdjustedProjectedROI,
+    ethAdjustedUnrealisedPnL,
     ethAdjustedActualAPR,
-    ethAdjustedProjectedAPR,
+    ethAdjustedProjectedUnrealisedPnL,
     currentEthPrice,
     firstFundingEthPrice,
     ethDelta
@@ -265,9 +265,9 @@ export function calculatePortfolioMetrics(
   let ethAdjustedMetrics = calculateEthAdjustedMetrics(
     portfolio,
     actualROI,
-    roi,  // projectedROI (portfolio-based)
+    roi,  // unrealisedPnL (portfolio-based)
     actualAPR,
-    apr,  // projectedAPR (portfolio-based)
+    apr,  // projectedUnrealisedPnL (portfolio-based)
     block
   )
   
@@ -285,8 +285,8 @@ export function calculatePortfolioMetrics(
   // Update portfolio with ETH-adjusted values
   portfolio.ethAdjustedRoi = ethAdjustedMetrics.ethAdjustedActualROI
   portfolio.ethAdjustedApr = ethAdjustedMetrics.ethAdjustedActualAPR
-  portfolio.ethAdjustedUnrealisedPnL = ethAdjustedMetrics.ethAdjustedProjectedROI
-  portfolio.ethAdjustedProjectedUnrealisedPnL = ethAdjustedMetrics.ethAdjustedProjectedAPR
+  portfolio.ethAdjustedUnrealisedPnL = ethAdjustedMetrics.ethAdjustedUnrealisedPnL
+  portfolio.ethAdjustedProjectedUnrealisedPnL = ethAdjustedMetrics.ethAdjustedProjectedUnrealisedPnL
   portfolio.currentEthPrice = ethAdjustedMetrics.currentEthPrice
   
   // firstFundingEthPrice is set in updateFundingBalance or registration fallback
