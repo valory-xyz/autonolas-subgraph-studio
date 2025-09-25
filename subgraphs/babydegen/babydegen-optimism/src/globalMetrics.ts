@@ -1,5 +1,5 @@
 import { BigDecimal, BigInt, Bytes, ethereum, log } from "@graphprotocol/graph-ts";
-import { DailyPopulationMetric, AgentPortfolioSnapshot, ServiceRegistry, AgentPortfolio } from "../../../../generated/schema";
+import { DailyPopulationMetric, AgentPortfolioSnapshot, ServiceRegistry, AgentPortfolio, FundingBalance, Service } from "../../../../generated/schema";
 
 /**
  * Determines if an agent snapshot should be excluded from projected ROI calculations
@@ -406,6 +406,18 @@ export function updateDailyPopulationMetricEntityWithEthAdjusted(
   dailyPopulationMetric.historicalMedianEthAdjustedUnrealisedPnL = historicalEthAdjustedUnrealisedPnL;
   dailyPopulationMetric.historicalMedianEthAdjustedProjectedUnrealisedPnL = historicalEthAdjustedProjectedUnrealisedPnL;
   
+  // Load all services from the registry to get service addresses for staking calculations
+  let registryId = Bytes.fromUTF8("registry");
+  let serviceRegistry = ServiceRegistry.load(registryId);
+  let serviceAddresses: Bytes[] = [];
+  if (serviceRegistry) {
+    serviceAddresses = serviceRegistry.serviceAddresses;
+  }
+  
+  // NEW: Set staking APR calculation support fields
+  dailyPopulationMetric.totalFundedAUM = calculateTotalFundedAUM(serviceAddresses);
+  dailyPopulationMetric.averageAgentDaysActive = calculateAverageAgentDaysActive(block);
+  
   dailyPopulationMetric.save();
   
   log.info("Created DailyPopulationMetric entity for day timestamp {} with {} agents, median ROI: {}, median APR: {}, median projected unrealised PnL: {}, ETH-adjusted ROI: {}, ETH-adjusted APR: {}", [
@@ -417,6 +429,98 @@ export function updateDailyPopulationMetricEntityWithEthAdjusted(
     medianEthAdjustedROI.toString(),
     medianEthAdjustedAPR.toString()
   ]);
+}
+
+/**
+ * Calculate total funded AUM across all active BabyDegen services
+ * @param serviceAddresses Array of service addresses
+ * @returns Total funded AUM as BigDecimal
+ */
+export function calculateTotalFundedAUM(serviceAddresses: Bytes[]): BigDecimal {
+  let totalAUM = BigDecimal.zero();
+  
+  for (let i = 0; i < serviceAddresses.length; i++) {
+    let serviceAddress = serviceAddresses[i];
+    let fundingBalance = FundingBalance.load(serviceAddress);
+    
+    if (fundingBalance) {
+      // Use netUsd (total funding balance) for AUM calculation
+      totalAUM = totalAUM.plus(fundingBalance.netUsd);
+    }
+  }
+  
+  return totalAUM;
+}
+
+/**
+ * Calculate average agent days active for annualization
+ * @param block Current ethereum block
+ * @returns Average days active as BigDecimal
+ */
+export function calculateAverageAgentDaysActive(block: ethereum.Block): BigDecimal {
+  let totalDaysActive = BigDecimal.zero();
+  let activeAgentCount = 0;
+  
+  // Load all services from the registry
+  let registryId = Bytes.fromUTF8("registry");
+  let serviceRegistry = ServiceRegistry.load(registryId);
+  if (!serviceRegistry) {
+    log.warning("ServiceRegistry not found when calculating average agent days active", []);
+    return BigDecimal.zero();
+  }
+  
+  // For each service, calculate days since first trading/funding
+  for (let i = 0; i < serviceRegistry.serviceAddresses.length; i++) {
+    let serviceAddress = serviceRegistry.serviceAddresses[i];
+    
+    // Load the portfolio for this service
+    let portfolio = AgentPortfolio.load(serviceAddress);
+    if (portfolio) {
+      let startTimestamp = portfolio.firstTradingTimestamp;
+      
+      // Fallback to service registration timestamp if no trading activity
+      if (startTimestamp.equals(BigInt.zero())) {
+        let service = Service.load(serviceAddress);
+        if (service && service.latestRegistrationTimestamp.gt(BigInt.zero())) {
+          startTimestamp = service.latestRegistrationTimestamp;
+          
+          log.debug("Using service registration timestamp for agent {} - no trading activity yet", [
+            serviceAddress.toHexString()
+          ]);
+        }
+      }
+      
+      // Calculate days active if we have a valid start timestamp
+      if (startTimestamp.gt(BigInt.zero())) {
+        let secondsActive = block.timestamp.minus(startTimestamp);
+        let daysActive = secondsActive.toBigDecimal().div(BigDecimal.fromString("86400")); // 86400 seconds per day
+        
+        // Only include agents with at least some activity (> 0 days)
+        if (daysActive.gt(BigDecimal.zero())) {
+          totalDaysActive = totalDaysActive.plus(daysActive);
+          activeAgentCount++;
+          
+          log.debug("Agent {} has been active for {} days", [
+            serviceAddress.toHexString(),
+            daysActive.toString()
+          ]);
+        }
+      }
+    }
+  }
+  
+  // Calculate average
+  let averageDaysActive = BigDecimal.zero();
+  if (activeAgentCount > 0) {
+    averageDaysActive = totalDaysActive.div(BigDecimal.fromString(activeAgentCount.toString()));
+  }
+  
+  log.info("Calculated average agent days active: {} days across {} active agents", [
+    averageDaysActive.toString(),
+    activeAgentCount.toString()
+  ]);
+  
+  return averageDaysActive;
 }
 
 /**
@@ -571,6 +675,18 @@ export function calculateGlobalMetrics(block: ethereum.Block): void {
   // Calculate 7-day SMAs for unrealised PnL metrics
   let sma7dUnrealisedPnL = calculate7DaysSMA(updatedHistoricalUnrealisedPnL);
   let sma7dProjectedUnrealisedPnL = calculate7DaysSMA(updatedHistoricalProjectedUnrealisedPnL);
+  
+  // Load all services from the registry to get service addresses
+  let registryId = Bytes.fromUTF8("registry");
+  let serviceRegistry = ServiceRegistry.load(registryId);
+  let serviceAddresses: Bytes[] = [];
+  if (serviceRegistry) {
+    serviceAddresses = serviceRegistry.serviceAddresses;
+  }
+  
+  // NEW: Calculate staking APR support fields
+  let totalFundedAUM = calculateTotalFundedAUM(serviceAddresses);
+  let averageAgentDaysActive = calculateAverageAgentDaysActive(block);
   
   // Create and save DailyPopulationMetric entity with ETH-adjusted metrics
   updateDailyPopulationMetricEntityWithEthAdjusted(

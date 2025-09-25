@@ -274,6 +274,10 @@ type DailyPopulationMetric @entity(immutable: true) {
   medianEthAdjustedUnrealisedPnL: BigDecimal!   # Median ETH-adjusted unrealised PnL
   medianEthAdjustedProjectedUnrealisedPnL: BigDecimal!   # Median ETH-adjusted projected unrealised PnL
   
+  # Staking APR Calculation Support
+  totalFundedAUM: BigDecimal!       # Sum of all FundingBalance.totalInUsd across active services
+  averageAgentDaysActive: BigDecimal!  # Average time since agents started (for annualization)
+  
   # 7-Day Simple Moving Averages
   sma7dROI: BigDecimal!             # 7-day SMA of median population ROI
   sma7dAPR: BigDecimal!             # 7-day SMA of median population APR
