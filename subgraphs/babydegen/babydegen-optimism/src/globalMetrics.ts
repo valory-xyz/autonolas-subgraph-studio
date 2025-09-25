@@ -512,7 +512,8 @@ export function calculateGlobalMetrics(block: ethereum.Block): void {
   let previousDailyPopulationMetric = getPreviousDailyPopulationMetric(dayTimestamp);
   let historicalROI: BigDecimal[] = [];
   let historicalAPR: BigDecimal[] = [];
-  let historicalProjectedAPR: BigDecimal[] = [];
+  let historicalUnrealisedPnL: BigDecimal[] = [];
+  let historicalProjectedUnrealisedPnL: BigDecimal[] = [];
   
   // NEW: Initialize ETH-adjusted historical arrays
   let historicalEthAdjustedROI: BigDecimal[] = [];
@@ -523,7 +524,8 @@ export function calculateGlobalMetrics(block: ethereum.Block): void {
   if (previousDailyPopulationMetric) {
     historicalROI = previousDailyPopulationMetric.historicalMedianROI;
     historicalAPR = previousDailyPopulationMetric.historicalMedianAPR;
-    historicalProjectedAPR = previousDailyPopulationMetric.historicalMedianProjectedUnrealisedPnL;
+    historicalUnrealisedPnL = previousDailyPopulationMetric.historicalMedianUnrealisedPnL;
+    historicalProjectedUnrealisedPnL = previousDailyPopulationMetric.historicalMedianProjectedUnrealisedPnL;
     
     // NEW: Load ETH-adjusted historical data
     historicalEthAdjustedROI = previousDailyPopulationMetric.historicalMedianEthAdjustedROI;
@@ -537,8 +539,11 @@ export function calculateGlobalMetrics(block: ethereum.Block): void {
   let updatedHistoricalROI = updatedHistorical[0];
   let updatedHistoricalAPR = updatedHistorical[1];
   
+  // Update unrealised PnL historical array
+  let updatedHistoricalUnrealisedPnL = updateProjectedAPRHistoricalArray(historicalUnrealisedPnL, medianUnrealisedPnL);
+  
   // Update projected unrealised PnL historical array
-  let updatedHistoricalProjectedAPR = updateProjectedAPRHistoricalArray(historicalProjectedAPR, medianProjectedUnrealisedPnL);
+  let updatedHistoricalProjectedUnrealisedPnL = updateProjectedAPRHistoricalArray(historicalProjectedUnrealisedPnL, medianProjectedUnrealisedPnL);
   
   // NEW: Update historical arrays with ETH-adjusted values
   let updatedHistoricalEthAdjusted = updateHistoricalArraysEthAdjusted(
@@ -555,7 +560,7 @@ export function calculateGlobalMetrics(block: ethereum.Block): void {
   // Calculate 7-day simple moving averages
   let sma7dROI = calculate7DaysSMA(updatedHistoricalROI);
   let sma7dAPR = calculate7DaysSMA(updatedHistoricalAPR);
-  let sma7dProjectedAPR = calculate7DaysSMA(updatedHistoricalProjectedAPR);
+  let sma7dProjectedAPR = calculate7DaysSMA(updatedHistoricalProjectedUnrealisedPnL);
   
   // NEW: Calculate 7-day SMAs for ETH-adjusted metrics
   let sma7dEthAdjustedROI = calculate7DaysSMA(updatedHistoricalEthAdjusted[0]);
@@ -564,8 +569,8 @@ export function calculateGlobalMetrics(block: ethereum.Block): void {
   let sma7dEthAdjustedProjectedAPR = calculate7DaysSMA(updatedHistoricalEthAdjusted[3]);
   
   // Calculate 7-day SMAs for unrealised PnL metrics
-  let sma7dUnrealisedPnL = calculate7DaysSMA(updatedHistoricalProjectedAPR);
-  let sma7dProjectedUnrealisedPnL = calculate7DaysSMA(updatedHistoricalProjectedAPR);
+  let sma7dUnrealisedPnL = calculate7DaysSMA(updatedHistoricalUnrealisedPnL);
+  let sma7dProjectedUnrealisedPnL = calculate7DaysSMA(updatedHistoricalProjectedUnrealisedPnL);
   
   // Create and save DailyPopulationMetric entity with ETH-adjusted metrics
   updateDailyPopulationMetricEntityWithEthAdjusted(
@@ -579,8 +584,8 @@ export function calculateGlobalMetrics(block: ethereum.Block): void {
     sma7dProjectedUnrealisedPnL,
     updatedHistoricalROI,
     updatedHistoricalAPR,
-    updatedHistoricalProjectedAPR,
-    updatedHistoricalProjectedAPR,
+    updatedHistoricalUnrealisedPnL,
+    updatedHistoricalProjectedUnrealisedPnL,
     medianEthAdjustedROI,
     medianEthAdjustedAPR,
     medianEthAdjustedProjectedROI,

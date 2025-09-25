@@ -155,10 +155,11 @@ type AgentPortfolio @entity(immutable: false) {
   service: Service!             # Link to service
   
   # Portfolio Values
-  finalValue: BigDecimal!       # Total current value (positions + uninvested)
+  finalValue: BigDecimal!       # Total current value (positions + uninvested + withdrawn)
   initialValue: BigDecimal!     # Initial investment from FundingBalance
   positionsValue: BigDecimal!   # Current value of all active positions
   uninvestedValue: BigDecimal!  # Token balances in safe
+  totalWithdrawnUsd: BigDecimal! # Total amount withdrawn to EOAs
   
   # Performance Metrics (ENHANCED)
   unrealisedPnL: BigDecimal!    # Current ROI calculation (portfolio-based unrealized PnL)
@@ -202,6 +203,7 @@ type AgentPortfolioSnapshot @entity(immutable: true) {
   initialValue: BigDecimal!     
   positionsValue: BigDecimal!   
   uninvestedValue: BigDecimal!  
+  totalWithdrawnUsd: BigDecimal! # Total amount withdrawn to EOAs at snapshot time
   
   # Performance at Snapshot
   roi: BigDecimal!              
