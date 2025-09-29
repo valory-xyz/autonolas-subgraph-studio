@@ -469,6 +469,6 @@ type VeolasDepositor @entity(immutable: false) {
 
 type Global @entity(immutable: false) {
   id: ID!
-  holderCount: Int!
+  veolasHolderCount: Int!
   updatedAt: BigInt!
 }
