@@ -467,7 +467,7 @@ type VeolasDepositor @entity(immutable: false) {
   unlockTimestamp: BigInt!
 }
 
-type VeolasStats @entity(immutable: false) {
+type Global @entity(immutable: false) {
   id: ID!
   holderCount: Int!
   updatedAt: BigInt!
