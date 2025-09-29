@@ -11,12 +11,6 @@
       "startBlock": 17310019
     }
   },
-  "mode-mainnet": {
-    "StakingFactory": {
-      "address": "0x75D529FAe220bC8db714F0202193726b46881B76",
-      "startBlock": 14444647
-    }
-  },
   "optimism": {
     "StakingFactory": {
       "address": "0xa45E64d13A30a51b91ae0eb182e88a40e9b18eD8",
