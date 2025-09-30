@@ -1,8 +1,6 @@
-import { BigInt, store } from "@graphprotocol/graph-ts";
+import { BigInt } from "@graphprotocol/graph-ts";
 import { Deposit, Withdraw } from "../generated/veOLAS/veOLAS";
 import { Global, VeolasDepositor } from "../generated/schema";
-
-const BIGINT_ZERO = BigInt.fromI32(0);
 
 function getOrCreateGlobalStats(): Global {
   let stats = Global.load("");
@@ -10,7 +8,7 @@ function getOrCreateGlobalStats(): Global {
   if (stats == null) {
     stats = new Global("");
     stats.veolasHolderCount = 0;
-    stats.updatedAt = BIGINT_ZERO;
+    stats.updatedAt = BigInt.zero();
   }
 
   return stats;
@@ -18,31 +16,34 @@ function getOrCreateGlobalStats(): Global {
 
 export function handleDeposit(event: Deposit): void {
   let depositor = VeolasDepositor.load(event.params.account);
-  let isNewDepositor = false;
+  const isNewDepositor = depositor == null;
+  const wasInactive = depositor !== null && !depositor.isActive;
 
   if (depositor == null) {
     depositor = new VeolasDepositor(event.params.account);
-    isNewDepositor = true;
   }
 
   depositor.unlockTimestamp = event.params.locktime;
+  depositor.isActive = true;
   depositor.save();
 
-  let stats = getOrCreateGlobalStats();
-  if (isNewDepositor) {
+  if (isNewDepositor || wasInactive) {
+    let stats = getOrCreateGlobalStats();
     stats.veolasHolderCount = stats.veolasHolderCount + 1;
+    stats.updatedAt = event.block.timestamp;
+    stats.save();
   }
-  stats.updatedAt = event.block.timestamp;
-  stats.save();
 }
 
 export function handleWithdraw(event: Withdraw): void {
   let depositor = VeolasDepositor.load(event.params.account);
-  if (depositor != null) {
-    store.remove("VeolasDepositor", event.params.account.toHexString());
+  if (depositor != null && depositor.isActive) {
+    depositor.isActive = false;
+    depositor.save();
+
     let stats = getOrCreateGlobalStats();
     stats.veolasHolderCount = stats.veolasHolderCount - 1;
     stats.updatedAt = event.block.timestamp;
     stats.save();
   }
-} 
+}
