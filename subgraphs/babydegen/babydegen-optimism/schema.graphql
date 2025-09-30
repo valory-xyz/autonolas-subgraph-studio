@@ -1,0 +1,364 @@
+# Service discovery entities
+type Service @entity(immutable: false) {
+  id: Bytes!                          # Service safe address
+  serviceId: BigInt!
+  operatorSafe: Bytes!
+  serviceSafe: Bytes!
+  
+  latestRegistrationBlock: BigInt!
+  latestRegistrationTimestamp: BigInt!
+  latestRegistrationTxHash: Bytes!
+  
+  latestMultisigBlock: BigInt!
+  latestMultisigTimestamp: BigInt!
+  latestMultisigTxHash: Bytes!
+  
+  isActive: Boolean!
+  createdAt: BigInt!
+  updatedAt: BigInt!
+  
+  # Token balance tracking
+  balances: [TokenBalance!]! @derivedFrom(field: "service")
+  
+  # Position tracking
+  positions: [ProtocolPosition!]! @derivedFrom(field: "service")
+  positionIds: [String!]!             # Array of position IDs for iteration
+}
+
+type ServiceRegistration @entity(immutable: false) {
+  id: Bytes!                          # serviceId as string
+  serviceId: BigInt!
+  operatorSafe: Bytes!
+  registrationBlock: BigInt!
+  registrationTimestamp: BigInt!
+  registrationTxHash: Bytes!
+}
+
+type ServiceIndex @entity(immutable: false) {
+  id: Bytes!                          # serviceId as string
+  serviceId: BigInt!
+  currentServiceSafe: Bytes!          # Points to current Service entity
+}
+
+type AddressType @entity(immutable: false) {
+  id: Bytes!           # The address itself
+  isContract: Boolean! # true = contract, false = EOA
+  checkedAt: BigInt!   # Block number when first checked
+}
+
+type FundingBalance @entity(immutable: false) {
+  id: Bytes!
+  service: Service              # Link to service
+  totalInUsd: BigDecimal!
+  totalOutUsd: BigDecimal!
+  totalWithdrawnUsd: BigDecimal!  # NEW: Track USDC withdrawals to EOAs separately
+  netUsd: BigDecimal!
+  firstInTimestamp: BigInt!
+  lastChangeTs: BigInt!
+}
+
+type ProtocolPosition @entity(immutable: false) {
+  id: Bytes!                # "<agent>-<tokenId>"
+  agent: Bytes!             @index
+  service: Service          # Link to service
+  protocol: String!         @index   # "velodrome-cl"
+  pool: Bytes!
+  
+  # Position status
+  isActive: Boolean!        # true = open, false = closed
+  
+  # Current state (only updated for active positions)
+  usdCurrent: BigDecimal!   # Total USD value
+  token0: Bytes
+  token0Symbol: String      # Token0 symbol (e.g., "USDC")
+  amount0: BigDecimal       # Current token0 amount
+  amount0USD: BigDecimal!   # Current USD value of token0
+  token1: Bytes
+  token1Symbol: String      # Token1 symbol (e.g., "DAI")
+  amount1: BigDecimal       # Current token1 amount  
+  amount1USD: BigDecimal!   # Current USD value of token1
+  liquidity: BigInt
+  
+  # Velodrome-specific
+  tokenId: BigInt!          # NFT token ID
+  
+  # Static position metadata (cached to avoid RPC calls)
+  tickLower: Int!           # Lower tick boundary (never changes)
+  tickUpper: Int!           # Upper tick boundary (never changes)
+  tickSpacing: Int          # Tick spacing for the pool (never changes) - used by Velodrome CL
+  fee: Int                  # Fee tier for the pool (never changes) - used by Uniswap V3
+  
+  # Entry tracking
+  entryTxHash: Bytes!       # Transaction hash when position opened
+  entryTimestamp: BigInt!   # Block timestamp when opened
+  entryAmount0: BigDecimal! # Initial token0 amount
+  entryAmount0USD: BigDecimal! # Initial USD value of token0
+  entryAmount1: BigDecimal! # Initial token1 amount
+  entryAmount1USD: BigDecimal! # Initial USD value of token1
+  entryAmountUSD: BigDecimal! # Total initial USD value
+  
+  # Exit tracking (set when position closes)
+  exitTxHash: Bytes         # Transaction hash when position closed
+  exitTimestamp: BigInt     # Block timestamp when closed
+  exitAmount0: BigDecimal   # Final token0 amount withdrawn
+  exitAmount0USD: BigDecimal # Final USD value of token0 at closure
+  exitAmount1: BigDecimal   # Final token1 amount withdrawn
+  exitAmount1USD: BigDecimal # Final USD value of token1 at closure
+  exitAmountUSD: BigDecimal # Total final USD value at closure
+  
+  # Cost Tracking
+  totalCostsUSD: BigDecimal!        # Total costs for this position (slippage + fees)
+  swapSlippageUSD: BigDecimal!      # Slippage costs from associated swaps
+  
+  # Position ROI (for closed positions)
+  investmentUSD: BigDecimal!        # entryAmountUSD + totalCostsUSD
+  grossGainUSD: BigDecimal!         # exitAmountUSD (total amount received)
+  netGainUSD: BigDecimal!           # exitAmountUSD - investmentUSD (actual profit/loss)
+  positionROI: BigDecimal!          # netGainUSD / investmentUSD * 100
+}
+
+type PriceSource @entity(immutable: false) {
+  id: Bytes!                    # pool/oracle address
+  token: Token!
+  sourceType: String!           # "chainlink", "curve_3pool", "uniswap_v3", "velodrome_v2"
+  priority: Int!                # 1 = highest priority
+  isActive: Boolean!
+  lastUpdate: BigInt!
+  lastPrice: BigDecimal!
+  confidence: BigDecimal!       # 0-1 confidence score
+}
+
+type Token @entity(immutable: false) {
+  id: Bytes!                    # token address
+  symbol: String!
+  name: String!
+  decimals: BigInt!
+  derivedUSD: BigDecimal!       # Current best price
+  priceSources: [PriceSource!]! # Hardcoded price sources
+  lastPriceUpdate: BigInt!
+  priceConfidence: BigDecimal!  # Current price confidence level
+}
+
+type PriceUpdate @entity(immutable: true) {
+  id: Bytes!                    # tx hash + timestamp
+  token: Token!
+  priceUSD: BigDecimal!
+  source: PriceSource!
+  confidence: BigDecimal!
+  timestamp: BigInt!
+  block: BigInt!
+}
+
+# Portfolio tracking entities
+type AgentPortfolio @entity(immutable: false) {
+  id: Bytes!                    # Service safe address
+  service: Service!             # Link to service
+  
+  # Portfolio Values
+  finalValue: BigDecimal!       # Total current value (positions + uninvested + withdrawn)
+  initialValue: BigDecimal!     # Initial investment from FundingBalance
+  positionsValue: BigDecimal!   # Current value of all active positions
+  uninvestedValue: BigDecimal!  # Token balances in safe
+  totalWithdrawnUsd: BigDecimal! # Total amount withdrawn to EOAs
+  
+  # Performance Metrics (ENHANCED)
+  unrealisedPnL: BigDecimal!    # Current ROI calculation (portfolio-based unrealized PnL)
+  roi: BigDecimal!              # Position-based ROI from closed positions (actual ROI)
+  apr: BigDecimal!              # Annualized Percentage Return (calculated from roi)
+  projectedUnrealisedPnL: BigDecimal!  # APR calculated from unrealisedPnL (portfolio-based)
+  
+  # ETH-adjusted performance metrics
+  ethAdjustedRoi: BigDecimal!              # ETH-adjusted actual ROI
+  ethAdjustedApr: BigDecimal!              # ETH-adjusted actual APR  
+  ethAdjustedUnrealisedPnL: BigDecimal!    # ETH-adjusted unrealised PnL
+  ethAdjustedProjectedUnrealisedPnL: BigDecimal!  # ETH-adjusted projected unrealised PnL
+
+  # ETH price tracking
+  firstFundingEthPrice: BigDecimal!        # ETH price at first funding
+  currentEthPrice: BigDecimal!             # Current ETH price
+  
+  # Position-Based Aggregates (NEW)
+  totalInvestments: BigDecimal! # Sum of (entryAmountUSD + costs) for closed positions
+  totalGrossGains: BigDecimal!  # Sum of exitAmountUSD for closed positions
+  totalCosts: BigDecimal!       # Sum of all costs for closed positions
+  
+  # Timing
+  firstTradingTimestamp: BigInt! # When first position was created
+  lastUpdated: BigInt!          # Last portfolio update timestamp
+  lastSnapshotTimestamp: BigInt! # Last snapshot timestamp
+  lastSnapshotBlock: BigInt!    # Last snapshot block
+  
+  # Metadata
+  totalPositions: Int!          # Count of active positions
+  totalClosedPositions: Int!    # Count of closed positions
+}
+
+type AgentPortfolioSnapshot @entity(immutable: true) {
+  id: Bytes!                    # "<serviceSafe>-<timestamp>"
+  service: Service!             # Link to service
+  portfolio: AgentPortfolio!    # Link to main portfolio
+  
+  # Snapshot Values
+  finalValue: BigDecimal!       
+  initialValue: BigDecimal!     
+  positionsValue: BigDecimal!   
+  uninvestedValue: BigDecimal!  
+  totalWithdrawnUsd: BigDecimal! # Total amount withdrawn to EOAs at snapshot time
+  
+  # Performance at Snapshot
+  roi: BigDecimal!              
+  apr: BigDecimal!              
+  unrealisedPnL: BigDecimal!    # Unrealised PnL at snapshot time
+  projectedUnrealisedPnL: BigDecimal!  # Projected unrealised PnL at snapshot time
+  
+  # ETH-adjusted metrics for historical snapshots
+  ethAdjustedRoi: BigDecimal!
+  ethAdjustedApr: BigDecimal!
+  ethAdjustedUnrealisedPnL: BigDecimal!
+  ethAdjustedProjectedUnrealisedPnL: BigDecimal!
+  
+  # Metadata
+  timestamp: BigInt!            # When snapshot was taken
+  block: BigInt!                # Block number
+  totalPositions: Int!          
+  totalClosedPositions: Int!    
+  
+  # Position details at snapshot time
+  positionIds: [String!]        # Array of ProtocolPosition IDs that were active at snapshot
+}
+
+type TokenBalance @entity(immutable: false) {
+  id: Bytes!                    # "<serviceSafe>-<token>"
+  service: Service!             # Link to service
+  token: Bytes!                 # Token address
+  symbol: String!               # Token symbol
+  decimals: Int!                # Token decimals
+  
+  # Balance Data
+  balance: BigDecimal!          # Token amount
+  balanceUSD: BigDecimal!       # USD value
+  
+  # Metadata
+  lastUpdated: BigInt!          # Last update timestamp
+  lastBlock: BigInt!            # Last update block
+}
+
+# Temporary storage for pending positions that need mint data
+type PendingMintPosition @entity(immutable: false) {
+  id: String!                   # "<txHash>-<poolAddress>"
+  txHash: Bytes!                # Transaction hash
+  poolAddress: Bytes!           # Pool address
+  positionId: Bytes!            # Position ID that needs mint amounts
+  recipient: Bytes!             # The recipient address (for validation)
+}
+
+# Registry to track all services for snapshot scheduling
+type ServiceRegistry @entity(immutable: false) {
+  id: Bytes!                    # "registry" - singleton
+  serviceAddresses: [Bytes!]!   # Array of all service addresses
+}
+
+# Daily population-level metrics entity
+type DailyPopulationMetric @entity(immutable: true) {
+  id: Bytes!                        # "<timestamp>" for daily snapshots
+  
+  # Population Metrics
+  medianPopulationROI: BigDecimal!  # Median of all agent ROI values
+  medianPopulationAPR: BigDecimal!  # Median of all agent APR values
+  medianUnrealisedPnL: BigDecimal!  # Median of all agent unrealised PnL values
+  medianProjectedUnrealisedPnL: BigDecimal!  # Median of all agent projected unrealised PnL values
+  
+  # ETH-adjusted population metrics
+  medianEthAdjustedROI: BigDecimal!        # Median ETH-adjusted actual ROI
+  medianEthAdjustedAPR: BigDecimal!        # Median ETH-adjusted actual APR
+  medianEthAdjustedUnrealisedPnL: BigDecimal!   # Median ETH-adjusted unrealised PnL
+  medianEthAdjustedProjectedUnrealisedPnL: BigDecimal!   # Median ETH-adjusted projected unrealised PnL
+  
+  # Staking APR Calculation Support
+  totalFundedAUM: BigDecimal!       # Sum of all FundingBalance.totalInUsd across active services
+  averageAgentDaysActive: BigDecimal!  # Average time since agents started (for annualization)
+  
+  # 7-Day Simple Moving Averages
+  sma7dROI: BigDecimal!             # 7-day SMA of median population ROI
+  sma7dAPR: BigDecimal!             # 7-day SMA of median population APR
+  sma7dUnrealisedPnL: BigDecimal!   # 7-day SMA of median unrealised PnL
+  sma7dProjectedUnrealisedPnL: BigDecimal!  # 7-day SMA of median projected unrealised PnL
+  
+  # 7-day Simple Moving Averages for ETH-adjusted metrics
+  sma7dEthAdjustedROI: BigDecimal!
+  sma7dEthAdjustedAPR: BigDecimal!
+  sma7dEthAdjustedUnrealisedPnL: BigDecimal!
+  sma7dEthAdjustedProjectedUnrealisedPnL: BigDecimal!
+  
+  # Metadata
+  timestamp: BigInt!                # UTC midnight timestamp
+  block: BigInt!                    # Block number when calculated
+  totalAgents: Int!                 # Number of agents included in calculation
+  
+  # Historical Data (for SMA calculation)
+  historicalMedianROI: [BigDecimal!]!  # Last 7 days of median ROI values
+  historicalMedianAPR: [BigDecimal!]!  # Last 7 days of median APR values
+  historicalMedianUnrealisedPnL: [BigDecimal!]!  # Last 7 days of median unrealised PnL values
+  historicalMedianProjectedUnrealisedPnL: [BigDecimal!]!  # Last 7 days of median projected unrealised PnL values
+  
+  # Historical arrays for ETH-adjusted SMA calculations
+  historicalMedianEthAdjustedROI: [BigDecimal!]!
+  historicalMedianEthAdjustedAPR: [BigDecimal!]!
+  historicalMedianEthAdjustedUnrealisedPnL: [BigDecimal!]!
+  historicalMedianEthAdjustedProjectedUnrealisedPnL: [BigDecimal!]!
+}
+
+# Swap transaction tracking
+type SwapTransaction @entity(immutable: true) {
+  id: Bytes!                        # "<txHash>-<logIndex>"
+  agent: Bytes!                     # Service safe address
+  transactionId: Bytes!             # LiFi transaction ID
+  txHash: Bytes!                    # Transaction hash
+  timestamp: BigInt!                # Block timestamp
+  block: BigInt!                    # Block number
+  
+  # Swap Details
+  fromAssetId: Bytes!               # Input token address
+  toAssetId: Bytes!                 # Output token address
+  fromAmount: BigInt!               # Input amount (wei)
+  toAmount: BigInt!                 # Output amount (wei)
+  fromAmountUSD: BigDecimal!        # Input amount in USD
+  toAmountUSD: BigDecimal!          # Output amount in USD
+  
+  # Slippage Calculation
+  expectedToAmountUSD: BigDecimal!  # Expected output amount in USD (1:1 if stablecoin)
+  slippageUSD: BigDecimal!          # Slippage in USD (expected - actual)
+  slippagePercentage: BigDecimal!   # Slippage percentage
+  
+  # Association Status
+  isAssociated: Boolean!            # Whether linked to position entry
+  expiresAt: BigInt!                # Cleanup timestamp (timestamp + 20 minutes)
+}
+
+# Association between swaps and position entries
+type SwapToEntryAssociation @entity(immutable: true) {
+  id: Bytes!                        # "<positionId>"
+  position: ProtocolPosition!       # Associated position
+  swaps: [SwapTransaction!]!        # Associated swap transactions
+  totalSlippageUSD: BigDecimal!     # Total slippage cost
+  associationTimestamp: BigInt!     # When association was created
+}
+
+# Flattened swap buffer for compiler-safe association (single entity per agent)
+type AgentSwapBuffer @entity(immutable: false) {
+  id: Bytes!                        # agentAddress
+  agent: Bytes!                     # Service safe address
+  
+  # Flattened swap data (last 4 time buckets as JSON strings)
+  bucket0Swaps: String!             # JSON string of swaps from current 5min bucket
+  bucket1Swaps: String!             # 5-10 minutes ago
+  bucket2Swaps: String!             # 10-15 minutes ago  
+  bucket3Swaps: String!             # 15-20 minutes ago
+  
+  # Aggregated data
+  totalSlippageUSD: BigDecimal!     # Total slippage across all buckets
+  
+  # Metadata
+  lastUpdated: BigInt!              # When last swap was added
+  currentBucketIndex: BigInt!       # Current time bucket index for rotation
+}

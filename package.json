@@ -12,6 +12,7 @@
     "codegen-governance": "graph codegen subgraphs/governance/subgraph.yaml",
     "codegen-staking": "graph codegen subgraphs/staking/subgraph.gnosis.yaml",
     "codegen-liquidity-eth": "graph codegen subgraphs/liquidity/liquidity-eth/subgraph.yaml -o subgraphs/liquidity/liquidity-eth/generated",
+    "codegen-babydegen-optimism": "graph codegen subgraphs/babydegen/babydegen-optimism/subgraph.yaml",
     "build-tokenomics:ethereum": "yarn codegen-tokenomics-l2 && yarn codegen-tokenomics-l1 && cp -r generated subgraphs/tokenomics/tokenomics-eth/ && graph build subgraphs/tokenomics/tokenomics-eth/subgraph.yaml",
     "build-tokenomics:arbitrum": "yarn codegen-tokenomics-l2 && graph build subgraphs/tokenomics/tokenomics-arbitrum/subgraph.arbitrum.yaml",
     "build-tokenomics:base": "yarn codegen-tokenomics-l2 && graph build subgraphs/tokenomics/tokenomics-base/subgraph.base.yaml",
@@ -39,6 +40,7 @@
     "build-predict:gnosis": "yarn codegen-predict && graph build subgraphs/predict/subgraph.yaml",
     "build-governance:mainnet": "yarn codegen-governance && graph build subgraphs/governance/subgraph.yaml",
     "build-liquidity:ethereum": "yarn codegen-liquidity-eth && graph build subgraphs/liquidity/liquidity-eth/subgraph.yaml",
+    "build-babydegen-optimism": "yarn codegen-babydegen-optimism && graph build subgraphs/babydegen/babydegen-optimism/subgraph.yaml",
     "deploy-studio": "node scripts/deploy-studio.js",
     "test": "graph test"
   },

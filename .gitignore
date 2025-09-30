@@ -6,3 +6,5 @@ generated-l2/
 
 .env
 /temp-garbage
+
+/subgraphs/babydegen/babydegen-optimism_test

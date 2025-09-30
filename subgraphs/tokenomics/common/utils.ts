@@ -80,4 +80,4 @@ export function handleTransferBalances(
   }
 
   token.save();
-} 
+}

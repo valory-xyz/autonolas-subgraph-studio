@@ -22,4 +22,4 @@ export function handleTransfer(event: Transfer): void {
     event.params.to,
     event.params.amount
   );
-} 
+}
