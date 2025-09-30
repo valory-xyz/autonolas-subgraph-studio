@@ -39,11 +39,6 @@ const networkTypes = {
         description: 'Gnosis Chain',
         buildCommand: 'yarn build-tokenomics:gnosis'
       },
-      'mode': {
-        path: 'subgraphs/tokenomics/tokenomics-mode/subgraph.mode.yaml',
-        description: 'Mode Network',
-        buildCommand: 'yarn build-tokenomics:mode'
-      },
       'optimism': {
         path: 'subgraphs/tokenomics/tokenomics-optimism/subgraph.optimism.yaml',
         description: 'Optimism Network',
@@ -89,11 +84,6 @@ const networkTypes = {
         path: 'subgraphs/service-registry/service-registry-celo/subgraph.celo.yaml',
         description: 'Celo Network',
         buildCommand: 'yarn build-service-registry:celo'
-      },
-      'mode': {
-        path: 'subgraphs/service-registry/service-registry-mode/subgraph.mode.yaml',
-        description: 'Mode Network',
-        buildCommand: 'yarn build-service-registry:mode'
       },
       'polygon': {
         path: 'subgraphs/service-registry/service-registry-polygon/subgraph.polygon.yaml',
@@ -190,11 +180,6 @@ const networkTypes = {
         description: 'Celo',
         buildCommand: 'yarn build-staking:celo'
       },
-      'mode': {
-        path: 'subgraphs/staking/subgraph.mode-mainnet.yaml',
-        description: 'Mode',
-        buildCommand: 'yarn build-staking:mode'
-      }
     }
   },
   '8': {
