@@ -1,0 +1,142 @@
+name: Deploy Subgraph
+
+run-name: Deploy ${{ inputs.subgraph }} ${{ inputs.version }} (${{ inputs.manifest }})
+
+on:
+  workflow_dispatch:
+    inputs:
+      subgraph:
+        description: "Subgraph (e.g., tokenomics)"
+        required: true
+        type: string
+      version:
+        description: "Version (e.g., v0.1.2)"
+        required: true
+        type: string
+      manifest:
+        description: "Manifest file (e.g., subgraph.yaml)"
+        required: true
+        type: string
+        default: "subgraph.yaml"
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Display deployment plan
+        run: |
+          echo "## 📋 Deployment Plan" >> $GITHUB_STEP_SUMMARY
+          echo "- Subgraph: \`${{ inputs.subgraph }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Version: \`${{ inputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Manifest: \`${{ inputs.manifest }}\`" >> $GITHUB_STEP_SUMMARY
+
+  validate-inputs:
+    needs: plan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Validate deployment branch
+        run: |
+          CURRENT_BRANCH="${GITHUB_REF#refs/heads/}"
+          if [ "$CURRENT_BRANCH" != "main" ]; then
+            echo "❌ Error: Deployments are only allowed from the 'main' branch"
+            echo "Current branch: $CURRENT_BRANCH"
+            exit 1
+          fi
+          echo "✅ Branch validation passed: deploying from main branch"
+
+      - name: Validate version format
+        run: |
+          if [[ ! "${{ inputs.version }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "❌ Error: Version must follow format vX.Y.Z (e.g., v0.1.2)"
+            exit 1
+          fi
+          echo "✅ Version format is valid: ${{ inputs.version }}"
+
+      - name: Validate subgraph folder exists
+        run: |
+          SUBGRAPH_PATH="subgraphs/${{ inputs.subgraph }}"
+
+          if [ ! -d "$SUBGRAPH_PATH" ]; then
+            echo "❌ Error: Subgraph folder '$SUBGRAPH_PATH' does not exist!"
+            echo ""
+            echo "Available subgraphs:"
+            ls -1 subgraphs/
+            exit 1
+          fi
+          echo "✅ Subgraph folder found: $SUBGRAPH_PATH"
+
+      - name: Validate manifest file exists
+        run: |
+          MANIFEST_PATH="subgraphs/${{ inputs.subgraph }}/${{ inputs.manifest }}"
+
+          if [ ! -f "$MANIFEST_PATH" ]; then
+            echo "❌ Error: Manifest file '$MANIFEST_PATH' does not exist!"
+            echo ""
+            echo "Available files in subgraphs/${{ inputs.subgraph }}:"
+            ls -1 subgraphs/${{ inputs.subgraph }}/ | grep subgraph
+            exit 1
+          fi
+          echo "✅ Manifest file found: $MANIFEST_PATH"
+
+  deploy:
+    needs: validate-inputs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "yarn"
+
+      - name: Prepare environment
+        run: |
+          # Export variables for subsequent steps
+          MANIFEST="${{ inputs.manifest }}"
+
+          # Extract network from manifest file name
+          if [[ "$MANIFEST" =~ ^subgraph\.(.+)\.yaml$ ]]; then
+            NETWORK="${BASH_REMATCH[1]}"
+          else
+            NETWORK=""
+          fi
+          echo "NETWORK=$NETWORK" >> $GITHUB_ENV
+
+          # Build Subgraph name
+          if [ -n "$NETWORK" ]; then
+            echo "SUBGRAPH_NAME=${{ inputs.subgraph }}-${NETWORK}" >> $GITHUB_ENV
+          else
+            echo "SUBGRAPH_NAME=${{ inputs.subgraph }}" >> $GITHUB_ENV
+          fi
+
+      - name: Install subgraph packages
+        run: yarn install
+
+      - name: Authenticate
+        run: yarn graph auth ${{ secrets.SUBGRAPH_STUDIO_KEY }}
+
+      - name: Generate code
+        run: yarn graph codegen subgraphs/${{ inputs.subgraph }}/${{ inputs.manifest }}
+
+      - name: Build subgraph
+        run: yarn graph build subgraphs/${{ inputs.subgraph }}/${{ inputs.manifest }}
+
+      - name: Deploy subgraph
+        run: |
+          yarn graph deploy \
+            ${{ env.SUBGRAPH_NAME }} \
+            subgraphs/${{ inputs.subgraph }}/${{ inputs.manifest }} \
+            -l ${{ inputs.version }}
+
+      - name: Deployment summary
+        if: success()
+        run: |
+          echo "✅ Subgraph deployed successfully"
+          echo "- Subgraph name: ${{ env.SUBGRAPH_NAME }}"
+          echo "- Version: ${{ inputs.version }}"
+          echo "- Manifest: ${{ inputs.manifest }}"
