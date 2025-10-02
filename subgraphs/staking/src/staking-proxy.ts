@@ -9,7 +9,7 @@ import {
   ServiceUnstaked as ServiceUnstakedEvent,
   ServicesEvicted as ServicesEvictedEvent,
   Withdraw as WithdrawEvent,
-} from "../../../generated/templates/StakingProxy/StakingProxy"
+} from "../generated/templates/StakingProxy/StakingProxy"
 import {
   Checkpoint,
   Deposit,
@@ -21,7 +21,7 @@ import {
   ServiceUnstaked,
   ServicesEvicted,
   Withdraw
-} from "../../../generated/schema"
+} from "../generated/schema"
 import { createRewardUpdate, getGlobal, getOlasForStaking } from "./utils"
 
 export function handleCheckpoint(event: CheckpointEvent): void {
