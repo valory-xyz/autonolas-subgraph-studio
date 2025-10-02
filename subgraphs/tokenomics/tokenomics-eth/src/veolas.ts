@@ -1,38 +1,51 @@
 import { BigInt } from "@graphprotocol/graph-ts";
 import { Deposit, Withdraw } from "../generated/veOLAS/veOLAS";
-import { Global, VeolasDepositor } from "../generated/schema";
-
-function getOrCreateGlobalStats(): Global {
-  let stats = Global.load("");
-
-  if (stats == null) {
-    stats = new Global("");
-    stats.veolasHolderCount = 0;
-    stats.updatedAt = BigInt.zero();
-  }
-
-  return stats;
-}
+import { VeolasDepositor, DepositorLock } from "../generated/schema";
+import { ethereum } from "@graphprotocol/graph-ts";
+import {
+  loadOrCreateDepositorLock,
+  getOrCreateGlobalMetrics,
+  updateDepositorLockForDeposit,
+  incrementGlobalCountersForDeposit,
+  updateDepositorLockForWithdraw,
+  decrementGlobalCountersForWithdraw,
+  getCurrentWeekStart,
+  loadLocksFromWeek,
+  getExpiredLocks,
+  updateDepositorLockForExpiry,
+} from "./veolas-utils";
 
 export function handleDeposit(event: Deposit): void {
   let depositor = VeolasDepositor.load(event.params.account);
-  const isNewDepositor = depositor == null;
-  const wasInactive = depositor !== null && !depositor.isActive;
-
   if (depositor == null) {
     depositor = new VeolasDepositor(event.params.account);
   }
-
   depositor.unlockTimestamp = event.params.locktime;
   depositor.isActive = true;
   depositor.save();
 
-  if (isNewDepositor || wasInactive) {
-    let stats = getOrCreateGlobalStats();
-    stats.veolasHolderCount = stats.veolasHolderCount + 1;
-    stats.updatedAt = event.block.timestamp;
-    stats.save();
-  }
+  let depositorLock = loadOrCreateDepositorLock(event.params.account);
+
+  const wasInactive = !depositorLock.isActive;
+  const wasLocked = depositorLock.isLocked;
+
+  depositorLock = updateDepositorLockForDeposit(
+    depositorLock,
+    event.params.locktime,
+    event.block.timestamp
+  );
+
+  depositorLock.save();
+
+  let globalMetrics = getOrCreateGlobalMetrics();
+  const becameLocked = depositorLock.isLocked && !wasLocked;
+  incrementGlobalCountersForDeposit(
+    globalMetrics,
+    wasInactive,
+    becameLocked,
+    event.block.timestamp
+  );
+  globalMetrics.save();
 }
 
 export function handleWithdraw(event: Withdraw): void {
@@ -40,10 +53,75 @@ export function handleWithdraw(event: Withdraw): void {
   if (depositor != null && depositor.isActive) {
     depositor.isActive = false;
     depositor.save();
+  }
 
-    let stats = getOrCreateGlobalStats();
-    stats.veolasHolderCount = stats.veolasHolderCount - 1;
-    stats.updatedAt = event.block.timestamp;
-    stats.save();
+  let depositorLock = loadOrCreateDepositorLock(event.params.account);
+
+  if (!depositorLock.isActive) {
+    return;
+  }
+
+  const wasLocked = depositorLock.isLocked;
+
+  depositorLock = updateDepositorLockForWithdraw(depositorLock);
+
+  depositorLock.save();
+
+  let globalMetrics = getOrCreateGlobalMetrics();
+  decrementGlobalCountersForWithdraw(
+    globalMetrics,
+    wasLocked,
+    event.block.timestamp
+  );
+  globalMetrics.save();
+}
+
+export function handleBlock(block: ethereum.Block): void {
+  const currentTimestamp = block.timestamp;
+
+  const currentWeekStart = getCurrentWeekStart(currentTimestamp);
+  const WEEK_SECONDS = BigInt.fromI32(7 * 24 * 60 * 60);
+  const weekStarts: BigInt[] = [currentWeekStart, currentWeekStart.minus(WEEK_SECONDS)];
+
+  for (let i = 0; i < weekStarts.length; i++) {
+    const locks = loadLocksFromWeek(weekStarts[i]);
+    if (locks.length == 0) {
+      continue;
+    }
+    const expiredLocks = getExpiredLocks(locks, currentTimestamp);
+    if (expiredLocks.length == 0) {
+      continue;
+    }
+    processExpiredLocksBatch(expiredLocks, currentTimestamp);
+  }
+}
+
+function processExpiredLocksBatch(
+  expiredLocks: DepositorLock[],
+  currentTimestamp: BigInt
+): void {
+  let globalMetrics = getOrCreateGlobalMetrics();
+
+  let expiredCount = 0;
+
+  for (let i = 0; i < expiredLocks.length; i++) {
+    let lock = expiredLocks[i];
+
+    if (lock.isActive && lock.isLocked) {
+      lock = updateDepositorLockForExpiry(lock);
+
+      lock.save();
+
+      expiredCount++;
+    }
+  }
+
+  if (expiredCount > 0) {
+    globalMetrics.activeLockedHolderCount =
+      globalMetrics.activeLockedHolderCount.minus(BigInt.fromI32(expiredCount));
+
+    globalMetrics.updatedAt = currentTimestamp;
+
+    globalMetrics.save();
   }
 }
