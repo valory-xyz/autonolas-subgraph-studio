@@ -294,6 +294,9 @@ dataSources:
       language: wasm/assemblyscript
       entities:
         - VeolasDepositor
+        - DepositorLock
+        - WeeklyDepositorsUnlock
+        - Global
       abis:
         - name: veOLAS
           file: ../../../abis/veOLAS.json
@@ -302,4 +305,6 @@ dataSources:
           handler: handleDeposit
         - event: Withdraw(indexed address,uint256,uint256)
           handler: handleWithdraw
+      blockHandlers:
+        - handler: handleBlock
       file: ./src/veolas.ts
