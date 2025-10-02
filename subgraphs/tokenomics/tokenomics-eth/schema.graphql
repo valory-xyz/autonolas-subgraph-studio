@@ -471,5 +471,21 @@ type VeolasDepositor @entity(immutable: false) {
 type Global @entity(immutable: false) {
   id: ID!
   veolasHolderCount: Int!
+  activeLockedHolderCount: BigInt! # non-expired locks count
   updatedAt: BigInt!
+}
+
+type DepositorLock @entity(immutable: false) {
+  id: ID! 
+  account: Bytes! 
+  unlockTimestamp: BigInt! 
+  isActive: Boolean! 
+  isLocked: Boolean! 
+  weeklyUnlock: WeeklyDepositorsUnlock 
+}
+
+type WeeklyDepositorsUnlock @entity(immutable: false) {
+  id: ID!
+  weeklyStartTimestamp: BigInt! 
+  locks: [DepositorLock!]! @derivedFrom(field: "weeklyUnlock")
 }
