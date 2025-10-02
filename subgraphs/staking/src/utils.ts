@@ -1,6 +1,6 @@
 import { Address, BigInt, Bytes } from "@graphprotocol/graph-ts";
-import { Global, RewardUpdate } from "../../../generated/schema";
-import { StakingProxy as StakingProxyContract } from "../../../generated/templates/StakingProxy/StakingProxy";
+import { Global, RewardUpdate } from "../generated/schema";
+import { StakingProxy as StakingProxyContract } from "../generated/templates/StakingProxy/StakingProxy";
 
 export function createRewardUpdate(
   id: string,
