@@ -2,6 +2,8 @@ import { Address, BigInt, Bytes } from "@graphprotocol/graph-ts";
 import { Global, RewardUpdate, DailyStakingGlobal } from "../../../generated/schema";
 import { StakingProxy as StakingProxyContract } from "../../../generated/templates/StakingProxy/StakingProxy";
 
+const ONE_DAY = BigInt.fromI32(86400);
+
 export function createRewardUpdate(
   id: string,
   blockNumber: BigInt,
@@ -41,7 +43,6 @@ export function getGlobal(): Global {
   return global;
 }
 
-const ONE_DAY = BigInt.fromI32(86400);
 
 export function dayStart(timestamp: BigInt): BigInt {
   return timestamp.div(ONE_DAY).times(ONE_DAY);
