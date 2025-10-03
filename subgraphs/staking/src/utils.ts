@@ -1,6 +1,6 @@
-import { Address, BigInt, Bytes } from "@graphprotocol/graph-ts";
-import { Global, RewardUpdate, DailyStakingGlobal } from "../../../generated/schema";
-import { StakingProxy as StakingProxyContract } from "../../../generated/templates/StakingProxy/StakingProxy";
+import { Address, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts";
+import { Global, RewardUpdate, DailyStakingGlobal } from "../generated/schema";
+import { StakingProxy as StakingProxyContract } from "../generated/templates/StakingProxy/StakingProxy";
 
 const ONE_DAY = BigInt.fromI32(86400);
 
@@ -44,18 +44,19 @@ export function getGlobal(): Global {
 }
 
 
-export function dayStart(timestamp: BigInt): BigInt {
+export function getDayTimestamp(timestamp: BigInt): BigInt {
   return timestamp.div(ONE_DAY).times(ONE_DAY);
 }
 
-export function upsertDailyStakingGlobal(dayTimestamp: BigInt, block: BigInt, totalRewards: BigInt): void {
+export function upsertDailyStakingGlobal(event: ethereum.Event, totalRewards: BigInt): void {
+  const dayTimestamp = getDayTimestamp(event.block.timestamp);
   const id = Bytes.fromUTF8(dayTimestamp.toString());
   let snapshot = DailyStakingGlobal.load(id);
   if (snapshot == null) {
     snapshot = new DailyStakingGlobal(id);
     snapshot.timestamp = dayTimestamp;
   }
-  snapshot.block = block;
+  snapshot.block = event.block.number;
   snapshot.totalRewards = totalRewards;
   snapshot.save();
 }

@@ -9,7 +9,7 @@ import {
   ServiceUnstaked as ServiceUnstakedEvent,
   ServicesEvicted as ServicesEvictedEvent,
   Withdraw as WithdrawEvent,
-} from "../../../generated/templates/StakingProxy/StakingProxy"
+} from "../generated/templates/StakingProxy/StakingProxy"
 import {
   Checkpoint,
   Deposit,
@@ -21,8 +21,8 @@ import {
   ServiceUnstaked,
   ServicesEvicted,
   Withdraw
-} from "../../../generated/schema"
-import { createRewardUpdate, getGlobal, getOlasForStaking, dayStart, upsertDailyStakingGlobal } from "./utils"
+} from "../generated/schema"
+import { createRewardUpdate, getGlobal, getOlasForStaking, upsertDailyStakingGlobal } from "./utils"
 
 export function handleCheckpoint(event: CheckpointEvent): void {
   let entity = new Checkpoint(
@@ -61,8 +61,7 @@ export function handleCheckpoint(event: CheckpointEvent): void {
   global.save();
 
   // Upsert daily snapshot with latest totals
-  const dayTimestamp = dayStart(event.block.timestamp);
-  upsertDailyStakingGlobal(dayTimestamp, event.block.number, global.totalRewards);
+  upsertDailyStakingGlobal(event, global.totalRewards);
 
   // Update claimable staking rewards
   createRewardUpdate(
