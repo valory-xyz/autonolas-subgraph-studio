@@ -465,4 +465,11 @@ type TokenHolder @entity(immutable: false) {
 type VeolasDepositor @entity(immutable: false) {
   id: Bytes!
   unlockTimestamp: BigInt!
+  isActive: Boolean!
+}
+
+type Global @entity(immutable: false) {
+  id: ID!
+  veolasHolderCount: Int!
+  updatedAt: BigInt!
 }
