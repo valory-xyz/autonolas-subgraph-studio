@@ -1,12 +1,16 @@
 name: Deploy Subgraph
 
-run-name: Deploy ${{ inputs.subgraph }} ${{ inputs.version }} (${{ inputs.manifest }})
+run-name: Deploy ${{ inputs.name }} ${{ inputs.version }}
 
 on:
   workflow_dispatch:
     inputs:
-      subgraph:
-        description: "Subgraph (e.g., tokenomics)"
+      folder:
+        description: "Subgraph folder (e.g., tokenomics)"
+        required: true
+        type: string
+      name:
+        description: "Subgraph name (e.g., olas-staking-mode)"
         required: true
         type: string
       version:
@@ -26,7 +30,8 @@ jobs:
       - name: Display deployment plan
         run: |
           echo "## 📋 Deployment Plan" >> $GITHUB_STEP_SUMMARY
-          echo "- Subgraph: \`${{ inputs.subgraph }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Subgraph folder: \`${{ inputs.folder }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Subgraph name: \`${{ inputs.name }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- Version: \`${{ inputs.version }}\`" >> $GITHUB_STEP_SUMMARY
           echo "- Manifest: \`${{ inputs.manifest }}\`" >> $GITHUB_STEP_SUMMARY
 
@@ -57,7 +62,7 @@ jobs:
 
       - name: Validate subgraph folder exists
         run: |
-          SUBGRAPH_PATH="subgraphs/${{ inputs.subgraph }}"
+          SUBGRAPH_PATH="subgraphs/${{ inputs.folder }}"
 
           if [ ! -d "$SUBGRAPH_PATH" ]; then
             echo "❌ Error: Subgraph folder '$SUBGRAPH_PATH' does not exist!"
@@ -70,13 +75,13 @@ jobs:
 
       - name: Validate manifest file exists
         run: |
-          MANIFEST_PATH="subgraphs/${{ inputs.subgraph }}/${{ inputs.manifest }}"
+          MANIFEST_PATH="subgraphs/${{ inputs.folder }}/${{ inputs.manifest }}"
 
           if [ ! -f "$MANIFEST_PATH" ]; then
             echo "❌ Error: Manifest file '$MANIFEST_PATH' does not exist!"
             echo ""
-            echo "Available files in subgraphs/${{ inputs.subgraph }}:"
-            ls -1 subgraphs/${{ inputs.subgraph }}/ | grep subgraph
+            echo "Available files in subgraphs/${{ inputs.folder }}:"
+            ls -1 subgraphs/${{ inputs.folder }}/ | grep subgraph
             exit 1
           fi
           echo "✅ Manifest file found: $MANIFEST_PATH"
@@ -94,26 +99,6 @@ jobs:
           node-version: "24"
           cache: "yarn"
 
-      - name: Prepare environment
-        run: |
-          # Export variables for subsequent steps
-          MANIFEST="${{ inputs.manifest }}"
-
-          # Extract network from manifest file name
-          if [[ "$MANIFEST" =~ ^subgraph\.(.+)\.yaml$ ]]; then
-            NETWORK="${BASH_REMATCH[1]}"
-          else
-            NETWORK=""
-          fi
-          echo "NETWORK=$NETWORK" >> $GITHUB_ENV
-
-          # Build Subgraph name
-          if [ -n "$NETWORK" ]; then
-            echo "SUBGRAPH_NAME=${{ inputs.subgraph }}-${NETWORK}" >> $GITHUB_ENV
-          else
-            echo "SUBGRAPH_NAME=${{ inputs.subgraph }}" >> $GITHUB_ENV
-          fi
-
       - name: Install subgraph packages
         run: yarn install
 
@@ -121,22 +106,23 @@ jobs:
         run: yarn graph auth ${{ secrets.SUBGRAPH_STUDIO_KEY }}
 
       - name: Generate code
-        run: yarn graph codegen subgraphs/${{ inputs.subgraph }}/${{ inputs.manifest }}
+        run: yarn graph codegen subgraphs/${{ inputs.folder }}/${{ inputs.manifest }}
 
       - name: Build subgraph
-        run: yarn graph build subgraphs/${{ inputs.subgraph }}/${{ inputs.manifest }}
+        run: yarn graph build subgraphs/${{ inputs.folder }}/${{ inputs.manifest }}
 
       - name: Deploy subgraph
         run: |
           yarn graph deploy \
-            ${{ env.SUBGRAPH_NAME }} \
-            subgraphs/${{ inputs.subgraph }}/${{ inputs.manifest }} \
+            ${{ inputs.name }} \
+            subgraphs/${{ inputs.folder }}/${{ inputs.manifest }} \
             -l ${{ inputs.version }}
 
       - name: Deployment summary
         if: success()
         run: |
           echo "✅ Subgraph deployed successfully"
-          echo "- Subgraph name: ${{ env.SUBGRAPH_NAME }}"
+          echo "- Subgraph folder: ${{ inputs.folder }}"
+          echo "- Subgraph name: ${{ inputs.name }}"
           echo "- Version: ${{ inputs.version }}"
           echo "- Manifest: ${{ inputs.manifest }}"
