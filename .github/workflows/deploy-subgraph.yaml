@@ -106,16 +106,19 @@ jobs:
         run: yarn graph auth ${{ secrets.SUBGRAPH_STUDIO_KEY }}
 
       - name: Generate code
-        run: yarn graph codegen subgraphs/${{ inputs.folder }}/${{ inputs.manifest }}
+        working-directory: subgraphs/${{ inputs.subgraph }}
+        run: yarn graph codegen ${{ inputs.manifest }}
 
       - name: Build subgraph
-        run: yarn graph build subgraphs/${{ inputs.folder }}/${{ inputs.manifest }}
+        working-directory: subgraphs/${{ inputs.subgraph }}
+        run: yarn graph build ${{ inputs.manifest }}
 
       - name: Deploy subgraph
+        working-directory: subgraphs/${{ inputs.subgraph }}
         run: |
           yarn graph deploy \
             ${{ inputs.name }} \
-            subgraphs/${{ inputs.folder }}/${{ inputs.manifest }} \
+            ${{ inputs.manifest }} \
             -l ${{ inputs.version }}
 
       - name: Deployment summary
