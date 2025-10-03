@@ -100,9 +100,11 @@ jobs:
           cache: "yarn"
 
       - name: Install subgraph packages
+        working-directory: subgraphs/${{ inputs.folder }}
         run: yarn install
 
       - name: Authenticate
+        working-directory: subgraphs/${{ inputs.folder }}
         run: yarn graph auth ${{ secrets.SUBGRAPH_STUDIO_KEY }}
 
       - name: Generate code
