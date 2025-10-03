@@ -195,3 +195,10 @@ type Global @entity(immutable: false) {
   currentOlasStaked: BigInt!
   totalRewards: BigInt!
 }
+
+type DailyStakingGlobal @entity(immutable: false) {
+  id: Bytes!
+  timestamp: BigInt!
+  block: BigInt!
+  totalRewards: BigInt!
+}
