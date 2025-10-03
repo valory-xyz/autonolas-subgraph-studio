@@ -4,7 +4,7 @@ import {
   InstanceStatusChanged as InstanceStatusChangedEvent,
   OwnerUpdated as OwnerUpdatedEvent,
   VerifierUpdated as VerifierUpdatedEvent
-} from "../generated/StakingFactory/StakingFactory"
+} from "../../../generated/StakingFactory/StakingFactory"
 import {
   InstanceCreated,
   InstanceRemoved,
@@ -12,9 +12,9 @@ import {
   OwnerUpdated,
   VerifierUpdated,
   StakingContract
-} from "../generated/schema"
-import { StakingProxy } from "../generated/templates";
-import { StakingProxy as StakingProxyContract } from "../generated/templates/StakingProxy/StakingProxy";
+} from "../../../generated/schema"
+import { StakingProxy } from "../../../generated/templates";
+import { StakingProxy as StakingProxyContract } from "../../../generated/templates/StakingProxy/StakingProxy";
 
 export function handleInstanceCreated(event: InstanceCreatedEvent): void {
   StakingProxy.create(event.params.instance);
