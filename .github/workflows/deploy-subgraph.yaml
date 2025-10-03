@@ -114,7 +114,7 @@ jobs:
         run: yarn graph build ${{ inputs.manifest }}
 
       - name: Deploy subgraph
-        working-directory: subgraphs/${{ inputs.subgraph }}
+        working-directory: subgraphs/${{ inputs.folder }}
         run: |
           yarn graph deploy \
             ${{ inputs.name }} \
