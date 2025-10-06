@@ -71,6 +71,8 @@ export function handleBlock(block: ethereum.Block): void {
   const currentTimestamp = block.timestamp;
 
   const currentWeekStart = getWeekStart(currentTimestamp);
+  // Also check the previous week to catch locks expiring at the week boundary
+  // (e.g., if no block landed after the expiry before the week rolled over).
   const weekStarts: BigInt[] = [currentWeekStart, currentWeekStart.minus(WEEK_SECONDS)];
 
   for (let i = 0; i < weekStarts.length; i++) {
