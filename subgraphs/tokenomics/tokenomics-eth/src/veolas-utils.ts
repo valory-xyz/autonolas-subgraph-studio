@@ -109,11 +109,12 @@ export function updateDepositorLockForExpiry(
 }
 
 export function incrementGlobalCountersForDeposit(
-  global: Global,
   wasInactive: boolean,
   becameLocked: boolean,
   currentTimestamp: BigInt
 ): void {
+  let global = getOrCreateGlobalMetrics();
+
   if (wasInactive) {
     global.veolasHolderCount = global.veolasHolderCount + 1;
   }
@@ -123,13 +124,15 @@ export function incrementGlobalCountersForDeposit(
   }
 
   global.updatedAt = currentTimestamp;
+  global.save();
 }
 
 export function decrementGlobalCountersForWithdraw(
-  global: Global,
   wasLocked: boolean,
   currentTimestamp: BigInt
 ): void {
+  let global = getOrCreateGlobalMetrics();
+
   global.veolasHolderCount = global.veolasHolderCount - 1;
 
   if (wasLocked) {
@@ -137,6 +140,7 @@ export function decrementGlobalCountersForWithdraw(
   }
 
   global.updatedAt = currentTimestamp;
+  global.save();
 }
 
 export function loadLocksFromWeek(weekStart: BigInt): DepositorLock[] {

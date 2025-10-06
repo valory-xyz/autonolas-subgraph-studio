@@ -37,15 +37,12 @@ export function handleDeposit(event: Deposit): void {
 
   depositorLock.save();
 
-  let globalMetrics = getOrCreateGlobalMetrics();
   const becameLocked = depositorLock.isLocked && !wasLocked;
   incrementGlobalCountersForDeposit(
-    globalMetrics,
     wasInactive,
     becameLocked,
     event.block.timestamp
   );
-  globalMetrics.save();
 }
 
 export function handleWithdraw(event: Withdraw): void {
@@ -62,13 +59,10 @@ export function handleWithdraw(event: Withdraw): void {
 
   depositorLock.save();
 
-  let globalMetrics = getOrCreateGlobalMetrics();
   decrementGlobalCountersForWithdraw(
-    globalMetrics,
     wasLocked,
     event.block.timestamp
   );
-  globalMetrics.save();
 }
 
 export function handleBlock(block: ethereum.Block): void {
@@ -112,6 +106,7 @@ function processExpiredLocksBatch(
   }
 
   if (expiredCount > 0) {
+    let globalMetrics = getOrCreateGlobalMetrics();
     globalMetrics.activeLockedHolderCount =
       globalMetrics.activeLockedHolderCount - expiredCount;
 
