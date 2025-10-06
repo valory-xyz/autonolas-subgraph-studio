@@ -34,7 +34,7 @@ export function loadOrCreateDepositorLock(account: Bytes): DepositorLock {
     depositorLock = new DepositorLock(accountId);
     depositorLock.account = account;
     depositorLock.unlockTimestamp = BigInt.zero();
-    depositorLock.isActive = false;
+    depositorLock.isVeOlasHolder = false;
     depositorLock.isLocked = false;
     depositorLock.weeklyUnlock = null;
   }
@@ -75,7 +75,7 @@ export function updateDepositorLockForDeposit(
   currentBlockTimestamp: BigInt
 ): DepositorLock {
   depositorLock.unlockTimestamp = unlockTimestamp;
-  depositorLock.isActive = true;
+  depositorLock.isVeOlasHolder = true;
 
   // Check if the lock is currently locked (not expired)
   const isLocked = !isTimestampExpired(unlockTimestamp, currentBlockTimestamp);
@@ -96,7 +96,7 @@ export function updateDepositorLockForDeposit(
 export function updateDepositorLockForWithdraw(
   depositorLock: DepositorLock
 ): DepositorLock {
-  depositorLock.isActive = false;
+  depositorLock.isVeOlasHolder = false;
   depositorLock.isLocked = false;
   depositorLock.weeklyUnlock = null;
 
@@ -164,7 +164,7 @@ export function isLockExpired(
   currentTimestamp: BigInt
 ): boolean {
   return (
-    lock.isActive &&
+    lock.isVeOlasHolder &&
     lock.isLocked &&
     isTimestampExpired(lock.unlockTimestamp, currentTimestamp)
   );

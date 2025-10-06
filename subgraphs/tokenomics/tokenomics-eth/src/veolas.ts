@@ -21,12 +21,12 @@ export function handleDeposit(event: Deposit): void {
     depositor = new VeolasDepositor(event.params.account);
   }
   depositor.unlockTimestamp = event.params.locktime;
-  depositor.isActive = true;
+  depositor.isVeOlasHolder = true;
   depositor.save();
 
   let depositorLock = loadOrCreateDepositorLock(event.params.account);
 
-  const wasInactive = !depositorLock.isActive;
+  const wasInactive = !depositorLock.isVeOlasHolder;
   const wasLocked = depositorLock.isLocked;
 
   depositorLock = updateDepositorLockForDeposit(
@@ -50,14 +50,14 @@ export function handleDeposit(event: Deposit): void {
 
 export function handleWithdraw(event: Withdraw): void {
   let depositor = VeolasDepositor.load(event.params.account);
-  if (depositor != null && depositor.isActive) {
-    depositor.isActive = false;
+  if (depositor != null && depositor.isVeOlasHolder) {
+    depositor.isVeOlasHolder = false;
     depositor.save();
   }
 
   let depositorLock = loadOrCreateDepositorLock(event.params.account);
 
-  if (!depositorLock.isActive) {
+  if (!depositorLock.isVeOlasHolder) {
     return;
   }
 
@@ -107,7 +107,7 @@ function processExpiredLocksBatch(
   for (let i = 0; i < expiredLocks.length; i++) {
     let lock = expiredLocks[i];
 
-    if (lock.isActive && lock.isLocked) {
+    if (lock.isVeOlasHolder && lock.isLocked) {
       lock = updateDepositorLockForExpiry(lock);
 
       lock.save();
