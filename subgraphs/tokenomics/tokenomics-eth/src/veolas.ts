@@ -9,7 +9,7 @@ import {
   incrementGlobalCountersForDeposit,
   updateDepositorLockForWithdraw,
   decrementGlobalCountersForWithdraw,
-  getCurrentWeekStart,
+  getWeekStart,
   loadLocksFromWeek,
   getExpiredLocks,
   updateDepositorLockForExpiry,
@@ -79,7 +79,7 @@ export function handleWithdraw(event: Withdraw): void {
 export function handleBlock(block: ethereum.Block): void {
   const currentTimestamp = block.timestamp;
 
-  const currentWeekStart = getCurrentWeekStart(currentTimestamp);
+  const currentWeekStart = getWeekStart(currentTimestamp);
   const WEEK_SECONDS = BigInt.fromI32(7 * 24 * 60 * 60);
   const weekStarts: BigInt[] = [currentWeekStart, currentWeekStart.minus(WEEK_SECONDS)];
 
@@ -118,7 +118,7 @@ function processExpiredLocksBatch(
 
   if (expiredCount > 0) {
     globalMetrics.activeLockedHolderCount =
-      globalMetrics.activeLockedHolderCount.minus(BigInt.fromI32(expiredCount));
+      globalMetrics.activeLockedHolderCount - expiredCount;
 
     globalMetrics.updatedAt = currentTimestamp;
 

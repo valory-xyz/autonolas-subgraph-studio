@@ -12,10 +12,6 @@ export function getWeekStart(timestamp: BigInt): BigInt {
   return timestamp.div(WEEK_SECONDS).times(WEEK_SECONDS);
 }
 
-export function getCurrentWeekStart(blockTimestamp: BigInt): BigInt {
-  return getWeekStart(blockTimestamp);
-}
-
 export function isTimestampExpired(
   timestamp: BigInt,
   currentBlockTimestamp: BigInt
@@ -50,7 +46,7 @@ export function loadOrCreateWeeklyDepositorsUnlock(
 
   if (weeklyEntity == null) {
     weeklyEntity = new WeeklyDepositorsUnlock(weekId);
-    weeklyEntity.weeklyStartTimestamp = weekStart;
+    weeklyEntity.startTimestamp = weekStart;
   }
 
   return weeklyEntity;
@@ -62,7 +58,7 @@ export function getOrCreateGlobalMetrics(): Global {
   if (global == null) {
     global = new Global("global");
     global.veolasHolderCount = 0;
-    global.activeLockedHolderCount = BigInt.zero();
+    global.activeLockedHolderCount = 0;
     global.updatedAt = BigInt.zero();
   }
 
@@ -123,9 +119,7 @@ export function incrementGlobalCountersForDeposit(
   }
 
   if (becameLocked) {
-    global.activeLockedHolderCount = global.activeLockedHolderCount.plus(
-      BigInt.fromI32(1)
-    );
+    global.activeLockedHolderCount = global.activeLockedHolderCount + 1;
   }
 
   global.updatedAt = currentTimestamp;
@@ -139,9 +133,7 @@ export function decrementGlobalCountersForWithdraw(
   global.veolasHolderCount = global.veolasHolderCount - 1;
 
   if (wasLocked) {
-    global.activeLockedHolderCount = global.activeLockedHolderCount.minus(
-      BigInt.fromI32(1)
-    );
+    global.activeLockedHolderCount = global.activeLockedHolderCount - 1;
   }
 
   global.updatedAt = currentTimestamp;
