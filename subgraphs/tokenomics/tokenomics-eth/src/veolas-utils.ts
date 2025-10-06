@@ -1,4 +1,4 @@
-import { BigInt, Bytes } from "@graphprotocol/graph-ts";
+import { BigInt, Bytes, log } from "@graphprotocol/graph-ts";
 import {
   DepositorLock,
   WeeklyDepositorsUnlock,
@@ -65,6 +65,23 @@ export function getOrCreateGlobalMetrics(): Global {
   return global;
 }
 
+function subtractWithFloor(current: i32, decrement: i32): i32 {
+  if (decrement <= 0) {
+    return current;
+  }
+
+  const next = current - decrement;
+  if (next < 0) {
+    log.warning("veOLAS counters would underflow: current={}, decrement={}", [
+      current.toString(),
+      decrement.toString(),
+    ]);
+    return 0;
+  }
+
+  return next;
+}
+
 export function updateDepositorLockForDeposit(
   depositorLock: DepositorLock,
   unlockTimestamp: BigInt,
@@ -128,15 +145,24 @@ export function incrementGlobalCountersForDeposit(
 }
 
 export function decrementGlobalCountersForWithdraw(
+  wasHolder: boolean,
   wasLocked: boolean,
   currentTimestamp: BigInt
 ): void {
   let global = getOrCreateGlobalMetrics();
 
-  global.veolasHolderCount = global.veolasHolderCount - 1;
+  if (wasHolder) {
+    global.veolasHolderCount = subtractWithFloor(
+      global.veolasHolderCount,
+      1
+    );
+  }
 
   if (wasLocked) {
-    global.activeLockedHolderCount = global.activeLockedHolderCount - 1;
+    global.activeLockedHolderCount = subtractWithFloor(
+      global.activeLockedHolderCount,
+      1
+    );
   }
 
   global.updatedAt = currentTimestamp;
@@ -206,8 +232,10 @@ export function processExpiredLocks(
     return;
   }
 
-  globalMetrics.activeLockedHolderCount =
-    globalMetrics.activeLockedHolderCount - expiredCount;
+  globalMetrics.activeLockedHolderCount = subtractWithFloor(
+    globalMetrics.activeLockedHolderCount,
+    expiredCount
+  );
   globalMetrics.updatedAt = currentTimestamp;
   globalMetrics.save();
 }

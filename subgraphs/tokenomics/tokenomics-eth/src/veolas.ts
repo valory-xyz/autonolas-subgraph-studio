@@ -1,4 +1,4 @@
-import { BigInt } from "@graphprotocol/graph-ts";
+import { BigInt, log } from "@graphprotocol/graph-ts";
 import { Deposit, Withdraw } from "../generated/veOLAS/veOLAS";
 import { VeolasDepositor } from "../generated/schema";
 import { ethereum } from "@graphprotocol/graph-ts";
@@ -55,6 +55,7 @@ export function handleWithdraw(event: Withdraw): void {
   }
 
   let depositorLock = loadOrCreateDepositorLock(event.params.account);
+  const wasHolder = depositorLock.isVeOlasHolder;
   const wasLocked = depositorLock.isLocked;
 
   depositorLock = updateDepositorLockForWithdraw(depositorLock);
@@ -62,6 +63,7 @@ export function handleWithdraw(event: Withdraw): void {
   depositorLock.save();
 
   decrementGlobalCountersForWithdraw(
+    wasHolder,
     wasLocked,
     event.block.timestamp
   );
@@ -82,5 +84,13 @@ export function handleBlock(block: ethereum.Block): void {
     }
     const expiredLocks = getExpiredLocks(locks, currentTimestamp);
     processExpiredLocks(expiredLocks, currentTimestamp);
+    if (expiredLocks.length > 0) {
+      const week = weekStarts[i].toString();
+      log.info("Processed {} expired locks for week {} at timestamp {}", [
+        expiredLocks.length.toString(),
+        week,
+        currentTimestamp.toString(),
+      ]);
+    }
   }
 }
