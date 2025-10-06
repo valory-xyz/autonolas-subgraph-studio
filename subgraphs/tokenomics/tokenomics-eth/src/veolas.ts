@@ -1,10 +1,9 @@
 import { BigInt } from "@graphprotocol/graph-ts";
 import { Deposit, Withdraw } from "../generated/veOLAS/veOLAS";
-import { VeolasDepositor, DepositorLock } from "../generated/schema";
+import { VeolasDepositor } from "../generated/schema";
 import { ethereum } from "@graphprotocol/graph-ts";
 import {
   loadOrCreateDepositorLock,
-  getOrCreateGlobalMetrics,
   updateDepositorLockForDeposit,
   incrementGlobalCountersForDeposit,
   updateDepositorLockForWithdraw,
@@ -12,15 +11,12 @@ import {
   getWeekStart,
   loadLocksFromWeek,
   getExpiredLocks,
-  updateDepositorLockForExpiry,
   WEEK_SECONDS,
   processExpiredLocks,
 } from "./veolas-utils";
 
 export function handleDeposit(event: Deposit): void {
   let depositor = VeolasDepositor.load(event.params.account);
-  const isNewDepositor = depositor == null;
-  const wasInactive = depositor !== null && !depositor.isActive;
 
   if (depositor == null) {
     depositor = new VeolasDepositor(event.params.account);
