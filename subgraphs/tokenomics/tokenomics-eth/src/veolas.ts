@@ -23,7 +23,7 @@ export function handleDeposit(event: Deposit): void {
   }
 
   depositor.unlockTimestamp = event.params.locktime;
-  depositor.isVeOlasHolder = true;
+  depositor.isActive = true;
   depositor.save();
 
   let depositorLock = loadOrCreateDepositorLock(event.params.account);
@@ -49,8 +49,8 @@ export function handleDeposit(event: Deposit): void {
 
 export function handleWithdraw(event: Withdraw): void {
   let depositor = VeolasDepositor.load(event.params.account);
-  if (depositor != null && depositor.isVeOlasHolder) {
-    depositor.isVeOlasHolder = false;
+  if (depositor != null && depositor.isActive) {
+    depositor.isActive = false;
     depositor.save();
   }
 
