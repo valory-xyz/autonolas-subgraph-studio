@@ -465,7 +465,7 @@ type TokenHolder @entity(immutable: false) {
 type VeolasDepositor @entity(immutable: false) {
   id: Bytes!
   unlockTimestamp: BigInt!
-  isActive: Boolean!
+  isVeOlasHolder: Boolean!
 }
 
 type Global @entity(immutable: false) {
@@ -479,7 +479,7 @@ type DepositorLock @entity(immutable: false) {
   id: ID! 
   account: Bytes! 
   unlockTimestamp: BigInt! 
-  isActive: Boolean! 
+  isVeOlasHolder: Boolean! 
   isLocked: Boolean! 
   weeklyUnlock: WeeklyDepositorsUnlock 
 }
