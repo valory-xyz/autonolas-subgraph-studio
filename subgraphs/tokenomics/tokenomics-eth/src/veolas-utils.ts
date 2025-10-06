@@ -6,7 +6,7 @@ import {
 } from "../generated/schema";
 
 // Constants for time calculations
-const WEEK_SECONDS = BigInt.fromI32(7 * 24 * 60 * 60); // 604800 seconds in a week
+export const WEEK_SECONDS = BigInt.fromI32(7 * 24 * 60 * 60); // 604800 seconds in a week
 
 export function getWeekStart(timestamp: BigInt): BigInt {
   return timestamp.div(WEEK_SECONDS).times(WEEK_SECONDS);
@@ -172,12 +172,43 @@ export function getExpiredLocks(
 ): DepositorLock[] {
   let expiredLocks: DepositorLock[] = [];
 
-  for (let i = 0; i < locks.length; i++) {
-    if (isLockExpired(locks[i], currentTimestamp)) {
-      expiredLocks.push(locks[i]);
+  for (let index = 0; index < locks.length; index++) {
+    if (isLockExpired(locks[index], currentTimestamp)) {
+      expiredLocks.push(locks[index]);
     }
   }
 
   return expiredLocks;
+}
+
+export function processExpiredLocks(
+  expiredLocks: DepositorLock[],
+  currentTimestamp: BigInt
+): void {
+  if (expiredLocks.length == 0) {
+    return;
+  }
+
+  let globalMetrics = getOrCreateGlobalMetrics();
+  let expiredCount = 0;
+
+  for (let index = 0; index < expiredLocks.length; index++) {
+    let depositorLock = expiredLocks[index];
+
+    if (depositorLock.isVeOlasHolder && depositorLock.isLocked) {
+      depositorLock = updateDepositorLockForExpiry(depositorLock);
+      depositorLock.save();
+      expiredCount++;
+    }
+  }
+
+  if (expiredCount == 0) {
+    return;
+  }
+
+  globalMetrics.activeLockedHolderCount =
+    globalMetrics.activeLockedHolderCount - expiredCount;
+  globalMetrics.updatedAt = currentTimestamp;
+  globalMetrics.save();
 }
 

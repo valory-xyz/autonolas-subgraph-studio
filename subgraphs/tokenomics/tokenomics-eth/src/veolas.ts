@@ -13,6 +13,8 @@ import {
   loadLocksFromWeek,
   getExpiredLocks,
   updateDepositorLockForExpiry,
+  WEEK_SECONDS,
+  processExpiredLocks,
 } from "./veolas-utils";
 
 export function handleDeposit(event: Deposit): void {
@@ -69,7 +71,6 @@ export function handleBlock(block: ethereum.Block): void {
   const currentTimestamp = block.timestamp;
 
   const currentWeekStart = getWeekStart(currentTimestamp);
-  const WEEK_SECONDS = BigInt.fromI32(7 * 24 * 60 * 60);
   const weekStarts: BigInt[] = [currentWeekStart, currentWeekStart.minus(WEEK_SECONDS)];
 
   for (let i = 0; i < weekStarts.length; i++) {
@@ -78,40 +79,6 @@ export function handleBlock(block: ethereum.Block): void {
       continue;
     }
     const expiredLocks = getExpiredLocks(locks, currentTimestamp);
-    if (expiredLocks.length == 0) {
-      continue;
-    }
-    processExpiredLocksBatch(expiredLocks, currentTimestamp);
-  }
-}
-
-function processExpiredLocksBatch(
-  expiredLocks: DepositorLock[],
-  currentTimestamp: BigInt
-): void {
-  let globalMetrics = getOrCreateGlobalMetrics();
-
-  let expiredCount = 0;
-
-  for (let i = 0; i < expiredLocks.length; i++) {
-    let lock = expiredLocks[i];
-
-    if (lock.isVeOlasHolder && lock.isLocked) {
-      lock = updateDepositorLockForExpiry(lock);
-
-      lock.save();
-
-      expiredCount++;
-    }
-  }
-
-  if (expiredCount > 0) {
-    let globalMetrics = getOrCreateGlobalMetrics();
-    globalMetrics.activeLockedHolderCount =
-      globalMetrics.activeLockedHolderCount - expiredCount;
-
-    globalMetrics.updatedAt = currentTimestamp;
-
-    globalMetrics.save();
+    processExpiredLocks(expiredLocks, currentTimestamp);
   }
 }
