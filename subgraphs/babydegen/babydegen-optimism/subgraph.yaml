@@ -1,0 +1,690 @@
+specVersion: 0.0.8
+schema:
+  file: ./schema.graphql
+# NOTE: This subgraph is configured to track USDC Native and ETH transfers for funding balance calculations.
+# While all token transfers are tracked for token balance purposes, only USDC Native and ETH flows affect
+# the funding metrics. Other token outflows are logged but do not affect funding calculations.
+dataSources:
+  - kind: ethereum
+    name: ServiceRegistryL2
+    network: optimism
+    source:
+      address: "0x3d77596beb0f130a4415df3D2D8232B3d3D31e44"
+      abi: ServiceRegistryL2
+      startBlock: 136774000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - Service
+        - ServiceRegistration
+        - ServiceIndex
+      abis:
+        - name: ServiceRegistryL2
+          file: ../../../abis/ServiceRegistryL2.json
+        - name: VelodromeV2Pool
+          file: ../../../abis/defi/VelodromeV2Pool.json
+        - name: VelodromeCLPool
+          file: ../../../abis/defi/VelodromeCLPool.json
+        - name: UniswapV3Pool
+          file: ../../../abis/defi/UniswapV3Pool.json
+        - name: AggregatorV3Interface
+          file: ../../../abis/oracles/AggregatorV3Interface.json
+        - name: Safe
+          file: ../../../abis/Safe.json
+      eventHandlers:
+        - event: CreateMultisigWithAgents(indexed uint256,indexed address)
+          handler: handleCreateMultisigWithAgents
+        - event: RegisterInstance(indexed address,indexed uint256,indexed address,uint256)
+          handler: handleRegisterInstance
+      file: ./src/serviceRegistry.ts
+  - kind: ethereum
+    name: USDC_Native
+    network: optimism
+    source:
+      address: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85"
+      abi: ERC20
+      startBlock: 136774000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - FundingBalance
+        - TokenBalance
+      abis:
+        - name: ERC20
+          file: ../../../abis/ERC20.json
+        - name: AggregatorV3Interface
+          file: ../../../abis/oracles/AggregatorV3Interface.json
+        - name: VelodromeCLPool
+          file: ../../../abis/defi/VelodromeCLPool.json
+        - name: UniswapV3Pool
+          file: ../../../abis/defi/UniswapV3Pool.json
+        - name: VelodromeV2Pool
+          file: ../../../abis/defi/VelodromeV2Pool.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleUSDC
+      file: ./src/funding.ts
+  # Additional token data sources for balance tracking
+  - kind: ethereum
+    name: WETH
+    network: optimism
+    source:
+      address: "0x4200000000000000000000000000000000000006"
+      abi: ERC20
+      startBlock: 136774000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - TokenBalance
+      abis:
+        - name: ERC20
+          file: ../../../abis/ERC20.json
+        - name: AggregatorV3Interface
+          file: ../../../abis/oracles/AggregatorV3Interface.json
+        - name: VelodromeCLPool
+          file: ../../../abis/defi/VelodromeCLPool.json
+        - name: UniswapV3Pool
+          file: ../../../abis/defi/UniswapV3Pool.json
+        - name: VelodromeV2Pool
+          file: ../../../abis/defi/VelodromeV2Pool.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleERC20Transfer
+      file: ./src/tokenBalances.ts
+  - kind: ethereum
+    name: DAI
+    network: optimism
+    source:
+      address: "0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1"
+      abi: ERC20
+      startBlock: 136774000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - TokenBalance
+      abis:
+        - name: ERC20
+          file: ../../../abis/ERC20.json
+        - name: AggregatorV3Interface
+          file: ../../../abis/oracles/AggregatorV3Interface.json
+        - name: VelodromeCLPool
+          file: ../../../abis/defi/VelodromeCLPool.json
+        - name: UniswapV3Pool
+          file: ../../../abis/defi/UniswapV3Pool.json
+        - name: VelodromeV2Pool
+          file: ../../../abis/defi/VelodromeV2Pool.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleERC20Transfer
+      file: ./src/tokenBalances.ts
+  - kind: ethereum
+    name: USDT
+    network: optimism
+    source:
+      address: "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58"
+      abi: ERC20
+      startBlock: 136774000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - TokenBalance
+      abis:
+        - name: ERC20
+          file: ../../../abis/ERC20.json
+        - name: AggregatorV3Interface
+          file: ../../../abis/oracles/AggregatorV3Interface.json
+        - name: VelodromeCLPool
+          file: ../../../abis/defi/VelodromeCLPool.json
+        - name: UniswapV3Pool
+          file: ../../../abis/defi/UniswapV3Pool.json
+        - name: VelodromeV2Pool
+          file: ../../../abis/defi/VelodromeV2Pool.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleERC20Transfer
+      file: ./src/tokenBalances.ts
+  - kind: ethereum
+    name: DOLA
+    network: optimism
+    source:
+      address: "0x8aE125E8653821E851F12A49F7765db9a9ce7384"
+      abi: ERC20
+      startBlock: 136774000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - TokenBalance
+      abis:
+        - name: ERC20
+          file: ../../../abis/ERC20.json
+        - name: AggregatorV3Interface
+          file: ../../../abis/oracles/AggregatorV3Interface.json
+        - name: VelodromeCLPool
+          file: ../../../abis/defi/VelodromeCLPool.json
+        - name: UniswapV3Pool
+          file: ../../../abis/defi/UniswapV3Pool.json
+        - name: VelodromeV2Pool
+          file: ../../../abis/defi/VelodromeV2Pool.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleERC20Transfer
+      file: ./src/tokenBalances.ts
+  - kind: ethereum
+    name: BOLD
+    network: optimism
+    source:
+      address: "0x087C440F251ff6cFE62B86dde1be558b95b4bb9b"
+      abi: ERC20
+      startBlock: 136774000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - TokenBalance
+      abis:
+        - name: ERC20
+          file: ../../../abis/ERC20.json
+        - name: AggregatorV3Interface
+          file: ../../../abis/oracles/AggregatorV3Interface.json
+        - name: VelodromeCLPool
+          file: ../../../abis/defi/VelodromeCLPool.json
+        - name: UniswapV3Pool
+          file: ../../../abis/defi/UniswapV3Pool.json
+        - name: VelodromeV2Pool
+          file: ../../../abis/defi/VelodromeV2Pool.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleERC20Transfer
+      file: ./src/tokenBalances.ts
+  - kind: ethereum
+    name: LUSD
+    network: optimism
+    source:
+      address: "0xc40F949F8a4e094D1b49a23ea9241D289B7b2819"
+      abi: ERC20
+      startBlock: 136774000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - TokenBalance
+      abis:
+        - name: ERC20
+          file: ../../../abis/ERC20.json
+        - name: AggregatorV3Interface
+          file: ../../../abis/oracles/AggregatorV3Interface.json
+        - name: VelodromeCLPool
+          file: ../../../abis/defi/VelodromeCLPool.json
+        - name: UniswapV3Pool
+          file: ../../../abis/defi/UniswapV3Pool.json
+        - name: VelodromeV2Pool
+          file: ../../../abis/defi/VelodromeV2Pool.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleERC20Transfer
+      file: ./src/tokenBalances.ts
+  - kind: ethereum
+    name: FRAX
+    network: optimism
+    source:
+      address: "0x2E3D870790dC77A83DD1d18184Acc7439A53f475"
+      abi: ERC20
+      startBlock: 136774000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - TokenBalance
+      abis:
+        - name: ERC20
+          file: ../../../abis/ERC20.json
+        - name: AggregatorV3Interface
+          file: ../../../abis/oracles/AggregatorV3Interface.json
+        - name: VelodromeCLPool
+          file: ../../../abis/defi/VelodromeCLPool.json
+        - name: UniswapV3Pool
+          file: ../../../abis/defi/UniswapV3Pool.json
+        - name: VelodromeV2Pool
+          file: ../../../abis/defi/VelodromeV2Pool.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleERC20Transfer
+      file: ./src/tokenBalances.ts
+  - kind: ethereum
+    name: sDAI
+    network: optimism
+    source:
+      address: "0x2218A117083f5B482B0bB821d27056Ba9c04b1D3"
+      abi: ERC20
+      startBlock: 136774000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - TokenBalance
+      abis:
+        - name: ERC20
+          file: ../../../abis/ERC20.json
+        - name: AggregatorV3Interface
+          file: ../../../abis/oracles/AggregatorV3Interface.json
+        - name: VelodromeCLPool
+          file: ../../../abis/defi/VelodromeCLPool.json
+        - name: UniswapV3Pool
+          file: ../../../abis/defi/UniswapV3Pool.json
+        - name: VelodromeV2Pool
+          file: ../../../abis/defi/VelodromeV2Pool.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleERC20Transfer
+      file: ./src/tokenBalances.ts
+  - kind: ethereum
+    name: USDC_Bridged
+    network: optimism
+    source:
+      address: "0x7F5c764cBc14f9669B88837ca1490cCa17c31607"
+      abi: ERC20
+      startBlock: 136774000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - FundingBalance
+        - TokenBalance
+      abis:
+        - name: ERC20
+          file: ../../../abis/ERC20.json
+        - name: AggregatorV3Interface
+          file: ../../../abis/oracles/AggregatorV3Interface.json
+        - name: VelodromeCLPool
+          file: ../../../abis/defi/VelodromeCLPool.json
+        - name: UniswapV3Pool
+          file: ../../../abis/defi/UniswapV3Pool.json
+        - name: VelodromeV2Pool
+          file: ../../../abis/defi/VelodromeV2Pool.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleUSDC
+      file: ./src/funding.ts
+  - kind: ethereum
+    name: USDT0
+    network: optimism
+    source:
+      address: "0x01bff41798a0bcf287b996046ca68b395dbc1071"
+      abi: ERC20
+      startBlock: 136774000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - TokenBalance
+      abis:
+        - name: ERC20
+          file: ../../../abis/ERC20.json
+        - name: AggregatorV3Interface
+          file: ../../../abis/oracles/AggregatorV3Interface.json
+        - name: VelodromeCLPool
+          file: ../../../abis/defi/VelodromeCLPool.json
+        - name: UniswapV3Pool
+          file: ../../../abis/defi/UniswapV3Pool.json
+        - name: VelodromeV2Pool
+          file: ../../../abis/defi/VelodromeV2Pool.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleERC20Transfer
+      file: ./src/tokenBalances.ts
+  - kind: ethereum
+    name: oUSDT
+    network: optimism
+    source:
+      address: "0x1217bfe6c773eec6cc4a38b5dc45b92292b6e189"
+      abi: ERC20
+      startBlock: 136774000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - TokenBalance
+      abis:
+        - name: ERC20
+          file: ../../../abis/ERC20.json
+        - name: AggregatorV3Interface
+          file: ../../../abis/oracles/AggregatorV3Interface.json
+        - name: VelodromeCLPool
+          file: ../../../abis/defi/VelodromeCLPool.json
+        - name: UniswapV3Pool
+          file: ../../../abis/defi/UniswapV3Pool.json
+        - name: VelodromeV2Pool
+          file: ../../../abis/defi/VelodromeV2Pool.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleERC20Transfer
+      file: ./src/tokenBalances.ts
+  - kind: ethereum
+    name: USDGLO
+    network: optimism
+    source:
+      address: "0x4f604735c1cf31399c6e711d5962b2b3e0225ad3"
+      abi: ERC20
+      startBlock: 136774000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - TokenBalance
+      abis:
+        - name: ERC20
+          file: ../../../abis/ERC20.json
+        - name: AggregatorV3Interface
+          file: ../../../abis/oracles/AggregatorV3Interface.json
+        - name: VelodromeCLPool
+          file: ../../../abis/defi/VelodromeCLPool.json
+        - name: UniswapV3Pool
+          file: ../../../abis/defi/UniswapV3Pool.json
+        - name: VelodromeV2Pool
+          file: ../../../abis/defi/VelodromeV2Pool.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleERC20Transfer
+      file: ./src/tokenBalances.ts
+  - kind: ethereum
+    name: VeloNFTManager
+    network: optimism
+    source:
+      address: "0x416b433906b1B72FA758e166e239c43d68dC6F29"
+      abi: NonfungiblePositionManager
+      startBlock: 136774000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - ProtocolPosition
+      abis:
+        - name: NonfungiblePositionManager
+          file: ../../../abis/nft/NonfungiblePositionManager.json
+        - name: VelodromeCLPool
+          file: ../../../abis/defi/VelodromeCLPool.json
+        - name: VelodromeCLFactory
+          file: ../../../abis/defi/VelodromeCLFactory.json
+        - name: VelodromeV2Pool
+          file: ../../../abis/defi/VelodromeV2Pool.json
+        - name: AggregatorV3Interface
+          file: ../../../abis/oracles/AggregatorV3Interface.json
+      eventHandlers:
+        - event: IncreaseLiquidity(indexed uint256,uint128,uint256,uint256)
+          handler: handleIncreaseLiquidity
+        - event: DecreaseLiquidity(indexed uint256,uint128,uint256,uint256)
+          handler: handleDecreaseLiquidity
+        - event: Collect(indexed uint256,address,uint256,uint256)
+          handler: handleCollect
+        - event: Transfer(indexed address,indexed address,indexed uint256)
+          handler: handleNFTTransfer
+      file: ./src/veloNFTManager.ts
+  - kind: ethereum
+    name: UniV3NFTManager
+    network: optimism
+    source:
+      address: "0xC36442b4a4522E871399CD717aBDD847Ab11FE88"
+      abi: NonfungiblePositionManager
+      startBlock: 136774000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - ProtocolPosition
+      abis:
+        - name: NonfungiblePositionManager
+          file: ../../../abis/defi/UniswapV3NFTManager.json
+        - name: UniswapV3Factory
+          file: ../../../abis/defi/UniswapV3Factory.json
+        - name: UniswapV3Pool
+          file: ../../../abis/defi/UniswapV3Pool.json
+        - name: VelodromeCLPool
+          file: ../../../abis/defi/VelodromeCLPool.json
+        - name: VelodromeCLFactory
+          file: ../../../abis/defi/VelodromeCLFactory.json
+        - name: VelodromeV2Pool
+          file: ../../../abis/defi/VelodromeV2Pool.json
+        - name: AggregatorV3Interface
+          file: ../../../abis/oracles/AggregatorV3Interface.json
+      eventHandlers:
+        - event: IncreaseLiquidity(indexed uint256,uint128,uint256,uint256)
+          handler: handleUniV3IncreaseLiquidity
+        - event: DecreaseLiquidity(indexed uint256,uint128,uint256,uint256)
+          handler: handleUniV3DecreaseLiquidity
+        - event: Collect(indexed uint256,address,uint256,uint256)
+          handler: handleUniV3Collect
+        - event: Transfer(indexed address,indexed address,indexed uint256)
+          handler: handleUniV3Transfer
+      file: ./src/uniV3NFTManager.ts
+  # VelodromeV2 Sugar Bootstrap
+  - kind: ethereum/contract
+    name: VeloV2Sugar
+    network: optimism
+    source:
+      address: '0xA64db2D254f07977609def75c3A7db3eDc72EE1D'
+      abi: Sugar
+      startBlock: 136772000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      file: ./src/veloV2Bootstrap.ts
+      entities:
+        - ProtocolPosition
+      abis:
+        - name: Sugar
+          file: ../../../abis/utils/Sugar.json
+        - name: PoolFactory
+          file: ../../../abis/defi/PoolFactory.json
+        - name: VelodromeV2Pool
+          file: ../../../abis/defi/VelodromeV2Pool.json
+      blockHandlers:
+        - handler: handleVeloV2Bootstrap
+          filter:
+            kind: once
+
+  # VelodromeV2 Factory for ongoing discovery
+  - kind: ethereum/contract
+    name: VeloV2Factory
+    network: optimism
+    source:
+      address: '0xF1046053aa5682b4F9a81b5481394DA16BE5FF5a'
+      abi: PoolFactory
+      startBlock: 136774000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      file: ./src/veloV2Bootstrap.ts
+      entities:
+        - ProtocolPosition
+      abis:
+        - name: PoolFactory
+          file: ../../../abis/defi/PoolFactory.json
+        - name: VelodromeV2Pool
+          file: ../../../abis/defi/VelodromeV2Pool.json
+      eventHandlers:
+        - event: PoolCreated(indexed address,indexed address,indexed bool,address,uint256)
+          handler: handleVeloV2PoolCreated
+
+
+  # Block handler for portfolio snapshots
+  - kind: ethereum/contract
+    name: PortfolioScheduler
+    network: optimism
+    source:
+      address: "0x3d77596beb0f130a4415df3D2D8232B3d3D31e44"  # ServiceRegistryL2 address
+      abi: ServiceRegistryL2
+      startBlock: 136774000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - AgentPortfolio
+        - AgentPortfolioSnapshot
+      abis:
+        - name: ServiceRegistryL2
+          file: ../../../abis/ServiceRegistryL2.json
+        - name: VelodromeV2Pool
+          file: ../../../abis/defi/VelodromeV2Pool.json
+        - name: VelodromeCLPool
+          file: ../../../abis/defi/VelodromeCLPool.json
+        - name: UniswapV3Pool
+          file: ../../../abis/defi/UniswapV3Pool.json
+        - name: AggregatorV3Interface
+          file: ../../../abis/oracles/AggregatorV3Interface.json
+        - name: ERC20
+          file: ../../../abis/ERC20.json
+      blockHandlers:
+        - handler: handleBlock
+          filter:
+            kind: polling
+            every: 100  # Check every 100 blocks
+      file: ./src/portfolioScheduler.ts
+  # LiFi Diamond contract for tracking ETH swaps
+  - kind: ethereum
+    name: LiFiDiamond
+    network: optimism
+    source:
+      address: "0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE"
+      abi: LiFiDiamond
+      startBlock: 136774000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - TokenBalance
+        - SwapTransaction
+        - SwapToEntryAssociation
+      abis:
+        - name: LiFiDiamond
+          file: ../../../abis/defi/LiFiDiamond.json
+        - name: AggregatorV3Interface
+          file: ../../../abis/oracles/AggregatorV3Interface.json
+        - name: VelodromeCLPool
+          file: ../../../abis/defi/VelodromeCLPool.json
+        - name: VelodromeV2Pool
+          file: ../../../abis/defi/VelodromeV2Pool.json
+      eventHandlers:
+        - event: LiFiGenericSwapCompleted(indexed bytes32,string,string,address,address,address,uint256,uint256)
+          handler: handleLiFiGenericSwapCompleted
+      file: ./src/lifiDiamond.ts
+  # Balancer V2 Vault for tracking liquidity positions
+  - kind: ethereum
+    name: BalancerVault
+    network: optimism
+    source:
+      address: "0xBA12222222228d8Ba445958a75a0704d566BF2C8"
+      abi: BalancerV2Vault
+      startBlock: 136813500
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - ProtocolPosition
+        - Service
+      abis:
+        - name: BalancerV2Vault
+          file: ../../../abis/BalancerV2Vault.json
+        - name: BalancerV2WeightedPool
+          file: ../../../abis/BalancerV2WeightedPool.json
+        - name: ERC20
+          file: ../../../abis/ERC20.json
+        - name: AggregatorV3Interface
+          file: ../../../abis/oracles/AggregatorV3Interface.json
+        - name: VelodromeCLPool
+          file: ../../../abis/defi/VelodromeCLPool.json
+        - name: VelodromeV2Pool
+          file: ../../../abis/defi/VelodromeV2Pool.json
+      eventHandlers:
+        - event: PoolBalanceChanged(indexed bytes32,indexed address,address[],int256[],uint256[])
+          handler: handlePoolBalanceChanged
+      file: ./src/balancerVault.ts
+
+templates:
+  # Keep VelodromeV2 Pool template for Mint event handling
+  - kind: ethereum/contract
+    name: VeloV2Pool
+    network: optimism
+    source:
+      abi: VelodromeV2Pool
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - ProtocolPosition
+      abis:
+        - name: VelodromeV2Pool
+          file: ../../../abis/defi/VelodromeV2Pool.json
+        - name: AggregatorV3Interface
+          file: ../../../abis/oracles/AggregatorV3Interface.json
+        - name: VelodromeCLPool
+          file: ../../../abis/defi/VelodromeCLPool.json
+        - name: UniswapV3Pool
+          file: ../../../abis/defi/UniswapV3Pool.json
+      eventHandlers:
+        - event: Mint(indexed address,uint256,uint256)
+          handler: handleVeloV2Mint
+        - event: Burn(indexed address,indexed address,uint256,uint256)
+          handler: handleVeloV2Burn
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleVeloV2Transfer
+      file: ./src/veloV2Pool.ts
+  # Safe template for tracking ETH transfers to service safes
+  - kind: ethereum/contract
+    name: Safe
+    network: optimism
+    source:
+      abi: Safe
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - FundingBalance
+        - Service
+      abis:
+        - name: Safe
+          file: ../../../abis/Safe.json
+        - name: AggregatorV3Interface
+          file: ../../../abis/oracles/AggregatorV3Interface.json
+        - name: VelodromeCLPool
+          file: ../../../abis/defi/VelodromeCLPool.json
+        - name: BalancerV2Vault
+          file: ../../../abis/BalancerV2Vault.json
+        - name: BalancerV2WeightedPool
+          file: ../../../abis/BalancerV2WeightedPool.json
+      eventHandlers:
+        - event: SafeReceived(indexed address,uint256)
+          handler: handleSafeReceived
+        - event: ExecutionSuccess(bytes32,uint256)
+          handler: handleExecutionSuccess
+        - event: ExecutionFromModuleSuccess(indexed address)
+          handler: handleExecutionFromModuleSuccess
+      file: ./src/safe.ts

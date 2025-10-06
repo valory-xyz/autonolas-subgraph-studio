@@ -19,9 +19,13 @@ import {
 
 export function handleDeposit(event: Deposit): void {
   let depositor = VeolasDepositor.load(event.params.account);
+  const isNewDepositor = depositor == null;
+  const wasInactive = depositor !== null && !depositor.isActive;
+
   if (depositor == null) {
     depositor = new VeolasDepositor(event.params.account);
   }
+
   depositor.unlockTimestamp = event.params.locktime;
   depositor.isVeOlasHolder = true;
   depositor.save();

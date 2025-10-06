@@ -1,0 +1,48 @@
+[
+  {
+    "inputs": [
+      {"internalType": "uint256", "name": "limit", "type": "uint256"},
+      {"internalType": "uint256", "name": "offset", "type": "uint256"}
+    ],
+    "name": "all",
+    "outputs": [
+      {
+        "components": [
+          {"internalType": "address", "name": "id", "type": "address"},
+          {"internalType": "string", "name": "symbol", "type": "string"},
+          {"internalType": "uint8", "name": "decimals", "type": "uint8"},
+          {"internalType": "uint256", "name": "liquidity", "type": "uint256"},
+          {"internalType": "int24", "name": "type", "type": "int24"},
+          {"internalType": "int24", "name": "tick", "type": "int24"},
+          {"internalType": "uint160", "name": "sqrt_ratio", "type": "uint160"},
+          {"internalType": "address", "name": "token0", "type": "address"},
+          {"internalType": "uint256", "name": "reserve0", "type": "uint256"},
+          {"internalType": "uint256", "name": "staked0", "type": "uint256"},
+          {"internalType": "address", "name": "token1", "type": "address"},
+          {"internalType": "uint256", "name": "reserve1", "type": "uint256"},
+          {"internalType": "uint256", "name": "staked1", "type": "uint256"},
+          {"internalType": "address", "name": "gauge", "type": "address"},
+          {"internalType": "uint256", "name": "gauge_liquidity", "type": "uint256"},
+          {"internalType": "bool", "name": "gauge_alive", "type": "bool"},
+          {"internalType": "address", "name": "fee", "type": "address"},
+          {"internalType": "address", "name": "bribe", "type": "address"},
+          {"internalType": "address", "name": "factory", "type": "address"},
+          {"internalType": "uint256", "name": "emissions", "type": "uint256"},
+          {"internalType": "address", "name": "emissions_token", "type": "address"},
+          {"internalType": "uint256", "name": "pool_fee", "type": "uint256"},
+          {"internalType": "uint256", "name": "unstaked_fee", "type": "uint256"},
+          {"internalType": "uint256", "name": "token0_fees", "type": "uint256"},
+          {"internalType": "uint256", "name": "token1_fees", "type": "uint256"},
+          {"internalType": "address", "name": "nfpm", "type": "address"},
+          {"internalType": "address", "name": "alm", "type": "address"},
+          {"internalType": "address", "name": "root", "type": "address"}
+        ],
+        "internalType": "struct LpSugar.Pool[]",
+        "name": "",
+        "type": "tuple[]"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  }
+]
