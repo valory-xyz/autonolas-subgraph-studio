@@ -56,11 +56,6 @@ export function handleWithdraw(event: Withdraw): void {
   }
 
   let depositorLock = loadOrCreateDepositorLock(event.params.account);
-
-  if (!depositorLock.isVeOlasHolder) {
-    return;
-  }
-
   const wasLocked = depositorLock.isLocked;
 
   depositorLock = updateDepositorLockForWithdraw(depositorLock);
