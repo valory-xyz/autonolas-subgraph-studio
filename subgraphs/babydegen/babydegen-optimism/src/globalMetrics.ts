@@ -93,45 +93,67 @@ export function calculate7DaysSMA(historicalValues: BigDecimal[]): BigDecimal {
  * @returns Array of AgentPortfolioSnapshot entities for the day
  */
 export function getAllAgentSnapshotsForDay(block: ethereum.Block): AgentPortfolioSnapshot[] {
-  let snapshots: AgentPortfolioSnapshot[] = [];
-  let dayTimestamp = getDayTimestamp(block.timestamp);
+  let snapshots: AgentPortfolioSnapshot[] = []
+  let dayTimestamp = getDayTimestamp(block.timestamp)
   
   // Load all services from the registry
-  let registryId = Bytes.fromUTF8("registry");
-  let serviceRegistry = ServiceRegistry.load(registryId);
+  let registryId = Bytes.fromUTF8("registry")
+  let serviceRegistry = ServiceRegistry.load(registryId)
   if (!serviceRegistry) {
-    log.warning("ServiceRegistry not found when calculating global metrics", []);
-    return snapshots;
+    log.warning("ServiceRegistry not found when calculating global metrics", [])
+    return snapshots
   }
+  
+  // Track exclusions for logging
+  let agentsExcludedForInsufficientPositions = 0
+  let totalAgentsProcessed = 0
   
   // For each service, look for snapshots created on this day
   for (let i = 0; i < serviceRegistry.serviceAddresses.length; i++) {
-    let serviceAddress = serviceRegistry.serviceAddresses[i];
+    let serviceAddress = serviceRegistry.serviceAddresses[i]
     
     // Query all snapshots for this service and filter by day
     // Since we don't know the exact block timestamp, we need to find snapshots within the day
-    let portfolio = AgentPortfolio.load(serviceAddress);
+    let portfolio = AgentPortfolio.load(serviceAddress)
     if (portfolio && portfolio.lastSnapshotTimestamp.gt(BigInt.zero())) {
-      let snapshotDayTimestamp = getDayTimestamp(portfolio.lastSnapshotTimestamp);
+      let snapshotDayTimestamp = getDayTimestamp(portfolio.lastSnapshotTimestamp)
       
-      // If the last snapshot was taken on this day, load it
+      // If the last snapshot was taken on this day, check position requirements
       if (snapshotDayTimestamp.equals(dayTimestamp)) {
-        let snapshotId = serviceAddress.toHexString() + "-" + portfolio.lastSnapshotTimestamp.toString();
-        let snapshot = AgentPortfolioSnapshot.load(Bytes.fromUTF8(snapshotId));
+        totalAgentsProcessed++
+        
+        // Check if agent has at least 2 total positions (active + closed)
+        let totalPositions = portfolio.totalPositions + portfolio.totalClosedPositions
+        if (totalPositions < 2) {
+          agentsExcludedForInsufficientPositions++
+          log.info("Excluding agent {} from population metrics - insufficient position history: {} total positions (active: {}, closed: {})", [
+            serviceAddress.toHexString(),
+            totalPositions.toString(),
+            portfolio.totalPositions.toString(),
+            portfolio.totalClosedPositions.toString()
+          ])
+          continue // Skip this agent
+        }
+        
+        // Load and include snapshot
+        let snapshotId = serviceAddress.toHexString() + "-" + portfolio.lastSnapshotTimestamp.toString()
+        let snapshot = AgentPortfolioSnapshot.load(Bytes.fromUTF8(snapshotId))
         
         if (snapshot) {
-          snapshots.push(snapshot);
+          snapshots.push(snapshot)
         }
       }
     }
   }
   
-  log.info("Found {} agent snapshots for day timestamp {}", [
+  log.info("Found {} agent snapshots for day timestamp {} (excluded {} for insufficient positions, {} total processed)", [
     snapshots.length.toString(),
-    dayTimestamp.toString()
-  ]);
+    dayTimestamp.toString(),
+    agentsExcludedForInsufficientPositions.toString(),
+    totalAgentsProcessed.toString()
+  ])
   
-  return snapshots;
+  return snapshots
 }
 
 /**

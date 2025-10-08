@@ -403,15 +403,8 @@ function calculatePositionsValue(serviceSafe: Address): BigDecimal {
 
 // Create a portfolio snapshot
 function createPortfolioSnapshot(portfolio: AgentPortfolio, block: ethereum.Block): void {
-  // Check if agent has at least 2 total positions (active + closed)
-  let totalPositions = portfolio.totalPositions + portfolio.totalClosedPositions
-  if (totalPositions < 2) {
-    log.info("SNAPSHOT: Skipping snapshot for agent {} - only {} total positions (minimum 2 required)", [
-      portfolio.service.toHexString(),
-      totalPositions.toString()
-    ])
-    return
-  }
+  // Create snapshot for all agents (no position count filter here)
+  // Position filtering is done in globalMetrics.ts when collecting for DailyPopulationMetric
   
   let snapshotId = portfolio.id.toHexString() + "-" + block.timestamp.toString()
   let snapshot = new AgentPortfolioSnapshot(Bytes.fromUTF8(snapshotId))
@@ -454,6 +447,7 @@ function createPortfolioSnapshot(portfolio: AgentPortfolio, block: ethereum.Bloc
   portfolio.lastSnapshotBlock = block.number
   portfolio.save()
   
+  let totalPositions = portfolio.totalPositions + portfolio.totalClosedPositions
   log.info("SNAPSHOT: Created snapshot for agent {} with {} total positions", [
     portfolio.service.toHexString(),
     totalPositions.toString()
