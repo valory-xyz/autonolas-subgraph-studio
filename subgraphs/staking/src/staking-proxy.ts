@@ -14,6 +14,7 @@ import {
   Checkpoint,
   Deposit,
   RewardClaimed,
+  DailyStakingGlobal,
   Service,
   ServiceForceUnstaked,
   ServiceInactivityWarning,
@@ -22,7 +23,7 @@ import {
   ServicesEvicted,
   Withdraw
 } from "../generated/schema"
-import { createRewardUpdate, getGlobal, getOlasForStaking, upsertDailyStakingGlobal } from "./utils"
+import { createRewardUpdate, getGlobal, getOlasForStaking, upsertDailyStakingGlobal, upsertServiceValue, computeMedianSorted } from "./utils"
 
 export function handleCheckpoint(event: CheckpointEvent): void {
   let entity = new Checkpoint(
@@ -60,8 +61,19 @@ export function handleCheckpoint(event: CheckpointEvent): void {
   global.totalRewards = global.totalRewards.plus(totalRewards);
   global.save();
 
-  // Upsert daily snapshot with latest totals
-  upsertDailyStakingGlobal(event, global.totalRewards);
+  // Upsert daily snapshot with latest totals and use same instance for median maintenance
+  const dailyStakingGlobal = upsertDailyStakingGlobal(event, global.totalRewards);
+  for (let i = 0; i < event.params.rewards.length; i++) {
+    const serviceId = event.params.serviceIds[i];
+    const serviceEntity = Service.load(serviceId.toString());
+    if (serviceEntity !== null) {
+      upsertServiceValue(dailyStakingGlobal, serviceId, serviceEntity.olasRewardsEarned);
+    }
+  }
+  dailyStakingGlobal.numServices = dailyStakingGlobal.cumulativeRewards.length;
+  dailyStakingGlobal.medianCumulativeRewards = computeMedianSorted(dailyStakingGlobal.cumulativeRewards);
+  dailyStakingGlobal.block = event.block.number;
+  dailyStakingGlobal.save();
 
   // Update claimable staking rewards
   createRewardUpdate(
