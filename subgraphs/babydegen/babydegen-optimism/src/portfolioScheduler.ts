@@ -47,12 +47,7 @@ function getDayTimestamp(timestamp: BigInt): BigInt {
  * 
  * @param block The new block
  */
-export function handleBlock(block: ethereum.Block): void {
-  // Only check every N blocks to reduce overhead
-  if (block.number.mod(CHECK_INTERVAL).notEqual(BigInt.zero())) {
-    return
-  }
-  
+export function handleBlock(block: ethereum.Block): void {  
   // Check all services for snapshot requirements
   checkServicesForSnapshot(block)
 }
