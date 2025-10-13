@@ -88,7 +88,6 @@ export function upsertDailyStakingGlobal(event: ethereum.Event, totalRewards: Bi
   return snapshot
 }
 
-// Helpers to maintain sorted cumulativeRewards with paired serviceIds
 function findIndex(serviceIds: BigInt[], target: BigInt): i32 {
   for (let i = 0; i < serviceIds.length; i++) {
     if (serviceIds[i].equals(target)) return i as i32;
