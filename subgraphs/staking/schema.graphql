@@ -201,4 +201,8 @@ type DailyStakingGlobal @entity(immutable: false) {
   timestamp: BigInt!
   block: BigInt!
   totalRewards: BigInt!
+  serviceIds: [BigInt!]!
+  cumulativeRewards: [BigInt!]!
+  numServices: Int!
+  medianCumulativeRewards: BigInt!
 }
