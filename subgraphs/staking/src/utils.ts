@@ -59,8 +59,16 @@ export function getOrCreateDailyStakingGlobal(event: ethereum.Event): DailyStaki
     const prevId = Bytes.fromUTF8(dayTimestamp.minus(ONE_DAY).toString());
     const prev = DailyStakingGlobal.load(prevId);
     if (prev != null) {
-      snapshot.serviceIds = prev.serviceIds;
-      snapshot.cumulativeRewards = prev.cumulativeRewards;
+      const prevServiceIds = prev.serviceIds;
+      const prevRewards = prev.cumulativeRewards;
+      const idsCopy = new Array<BigInt>(prevServiceIds.length);
+      const rewardsCopy = new Array<BigInt>(prevRewards.length);
+      for (let i = 0; i < prevServiceIds.length; i++) {
+        idsCopy[i] = prevServiceIds[i];
+        rewardsCopy[i] = prevRewards[i];
+      }
+      snapshot.serviceIds = idsCopy;
+      snapshot.cumulativeRewards = rewardsCopy;
       snapshot.numServices = prev.numServices;
       snapshot.medianCumulativeRewards = prev.medianCumulativeRewards;
     } else {
@@ -122,7 +130,7 @@ export function upsertServiceValue(snapshot: DailyStakingGlobal, serviceId: BigI
   if (existingIndex >= 0) {
     const previousValue = rewardTotals[existingIndex];
     if (previousValue.equals(newValue)) return;
-    if (newValue.lt(previousValue)) return;
+    assert(!newValue.lt(previousValue), "cumulative rewards must not decrease");
     rewardTotals[existingIndex] = newValue;
     moveRightUntilSorted(rewardTotals, serviceIds, existingIndex);
     snapshot.cumulativeRewards = rewardTotals;
