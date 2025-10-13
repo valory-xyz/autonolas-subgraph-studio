@@ -464,24 +464,23 @@ export function updateDailyPopulationMetricEntityWithEthAdjusted(
 }
 
 /**
- * Calculate median AUM across all active BabyDegen services
- * @param serviceAddresses Array of service addresses
+ * Calculate median AUM across agents included in portfolio snapshots
+ * @param snapshots Array of agent portfolio snapshots (already filtered for position requirements)
  * @returns Median AUM as BigDecimal
  */
-export function calculateMedianAUM(serviceAddresses: Bytes[]): BigDecimal {
+export function calculateMedianAUM(snapshots: AgentPortfolioSnapshot[]): BigDecimal {
   let aumValues: BigDecimal[] = [];
   
-  for (let i = 0; i < serviceAddresses.length; i++) {
-    let serviceAddress = serviceAddresses[i];
+  for (let i = 0; i < snapshots.length; i++) {
+    let snapshot = snapshots[i];
+    let serviceAddress = snapshot.service;
     let fundingBalance = FundingBalance.load(serviceAddress);
     
     if (fundingBalance) {
-      // Use netUsd (total funding balance) for individual agent AUM
       aumValues.push(fundingBalance.netUsd);
     }
   }
   
-  // Calculate median of individual AUM values
   return calculateMedian(aumValues);
 }
 
@@ -758,8 +757,8 @@ export function calculateGlobalMetrics(block: ethereum.Block): void {
     serviceAddresses = serviceRegistry.serviceAddresses;
   }
   
-  //Calculate AUM metrics
-  let medianAUM = calculateMedianAUM(serviceAddresses);
+  // Calculate AUM metrics using the same filtered snapshots
+  let medianAUM = calculateMedianAUM(snapshots);
   let totalFundedAUM = calculateTotalFundedAUM(serviceAddresses);
   let averageAgentDaysActive = calculateAverageAgentDaysActive(block);
   
