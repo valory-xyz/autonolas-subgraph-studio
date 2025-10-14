@@ -31,10 +31,7 @@ export function getOlasForStaking(address: Address): BigInt {
 }
 
 
-/**
- * Get or create the global staking entity (singleton).
- * Initializes all fields to zero on first access.
- */
+
 export function getOrCreateGlobal(): Global {
   let global = Global.load('');
   if (global == null) {
@@ -54,7 +51,7 @@ export function getDayTimestamp(timestamp: BigInt): BigInt {
 }
 
 /**
- * Get or create a daily global snapshot with efficient forward-filling.
+ * Get or create a daily global snapshot with forward-filling.
  * Uses the lastActiveDayTimestamp from Global to instantly find the most recent
  * active day for forward-filling, ensuring population continuity.
  */
