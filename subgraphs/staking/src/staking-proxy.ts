@@ -14,7 +14,7 @@ import {
   Checkpoint,
   Deposit,
   RewardClaimed,
-  DailyStakingGlobal,
+  CumulativeDailyStakingGlobal,
   Service,
   ServiceForceUnstaked,
   ServiceInactivityWarning,
@@ -23,7 +23,7 @@ import {
   ServicesEvicted,
   Withdraw
 } from "../generated/schema"
-import { createRewardUpdate, getGlobal, getOlasForStaking, upsertDailyStakingGlobal, upsertServiceValue, computeMedianSorted } from "./utils"
+import { createRewardUpdate, getOrCreateGlobal, getOlasForStaking, upsertCumulativeDailyStakingGlobal, computeMedianOfAllServices } from "./utils"
 
 export function handleCheckpoint(event: CheckpointEvent): void {
   let entity = new Checkpoint(
@@ -57,23 +57,12 @@ export function handleCheckpoint(event: CheckpointEvent): void {
   }
 
   // Update global cumulative staking rewards
-  let global = getGlobal();
+  let global = getOrCreateGlobal();
   global.totalRewards = global.totalRewards.plus(totalRewards);
   global.save();
 
-  // Upsert daily snapshot with latest totals and use same instance for median maintenance
-  const dailyStakingGlobal = upsertDailyStakingGlobal(event, global.totalRewards);
-  for (let i = 0; i < event.params.rewards.length; i++) {
-    const serviceId = event.params.serviceIds[i];
-    const serviceEntity = Service.load(serviceId.toString());
-    if (serviceEntity !== null) {
-      upsertServiceValue(dailyStakingGlobal, serviceId, serviceEntity.olasRewardsEarned);
-    }
-  }
-  dailyStakingGlobal.numServices = dailyStakingGlobal.cumulativeRewards.length;
-  dailyStakingGlobal.medianCumulativeRewards = computeMedianSorted(dailyStakingGlobal.cumulativeRewards);
-  dailyStakingGlobal.block = event.block.number;
-  dailyStakingGlobal.save();
+  // Create or update daily global snapshot (handles median calculation and saving)
+  upsertCumulativeDailyStakingGlobal(event, global.totalRewards);
 
   // Update claimable staking rewards
   createRewardUpdate(
@@ -159,7 +148,7 @@ export function handleServiceForceUnstaked(
   }
 
   // Update global
-  let global = getGlobal();
+  let global = getOrCreateGlobal();
   global.cumulativeOlasUnstaked = global.cumulativeOlasUnstaked.plus(olasForStaking);
   global.currentOlasStaked = global.currentOlasStaked.minus(olasForStaking);
   global.save();
@@ -206,6 +195,7 @@ export function handleServiceStaked(event: ServiceStakedEvent): void {
     service.blockTimestamp = event.block.timestamp;
     service.currentOlasStaked = BigInt.fromI32(0);
     service.olasRewardsEarned = BigInt.fromI32(0);
+    service.global = getOrCreateGlobal().id;
   }
 
   const olasForStaking = getOlasForStaking(event.params._event.address)
@@ -213,7 +203,7 @@ export function handleServiceStaked(event: ServiceStakedEvent): void {
   service.save()
 
   // Update global
-  let global = getGlobal();
+  let global = getOrCreateGlobal();
   global.cumulativeOlasStaked = global.cumulativeOlasStaked.plus(olasForStaking)
   global.currentOlasStaked = global.currentOlasStaked.plus(olasForStaking)
   global.save()
@@ -257,7 +247,7 @@ export function handleServiceUnstaked(event: ServiceUnstakedEvent): void {
   }
 
   // Update global
-  let global = getGlobal();
+  let global = getOrCreateGlobal();
   global.cumulativeOlasUnstaked = global.cumulativeOlasUnstaked.plus(olasForStaking);
   global.currentOlasStaked = global.currentOlasStaked.minus(olasForStaking);
   global.save();
