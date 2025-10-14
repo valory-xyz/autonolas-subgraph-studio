@@ -1,5 +1,5 @@
 import { BigDecimal, BigInt, Bytes, ethereum, log } from "@graphprotocol/graph-ts";
-import { DailyPopulationMetric, AgentPortfolioSnapshot, ServiceRegistry, AgentPortfolio, FundingBalance, Service } from "../../../../generated/schema";
+import { DailyPopulationMetric, AgentPortfolioSnapshot, ServiceRegistry, AgentPortfolio, FundingBalance, Service } from "../generated/schema";
 
 /**
  * Determines if an agent snapshot should be excluded from projected ROI calculations
