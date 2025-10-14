@@ -136,7 +136,7 @@ export function handleCreateMultisigWithAgents(event: CreateMultisigWithAgents):
   serviceIndex.currentServiceSafe = multisig
   serviceIndex.save()
   
-  // NEW: Set firstTradingTimestamp to registration timestamp if no funding exists
+  //  Set firstTradingTimestamp to registration timestamp if no funding exists
   let portfolio = ensureAgentPortfolio(multisig, event.block.timestamp)
   if (portfolio.firstTradingTimestamp.equals(BigInt.zero())) {
     // No funding has occurred yet - use registration timestamp as fallback

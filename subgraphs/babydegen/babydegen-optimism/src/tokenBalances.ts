@@ -284,7 +284,7 @@ export function updateFundingBalance(
   if (deposit) {
     fb.totalInUsd = fb.totalInUsd.plus(usd)
     
-    // NEW: Set firstTradingTimestamp and capture ETH price on first funding
+    //  Set firstTradingTimestamp and capture ETH price on first funding
     if (oldTotalIn.equals(BigDecimal.zero())) {
       // This is the first funding - update portfolio
       let portfolio = ensureAgentPortfolio(serviceSafe, ts)
@@ -309,7 +309,7 @@ export function updateFundingBalance(
   ensureAgentPortfolio(serviceSafe, ts)
 }
 
-// NEW: Helper function to update withdrawal tracking separately (for EOA withdrawals)
+//  Helper function to update withdrawal tracking separately (for EOA withdrawals)
 export function updateWithdrawalBalance(
   serviceSafe: Address,
   usd: BigDecimal,

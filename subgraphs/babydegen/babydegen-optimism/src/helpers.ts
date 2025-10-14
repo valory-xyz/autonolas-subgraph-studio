@@ -249,7 +249,7 @@ export function calculatePortfolioMetrics(
     }
   }
   
-  // NEW: Ensure firstTradingTimestamp fallback to registration if no funding
+  //  Ensure firstTradingTimestamp fallback to registration if no funding
   if (portfolio.firstTradingTimestamp.equals(BigInt.zero())) {
     let serviceEntity = Service.load(serviceSafe)
     if (serviceEntity != null && serviceEntity.latestRegistrationTimestamp.gt(BigInt.zero())) {
@@ -261,7 +261,7 @@ export function calculatePortfolioMetrics(
     }
   }
   
-  // NEW: Calculate ETH-adjusted metrics
+  //  Calculate ETH-adjusted metrics
   let ethAdjustedMetrics = calculateEthAdjustedMetrics(
     portfolio,
     actualROI,
@@ -403,15 +403,6 @@ function calculatePositionsValue(serviceSafe: Address): BigDecimal {
 
 // Create a portfolio snapshot
 function createPortfolioSnapshot(portfolio: AgentPortfolio, block: ethereum.Block): void {
-  // Check if agent has at least 2 total positions (active + closed)
-  let totalPositions = portfolio.totalPositions + portfolio.totalClosedPositions
-  if (totalPositions < 2) {
-    log.info("SNAPSHOT: Skipping snapshot for agent {} - only {} total positions (minimum 2 required)", [
-      portfolio.service.toHexString(),
-      totalPositions.toString()
-    ])
-    return
-  }
   
   let snapshotId = portfolio.id.toHexString() + "-" + block.timestamp.toString()
   let snapshot = new AgentPortfolioSnapshot(Bytes.fromUTF8(snapshotId))
@@ -432,7 +423,7 @@ function createPortfolioSnapshot(portfolio: AgentPortfolio, block: ethereum.Bloc
   snapshot.unrealisedPnL = portfolio.unrealisedPnL
   snapshot.projectedUnrealisedPnL = portfolio.projectedUnrealisedPnL
   
-  // NEW: Copy ETH-adjusted metrics
+  //  Copy ETH-adjusted metrics
   snapshot.ethAdjustedRoi = portfolio.ethAdjustedRoi
   snapshot.ethAdjustedApr = portfolio.ethAdjustedApr
   snapshot.ethAdjustedUnrealisedPnL = portfolio.ethAdjustedUnrealisedPnL
@@ -454,6 +445,7 @@ function createPortfolioSnapshot(portfolio: AgentPortfolio, block: ethereum.Bloc
   portfolio.lastSnapshotBlock = block.number
   portfolio.save()
   
+  let totalPositions = portfolio.totalPositions + portfolio.totalClosedPositions
   log.info("SNAPSHOT: Created snapshot for agent {} with {} total positions", [
     portfolio.service.toHexString(),
     totalPositions.toString()
@@ -485,7 +477,7 @@ export function ensureAgentPortfolio(serviceSafe: Address, timestamp: BigInt): A
     portfolio.totalGrossGains = BigDecimal.zero()
     portfolio.totalCosts = BigDecimal.zero()
     portfolio.apr = BigDecimal.zero()
-    portfolio.projectedUnrealisedPnL = BigDecimal.zero()  // NEW: Initialize projected unrealised PnL
+    portfolio.projectedUnrealisedPnL = BigDecimal.zero()  //  Initialize projected unrealised PnL
     
     // Initialize ETH-adjusted performance metrics
     portfolio.ethAdjustedRoi = BigDecimal.zero()
