@@ -196,13 +196,19 @@ type Global @entity(immutable: false) {
   totalRewards: BigInt!
 }
 
-type DailyStakingGlobal @entity(immutable: false) {
+type CumulativeDailyStakingGlobal @entity(immutable: false) {
   id: Bytes!
   timestamp: BigInt!
   block: BigInt!
   totalRewards: BigInt!
-  serviceIds: [BigInt!]!
-  cumulativeRewards: [BigInt!]!
   numServices: Int!
   medianCumulativeRewards: BigInt!
+}
+
+type DailyServiceSnapshot @entity(immutable: false) {
+  id: Bytes!
+  timestamp: BigInt!
+  serviceId: BigInt!
+  cumulativeRewards: BigInt!
+  block: BigInt!
 }
