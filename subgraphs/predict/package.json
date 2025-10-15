@@ -1,6 +1,5 @@
 {
   "name": "autonolas-predict-subgraph",
-  "license": "UNLICENSED",
   "scripts": {
     "codegen": "graph codegen subgraph.yaml",
     "build": "graph build subgraph.yaml",
