@@ -562,7 +562,7 @@ dataSources:
         - handler: handleBlock
           filter:
             kind: polling
-            every: 100  # Check every 100 blocks
+            every: 1800
       file: ./src/portfolioScheduler.ts
   # LiFi Diamond contract for tracking ETH swaps
   - kind: ethereum

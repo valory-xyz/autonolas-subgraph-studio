@@ -93,45 +93,67 @@ export function calculate7DaysSMA(historicalValues: BigDecimal[]): BigDecimal {
  * @returns Array of AgentPortfolioSnapshot entities for the day
  */
 export function getAllAgentSnapshotsForDay(block: ethereum.Block): AgentPortfolioSnapshot[] {
-  let snapshots: AgentPortfolioSnapshot[] = [];
-  let dayTimestamp = getDayTimestamp(block.timestamp);
+  let snapshots: AgentPortfolioSnapshot[] = []
+  let dayTimestamp = getDayTimestamp(block.timestamp)
   
   // Load all services from the registry
-  let registryId = Bytes.fromUTF8("registry");
-  let serviceRegistry = ServiceRegistry.load(registryId);
+  let registryId = Bytes.fromUTF8("registry")
+  let serviceRegistry = ServiceRegistry.load(registryId)
   if (!serviceRegistry) {
-    log.warning("ServiceRegistry not found when calculating global metrics", []);
-    return snapshots;
+    log.warning("ServiceRegistry not found when calculating global metrics", [])
+    return snapshots
   }
+  
+  // Track exclusions for logging
+  let agentsExcludedForInsufficientPositions = 0
+  let totalAgentsProcessed = 0
   
   // For each service, look for snapshots created on this day
   for (let i = 0; i < serviceRegistry.serviceAddresses.length; i++) {
-    let serviceAddress = serviceRegistry.serviceAddresses[i];
+    let serviceAddress = serviceRegistry.serviceAddresses[i]
     
     // Query all snapshots for this service and filter by day
     // Since we don't know the exact block timestamp, we need to find snapshots within the day
-    let portfolio = AgentPortfolio.load(serviceAddress);
+    let portfolio = AgentPortfolio.load(serviceAddress)
     if (portfolio && portfolio.lastSnapshotTimestamp.gt(BigInt.zero())) {
-      let snapshotDayTimestamp = getDayTimestamp(portfolio.lastSnapshotTimestamp);
+      let snapshotDayTimestamp = getDayTimestamp(portfolio.lastSnapshotTimestamp)
       
-      // If the last snapshot was taken on this day, load it
+      // If the last snapshot was taken on this day, check position requirements
       if (snapshotDayTimestamp.equals(dayTimestamp)) {
-        let snapshotId = serviceAddress.toHexString() + "-" + portfolio.lastSnapshotTimestamp.toString();
-        let snapshot = AgentPortfolioSnapshot.load(Bytes.fromUTF8(snapshotId));
+        totalAgentsProcessed++
+        
+        // Check if agent has at least 2 total positions (active + closed)
+        let totalPositions = portfolio.totalPositions + portfolio.totalClosedPositions
+        if (totalPositions < 2) {
+          agentsExcludedForInsufficientPositions++
+          log.info("Excluding agent {} from population metrics - insufficient position history: {} total positions (active: {}, closed: {})", [
+            serviceAddress.toHexString(),
+            totalPositions.toString(),
+            portfolio.totalPositions.toString(),
+            portfolio.totalClosedPositions.toString()
+          ])
+          continue // Skip this agent
+        }
+        
+        // Load and include snapshot
+        let snapshotId = serviceAddress.toHexString() + "-" + portfolio.lastSnapshotTimestamp.toString()
+        let snapshot = AgentPortfolioSnapshot.load(Bytes.fromUTF8(snapshotId))
         
         if (snapshot) {
-          snapshots.push(snapshot);
+          snapshots.push(snapshot)
         }
       }
     }
   }
   
-  log.info("Found {} agent snapshots for day timestamp {}", [
+  log.info("Found {} agent snapshots for day timestamp {} (excluded {} for insufficient positions, {} total processed)", [
     snapshots.length.toString(),
-    dayTimestamp.toString()
-  ]);
+    dayTimestamp.toString(),
+    agentsExcludedForInsufficientPositions.toString(),
+    totalAgentsProcessed.toString()
+  ])
   
-  return snapshots;
+  return snapshots
 }
 
 /**
@@ -349,6 +371,9 @@ export function updateDailyPopulationMetricEntityWithEthAdjusted(
   historicalEthAdjustedAPR: BigDecimal[],
   historicalEthAdjustedUnrealisedPnL: BigDecimal[],
   historicalEthAdjustedProjectedUnrealisedPnL: BigDecimal[],
+  medianAUM: BigDecimal,
+  sma7dAUM: BigDecimal,
+  historicalAUM: BigDecimal[],
   totalAgents: number,
   block: ethereum.Block
 ): void {
@@ -371,7 +396,7 @@ export function updateDailyPopulationMetricEntityWithEthAdjusted(
   dailyPopulationMetric.medianUnrealisedPnL = medianUnrealisedPnL;
   dailyPopulationMetric.medianProjectedUnrealisedPnL = medianProjectedUnrealisedPnL;
   
-  // NEW: Set ETH-adjusted population metrics
+  //  Set ETH-adjusted population metrics
   dailyPopulationMetric.medianEthAdjustedROI = medianEthAdjustedROI;
   dailyPopulationMetric.medianEthAdjustedAPR = medianEthAdjustedAPR;
   dailyPopulationMetric.medianEthAdjustedUnrealisedPnL = medianEthAdjustedUnrealisedPnL;
@@ -383,7 +408,7 @@ export function updateDailyPopulationMetricEntityWithEthAdjusted(
   dailyPopulationMetric.sma7dUnrealisedPnL = sma7dUnrealisedPnL;
   dailyPopulationMetric.sma7dProjectedUnrealisedPnL = sma7dProjectedUnrealisedPnL;
   
-  // NEW: Set ETH-adjusted 7-day SMAs
+  //  Set ETH-adjusted 7-day SMAs
   dailyPopulationMetric.sma7dEthAdjustedROI = sma7dEthAdjustedROI;
   dailyPopulationMetric.sma7dEthAdjustedAPR = sma7dEthAdjustedAPR;
   dailyPopulationMetric.sma7dEthAdjustedUnrealisedPnL = sma7dEthAdjustedUnrealisedPnL;
@@ -400,7 +425,7 @@ export function updateDailyPopulationMetricEntityWithEthAdjusted(
   dailyPopulationMetric.historicalMedianUnrealisedPnL = historicalUnrealisedPnL;
   dailyPopulationMetric.historicalMedianProjectedUnrealisedPnL = historicalProjectedUnrealisedPnL;
   
-  // NEW: Set ETH-adjusted historical data
+  //  Set ETH-adjusted historical data
   dailyPopulationMetric.historicalMedianEthAdjustedROI = historicalEthAdjustedROI;
   dailyPopulationMetric.historicalMedianEthAdjustedAPR = historicalEthAdjustedAPR;
   dailyPopulationMetric.historicalMedianEthAdjustedUnrealisedPnL = historicalEthAdjustedUnrealisedPnL;
@@ -414,9 +439,16 @@ export function updateDailyPopulationMetricEntityWithEthAdjusted(
     serviceAddresses = serviceRegistry.serviceAddresses;
   }
   
-  // NEW: Set staking APR calculation support fields
+  //Set AUM fields
+  dailyPopulationMetric.medianAUM = medianAUM;
+  dailyPopulationMetric.sma7dAUM = sma7dAUM;
+  
+  //  Set staking APR calculation support fields
   dailyPopulationMetric.totalFundedAUM = calculateTotalFundedAUM(serviceAddresses);
   dailyPopulationMetric.averageAgentDaysActive = calculateAverageAgentDaysActive(block);
+  
+  //Set AUM historical data
+  dailyPopulationMetric.historicalMedianAUM = historicalAUM;
   
   dailyPopulationMetric.save();
   
@@ -429,6 +461,27 @@ export function updateDailyPopulationMetricEntityWithEthAdjusted(
     medianEthAdjustedROI.toString(),
     medianEthAdjustedAPR.toString()
   ]);
+}
+
+/**
+ * Calculate median AUM across agents included in portfolio snapshots
+ * @param snapshots Array of agent portfolio snapshots (already filtered for position requirements)
+ * @returns Median AUM as BigDecimal
+ */
+export function calculateMedianAUM(snapshots: AgentPortfolioSnapshot[]): BigDecimal {
+  let aumValues: BigDecimal[] = [];
+  
+  for (let i = 0; i < snapshots.length; i++) {
+    let snapshot = snapshots[i];
+    let serviceAddress = snapshot.service;
+    let fundingBalance = FundingBalance.load(serviceAddress);
+    
+    if (fundingBalance) {
+      aumValues.push(fundingBalance.netUsd);
+    }
+  }
+  
+  return calculateMedian(aumValues);
 }
 
 /**
@@ -450,6 +503,26 @@ export function calculateTotalFundedAUM(serviceAddresses: Bytes[]): BigDecimal {
   }
   
   return totalAUM;
+}
+/**
+ * Update AUM historical array with new median value, maintaining 7-day window
+ * @param historicalAUM Current historical AUM array
+ * @param newMedianAUM New median AUM to add
+ * @returns Updated historical AUM array
+ */
+export function updateAUMHistoricalArray(
+  historicalAUM: BigDecimal[],
+  newMedianAUM: BigDecimal
+): BigDecimal[] {
+  // Add new value to the end
+  historicalAUM.push(newMedianAUM);
+  
+  // Keep only last 7 days (remove oldest if we have more than 7)
+  if (historicalAUM.length > 7) {
+    historicalAUM.shift(); // Remove first element
+  }
+  
+  return historicalAUM;
 }
 
 /**
@@ -552,7 +625,7 @@ export function calculateGlobalMetrics(block: ethereum.Block): void {
   let unrealisedPnLValues: BigDecimal[] = [];
   let projectedUnrealisedPnLValues: BigDecimal[] = [];
   
-  // NEW: Extract ETH-adjusted values from snapshots with selective filtering
+  //  Extract ETH-adjusted values from snapshots with selective filtering
   let ethAdjustedRoiValues: BigDecimal[] = [];
   let ethAdjustedAprValues: BigDecimal[] = [];
   let ethAdjustedProjectedRoiValues: BigDecimal[] = [];
@@ -619,7 +692,7 @@ export function calculateGlobalMetrics(block: ethereum.Block): void {
   let historicalUnrealisedPnL: BigDecimal[] = [];
   let historicalProjectedUnrealisedPnL: BigDecimal[] = [];
   
-  // NEW: Initialize ETH-adjusted historical arrays
+  //  Initialize ETH-adjusted historical arrays
   let historicalEthAdjustedROI: BigDecimal[] = [];
   let historicalEthAdjustedAPR: BigDecimal[] = [];
   let historicalEthAdjustedProjectedROI: BigDecimal[] = [];
@@ -631,7 +704,7 @@ export function calculateGlobalMetrics(block: ethereum.Block): void {
     historicalUnrealisedPnL = previousDailyPopulationMetric.historicalMedianUnrealisedPnL;
     historicalProjectedUnrealisedPnL = previousDailyPopulationMetric.historicalMedianProjectedUnrealisedPnL;
     
-    // NEW: Load ETH-adjusted historical data
+    //  Load ETH-adjusted historical data
     historicalEthAdjustedROI = previousDailyPopulationMetric.historicalMedianEthAdjustedROI;
     historicalEthAdjustedAPR = previousDailyPopulationMetric.historicalMedianEthAdjustedAPR;
     historicalEthAdjustedProjectedROI = previousDailyPopulationMetric.historicalMedianEthAdjustedUnrealisedPnL;
@@ -649,7 +722,7 @@ export function calculateGlobalMetrics(block: ethereum.Block): void {
   // Update projected unrealised PnL historical array
   let updatedHistoricalProjectedUnrealisedPnL = updateProjectedAPRHistoricalArray(historicalProjectedUnrealisedPnL, medianProjectedUnrealisedPnL);
   
-  // NEW: Update historical arrays with ETH-adjusted values
+  //  Update historical arrays with ETH-adjusted values
   let updatedHistoricalEthAdjusted = updateHistoricalArraysEthAdjusted(
     historicalEthAdjustedROI,
     historicalEthAdjustedAPR,
@@ -666,7 +739,7 @@ export function calculateGlobalMetrics(block: ethereum.Block): void {
   let sma7dAPR = calculate7DaysSMA(updatedHistoricalAPR);
   let sma7dProjectedAPR = calculate7DaysSMA(updatedHistoricalProjectedUnrealisedPnL);
   
-  // NEW: Calculate 7-day SMAs for ETH-adjusted metrics
+  //  Calculate 7-day SMAs for ETH-adjusted metrics
   let sma7dEthAdjustedROI = calculate7DaysSMA(updatedHistoricalEthAdjusted[0]);
   let sma7dEthAdjustedAPR = calculate7DaysSMA(updatedHistoricalEthAdjusted[1]);
   let sma7dEthAdjustedProjectedROI = calculate7DaysSMA(updatedHistoricalEthAdjusted[2]);
@@ -684,9 +757,22 @@ export function calculateGlobalMetrics(block: ethereum.Block): void {
     serviceAddresses = serviceRegistry.serviceAddresses;
   }
   
-  // NEW: Calculate staking APR support fields
+  // Calculate AUM metrics using the same filtered snapshots
+  let medianAUM = calculateMedianAUM(snapshots);
   let totalFundedAUM = calculateTotalFundedAUM(serviceAddresses);
   let averageAgentDaysActive = calculateAverageAgentDaysActive(block);
+  
+  //Load historical AUM data
+  let historicalAUM: BigDecimal[] = [];
+  if (previousDailyPopulationMetric) {
+    historicalAUM = previousDailyPopulationMetric.historicalMedianAUM;
+  }
+  
+  // Update AUM historical array
+  let updatedHistoricalAUM = updateAUMHistoricalArray(historicalAUM, medianAUM);
+  
+  //Calculate 7-day SMA for AUM
+  let sma7dAUM = calculate7DaysSMA(updatedHistoricalAUM);
   
   // Create and save DailyPopulationMetric entity with ETH-adjusted metrics
   updateDailyPopulationMetricEntityWithEthAdjusted(
@@ -714,6 +800,9 @@ export function calculateGlobalMetrics(block: ethereum.Block): void {
     updatedHistoricalEthAdjusted[1],
     updatedHistoricalEthAdjusted[2],
     updatedHistoricalEthAdjusted[3],
+    medianAUM,
+    sma7dAUM,
+    updatedHistoricalAUM,
     snapshots.length,
     block
   );

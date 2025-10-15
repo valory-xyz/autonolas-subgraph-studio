@@ -51,7 +51,7 @@ type FundingBalance @entity(immutable: false) {
   service: Service              # Link to service
   totalInUsd: BigDecimal!
   totalOutUsd: BigDecimal!
-  totalWithdrawnUsd: BigDecimal!  # NEW: Track USDC withdrawals to EOAs separately
+  totalWithdrawnUsd: BigDecimal!  #  Track USDC withdrawals to EOAs separately
   netUsd: BigDecimal!
   firstInTimestamp: BigInt!
   lastChangeTs: BigInt!
@@ -276,6 +276,7 @@ type DailyPopulationMetric @entity(immutable: true) {
   
   # Staking APR Calculation Support
   totalFundedAUM: BigDecimal!       # Sum of all FundingBalance.totalInUsd across active services
+  medianAUM: BigDecimal!            # Median AUM across all active agents
   averageAgentDaysActive: BigDecimal!  # Average time since agents started (for annualization)
   
   # 7-Day Simple Moving Averages
@@ -283,6 +284,7 @@ type DailyPopulationMetric @entity(immutable: true) {
   sma7dAPR: BigDecimal!             # 7-day SMA of median population APR
   sma7dUnrealisedPnL: BigDecimal!   # 7-day SMA of median unrealised PnL
   sma7dProjectedUnrealisedPnL: BigDecimal!  # 7-day SMA of median projected unrealised PnL
+  sma7dAUM: BigDecimal!             # 7-day SMA of median AUM
   
   # 7-day Simple Moving Averages for ETH-adjusted metrics
   sma7dEthAdjustedROI: BigDecimal!
@@ -300,6 +302,7 @@ type DailyPopulationMetric @entity(immutable: true) {
   historicalMedianAPR: [BigDecimal!]!  # Last 7 days of median APR values
   historicalMedianUnrealisedPnL: [BigDecimal!]!  # Last 7 days of median unrealised PnL values
   historicalMedianProjectedUnrealisedPnL: [BigDecimal!]!  # Last 7 days of median projected unrealised PnL values
+  historicalMedianAUM: [BigDecimal!]!  # Last 7 days of median AUM values
   
   # Historical arrays for ETH-adjusted SMA calculations
   historicalMedianEthAdjustedROI: [BigDecimal!]!

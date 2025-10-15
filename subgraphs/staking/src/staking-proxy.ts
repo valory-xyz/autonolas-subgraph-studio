@@ -22,7 +22,7 @@ import {
   ServicesEvicted,
   Withdraw
 } from "../generated/schema"
-import { createRewardUpdate, getGlobal, getOlasForStaking } from "./utils"
+import { createRewardUpdate, getGlobal, getOlasForStaking, upsertDailyStakingGlobal } from "./utils"
 
 export function handleCheckpoint(event: CheckpointEvent): void {
   let entity = new Checkpoint(
@@ -54,6 +54,14 @@ export function handleCheckpoint(event: CheckpointEvent): void {
       service.save();
     }
   }
+
+  // Update global cumulative staking rewards
+  let global = getGlobal();
+  global.totalRewards = global.totalRewards.plus(totalRewards);
+  global.save();
+
+  // Upsert daily snapshot with latest totals
+  upsertDailyStakingGlobal(event, global.totalRewards);
 
   // Update claimable staking rewards
   createRewardUpdate(
