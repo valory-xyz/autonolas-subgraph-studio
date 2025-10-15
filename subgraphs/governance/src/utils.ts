@@ -1,6 +1,6 @@
 import { Address, BigInt } from "@graphprotocol/graph-ts";
-import { GovernorOLAS } from "../../../generated/GovernorOLAS/GovernorOLAS";
-import { ProposalCreated } from "../../../generated/schema";
+import { GovernorOLAS } from "../generated/GovernorOLAS/GovernorOLAS";
+import { ProposalCreated } from "../generated/schema";
 
 /**
  * Update quorum for historical proposals

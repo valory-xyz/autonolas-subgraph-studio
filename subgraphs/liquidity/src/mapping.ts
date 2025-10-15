@@ -1,5 +1,3 @@
-import { BigInt } from '@graphprotocol/graph-ts';
-
 import { Transfer } from '../generated/OLASETHLPToken/ERC20';
 import { Sync } from '../generated/OLASETHPair/UniswapV2Pair';
 

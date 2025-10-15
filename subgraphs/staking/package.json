@@ -1,6 +1,5 @@
 {
   "name": "autonolas-tokenomics-subgraph",
-  "license": "UNLICENSED",
   "scripts": {
     "codegen": "graph codegen subgraph.gnosis.yaml",
     "build": "graph build subgraph.gnosis.yaml",

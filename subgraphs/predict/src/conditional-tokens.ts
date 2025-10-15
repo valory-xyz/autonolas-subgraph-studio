@@ -1,8 +1,8 @@
 import {
   ConditionPreparation as ConditionPreparationEvent,
   PayoutRedemption as PayoutRedemptionEvent,
-} from "../../../generated/ConditionalTokens/ConditionalTokens";
-import { ConditionPreparation, Question } from "../../../generated/schema";
+} from "../generated/ConditionalTokens/ConditionalTokens";
+import { ConditionPreparation, Question } from "../generated/schema";
 import { updateTraderAgentPayout } from "./utils";
 
 export function handleConditionPreparation(

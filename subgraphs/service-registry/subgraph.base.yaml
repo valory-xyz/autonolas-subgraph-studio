@@ -1,19 +1,18 @@
 specVersion: 0.0.5
 schema:
-  file: ../common/schema.graphql
+  file: ./schema.graphql
 dataSources:
   - kind: ethereum/contract
-    name: ServiceRegistry
-    network: mainnet # The Graph's network name for Ethereum
+    name: ServiceRegistryL2
+    network: base
     source:
-      address: "0x48b6af7B12C71f09e2fC8aF4855De4Ff54e775cA"
-      abi: ServiceRegistry
-      startBlock: 15178299
+      address: "0x3C1fF68f5aa342D296d4DEe4Bb1cACCA912D95fE"
+      abi: ServiceRegistryL2
+      startBlock: 10827380
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.6
       language: wasm/assemblyscript
-      file: src/mapping.ts
       entities:
         - Service
         - Multisig
@@ -25,10 +24,10 @@ dataSources:
         - GlobalMetrics
         - Operator
       abis:
-        - name: ServiceRegistry
-          file: ../../../abis/ServiceRegistry.json
+        - name: ServiceRegistryL2
+          file: ../../abis/ServiceRegistryL2.json
       eventHandlers:
-        - event: CreateService(indexed uint256)
+        - event: CreateService(indexed uint256,bytes32)
           handler: handleCreateService
         - event: CreateMultisigWithAgents(indexed uint256,indexed address)
           handler: handleCreateMultisig
@@ -36,19 +35,19 @@ dataSources:
           handler: handleRegisterInstance
         - event: TerminateService(indexed uint256)
           handler: handleTerminateService
-      callHandlers: []
+      file: ./src/mapping.ts
 
 templates:
   - kind: ethereum/contract
     name: GnosisSafe
-    network: mainnet
+    network: base
     source:
       abi: GnosisSafe
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.6
       language: wasm/assemblyscript
-      file: src/mapping.ts
+      file: ./src/mapping.ts
       entities:
         - Service
         - Multisig
@@ -62,7 +61,7 @@ templates:
         - Operator
       abis:
         - name: GnosisSafe
-          file: ../../../abis/GnosisSafe.json
+          file: ./abis/GnosisSafe.json
       eventHandlers:
         - event: ExecutionSuccess(bytes32,uint256)
           handler: handleExecutionSuccess

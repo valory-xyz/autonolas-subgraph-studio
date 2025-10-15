@@ -1,5 +1,5 @@
 import { Address, BigInt } from "@graphprotocol/graph-ts";
-import { Global, TraderAgent } from "../../../generated/schema";
+import { Global, TraderAgent } from "../generated/schema";
 
 export function updateTraderAgentActivity(
   address: Address,

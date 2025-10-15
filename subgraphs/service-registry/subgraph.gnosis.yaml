@@ -1,14 +1,14 @@
 specVersion: 0.0.5
 schema:
-  file: ../common/schema.graphql
+  file: ./schema.graphql
 dataSources:
   - kind: ethereum/contract
     name: ServiceRegistryL2
-    network: celo
+    network: gnosis
     source:
-      address: "0xE3607b00E75f6405248323A9417ff6b39B244b50"
+      address: "0x9338b5153AE39BB89f50468E608eD9d764B755fD"
       abi: ServiceRegistryL2
-      startBlock: 24205712
+      startBlock: 27871084
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.6
@@ -25,7 +25,7 @@ dataSources:
         - Operator
       abis:
         - name: ServiceRegistryL2
-          file: ../../../abis/ServiceRegistryL2.json
+          file: ../../abis/ServiceRegistryL2.json
       eventHandlers:
         - event: CreateService(indexed uint256,bytes32)
           handler: handleCreateService
@@ -35,19 +35,19 @@ dataSources:
           handler: handleRegisterInstance
         - event: TerminateService(indexed uint256)
           handler: handleTerminateService
-      file: ../common/mappers/mapping.ts
+      file: ./src/mapping.ts
 
 templates:
   - kind: ethereum/contract
     name: GnosisSafe
-    network: celo
+    network: gnosis
     source:
       abi: GnosisSafe
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.6
       language: wasm/assemblyscript
-      file: ../common/mappers/mapping.ts
+      file: ./src/mapping.ts
       entities:
         - Service
         - Multisig
@@ -61,10 +61,9 @@ templates:
         - Operator
       abis:
         - name: GnosisSafe
-          file: ../../../abis/GnosisSafe.json
+          file: ../../abis/GnosisSafe.json
       eventHandlers:
         - event: ExecutionSuccess(bytes32,uint256)
           handler: handleExecutionSuccess
         - event: ExecutionFromModuleSuccess(indexed address)
           handler: handleExecutionFromModuleSuccess
-      

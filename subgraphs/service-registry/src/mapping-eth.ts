@@ -4,7 +4,7 @@ import {
   CreateService,
   RegisterInstance,
   TerminateService,
-} from "../generated/ServiceRegistryL2/ServiceRegistryL2";
+} from "../generated/ServiceRegistry/ServiceRegistry";
 import {
   ExecutionSuccess,
   ExecutionFromModuleSuccess,
@@ -29,7 +29,7 @@ import {
   createOrUpdateAgentRegistration,
   getMostRecentAgentId,
   updateUniqueOperators,
-} from "../utils";
+} from "./utils";
 
 function updateDailyAgentPerformance(
   event: ethereum.Event,

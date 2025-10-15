@@ -1,11 +1,11 @@
-import { FixedProductMarketMakerCreation as FixedProductMarketMakerCreationEvent } from "../../../generated/FPMMDeterministicFactory/FPMMDeterministicFactory";
+import { FixedProductMarketMakerCreation as FixedProductMarketMakerCreationEvent } from "../generated/FPMMDeterministicFactory/FPMMDeterministicFactory";
 import {
   ConditionPreparation,
   CreatorAgent,
   FixedProductMarketMakerCreation,
   Question,
-} from "../../../generated/schema";
-import { FixedProductMarketMaker as FixedProductMarketMakerTemplate } from "../../../generated/templates";
+} from "../generated/schema";
+import { FixedProductMarketMaker as FixedProductMarketMakerTemplate } from "../generated/templates";
 import { CREATOR_ADDRESSES, BLACKLISTED_MARKETS } from "./constants";
 
 export function handleFixedProductMarketMakerCreation(

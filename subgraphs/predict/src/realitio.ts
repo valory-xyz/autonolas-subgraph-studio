@@ -4,14 +4,14 @@ import {
   LogAnswerReveal as LogAnswerRevealEvent,
   LogNotifyOfArbitrationRequest as LogNotifyOfArbitrationRequestEvent,
   LogFinalize as LogFinalizeEvent,
-} from "../../../generated/Realitio/Realitio";
+} from "../generated/Realitio/Realitio";
 import {
   Question,
   QuestionFinalized,
   TraderAgent,
   FixedProductMarketMakerCreation,
   LogNotifyOfArbitrationRequest,
-} from "../../../generated/schema";
+} from "../generated/schema";
 import { CREATOR_ADDRESSES, INVALID_ANSWER_HEX } from "./constants";
 import { getGlobal } from "./utils";
 
