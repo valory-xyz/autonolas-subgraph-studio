@@ -11,7 +11,7 @@ import {
   VoteCastWithParams as VoteCastWithParamsEvent,
   VotingDelaySet as VotingDelaySetEvent,
   VotingPeriodSet as VotingPeriodSetEvent,
-} from "../../../generated/GovernorOLAS/GovernorOLAS";
+} from "../generated/GovernorOLAS/GovernorOLAS";
 import {
   ProposalCanceled,
   ProposalCreated,
@@ -24,7 +24,7 @@ import {
   VoteCastWithParams,
   VotingDelaySet,
   VotingPeriodSet,
-} from "../../../generated/schema";
+} from "../generated/schema";
 import { updateProposalQuorum } from "./utils";
 
 export function handleProposalCanceled(event: ProposalCanceledEvent): void {

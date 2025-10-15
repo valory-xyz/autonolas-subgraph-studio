@@ -3,11 +3,11 @@ import {
   Bet,
   FixedProductMarketMakerCreation,
   TraderAgent,
-} from "../../../generated/schema";
+} from "../generated/schema";
 import {
   FPMMBuy as FPMMBuyEvent,
   FPMMSell as FPMMSellEvent,
-} from "../../../generated/templates/FixedProductMarketMaker/FixedProductMarketMaker";
+} from "../generated/templates/FixedProductMarketMaker/FixedProductMarketMaker";
 import { updateTraderAgentActivity } from "./utils";
 
 export function handleBuy(event: FPMMBuyEvent): void {

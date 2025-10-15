@@ -13,7 +13,7 @@ import {
   Multisig,
   Service,
   Operator,
-} from "./generated/schema";
+} from "../generated/schema";
 
 const ONE_DAY = BigInt.fromI32(86400);
 

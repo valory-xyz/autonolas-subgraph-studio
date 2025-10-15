@@ -1,6 +1,6 @@
 import { BigInt } from "@graphprotocol/graph-ts";
-import { CreateMultisigWithAgents as CreateMultisigWithAgentsEvent } from "../../../generated/ServiceRegistryL2/ServiceRegistryL2";
-import { TraderAgent } from "../../../generated/schema";
+import { CreateMultisigWithAgents as CreateMultisigWithAgentsEvent } from "../generated/ServiceRegistryL2/ServiceRegistryL2";
+import { TraderAgent } from "../generated/schema";
 import { getGlobal } from "./utils";
 
 export function handleCreateMultisigWithAgents(
