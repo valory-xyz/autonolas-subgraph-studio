@@ -186,6 +186,7 @@ type Service @entity(immutable: false) {
   olasRewardsEarned: BigInt!
   blockNumber: BigInt!
   blockTimestamp: BigInt!
+  global: Global!
 }
 
 type Global @entity(immutable: false) {
@@ -194,11 +195,15 @@ type Global @entity(immutable: false) {
   cumulativeOlasUnstaked: BigInt!
   currentOlasStaked: BigInt!
   totalRewards: BigInt!
+  lastActiveDayTimestamp: BigInt!
+  services: [Service!]! @derivedFrom(field: "global")
 }
 
-type DailyStakingGlobal @entity(immutable: false) {
+type CumulativeDailyStakingGlobal @entity(immutable: false) {
   id: Bytes!
   timestamp: BigInt!
   block: BigInt!
   totalRewards: BigInt!
+  numServices: Int!
+  medianCumulativeRewards: BigInt!
 }
