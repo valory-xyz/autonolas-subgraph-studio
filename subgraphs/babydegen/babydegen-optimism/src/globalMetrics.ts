@@ -104,8 +104,6 @@ export function getAllAgentSnapshotsForDay(block: ethereum.Block): AgentPortfoli
     return snapshots
   }
   
-  // Track exclusions for logging
-  let agentsExcludedForInsufficientPositions = 0
   let totalAgentsProcessed = 0
   
   // For each service, look for snapshots created on this day
@@ -113,29 +111,15 @@ export function getAllAgentSnapshotsForDay(block: ethereum.Block): AgentPortfoli
     let serviceAddress = serviceRegistry.serviceAddresses[i]
     
     // Query all snapshots for this service and filter by day
-    // Since we don't know the exact block timestamp, we need to find snapshots within the day
     let portfolio = AgentPortfolio.load(serviceAddress)
     if (portfolio && portfolio.lastSnapshotTimestamp.gt(BigInt.zero())) {
       let snapshotDayTimestamp = getDayTimestamp(portfolio.lastSnapshotTimestamp)
       
-      // If the last snapshot was taken on this day, check position requirements
+      // If the last snapshot was taken on this day, include ALL agents (no position filtering)
       if (snapshotDayTimestamp.equals(dayTimestamp)) {
         totalAgentsProcessed++
         
-        // Check if agent has at least 2 total positions (active + closed)
-        let totalPositions = portfolio.totalPositions + portfolio.totalClosedPositions
-        if (totalPositions < 2) {
-          agentsExcludedForInsufficientPositions++
-          log.info("Excluding agent {} from population metrics - insufficient position history: {} total positions (active: {}, closed: {})", [
-            serviceAddress.toHexString(),
-            totalPositions.toString(),
-            portfolio.totalPositions.toString(),
-            portfolio.totalClosedPositions.toString()
-          ])
-          continue // Skip this agent
-        }
-        
-        // Load and include snapshot
+        // Load and include snapshot for ALL agents
         let snapshotId = serviceAddress.toHexString() + "-" + portfolio.lastSnapshotTimestamp.toString()
         let snapshot = AgentPortfolioSnapshot.load(Bytes.fromUTF8(snapshotId))
         
@@ -146,14 +130,39 @@ export function getAllAgentSnapshotsForDay(block: ethereum.Block): AgentPortfoli
     }
   }
   
-  log.info("Found {} agent snapshots for day timestamp {} (excluded {} for insufficient positions, {} total processed)", [
+  log.info("Found {} agent snapshots for day timestamp {} (included ALL agents, {} total processed)", [
     snapshots.length.toString(),
     dayTimestamp.toString(),
-    agentsExcludedForInsufficientPositions.toString(),
     totalAgentsProcessed.toString()
   ])
   
   return snapshots
+}
+
+/**
+ * Get lifetime active agent snapshots (agents with >2 total positions)
+ * @param snapshots All agent snapshots
+ * @returns Array of snapshots for lifetime active agents
+ */
+export function getLifetimeActiveAgentSnapshots(snapshots: AgentPortfolioSnapshot[]): AgentPortfolioSnapshot[] {
+  let lifetimeActiveSnapshots: AgentPortfolioSnapshot[] = []
+  
+  for (let i = 0; i < snapshots.length; i++) {
+    let snapshot = snapshots[i]
+    let totalPositions = snapshot.totalPositions + snapshot.totalClosedPositions
+    
+    // Include agents with >2 total positions (lifetime active)
+    if (totalPositions > 2) {
+      lifetimeActiveSnapshots.push(snapshot)
+    }
+  }
+  
+  log.info("Found {} lifetime active agent snapshots (>2 positions) out of {} total snapshots", [
+    lifetimeActiveSnapshots.length.toString(),
+    snapshots.length.toString()
+  ])
+  
+  return lifetimeActiveSnapshots
 }
 
 /**
@@ -374,7 +383,25 @@ export function updateDailyPopulationMetricEntityWithEthAdjusted(
   medianAUM: BigDecimal,
   sma7dAUM: BigDecimal,
   historicalAUM: BigDecimal[],
+  // Lifetime active agent parameters
+  medianLifetimeActiveUnrealisedPnL: BigDecimal,
+  medianLifetimeActiveProjectedUnrealisedPnL: BigDecimal,
+  medianLifetimeActiveEthAdjustedUnrealisedPnL: BigDecimal,
+  medianLifetimeActiveEthAdjustedProjectedUnrealisedPnL: BigDecimal,
+  medianLifetimeActiveAUM: BigDecimal,
+  totalLifetimeActiveFundedAUM: BigDecimal,
+  sma7dLifetimeActiveUnrealisedPnL: BigDecimal,
+  sma7dLifetimeActiveProjectedUnrealisedPnL: BigDecimal,
+  sma7dLifetimeActiveEthAdjustedUnrealisedPnL: BigDecimal,
+  sma7dLifetimeActiveEthAdjustedProjectedUnrealisedPnL: BigDecimal,
+  sma7dLifetimeActiveAUM: BigDecimal,
+  historicalLifetimeActiveUnrealisedPnL: BigDecimal[],
+  historicalLifetimeActiveProjectedUnrealisedPnL: BigDecimal[],
+  historicalLifetimeActiveEthAdjustedUnrealisedPnL: BigDecimal[],
+  historicalLifetimeActiveEthAdjustedProjectedUnrealisedPnL: BigDecimal[],
+  historicalLifetimeActiveAUM: BigDecimal[],
   totalAgents: number,
+  totalLifetimeActiveAgents: number,
   block: ethereum.Block
 ): void {
   // Use day timestamp (UTC midnight) for entity ID to ensure one entity per day
@@ -430,6 +457,29 @@ export function updateDailyPopulationMetricEntityWithEthAdjusted(
   dailyPopulationMetric.historicalMedianEthAdjustedAPR = historicalEthAdjustedAPR;
   dailyPopulationMetric.historicalMedianEthAdjustedUnrealisedPnL = historicalEthAdjustedUnrealisedPnL;
   dailyPopulationMetric.historicalMedianEthAdjustedProjectedUnrealisedPnL = historicalEthAdjustedProjectedUnrealisedPnL;
+  
+  // Set lifetime active agent metrics
+  dailyPopulationMetric.medianLifetimeActiveUnrealisedPnL = medianLifetimeActiveUnrealisedPnL;
+  dailyPopulationMetric.medianLifetimeActiveProjectedUnrealisedPnL = medianLifetimeActiveProjectedUnrealisedPnL;
+  dailyPopulationMetric.medianLifetimeActiveEthAdjustedUnrealisedPnL = medianLifetimeActiveEthAdjustedUnrealisedPnL;
+  dailyPopulationMetric.medianLifetimeActiveEthAdjustedProjectedUnrealisedPnL = medianLifetimeActiveEthAdjustedProjectedUnrealisedPnL;
+  dailyPopulationMetric.medianLifetimeActiveAUM = medianLifetimeActiveAUM;
+  dailyPopulationMetric.totalLifetimeActiveFundedAUM = totalLifetimeActiveFundedAUM;
+  dailyPopulationMetric.totalLifetimeActiveAgents = totalLifetimeActiveAgents as i32;
+  
+  // Set lifetime active agent 7-day SMAs
+  dailyPopulationMetric.sma7dLifetimeActiveUnrealisedPnL = sma7dLifetimeActiveUnrealisedPnL;
+  dailyPopulationMetric.sma7dLifetimeActiveProjectedUnrealisedPnL = sma7dLifetimeActiveProjectedUnrealisedPnL;
+  dailyPopulationMetric.sma7dLifetimeActiveEthAdjustedUnrealisedPnL = sma7dLifetimeActiveEthAdjustedUnrealisedPnL;
+  dailyPopulationMetric.sma7dLifetimeActiveEthAdjustedProjectedUnrealisedPnL = sma7dLifetimeActiveEthAdjustedProjectedUnrealisedPnL;
+  dailyPopulationMetric.sma7dLifetimeActiveAUM = sma7dLifetimeActiveAUM;
+  
+  // Set lifetime active agent historical data
+  dailyPopulationMetric.historicalMedianLifetimeActiveUnrealisedPnL = historicalLifetimeActiveUnrealisedPnL;
+  dailyPopulationMetric.historicalMedianLifetimeActiveProjectedUnrealisedPnL = historicalLifetimeActiveProjectedUnrealisedPnL;
+  dailyPopulationMetric.historicalMedianLifetimeActiveEthAdjustedUnrealisedPnL = historicalLifetimeActiveEthAdjustedUnrealisedPnL;
+  dailyPopulationMetric.historicalMedianLifetimeActiveEthAdjustedProjectedUnrealisedPnL = historicalLifetimeActiveEthAdjustedProjectedUnrealisedPnL;
+  dailyPopulationMetric.historicalMedianLifetimeActiveAUM = historicalLifetimeActiveAUM;
   
   // Load all services from the registry to get service addresses for staking calculations
   let registryId = Bytes.fromUTF8("registry");
@@ -498,6 +548,27 @@ export function calculateTotalFundedAUM(serviceAddresses: Bytes[]): BigDecimal {
     
     if (fundingBalance) {
       // Use netUsd (total funding balance) for AUM calculation
+      totalAUM = totalAUM.plus(fundingBalance.netUsd);
+    }
+  }
+  
+  return totalAUM;
+}
+
+/**
+ * Calculate total funded AUM for specific agent snapshots
+ * @param snapshots Array of agent portfolio snapshots
+ * @returns Total funded AUM as BigDecimal
+ */
+export function calculateTotalFundedAUMForSnapshots(snapshots: AgentPortfolioSnapshot[]): BigDecimal {
+  let totalAUM = BigDecimal.zero();
+  
+  for (let i = 0; i < snapshots.length; i++) {
+    let snapshot = snapshots[i];
+    let serviceAddress = snapshot.service;
+    let fundingBalance = FundingBalance.load(serviceAddress);
+    
+    if (fundingBalance) {
       totalAUM = totalAUM.plus(fundingBalance.netUsd);
     }
   }
@@ -685,6 +756,38 @@ export function calculateGlobalMetrics(block: ethereum.Block): void {
   let medianEthAdjustedProjectedROI = calculateMedian(ethAdjustedProjectedRoiValues);
   let medianEthAdjustedProjectedAPR = calculateMedian(ethAdjustedProjectedAprValues);
   
+  // Get lifetime active agent snapshots (>2 positions)
+  let lifetimeActiveSnapshots = getLifetimeActiveAgentSnapshots(snapshots);
+  
+  // Calculate metrics for lifetime active agents
+  let lifetimeActiveUnrealisedPnLValues: BigDecimal[] = [];
+  let lifetimeActiveProjectedUnrealisedPnLValues: BigDecimal[] = [];
+  let lifetimeActiveEthAdjustedUnrealisedPnLValues: BigDecimal[] = [];
+  let lifetimeActiveEthAdjustedProjectedUnrealisedPnLValues: BigDecimal[] = [];
+  
+  for (let i = 0; i < lifetimeActiveSnapshots.length; i++) {
+    let snapshot = lifetimeActiveSnapshots[i];
+
+    let shouldExclude = shouldExcludeFromProjectedROI(snapshot);
+    
+    if (!shouldExclude) {
+      lifetimeActiveUnrealisedPnLValues.push(snapshot.unrealisedPnL);
+      lifetimeActiveProjectedUnrealisedPnLValues.push(snapshot.projectedUnrealisedPnL);
+      lifetimeActiveEthAdjustedUnrealisedPnLValues.push(snapshot.ethAdjustedUnrealisedPnL);
+      lifetimeActiveEthAdjustedProjectedUnrealisedPnLValues.push(snapshot.ethAdjustedProjectedUnrealisedPnL);
+    }
+  }
+  
+  // Calculate medians for lifetime active agents
+  let medianLifetimeActiveUnrealisedPnL = calculateMedian(lifetimeActiveUnrealisedPnLValues);
+  let medianLifetimeActiveProjectedUnrealisedPnL = calculateMedian(lifetimeActiveProjectedUnrealisedPnLValues);
+  let medianLifetimeActiveEthAdjustedUnrealisedPnL = calculateMedian(lifetimeActiveEthAdjustedUnrealisedPnLValues);
+  let medianLifetimeActiveEthAdjustedProjectedUnrealisedPnL = calculateMedian(lifetimeActiveEthAdjustedProjectedUnrealisedPnLValues);
+  
+  // Calculate AUM metrics for lifetime active agents
+  let medianLifetimeActiveAUM = calculateMedianAUM(lifetimeActiveSnapshots);
+  let totalLifetimeActiveFundedAUM = calculateTotalFundedAUMForSnapshots(lifetimeActiveSnapshots);
+  
   // Get previous DailyPopulationMetric entity for historical data using day timestamp
   let previousDailyPopulationMetric = getPreviousDailyPopulationMetric(dayTimestamp);
   let historicalROI: BigDecimal[] = [];
@@ -698,6 +801,13 @@ export function calculateGlobalMetrics(block: ethereum.Block): void {
   let historicalEthAdjustedProjectedROI: BigDecimal[] = [];
   let historicalEthAdjustedProjectedAPR: BigDecimal[] = [];
   
+  // Initialize lifetime active historical arrays
+  let historicalLifetimeActiveUnrealisedPnL: BigDecimal[] = [];
+  let historicalLifetimeActiveProjectedUnrealisedPnL: BigDecimal[] = [];
+  let historicalLifetimeActiveEthAdjustedUnrealisedPnL: BigDecimal[] = [];
+  let historicalLifetimeActiveEthAdjustedProjectedUnrealisedPnL: BigDecimal[] = [];
+  let historicalLifetimeActiveAUM: BigDecimal[] = [];
+  
   if (previousDailyPopulationMetric) {
     historicalROI = previousDailyPopulationMetric.historicalMedianROI;
     historicalAPR = previousDailyPopulationMetric.historicalMedianAPR;
@@ -709,6 +819,13 @@ export function calculateGlobalMetrics(block: ethereum.Block): void {
     historicalEthAdjustedAPR = previousDailyPopulationMetric.historicalMedianEthAdjustedAPR;
     historicalEthAdjustedProjectedROI = previousDailyPopulationMetric.historicalMedianEthAdjustedUnrealisedPnL;
     historicalEthAdjustedProjectedAPR = previousDailyPopulationMetric.historicalMedianEthAdjustedProjectedUnrealisedPnL;
+    
+    // Load lifetime active historical data
+    historicalLifetimeActiveUnrealisedPnL = previousDailyPopulationMetric.historicalMedianLifetimeActiveUnrealisedPnL;
+    historicalLifetimeActiveProjectedUnrealisedPnL = previousDailyPopulationMetric.historicalMedianLifetimeActiveProjectedUnrealisedPnL;
+    historicalLifetimeActiveEthAdjustedUnrealisedPnL = previousDailyPopulationMetric.historicalMedianLifetimeActiveEthAdjustedUnrealisedPnL;
+    historicalLifetimeActiveEthAdjustedProjectedUnrealisedPnL = previousDailyPopulationMetric.historicalMedianLifetimeActiveEthAdjustedProjectedUnrealisedPnL;
+    historicalLifetimeActiveAUM = previousDailyPopulationMetric.historicalMedianLifetimeActiveAUM;
   }
   
   // Update historical arrays with new median values
@@ -774,6 +891,20 @@ export function calculateGlobalMetrics(block: ethereum.Block): void {
   //Calculate 7-day SMA for AUM
   let sma7dAUM = calculate7DaysSMA(updatedHistoricalAUM);
   
+  // Update lifetime active historical arrays with new median values
+  let updatedHistoricalLifetimeActiveUnrealisedPnL = updateProjectedAPRHistoricalArray(historicalLifetimeActiveUnrealisedPnL, medianLifetimeActiveUnrealisedPnL);
+  let updatedHistoricalLifetimeActiveProjectedUnrealisedPnL = updateProjectedAPRHistoricalArray(historicalLifetimeActiveProjectedUnrealisedPnL, medianLifetimeActiveProjectedUnrealisedPnL);
+  let updatedHistoricalLifetimeActiveEthAdjustedUnrealisedPnL = updateProjectedAPRHistoricalArray(historicalLifetimeActiveEthAdjustedUnrealisedPnL, medianLifetimeActiveEthAdjustedUnrealisedPnL);
+  let updatedHistoricalLifetimeActiveEthAdjustedProjectedUnrealisedPnL = updateProjectedAPRHistoricalArray(historicalLifetimeActiveEthAdjustedProjectedUnrealisedPnL, medianLifetimeActiveEthAdjustedProjectedUnrealisedPnL);
+  let updatedHistoricalLifetimeActiveAUM = updateAUMHistoricalArray(historicalLifetimeActiveAUM, medianLifetimeActiveAUM);
+  
+  // Calculate 7-day SMAs for lifetime active agents
+  let sma7dLifetimeActiveUnrealisedPnL = calculate7DaysSMA(updatedHistoricalLifetimeActiveUnrealisedPnL);
+  let sma7dLifetimeActiveProjectedUnrealisedPnL = calculate7DaysSMA(updatedHistoricalLifetimeActiveProjectedUnrealisedPnL);
+  let sma7dLifetimeActiveEthAdjustedUnrealisedPnL = calculate7DaysSMA(updatedHistoricalLifetimeActiveEthAdjustedUnrealisedPnL);
+  let sma7dLifetimeActiveEthAdjustedProjectedUnrealisedPnL = calculate7DaysSMA(updatedHistoricalLifetimeActiveEthAdjustedProjectedUnrealisedPnL);
+  let sma7dLifetimeActiveAUM = calculate7DaysSMA(updatedHistoricalLifetimeActiveAUM);
+
   // Create and save DailyPopulationMetric entity with ETH-adjusted metrics
   updateDailyPopulationMetricEntityWithEthAdjusted(
     medianROI,
@@ -803,7 +934,25 @@ export function calculateGlobalMetrics(block: ethereum.Block): void {
     medianAUM,
     sma7dAUM,
     updatedHistoricalAUM,
+    // Lifetime active agent parameters
+    medianLifetimeActiveUnrealisedPnL,
+    medianLifetimeActiveProjectedUnrealisedPnL,
+    medianLifetimeActiveEthAdjustedUnrealisedPnL,
+    medianLifetimeActiveEthAdjustedProjectedUnrealisedPnL,
+    medianLifetimeActiveAUM,
+    totalLifetimeActiveFundedAUM,
+    sma7dLifetimeActiveUnrealisedPnL,
+    sma7dLifetimeActiveProjectedUnrealisedPnL,
+    sma7dLifetimeActiveEthAdjustedUnrealisedPnL,
+    sma7dLifetimeActiveEthAdjustedProjectedUnrealisedPnL,
+    sma7dLifetimeActiveAUM,
+    updatedHistoricalLifetimeActiveUnrealisedPnL,
+    updatedHistoricalLifetimeActiveProjectedUnrealisedPnL,
+    updatedHistoricalLifetimeActiveEthAdjustedUnrealisedPnL,
+    updatedHistoricalLifetimeActiveEthAdjustedProjectedUnrealisedPnL,
+    updatedHistoricalLifetimeActiveAUM,
     snapshots.length,
+    lifetimeActiveSnapshots.length,
     block
   );
   
