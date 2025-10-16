@@ -12,6 +12,9 @@ import { calculateUninvestedValue, updateFundingBalance } from "./tokenBalances"
 import { getServiceByAgent } from "./config"
 import { calculateActualROI, aggregateClosedPositionMetrics } from "./roiCalculation"
 import { getEthUsd } from "./common"
+import { getTokenPriceUSD } from "./priceDiscovery"
+import { WETH, WHITELISTED_TOKENS } from "./constants"
+import { TokenBalance } from "../../../../generated/schema"
 
 // ETH-adjusted metrics calculation class
 class EthAdjustedMetrics {
@@ -155,6 +158,151 @@ export function updateFunding(
   calculatePortfolioMetrics(serviceSafe, block)
 }
 
+// Refresh all TokenBalance USD values for a service using current prices (with 5-minute caching)
+export function refreshTokenBalanceUSDValues(
+  serviceSafe: Address,
+  block: ethereum.Block
+): void {
+  let service = getServiceByAgent(serviceSafe)
+  if (service == null) {
+    return
+  }
+
+  // Create array of all tokens to refresh (ETH + whitelisted tokens)
+  let tokensToRefresh: Address[] = []
+
+  // Add ETH (Address.zero())
+  tokensToRefresh.push(Address.zero())
+
+  // Add all whitelisted tokens
+  for (let i = 0; i < WHITELISTED_TOKENS.length; i++) {
+    let tokenAddressString = WHITELISTED_TOKENS[i]
+    let tokenAddress = Address.fromString(tokenAddressString)
+    tokensToRefresh.push(tokenAddress)
+  }
+
+  // Refresh USD values for all tokens
+  for (let i = 0; i < tokensToRefresh.length; i++) {
+    let tokenAddress = tokensToRefresh[i]
+    let balanceId = serviceSafe.toHexString() + "-" + tokenAddress.toHexString()
+    let balance = TokenBalance.load(Bytes.fromUTF8(balanceId))
+
+    if (balance != null && balance.balance.gt(BigDecimal.zero())) {
+      // Determine which address to use for price lookup
+      let priceTokenAddress = tokenAddress.equals(Address.zero()) ? WETH : tokenAddress
+
+      // Use normal price caching (forceRefresh = false) for efficiency
+      let tokenPrice = getTokenPriceUSD(priceTokenAddress, block.timestamp, false)
+      balance.balanceUSD = balance.balance.times(tokenPrice)
+      balance.lastUpdated = block.timestamp
+      balance.lastBlock = block.number
+      balance.save()
+    }
+  }
+}
+
+// Updates a single token's USD value in a position
+function updateTokenUSDValue(
+  position: ProtocolPosition,
+  tokenAddress: Bytes,
+  tokenAmount: BigDecimal,
+  isToken0: boolean,
+  block: ethereum.Block
+): boolean {
+  let tokenPrice = getTokenPriceUSD(Address.fromBytes(tokenAddress), block.timestamp, false)
+  let newTokenUSD = tokenAmount.times(tokenPrice)
+  
+  let currentUSD = isToken0 ? position.amount0USD : position.amount1USD
+  
+  if (!newTokenUSD.equals(currentUSD)) {
+    if (isToken0) {
+      position.amount0USD = newTokenUSD
+    } else {
+      position.amount1USD = newTokenUSD
+    }
+    return true
+  }
+  
+  return false
+}
+
+//Refreshes USD values for a single position
+function refreshSinglePositionUSD(
+  position: ProtocolPosition,
+  block: ethereum.Block
+): void {
+  let needsUpdate = false
+
+  // Refresh token0 USD value if token0 exists and amount > 0
+  if (position.token0 && position.amount0 && position.amount0!.gt(BigDecimal.zero())) {
+    let updated = updateTokenUSDValue(position, position.token0!, position.amount0!, true, block)
+    if (updated) {
+      needsUpdate = true
+    }
+  }
+
+  // Refresh token1 USD value if token1 exists and amount > 0
+  if (position.token1 && position.amount1 && position.amount1!.gt(BigDecimal.zero())) {
+    let updated = updateTokenUSDValue(position, position.token1!, position.amount1!, false, block)
+    if (updated) {
+      needsUpdate = true
+    }
+  }
+
+  // Update total USD current value and save if any updates were made
+  if (needsUpdate) {
+    position.usdCurrent = position.amount0USD.plus(position.amount1USD)
+    position.save()
+  }
+}
+
+// Refresh USD values for all active ProtocolPositions of a service using current prices
+export function refreshActivePositionUSDValues(
+  serviceSafe: Address,
+  block: ethereum.Block
+): void {
+  let service = getServiceByAgent(serviceSafe)
+  if (service == null || service.positionIds == null) {
+    return
+  }
+
+  let positionIds = service.positionIds
+
+  for (let i = 0; i < positionIds.length; i++) {
+    let positionIdString = positionIds[i]
+    let position: ProtocolPosition | null = null
+
+    let directId = Bytes.fromUTF8(positionIdString)
+    position = ProtocolPosition.load(directId)
+
+    if (position == null) {
+      if (positionIdString.startsWith("0x") && positionIdString.length % 2 == 0) {
+        let hexBytes = Bytes.fromHexString(positionIdString)
+        let decodedString = hexBytes.toString()
+        let decodedId = Bytes.fromUTF8(decodedString)
+        position = ProtocolPosition.load(decodedId)
+      }
+    }
+
+    // Only refresh USD values for ACTIVE positions
+    if (position != null && position.isActive) {
+      refreshSinglePositionUSD(position, block)
+    }
+  }
+}
+
+// Comprehensive price refresh function for both token balances and active positions
+export function refreshAllUSDValues(
+  serviceSafe: Address,
+  block: ethereum.Block
+): void {
+  // Refresh TokenBalance USD values with current prices
+  refreshTokenBalanceUSDValues(serviceSafe, block)
+
+  // Refresh active ProtocolPosition USD values with current prices
+  refreshActivePositionUSDValues(serviceSafe, block)
+}
+
 // Calculate portfolio metrics for an agent
 export function calculatePortfolioMetrics(
   serviceSafe: Address, 
@@ -168,7 +316,10 @@ export function calculatePortfolioMetrics(
   
   // Ensure portfolio exists (replaces the existing if/else logic)
   let portfolio = ensureAgentPortfolio(serviceSafe, block.timestamp)
-  
+
+  // This ensures that both TokenBalance and ProtocolPosition USD values are current
+  refreshAllUSDValues(serviceSafe, block)
+
   // 1. Get initial investment from FundingBalance (use totalInUsd to preserve baseline)
   let fundingBalance = FundingBalance.load(serviceSafe as Bytes)
   let initialValue = fundingBalance ? fundingBalance.totalInUsd : BigDecimal.zero()
