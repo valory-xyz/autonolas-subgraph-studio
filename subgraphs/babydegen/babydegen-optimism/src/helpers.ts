@@ -201,17 +201,68 @@ export function refreshTokenBalanceUSDValues(
   }
 }
 
+// Updates a single token's USD value in a position
+function updateTokenUSDValue(
+  position: ProtocolPosition,
+  tokenAddress: Bytes,
+  tokenAmount: BigDecimal,
+  isToken0: boolean,
+  block: ethereum.Block
+): boolean {
+  let tokenPrice = getTokenPriceUSD(Address.fromBytes(tokenAddress), block.timestamp, false)
+  let newTokenUSD = tokenAmount.times(tokenPrice)
+  
+  let currentUSD = isToken0 ? position.amount0USD : position.amount1USD
+  
+  if (!newTokenUSD.equals(currentUSD)) {
+    if (isToken0) {
+      position.amount0USD = newTokenUSD
+    } else {
+      position.amount1USD = newTokenUSD
+    }
+    return true
+  }
+  
+  return false
+}
+
+//Refreshes USD values for a single position
+function refreshSinglePositionUSD(
+  position: ProtocolPosition,
+  block: ethereum.Block
+): void {
+  let needsUpdate = false
+
+  // Refresh token0 USD value if token0 exists and amount > 0
+  if (position.token0 && position.amount0 && position.amount0!.gt(BigDecimal.zero())) {
+    let updated = updateTokenUSDValue(position, position.token0!, position.amount0!, true, block)
+    if (updated) {
+      needsUpdate = true
+    }
+  }
+
+  // Refresh token1 USD value if token1 exists and amount > 0
+  if (position.token1 && position.amount1 && position.amount1!.gt(BigDecimal.zero())) {
+    let updated = updateTokenUSDValue(position, position.token1!, position.amount1!, false, block)
+    if (updated) {
+      needsUpdate = true
+    }
+  }
+
+  // Update total USD current value and save if any updates were made
+  if (needsUpdate) {
+    position.usdCurrent = position.amount0USD.plus(position.amount1USD)
+    position.save()
+  }
+}
+
 // Refresh USD values for all active ProtocolPositions of a service using current prices
 export function refreshActivePositionUSDValues(
   serviceSafe: Address,
   block: ethereum.Block
 ): void {
   let service = getServiceByAgent(serviceSafe)
-  if (service == null) {
-    return
-  }
-
-  if (service.positionIds == null) {
+  if (service == null || service.positionIds == null) {
     return
   }
 
@@ -235,35 +286,7 @@ export function refreshActivePositionUSDValues(
 
     // Only refresh USD values for ACTIVE positions
     if (position != null && position.isActive) {
-      let needsUpdate = false
-
-      // Refresh token0 USD value if token0 exists and amount > 0
-      if (position.token0 && position.amount0 && position.amount0!.gt(BigDecimal.zero())) {
-        let token0Price = getTokenPriceUSD(Address.fromBytes(position.token0!), block.timestamp, false)
-        let newAmount0USD = position.amount0!.times(token0Price)
-
-        if (!newAmount0USD.equals(position.amount0USD)) {
-          position.amount0USD = newAmount0USD
-          needsUpdate = true
-        }
-      }
-
-      // Refresh token1 USD value if token1 exists and amount > 0
-      if (position.token1 && position.amount1 && position.amount1!.gt(BigDecimal.zero())) {
-        let token1Price = getTokenPriceUSD(Address.fromBytes(position.token1!), block.timestamp, false)
-        let newAmount1USD = position.amount1!.times(token1Price)
-
-        if (!newAmount1USD.equals(position.amount1USD)) {
-          position.amount1USD = newAmount1USD
-          needsUpdate = true
-        }
-      }
-
-      // Update total USD current value
-      if (needsUpdate) {
-        position.usdCurrent = position.amount0USD.plus(position.amount1USD)
-        position.save()
-      }
+      refreshSinglePositionUSD(position, block)
     }
   }
 }
