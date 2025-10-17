@@ -12,7 +12,7 @@ import { VelodromeV2Pool } from "../../../../generated/templates/VeloV2Pool/Velo
 import { VeloV2Pool as VeloV2PoolTemplate } from "../../../../generated/templates"
 import { getTokenPriceUSD } from "./priceDiscovery"
 import { getServiceByAgent } from "./config"
-import { parseTotalSlippageFromBucket, associateSwapsWithPosition } from "./helpers"
+import { parseTotalSlippageFromBucket, associateSwapsWithPosition, calculatePortfolioMetrics } from "./helpers"
 import { getTokenDecimals, getTokenSymbol } from "./tokenUtils"
 import { calculatePositionROI } from "./roiCalculation"
 
@@ -228,7 +228,8 @@ export function refreshVeloV2Position(
   userAddress: Address,
   poolAddress: Address,
   block: ethereum.Block,
-  txHash: Bytes
+  txHash: Bytes,
+  updatePortfolio: boolean = true
 ): void {
   const positionId = getVeloV2PositionId(userAddress, poolAddress)
   
@@ -404,6 +405,11 @@ export function refreshVeloV2Position(
   }
   
   pp.save()
+  
+  // Only update portfolio if flag is true (prevents recursion)
+  if (updatePortfolio) {
+    calculatePortfolioMetrics(userAddress, block)
+  }
 }
 
 // Handle VelodromeV2 Burn events (liquidity removal)

@@ -351,7 +351,7 @@ export function refreshUniV3PositionWithExitAmounts(
 }
 
 // 2c. Re-price NFT into USD + persist (for non-entry events)
-export function refreshUniV3Position(tokenId: BigInt, block: ethereum.Block, txHash: Bytes = Bytes.empty()): void {
+export function refreshUniV3Position(tokenId: BigInt, block: ethereum.Block, txHash: Bytes = Bytes.empty(), updatePortfolio: boolean = true): void {
   const mgr = NonfungiblePositionManager.bind(UNI_V3_MANAGER)
   
   // First, get the actual NFT owner
@@ -528,8 +528,9 @@ export function refreshUniV3Position(tokenId: BigInt, block: ethereum.Block, txH
   
   pp.save()
 
-  // bubble up to AgentPortfolio
-  refreshPortfolio(nftOwner, block)
+  if (updatePortfolio) {
+    refreshPortfolio(nftOwner, block, true)
+  }
 }
 
 // 3. Handle NFT transfers (add/remove from cache)

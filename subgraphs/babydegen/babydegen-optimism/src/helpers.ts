@@ -15,6 +15,10 @@ import { getEthUsd } from "./common"
 import { getTokenPriceUSD } from "./priceDiscovery"
 import { WETH, WHITELISTED_TOKENS } from "./constants"
 import { TokenBalance } from "../../../../generated/schema"
+import { refreshVeloV2Position } from "./veloV2Shared"
+import { refreshVeloCLPosition } from "./veloCLShared"
+import { refreshUniV3Position } from "./uniV3Shared"
+import { refreshBalancerPosition } from "./balancerShared"
 
 // ETH-adjusted metrics calculation class
 class EthAdjustedMetrics {
@@ -303,10 +307,84 @@ export function refreshAllUSDValues(
   refreshActivePositionUSDValues(serviceSafe, block)
 }
 
+// Refresh all active positions
+export function refreshAllActivePositions(
+  serviceSafe: Address,
+  block: ethereum.Block,
+  updatePortfolio: boolean
+): void {
+  let service = getServiceByAgent(serviceSafe)
+  if (service == null || service.positionIds == null) {
+    return
+  }
+
+  let positionIds = service.positionIds
+
+  for (let i = 0; i < positionIds.length; i++) {
+    let positionIdString = positionIds[i]
+    let position: ProtocolPosition | null = null
+
+    let directId = Bytes.fromUTF8(positionIdString)
+    position = ProtocolPosition.load(directId)
+
+    if (position == null) {
+      if (positionIdString.startsWith("0x") && positionIdString.length % 2 == 0) {
+        let hexBytes = Bytes.fromHexString(positionIdString)
+        let decodedString = hexBytes.toString()
+        let decodedId = Bytes.fromUTF8(decodedString)
+        position = ProtocolPosition.load(decodedId)
+      }
+    }
+
+    // Only refresh ACTIVE positions
+    if (position != null && position.isActive) {
+      let protocol = position.protocol
+      
+      // Call protocol-specific refresh function with updatePortfolio flag
+      if (protocol == "velodrome-v2") {
+        refreshVeloV2Position(
+          Address.fromBytes(position.agent),
+          Address.fromBytes(position.pool),
+          block,
+          Bytes.empty(),
+          updatePortfolio
+        )
+      } else if (protocol == "velodrome-cl") {
+        refreshVeloCLPosition(
+          position.tokenId,
+          block,
+          Bytes.empty(),
+          updatePortfolio
+        )
+      } else if (protocol == "uniswap-v3") {
+        refreshUniV3Position(
+          position.tokenId,
+          block,
+          Bytes.empty(),
+          updatePortfolio
+        )
+      } else if (protocol == "balancer") {
+        // For Balancer, tokenId is actually the poolId (stored as BigInt)
+        // We need to convert it back to Bytes
+        let poolIdBytes = changetype<Bytes>(Bytes.fromBigInt(position.tokenId))
+        refreshBalancerPosition(
+          Address.fromBytes(position.agent),
+          Address.fromBytes(position.pool),
+          poolIdBytes,
+          block,
+          Bytes.empty(),
+          updatePortfolio
+        )
+      }
+    }
+  }
+}
+
 // Calculate portfolio metrics for an agent
 export function calculatePortfolioMetrics(
   serviceSafe: Address, 
-  block: ethereum.Block
+  block: ethereum.Block,
+  takeSnapshot: boolean = false
 ): void {
   // Check if this is a valid service
   let service = getServiceByAgent(serviceSafe)
@@ -317,8 +395,14 @@ export function calculatePortfolioMetrics(
   // Ensure portfolio exists (replaces the existing if/else logic)
   let portfolio = ensureAgentPortfolio(serviceSafe, block.timestamp)
 
-  // This ensures that both TokenBalance and ProtocolPosition USD values are current
-  refreshAllUSDValues(serviceSafe, block)
+  if(takeSnapshot){
+    // Refresh all active position amounts
+    refreshAllActivePositions(serviceSafe, block, false)
+    
+    // This ensures that both TokenBalance and ProtocolPosition USD values are current
+    refreshAllUSDValues(serviceSafe, block)
+  }
+
 
   // 1. Get initial investment from FundingBalance (use totalInUsd to preserve baseline)
   let fundingBalance = FundingBalance.load(serviceSafe as Bytes)
@@ -497,8 +581,11 @@ export function calculatePortfolioMetrics(
   
   portfolio.save()
   
-  // Create snapshot
-  createPortfolioSnapshot(portfolio, block)
+  if(takeSnapshot){
+    // Create snapshot
+    createPortfolioSnapshot(portfolio, block)
+  }
+
   
   log.info("PORTFOLIO: {} USD (ROI: {}%, positions: {}, uninvested: {})", [
     finalValue.toString(),

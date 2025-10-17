@@ -78,11 +78,11 @@ function checkServicesForSnapshot(block: ethereum.Block): void {
     let serviceAddress = serviceAddresses[i]
     
     // Check if snapshot is due for this service
-    if (isSnapshotDue(serviceAddress, block)) {
+      if (isSnapshotDue(serviceAddress, block)) {
       
       // Trigger portfolio calculation which will create snapshot
       // Convert Bytes to Address for calculatePortfolioMetrics
-      calculatePortfolioMetrics(Address.fromBytes(serviceAddress), block)
+      calculatePortfolioMetrics(Address.fromBytes(serviceAddress), block, true)
       
       // Update snapshot tracking in portfolio
       updateSnapshotTracking(serviceAddress, block)

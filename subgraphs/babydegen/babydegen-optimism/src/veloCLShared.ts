@@ -303,7 +303,7 @@ export function refreshVeloCLPositionWithExitAmounts(
   }
 }
 
-export function refreshVeloCLPosition(tokenId: BigInt, block: ethereum.Block, txHash: Bytes = Bytes.empty()): void {
+export function refreshVeloCLPosition(tokenId: BigInt, block: ethereum.Block, txHash: Bytes = Bytes.empty(), updatePortfolio: boolean = true): void {
   const mgr = NonfungiblePositionManager.bind(VELO_MANAGER)
   const ownerResult = mgr.try_ownerOf(tokenId)
   if (ownerResult.reverted) {
@@ -445,7 +445,10 @@ export function refreshVeloCLPosition(tokenId: BigInt, block: ethereum.Block, tx
   }
   
   pp.save()
-  refreshPortfolio(nftOwner, block)
+  
+  if (updatePortfolio) {
+    refreshPortfolio(nftOwner, block, true)
+  }
 }
 
 export function handleNFTTransferForCache(tokenId: BigInt, from: Address, to: Address): void {
