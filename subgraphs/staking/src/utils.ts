@@ -2,7 +2,8 @@ import { Address, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts";
 import { Global, RewardUpdate, CumulativeDailyStakingGlobal, Service } from "../generated/schema";
 import { StakingProxy as StakingProxyContract } from "../generated/templates/StakingProxy/StakingProxy";
 
-const ONE_DAY = BigInt.fromI32(86400);
+export const SECONDS_PER_DAY = BigInt.fromI32(86400);
+export const OPTIMUS_LAUNCH_TS = BigInt.fromI32(1717545600); // June 5, 2024 00:00:00 UTC
 
 export function createRewardUpdate(
   id: string,
@@ -40,6 +41,7 @@ export function getOrCreateGlobal(): Global {
     global.cumulativeOlasUnstaked = BigInt.fromI32(0);
     global.currentOlasStaked = BigInt.fromI32(0);
     global.totalRewards = BigInt.fromI32(0);
+    global.minDailyPayout = BigInt.fromI32(0);
     global.lastActiveDayTimestamp = BigInt.fromI32(0);
   }
   return global;
@@ -47,7 +49,7 @@ export function getOrCreateGlobal(): Global {
 
 
 export function getDayTimestamp(timestamp: BigInt): BigInt {
-  return timestamp.div(ONE_DAY).times(ONE_DAY);
+  return timestamp.div(SECONDS_PER_DAY).times(SECONDS_PER_DAY);
 }
 
 /**
@@ -63,8 +65,8 @@ export function getOrCreateCumulativeDailyStakingGlobal(event: ethereum.Event): 
     snapshot = new CumulativeDailyStakingGlobal(id);
     snapshot.timestamp = dayTimestamp;
     snapshot.totalRewards = BigInt.fromI32(0);
-    snapshot.numServices = 0;
-    snapshot.medianCumulativeRewards = BigInt.fromI32(0);
+    snapshot.numEligibleServices = 0;
+    snapshot.medianCumulativeRewardsEligibleServices = BigInt.fromI32(0);
 
     // Use the last active day timestamp from Global for instant forward-filling
     const global = getOrCreateGlobal();
@@ -73,8 +75,8 @@ export function getOrCreateCumulativeDailyStakingGlobal(event: ethereum.Event): 
       const referenceSnapshot = CumulativeDailyStakingGlobal.load(referenceId);
       if (referenceSnapshot != null) {
         // Copy metadata from the most recent active day for continuity
-        snapshot.numServices = referenceSnapshot.numServices;
-        snapshot.medianCumulativeRewards = referenceSnapshot.medianCumulativeRewards;
+        snapshot.numEligibleServices = referenceSnapshot.numEligibleServices;
+        snapshot.medianCumulativeRewardsEligibleServices = referenceSnapshot.medianCumulativeRewardsEligibleServices;
       }
     }
   }
@@ -91,12 +93,13 @@ export function upsertCumulativeDailyStakingGlobal(event: ethereum.Event, totalR
   snapshot.block = event.block.number;
   snapshot.totalRewards = totalRewards;
 
-  // Compute median from ALL services in the system
-  snapshot.medianCumulativeRewards = computeMedianOfAllServices();
-  
-  // Update service count
+  // Compute filtered median and service count
   const global = getOrCreateGlobal();
-  snapshot.numServices = global.services.load().length;
+  const eligibleRewards = loadEligibleRewards(global);
+  const numEligibleServices = eligibleRewards.length;
+
+  snapshot.medianCumulativeRewardsEligibleServices = median(eligibleRewards);
+  snapshot.numEligibleServices = numEligibleServices;
 
   // Update Global to track this as the most recent active day for future forward-filling
   global.lastActiveDayTimestamp = snapshot.timestamp;
@@ -110,45 +113,65 @@ export function upsertCumulativeDailyStakingGlobal(event: ethereum.Event, totalR
 
 
 /**
- * Compute the median of cumulative rewards from ALL Service entities in the system.
- * This gives us the true ecosystem median representing all services' reward levels.
- * Returns 0 if no services exist.
+ * Update the global minimum daily payout if the provided value is smaller.
  */
-export function computeMedianOfAllServices(): BigInt {
+export function maybeUpdateMinDailyPayout(dailyPayout: BigInt): void {
+  if (dailyPayout.le(BigInt.fromI32(0))) {
+    return;
+  }
+
   const global = getOrCreateGlobal();
-  const allServices = global.services.load();
+  if (global.minDailyPayout.isZero() || dailyPayout.lt(global.minDailyPayout)) {
+    global.minDailyPayout = dailyPayout;
+    global.save();
+  }
+}
 
-  if (allServices.length == 0) {
+
+function median(values: Array<BigInt>): BigInt {
+  if (values.length == 0) {
     return BigInt.fromI32(0);
   }
 
-  // Extract current cumulative rewards from each service entity
-  const rewards = new Array<BigInt>();
-  for (let i = 0; i < allServices.length; i++) {
-    rewards.push(allServices[i].olasRewardsEarned);
-  }
-
-  if (rewards.length == 0) {
-    return BigInt.fromI32(0);
-  }
-
-  // Sort rewards in ascending order (smallest to largest)
-  rewards.sort((firstReward: BigInt, secondReward: BigInt) => {
-    if (firstReward.lt(secondReward)) {
+  // Sort the values in ascending order
+  values.sort((a: BigInt, b: BigInt) => {
+    if (a.lt(b)) {
       return -1;
-    } else if (firstReward.gt(secondReward)) {
-      return 1;
-    } else {
-      return 0;
     }
+    if (a.gt(b)) {
+      return 1;
+    }
+    return 0;
   });
 
-  const n = rewards.length;
+  const n = values.length;
   const mid = n / 2;
 
-  // If odd length, return middle element; if even, average the two middle elements
-  if (n % 2 === 1) {
-    return rewards[mid];
+  if (n % 2 == 1) {
+    return values[mid];
   }
-  return rewards[mid - 1].plus(rewards[mid]).div(BigInt.fromI32(2));
+
+  return values[mid - 1].plus(values[mid]).div(BigInt.fromI32(2));
+}
+
+
+function loadEligibleRewards(global: Global): Array<BigInt> {
+  const rewards = new Array<BigInt>();
+  const services = global.services.load();
+  const threshold = global.minDailyPayout;
+
+  for (let i = 0; i < services.length; i++) {
+    const service = services[i];
+    if (service == null) {
+      continue;
+    }
+
+    if (!threshold.isZero() && service.olasRewardsEarnedSinceOptimus.lt(threshold)) {
+      continue;
+    }
+
+    rewards.push(service.olasRewardsEarnedSinceOptimus);
+  }
+
+  return rewards;
 }
