@@ -407,6 +407,34 @@ dataSources:
           handler: handleERC20Transfer
       file: ./src/tokenBalances.ts
   - kind: ethereum
+    name: VELO
+    network: optimism
+    source:
+      address: "0x9560e827aF36c94D2Ac33a39bCE1Fe78631088Db"
+      abi: ERC20
+      startBlock: 136774000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - TokenBalance
+      abis:
+        - name: ERC20
+          file: ../../../abis/ERC20.json
+        - name: AggregatorV3Interface
+          file: ../../../abis/oracles/AggregatorV3Interface.json
+        - name: VelodromeCLPool
+          file: ../../../abis/defi/VelodromeCLPool.json
+        - name: UniswapV3Pool
+          file: ../../../abis/defi/UniswapV3Pool.json
+        - name: VelodromeV2Pool
+          file: ../../../abis/defi/VelodromeV2Pool.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleERC20Transfer
+      file: ./src/tokenBalances.ts
+  - kind: ethereum
     name: VeloNFTManager
     network: optimism
     source:

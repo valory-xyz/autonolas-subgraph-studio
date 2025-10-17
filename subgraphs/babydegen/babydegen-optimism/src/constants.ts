@@ -27,6 +27,7 @@ export const SDAI = Address.fromString("0x2218a117083f5b482b0bb821d27056ba9c04b1
 export const USDT0 = Address.fromString("0x01bff41798a0bcf287b996046ca68b395dbc1071") // USDT0
 export const OUSDT = Address.fromString("0x1217bfe6c773eec6cc4a38b5dc45b92292b6e189") // oUSDT
 export const USDGLO = Address.fromString("0x4f604735c1cf31399c6e711d5962b2b3e0225ad3") // USDGLO
+export const VELO = Address.fromString("0x9560e827aF36c94D2Ac33a39bCE1Fe78631088Db") // VELO
 
 // Chainlink price feeds (Optimism mainnet)
 export const ETH_USD_FEED = Address.fromString("0x13e3Ee699D1909E989722E753853AE30b17e08c5")
@@ -78,7 +79,8 @@ export const WHITELISTED_TOKENS: string[] = [
   DOLA.toHexString(),
   USDT0.toHexString(),
   OUSDT.toHexString(),
-  USDGLO.toHexString()
+  USDGLO.toHexString(),
+  VELO.toHexString()
 ]
 
 // Stablecoin addresses (for price fallbacks)
