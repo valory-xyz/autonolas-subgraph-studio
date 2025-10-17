@@ -10,6 +10,7 @@ import {
   ServicesEvicted as ServicesEvictedEvent,
   Withdraw as WithdrawEvent,
 } from "../generated/templates/StakingProxy/StakingProxy"
+import { StakingProxy as StakingProxyContract } from "../generated/templates/StakingProxy/StakingProxy";
 import {
   Checkpoint,
   Deposit,
@@ -23,7 +24,15 @@ import {
   ServicesEvicted,
   Withdraw
 } from "../generated/schema"
-import { createRewardUpdate, getOrCreateGlobal, getOlasForStaking, upsertCumulativeDailyStakingGlobal, computeMedianOfAllServices } from "./utils"
+import {
+  createRewardUpdate,
+  getOrCreateGlobal,
+  getOlasForStaking,
+  upsertCumulativeDailyStakingGlobal,
+  maybeUpdateMinDailyPayout,
+  SECONDS_PER_DAY,
+  OPTIMUS_LAUNCH_TS
+} from "./utils"
 
 export function handleCheckpoint(event: CheckpointEvent): void {
   let entity = new Checkpoint(
@@ -41,18 +50,33 @@ export function handleCheckpoint(event: CheckpointEvent): void {
 
   entity.save()
 
-  let totalRewards = BigInt.fromI32(0);
+  const zero = BigInt.fromI32(0);
+  let totalRewards = zero;
+  const isAfterLaunch = event.block.timestamp.ge(OPTIMUS_LAUNCH_TS);
+
   for (let i = 0; i < event.params.rewards.length; i++) {
+    const reward = event.params.rewards[i];
     // Calculate total rewards for this checkpoint
-    totalRewards = totalRewards.plus(event.params.rewards[i]);
+    totalRewards = totalRewards.plus(reward);
 
     // and update each service cumulative rewards
     let service = Service.load(event.params.serviceIds[i].toString());
     if (service !== null) {
-      service.olasRewardsEarned = service.olasRewardsEarned.plus(
-        event.params.rewards[i]
-      );
+      service.olasRewardsEarned = service.olasRewardsEarned.plus(reward);
+      if (isAfterLaunch) {
+        service.olasRewardsEarnedSinceOptimus = service.olasRewardsEarnedSinceOptimus.plus(reward);
+      }
       service.save();
+    }
+  }
+
+  // Update global minimum viable daily payout using contract emission rate (rewardsPerSecond)
+  if (isAfterLaunch) {
+    const contract = StakingProxyContract.bind(event.address);
+    const rewardsPerSecond = contract.rewardsPerSecond();
+    if (rewardsPerSecond.gt(zero)) {
+      const dailyPayout = rewardsPerSecond.times(SECONDS_PER_DAY);
+      maybeUpdateMinDailyPayout(dailyPayout);
     }
   }
 
@@ -195,6 +219,7 @@ export function handleServiceStaked(event: ServiceStakedEvent): void {
     service.blockTimestamp = event.block.timestamp;
     service.currentOlasStaked = BigInt.fromI32(0);
     service.olasRewardsEarned = BigInt.fromI32(0);
+    service.olasRewardsEarnedSinceOptimus = BigInt.fromI32(0);
     service.global = getOrCreateGlobal().id;
   }
 
