@@ -1,4 +1,4 @@
-import { BigInt, Address } from '@graphprotocol/graph-ts';
+import { BigInt, Address, log } from '@graphprotocol/graph-ts';
 import {
   ExecCall as ExecCallLM,
   AgentMechLM as AgentMechLMContract,
@@ -184,6 +184,10 @@ export function handleRequest(event: RequestEvent): void {
   const mechAddress = event.address;
   const mech = LegacyMech.load(mechAddress);
   if (mech == null) {
+    log.warning('Request received for unknown LegacyMech {} at block {}', [
+      mechAddress.toHexString(),
+      event.block.number.toString(),
+    ]);
     return;
   }
 
@@ -228,6 +232,11 @@ export function handleMarketplaceRequest(
       mech.agentId,
       fee,
       event.block.timestamp
+    );
+  } else {
+    log.warning(
+      'Marketplace request received for unknown LegacyMechMarketPlace {} at block {}',
+      [mechAddress.toHexString(), event.block.number.toString()]
     );
   }
 
