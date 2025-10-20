@@ -116,14 +116,14 @@ dataSources:
       kind: ethereum/events
       apiVersion: 0.0.7
       language: wasm/assemblyscript
-      entities: [LegacyMechMarketPlace, DailyFees, MechDaily]
+      entities: [LegacyMechMarketPlace, DailyFees, MechDaily, Global]
       abis:
         - name: LegacyMarketPlace
           file: ../../abis/LegacyMarketPlace.json
       file: ./src/mapping.ts
-      callHandlers:
-        - function: request(bytes,address,address,uint256,address,uint256,uint256)
-          handler: handleRequestFromMarketPlace
+      eventHandlers:
+        - event: MarketplaceRequest(indexed address,indexed address,uint256,bytes)
+          handler: handleMarketplaceRequest
 
 templates:
   - name: LegacyMech
