@@ -1,16 +1,22 @@
 import { BigInt, Address } from '@graphprotocol/graph-ts';
-import { ExecCall as ExecCallLM } from '../generated/templates/LegacyMech/AgentMechLM';
-import { ExecCall as ExecCallLMM } from '../generated/templates/LegacyMechMarketPlace/AgentMechLMM';
+import {
+  ExecCall as ExecCallLM,
+  AgentMechLM as AgentMechLMContract,
+} from '../generated/templates/LegacyMech/AgentMechLM';
+import {
+  ExecCall as ExecCallLMM,
+  AgentMechLMM as AgentMechLMMContract,
+} from '../generated/templates/LegacyMechMarketPlace/AgentMechLMM';
 import { Request as RequestEvent } from '../generated/templates/LegacyMech/AgentMechLM';
 import { PriceUpdated as PriceUpdatedLMEvent } from '../generated/templates/LegacyMech/AgentMechLM';
 import { PriceUpdated as PriceUpdatedLMMEvent } from '../generated/templates/LegacyMechMarketPlace/AgentMechLMM';
 import { CreateMech } from '../generated/LMFactory/Factory';
-import { LegacyMech, Global, LegacyMechMarketPlace } from '../generated/schema';
+import { LegacyMech, LegacyMechMarketPlace } from '../generated/schema';
 import {
   LegacyMech as LegacyMechTemplate,
   LegacyMechMarketPlace as LegacyMechMarketPlaceTemplate,
 } from '../generated/templates';
-import { RequestCall as MarketPlaceRequestCall } from '../generated/LegacyMarketPlace/LegacyMarketPlace';
+import { MarketplaceRequest as MarketplaceRequestEvent } from '../generated/LegacyMarketPlace/LegacyMarketPlace';
 import {
   updateGlobalFeesInLegacyMech,
   updateGlobalFeesInLegacyMechMarketPlace,
@@ -25,6 +31,20 @@ import {
 import { BURN_ADDRESS_MECH_FEES_GNOSIS } from './constants';
 
 const BURNER_ADDRESS = Address.fromString(BURN_ADDRESS_MECH_FEES_GNOSIS);
+
+function getMechPrice(mechAddress: Address): BigInt {
+  const lmmPrice = AgentMechLMMContract.bind(mechAddress).try_price();
+  if (!lmmPrice.reverted) {
+    return lmmPrice.value;
+  }
+
+  const lmPrice = AgentMechLMContract.bind(mechAddress).try_price();
+  if (!lmPrice.reverted) {
+    return lmPrice.value;
+  }
+
+  return BigInt.fromI32(0);
+}
 
 // Handler for standard Legacy Mechs
 export function handleCreateMechLM(event: CreateMech): void {
@@ -187,34 +207,34 @@ export function handleRequest(event: RequestEvent): void {
   );
 }
 
-// Call handler for requests routed through the marketplace to LMMs
-export function handleRequestFromMarketPlace(
-  call: MarketPlaceRequestCall
+// Event handler for requests routed through the marketplace to LMMs
+export function handleMarketplaceRequest(
+  event: MarketplaceRequestEvent
 ): void {
-  const mechAddress = call.inputs.priorityMech;
-  const mech = LegacyMechMarketPlace.load(mechAddress);
-  if (mech == null) {
+  const mechAddress = event.params.requestedMech;
+  const fee = getMechPrice(mechAddress);
+
+  if (fee.le(BigInt.fromI32(0))) {
     return;
   }
 
-  // The fee is the value sent with the transaction, which is only available in a call handler
-  const fee = mech.price;
-  mech.totalFeesIn = mech.totalFeesIn.plus(fee);
-  mech.save();
+  const mech = LegacyMechMarketPlace.load(mechAddress);
+  if (mech != null) {
+    mech.totalFeesIn = mech.totalFeesIn.plus(fee);
+    mech.save();
+
+    updateMechDailyFeesInLegacyMechMarketPlace(
+      mechAddress,
+      mech.agentId,
+      fee,
+      event.block.timestamp
+    );
+  }
 
   updateGlobalFeesInLegacyMechMarketPlace(fee);
 
-  // Update daily fees
-  const dailyFees = getOrCreateDailyFees(call.block.timestamp);
+  const dailyFees = getOrCreateDailyFees(event.block.timestamp);
   dailyFees.totalFeesInLegacyMechMarketPlace =
     dailyFees.totalFeesInLegacyMechMarketPlace.plus(fee);
   dailyFees.save();
-
-  // Update mech daily fees
-  updateMechDailyFeesInLegacyMechMarketPlace(
-    mechAddress,
-    mech.agentId,
-    fee,
-    call.block.timestamp
-  );
 }
