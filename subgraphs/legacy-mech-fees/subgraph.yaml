@@ -120,6 +120,10 @@ dataSources:
       abis:
         - name: LegacyMarketPlace
           file: ../../abis/LegacyMarketPlace.json
+        - name: AgentMechLM
+          file: ../../abis/AgentMech-LM.json
+        - name: AgentMechLMM
+          file: ../../abis/AgentMech-LMM.json
       file: ./src/mapping.ts
       eventHandlers:
         - event: MarketplaceRequest(indexed address,indexed address,uint256,bytes)
