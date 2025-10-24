@@ -580,12 +580,20 @@ dataSources:
           file: ../../../abis/defi/VelodromeV2Pool.json
         - name: VelodromeCLPool
           file: ../../../abis/defi/VelodromeCLPool.json
+        - name: VelodromeCLFactory
+          file: ../../../abis/defi/VelodromeCLFactory.json
         - name: UniswapV3Pool
           file: ../../../abis/defi/UniswapV3Pool.json
+        - name: UniswapV3Factory
+          file: ../../../abis/defi/UniswapV3Factory.json
         - name: AggregatorV3Interface
           file: ../../../abis/oracles/AggregatorV3Interface.json
         - name: ERC20
           file: ../../../abis/ERC20.json
+        - name: BalancerV2Vault
+          file: ../../../abis/BalancerV2Vault.json
+        - name: BalancerV2WeightedPool
+          file: ../../../abis/BalancerV2WeightedPool.json
       blockHandlers:
         - handler: handleBlock
           filter:
