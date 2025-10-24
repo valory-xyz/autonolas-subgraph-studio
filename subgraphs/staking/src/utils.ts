@@ -207,7 +207,7 @@ export function isAllowedImplementation(implementation: Bytes): boolean {
         "0x4aba1Cf7a39a51D75cBa789f5f21cf4882162519"
       ) as Bytes,
     ];
-  } else if (network == "matic") {
+  } else if (network == "optimism") {
     allowed = [
       Bytes.fromHexString(
         "0x63C2c53c09dE534Dd3bc0b7771bf976070936bAC"
