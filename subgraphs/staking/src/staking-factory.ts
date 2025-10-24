@@ -1,3 +1,4 @@
+import { Bytes } from "@graphprotocol/graph-ts";
 import {
   InstanceCreated as InstanceCreatedEvent,
   InstanceRemoved as InstanceRemovedEvent,
@@ -16,6 +17,8 @@ import {
 import { StakingProxy } from "../generated/templates";
 import { StakingProxy as StakingProxyContract } from "../generated/templates/StakingProxy/StakingProxy";
 
+const ALLOWED_IMPLEMENTATIONS = [Bytes.fromHexString('0xEa00be6690a871827fAfD705440D20dd75e67AB1')]
+
 export function handleInstanceCreated(event: InstanceCreatedEvent): void {
   StakingProxy.create(event.params.instance);
 
@@ -31,6 +34,8 @@ export function handleInstanceCreated(event: InstanceCreatedEvent): void {
   entity.transactionHash = event.transaction.hash
 
   entity.save()
+
+  if (!ALLOWED_IMPLEMENTATIONS.includes(entity.implementation)) return;
 
   let stakingContract = new StakingContract(
     event.transaction.hash.concatI32(event.logIndex.toI32())
