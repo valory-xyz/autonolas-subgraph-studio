@@ -18,8 +18,6 @@ import { StakingProxy as StakingProxyContract } from "../generated/templates/Sta
 import { isAllowedImplementation } from "./utils";
 
 export function handleInstanceCreated(event: InstanceCreatedEvent): void {
-  StakingProxy.create(event.params.instance);
-
   let entity = new InstanceCreated(
     event.transaction.hash.concatI32(event.logIndex.toI32())
   );
@@ -33,8 +31,10 @@ export function handleInstanceCreated(event: InstanceCreatedEvent): void {
 
   entity.save();
 
-  // Only proceed with creating StakingContract entity for allowed implementation
+  // Only proceed with creating StakingContract entity and proxy for allowed implementation
   if (!isAllowedImplementation(entity.implementation)) return;
+
+  StakingProxy.create(event.params.instance);
 
   let stakingContract = new StakingContract(
     event.transaction.hash.concatI32(event.logIndex.toI32())
