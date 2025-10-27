@@ -9,7 +9,8 @@ import {
   FRAX,
   DOLA,
   BOLD,
-  SDAI
+  SDAI,
+  VELO
 } from "./constants"
 
 // Centralized function to get token decimals
@@ -27,6 +28,7 @@ export function getTokenDecimals(tokenAddress: Address): i32 {
   if (tokenHex == DOLA.toHexString().toLowerCase()) return 18         // DOLA
   if (tokenHex == BOLD.toHexString().toLowerCase()) return 18         // BOLD
   if (tokenHex == SDAI.toHexString().toLowerCase()) return 18         // sDAI
+  if (tokenHex == VELO.toHexString().toLowerCase()) return 18         // VELO
   
   // Default to 18 decimals for unknown tokens
   log.warning("TOKEN_UTILS: Unknown token decimals for {}, defaulting to 18", [tokenHex])
@@ -48,6 +50,7 @@ export function getTokenSymbol(tokenAddress: Address): string {
   if (tokenHex == DOLA.toHexString().toLowerCase()) return "DOLA"
   if (tokenHex == BOLD.toHexString().toLowerCase()) return "BOLD"
   if (tokenHex == SDAI.toHexString().toLowerCase()) return "sDAI"
+  if (tokenHex == VELO.toHexString().toLowerCase()) return "VELO"
   
   // Return the address as fallback for unknown tokens
   log.warning("TOKEN_UTILS: Unknown token symbol for {}, using address", [tokenHex])
