@@ -5,41 +5,68 @@ import {
   Transfer,
   NonfungiblePositionManager
 } from "../../../../generated/VeloNFTManager/NonfungiblePositionManager"
-import { VELO_NFT_MANAGER, getServiceByAgent } from "./config"
-import { ensurePoolTemplate, refreshVeloCLPosition, refreshVeloCLPositionWithEventAmounts, refreshVeloCLPositionWithExitAmounts, handleNFTTransferForCache } from "./veloCLShared"
-import { isSafeOwnedNFT } from "./poolIndexCache"
-import { log, Address, Bytes, BigDecimal } from "@graphprotocol/graph-ts"
-import { ProtocolPosition } from "../../../../generated/schema"
+import { VELO_MANAGER } from "./constants"
+import { getServiceByAgent } from "./config"
+import { refreshVeloCLPosition, refreshVeloCLPositionWithEventAmounts, refreshVeloCLPositionWithExitAmounts, getVeloCLPositionId } from "./veloCLShared"
+import { Address, Bytes, BigInt, log } from "@graphprotocol/graph-ts"
+import { ProtocolPosition, NFTPositionMapping } from "../../../../generated/schema"
 import { calculatePortfolioMetrics } from "./helpers"
 
-const MANAGER = VELO_NFT_MANAGER
+const ZERO_ADDRESS = Address.fromString("0x0000000000000000000000000000000000000000")
 
-export function handleNFTTransfer(ev: Transfer): void {
-  const toService = getServiceByAgent(ev.params.to)
-  const fromService = getServiceByAgent(ev.params.from)
+// ============================================
+// HANDLER 1: Track NFT Transfers
+// ============================================
+export function handleNFTTransfer(event: Transfer): void {
+  const from = event.params.from
+  const to = event.params.to
+  const tokenId = event.params.tokenId
+  
+  // CASE 1: NFT Minted (Position Opened) - Transfer FROM zero address
+  if (from.equals(ZERO_ADDRESS)) {
+    // Check if recipient is a service
+    const toService = getServiceByAgent(to)
+    
+    if (toService != null) {
+      // Create mapping entity for this NFT
+      const mappingId = Bytes.fromUTF8("velo-cl-" + tokenId.toString())
+      let mapping = NFTPositionMapping.load(mappingId)
 
-  if (!toService && !fromService) {
+      if (mapping == null) {
+        mapping = new NFTPositionMapping(mappingId)
+        mapping.protocol = "velo-cl"
+        const positionId = getVeloCLPositionId(to, tokenId)
+        mapping.positionId = positionId
+        mapping.save()
+      }
+      
+      // Create position entity with zero amounts
+      // (will be updated by IncreaseLiquidity event)
+      let positionId = getVeloCLPositionId(to, tokenId)
+      let position = ProtocolPosition.load(positionId)
+      
+      if (position == null) {
+        // Create placeholder position - amounts will be set by IncreaseLiquidity
+        refreshVeloCLPosition(tokenId, event.block, event.transaction.hash, false)
+      }
+    }
     return
   }
 
-  if (toService) {
-    ensurePoolTemplate(ev.params.tokenId)
-  }
-  
-  if (fromService) {
-    // Mark position as closed when NFT is transferred out
-    const positionId = ev.params.from.toHex() + "-" + ev.params.tokenId.toString()
-    const id = Bytes.fromUTF8(positionId)
-    let position = ProtocolPosition.load(id)
+  // CASE 2: NFT Burned (Position Closed) - Transfer TO zero address
+  if (to.equals(ZERO_ADDRESS)) {
+    // Check if sender is a service
+    const fromService = getServiceByAgent(from)
     
-    if (position && position.isActive) {
-      // SIMPLIFIED: Only mark as inactive, never set exit amounts
-      // Exit amounts will always be set by DecreaseLiquidity events
+    if (fromService != null) {
+      const positionId = getVeloCLPositionId(from, tokenId)
+      let position = ProtocolPosition.load(positionId)
+    
+      if (position != null) {
+        // Mark position as closed
       position.isActive = false
-      position.exitTxHash = ev.transaction.hash
-      position.exitTimestamp = ev.block.timestamp
-      
-      // Position closed by NFT transfer
+        position.exitTxHash = event.transaction.hash
+        position.exitTimestamp = event.block.timestamp
       position.save()
     }
   }
