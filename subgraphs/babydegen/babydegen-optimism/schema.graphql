@@ -388,3 +388,10 @@ type AgentSwapBuffer @entity(immutable: false) {
   lastUpdated: BigInt!              # When last swap was added
   currentBucketIndex: BigInt!       # Current time bucket index for rotation
 }
+
+# Mapping from NFT tokenId to Position ID for efficient lookups
+type NFTPositionMapping @entity(immutable: false) {
+  id: Bytes!
+  positionId: Bytes!
+  protocol: String!
+}
