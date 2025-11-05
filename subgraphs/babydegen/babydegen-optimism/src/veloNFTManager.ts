@@ -70,128 +70,86 @@ export function handleNFTTransfer(event: Transfer): void {
       position.save()
     }
   }
-  
-  // Update cache
-  handleNFTTransferForCache(ev.params.tokenId, ev.params.from, ev.params.to)
-  
-  // Call refresh - no try/catch since it's not supported
-  refreshVeloCLPosition(ev.params.tokenId, ev.block, ev.transaction.hash)
+    return
+  }
 }
 
-export function handleIncreaseLiquidity(ev: IncreaseLiquidity): void {
-  // Get owner early for logging
-  let owner = Address.zero()
-  const mgr = NonfungiblePositionManager.bind(MANAGER)
-  const ownerResult = mgr.try_ownerOf(ev.params.tokenId)
-  if (!ownerResult.reverted) {
-    owner = ownerResult.value
-  }
+// ============================================
+// HANDLER 2: Track Liquidity Increases
+// ============================================
+export function handleIncreaseLiquidity(event: IncreaseLiquidity): void {
+  const tokenId = event.params.tokenId
   
-  let shouldProcess = false
-  
-  // PHASE 1 OPTIMIZATION: Use cache instead of ownerOf() RPC call
-  const isSafeOwned = isSafeOwnedNFT("velodrome-cl", ev.params.tokenId)
-  
-  
-  if (isSafeOwned) {
-    shouldProcess = true
-  } else {
-    // FALLBACK: Check actual ownership for positions not in cache (existing positions)
+  // Look up position using mapping (NO ownerOf call!)
+  const mappingId = Bytes.fromUTF8("velo-cl-" + tokenId.toString())
+  const mapping = NFTPositionMapping.load(mappingId)
     
-    if (!ownerResult.reverted && getServiceByAgent(owner) != null) {
-      shouldProcess = true
-      
-      // Ensure pool template exists and populate cache for future
-      ensurePoolTemplate(ev.params.tokenId)
-    }
+  if (mapping == null) {
+    // Position not tracked (not owned by a service)
+    return
   }
   
-  
-  if (shouldProcess) {
-    // Use event amounts for accurate entry tracking
+  // Update position with actual event amounts
     refreshVeloCLPositionWithEventAmounts(
-      ev.params.tokenId, 
-      ev.block, 
-      ev.params.amount0,
-      ev.params.amount1,
-      ev.transaction.hash
+    tokenId,
+    event.block,
+    event.params.amount0,
+    event.params.amount1,
+    event.transaction.hash
     )
-    
-  }
 }
 
-export function handleDecreaseLiquidity(ev: DecreaseLiquidity): void {
-  let shouldProcess = false
+// ============================================
+// HANDLER 3: Track Liquidity Decreases
+// ============================================
+export function handleDecreaseLiquidity(event: DecreaseLiquidity): void {
+  const tokenId = event.params.tokenId
   
-  // 1. Check cache first (fast path)
-  const isSafeOwned = isSafeOwnedNFT("velodrome-cl", ev.params.tokenId)
-  
-  if (isSafeOwned) {
-    shouldProcess = true
-    
-  } else {
-    
-    // 2. Final fallback: check actual ownership on-chain
-    const mgr = NonfungiblePositionManager.bind(MANAGER)
-    const ownerResult = mgr.try_ownerOf(ev.params.tokenId)
-    
-    if (!ownerResult.reverted) {
-      const owner = ownerResult.value
-      const ownerService = getServiceByAgent(owner)
-      
-      if (ownerService != null) {
-        shouldProcess = true
+  // Look up position using mapping (NO ownerOf call!)
+  const mappingId = Bytes.fromUTF8("velo-cl-" + tokenId.toString())
+  const mapping = NFTPositionMapping.load(mappingId)
         
-        // Check for existing active position
-        const positionId = owner.toHex() + "-" + ev.params.tokenId.toString()
-        const id = Bytes.fromUTF8(positionId)
-        const position = ProtocolPosition.load(id)
-        
-        if (position && position.isActive) {
-          shouldProcess = true
+  if (mapping == null) {
+    // Position not tracked (not owned by a service)
+    return
         }
         
-        // Ensure pool template exists and populate cache for future
-        ensurePoolTemplate(ev.params.tokenId)
-      }
-    }
-  }
-  
-  if (shouldProcess) {
-    // Use refreshVeloCLPositionWithExitAmounts to handle exit with actual event amounts
+  // Check if this is a full withdrawal by looking at remaining liquidity
+  // This will be handled in refreshVeloCLPositionWithExitAmounts
     refreshVeloCLPositionWithExitAmounts(
-      ev.params.tokenId,
-      ev.block,
-      ev.params.amount0,  // Actual amount0 from event
-      ev.params.amount1,  // Actual amount1 from event
-      ev.params.liquidity, // Liquidity being removed
-      ev.transaction.hash
+    tokenId,
+    event.block,
+    event.params.amount0,
+    event.params.amount1,
+    event.params.liquidity,
+    event.transaction.hash
     )
   }
-}
 
-export function handleCollect(ev: Collect): void {
-  // PHASE 1 OPTIMIZATION: Use cache instead of ownerOf() RPC call
-  const isSafeOwned = isSafeOwnedNFT("velodrome-cl", ev.params.tokenId)
+// ============================================
+// HANDLER 4: Track Fee Collections
+// ============================================
+export function handleCollect(event: Collect): void {
+  const tokenId = event.params.tokenId
   
-  if (isSafeOwned) {
-    // Process fee collection
-    
-    // Refresh position and trigger portfolio update
-    refreshVeloCLPosition(ev.params.tokenId, ev.block, ev.transaction.hash)
-    
-    // Get the owner to trigger portfolio recalculation
-    const mgr = NonfungiblePositionManager.bind(MANAGER)
-    const ownerResult = mgr.try_ownerOf(ev.params.tokenId)
-    
-    if (!ownerResult.reverted) {
-      const owner = ownerResult.value
-      const ownerService = getServiceByAgent(owner)
-      
-      if (ownerService != null) {
-        // Trigger portfolio recalculation
-        calculatePortfolioMetrics(owner, ev.block)
-      }
-    }
+  // Look up position using mapping (NO ownerOf call!)
+  const mappingId = Bytes.fromUTF8("velo-cl-" + tokenId.toString())
+  const mapping = NFTPositionMapping.load(mappingId)
+  
+  if (mapping == null) {
+    // Position not tracked (not owned by a service)
+    return
   }
+  
+  // Load position to get owner for portfolio update
+  let position = ProtocolPosition.load(mapping.positionId)
+  if (position == null) {
+    return
+  }
+  
+  // Refresh position (fees collected don't change liquidity amounts)
+  refreshVeloCLPosition(tokenId, event.block, event.transaction.hash, false)
+  
+        // Trigger portfolio recalculation
+  calculatePortfolioMetrics(Address.fromBytes(position.agent), event.block)
 }
