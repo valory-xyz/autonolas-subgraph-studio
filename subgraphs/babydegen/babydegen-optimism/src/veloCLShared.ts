@@ -62,24 +62,6 @@ function getPoolAddress(token0: Address, token1: Address, tickSpacing: i32, toke
   return poolAddress
 }
 
-export function ensurePoolTemplate(tokenId: BigInt): void {
-  const mgr = NonfungiblePositionManager.bind(VELO_MANAGER)
-  const posResult = mgr.try_positions(tokenId)
-  
-  if (posResult.reverted) {
-    return
-  }
-  
-  const pos = posResult.value
-  const poolAddress = getPoolAddress(pos.value2, pos.value3, pos.value4 as i32, tokenId)
-  
-  if (poolAddress.equals(Address.zero())) {
-    return
-  }
-  
-  addAgentNFTToPool("velodrome-cl", poolAddress, tokenId)
-}
-
 function isPositionClosed(liquidity: BigInt, amount0: BigDecimal, amount1: BigDecimal): boolean {
   const isLiquidityZero = liquidity.equals(BigInt.zero())
   const areAmountsZero = amount0.equals(BigDecimal.zero()) && amount1.equals(BigDecimal.zero())
@@ -448,29 +430,5 @@ export function refreshVeloCLPosition(tokenId: BigInt, block: ethereum.Block, tx
   
   if (updatePortfolio) {
     refreshPortfolio(nftOwner, block, true)
-  }
-}
-
-export function handleNFTTransferForCache(tokenId: BigInt, from: Address, to: Address): void {
-  const mgr = NonfungiblePositionManager.bind(VELO_MANAGER)
-  const posResult = mgr.try_positions(tokenId)
-  
-  if (posResult.reverted) {
-    return
-  }
-  
-  const pos = posResult.value
-  const poolAddress = getPoolAddress(pos.value2, pos.value3, pos.value4 as i32, tokenId)
-  
-  if (poolAddress.equals(Address.zero())) {
-    return
-  }
-  
-  if (!from.equals(Address.zero())) {
-    removeAgentNFTFromPool("velodrome-cl", poolAddress, tokenId)
-  }
-  
-  if (!to.equals(Address.zero())) {
-    addAgentNFTToPool("velodrome-cl", poolAddress, tokenId)
   }
 }

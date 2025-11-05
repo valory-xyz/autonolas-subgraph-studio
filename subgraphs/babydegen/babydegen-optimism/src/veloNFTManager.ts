@@ -31,7 +31,7 @@ export function handleNFTTransfer(event: Transfer): void {
       // Create mapping entity for this NFT
       const mappingId = Bytes.fromUTF8("velo-cl-" + tokenId.toString())
       let mapping = NFTPositionMapping.load(mappingId)
-
+      
       if (mapping == null) {
         mapping = new NFTPositionMapping(mappingId)
         mapping.protocol = "velo-cl"
@@ -52,7 +52,7 @@ export function handleNFTTransfer(event: Transfer): void {
     }
     return
   }
-
+  
   // CASE 2: NFT Burned (Position Closed) - Transfer TO zero address
   if (to.equals(ZERO_ADDRESS)) {
     // Check if sender is a service
@@ -61,15 +61,15 @@ export function handleNFTTransfer(event: Transfer): void {
     if (fromService != null) {
       const positionId = getVeloCLPositionId(from, tokenId)
       let position = ProtocolPosition.load(positionId)
-    
+      
       if (position != null) {
         // Mark position as closed
-      position.isActive = false
+        position.isActive = false
         position.exitTxHash = event.transaction.hash
         position.exitTimestamp = event.block.timestamp
-      position.save()
+        position.save()
+      }
     }
-  }
     return
   }
 }
@@ -83,20 +83,20 @@ export function handleIncreaseLiquidity(event: IncreaseLiquidity): void {
   // Look up position using mapping (NO ownerOf call!)
   const mappingId = Bytes.fromUTF8("velo-cl-" + tokenId.toString())
   const mapping = NFTPositionMapping.load(mappingId)
-    
+  
   if (mapping == null) {
     // Position not tracked (not owned by a service)
     return
   }
   
   // Update position with actual event amounts
-    refreshVeloCLPositionWithEventAmounts(
+  refreshVeloCLPositionWithEventAmounts(
     tokenId,
     event.block,
     event.params.amount0,
     event.params.amount1,
     event.transaction.hash
-    )
+  )
 }
 
 // ============================================
@@ -108,23 +108,23 @@ export function handleDecreaseLiquidity(event: DecreaseLiquidity): void {
   // Look up position using mapping (NO ownerOf call!)
   const mappingId = Bytes.fromUTF8("velo-cl-" + tokenId.toString())
   const mapping = NFTPositionMapping.load(mappingId)
-        
+  
   if (mapping == null) {
     // Position not tracked (not owned by a service)
     return
-        }
-        
+  }
+  
   // Check if this is a full withdrawal by looking at remaining liquidity
   // This will be handled in refreshVeloCLPositionWithExitAmounts
-    refreshVeloCLPositionWithExitAmounts(
+  refreshVeloCLPositionWithExitAmounts(
     tokenId,
     event.block,
     event.params.amount0,
     event.params.amount1,
     event.params.liquidity,
     event.transaction.hash
-    )
-  }
+  )
+}
 
 // ============================================
 // HANDLER 4: Track Fee Collections
@@ -150,6 +150,6 @@ export function handleCollect(event: Collect): void {
   // Refresh position (fees collected don't change liquidity amounts)
   refreshVeloCLPosition(tokenId, event.block, event.transaction.hash, false)
   
-        // Trigger portfolio recalculation
+  // Trigger portfolio recalculation
   calculatePortfolioMetrics(Address.fromBytes(position.agent), event.block)
 }
