@@ -5,7 +5,7 @@ dataSources:
   # --- Legacy Mech (LM) Factories ---
   - kind: ethereum/contract
     name: LMFactory
-    network: xdai
+    network: gnosis
     source:
       address: "0x88de734655184a09b70700ae4f72364d1ad23728"
       abi: Factory
@@ -25,7 +25,7 @@ dataSources:
 
   - kind: ethereum/contract
     name: LMFactory2
-    network: xdai
+    network: gnosis
     source:
       address: "0x4be7a91e67be963806fefa9c1fd6c53dfc358d94"
       abi: Factory
@@ -46,7 +46,7 @@ dataSources:
   # --- Legacy Market-Maker (LMM) Factories ---
   - kind: ethereum/contract
     name: LMMFactory
-    network: xdai
+    network: gnosis
     source:
       address: "0x2acd313b892c9922e470e4950e907d5eaa70fc2a"
       abi: Factory
@@ -66,7 +66,7 @@ dataSources:
 
   - kind: ethereum/contract
     name: LMMFactory2
-    network: xdai
+    network: gnosis
     source:
       address: "0x6d8cbebcad7397c63347d44448147db05e7d17b0"
       abi: Factory
@@ -86,7 +86,7 @@ dataSources:
 
   - kind: ethereum/contract
     name: LMMFactory3
-    network: xdai
+    network: gnosis
     source:
       address: "0x25c980328762a03f70c2649ef4be691b811b690a"
       abi: Factory
@@ -107,7 +107,7 @@ dataSources:
   # --- Legacy Marketplace Contract ---
   - kind: ethereum/contract
     name: LegacyMarketPlace
-    network: xdai
+    network: gnosis
     source:
       address: "0x4554fE75c1f5576c1d7F765B2A036c199Adae329"
       abi: LegacyMarketPlace
@@ -132,7 +132,7 @@ dataSources:
 templates:
   - name: LegacyMech
     kind: ethereum/contract
-    network: xdai
+    network: gnosis
     source:
       abi: AgentMechLM
     mapping:
@@ -155,7 +155,7 @@ templates:
 
   - name: LegacyMechMarketPlace
     kind: ethereum/contract
-    network: xdai
+    network: gnosis
     source:
       abi: AgentMechLMM
     mapping:
