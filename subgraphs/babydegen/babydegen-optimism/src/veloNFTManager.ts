@@ -14,9 +14,7 @@ import { calculatePortfolioMetrics } from "./helpers"
 
 const ZERO_ADDRESS = Address.fromString("0x0000000000000000000000000000000000000000")
 
-// ============================================
-// HANDLER 1: Track NFT Transfers
-// ============================================
+
 export function handleNFTTransfer(event: Transfer): void {
   const from = event.params.from
   const to = event.params.to
@@ -47,7 +45,7 @@ export function handleNFTTransfer(event: Transfer): void {
       
       if (position == null) {
         // Create placeholder position - amounts will be set by IncreaseLiquidity
-        refreshVeloCLPosition(tokenId, event.block, event.transaction.hash, false)
+        refreshVeloCLPosition(positionId, tokenId, event.block, event.transaction.hash, false, to)
       }
     }
     return
@@ -74,13 +72,10 @@ export function handleNFTTransfer(event: Transfer): void {
   }
 }
 
-// ============================================
-// HANDLER 2: Track Liquidity Increases
-// ============================================
 export function handleIncreaseLiquidity(event: IncreaseLiquidity): void {
   const tokenId = event.params.tokenId
   
-  // Look up position using mapping (NO ownerOf call!)
+  // Look up position using mapping
   const mappingId = Bytes.fromUTF8("velo-cl-" + tokenId.toString())
   const mapping = NFTPositionMapping.load(mappingId)
   
@@ -91,6 +86,7 @@ export function handleIncreaseLiquidity(event: IncreaseLiquidity): void {
   
   // Update position with actual event amounts
   refreshVeloCLPositionWithEventAmounts(
+    mapping.positionId,
     tokenId,
     event.block,
     event.params.amount0,
@@ -99,13 +95,10 @@ export function handleIncreaseLiquidity(event: IncreaseLiquidity): void {
   )
 }
 
-// ============================================
-// HANDLER 3: Track Liquidity Decreases
-// ============================================
 export function handleDecreaseLiquidity(event: DecreaseLiquidity): void {
   const tokenId = event.params.tokenId
   
-  // Look up position using mapping (NO ownerOf call!)
+  // Look up position using mapping
   const mappingId = Bytes.fromUTF8("velo-cl-" + tokenId.toString())
   const mapping = NFTPositionMapping.load(mappingId)
   
@@ -117,6 +110,7 @@ export function handleDecreaseLiquidity(event: DecreaseLiquidity): void {
   // Check if this is a full withdrawal by looking at remaining liquidity
   // This will be handled in refreshVeloCLPositionWithExitAmounts
   refreshVeloCLPositionWithExitAmounts(
+    mapping.positionId,
     tokenId,
     event.block,
     event.params.amount0,
@@ -126,13 +120,11 @@ export function handleDecreaseLiquidity(event: DecreaseLiquidity): void {
   )
 }
 
-// ============================================
-// HANDLER 4: Track Fee Collections
-// ============================================
+
 export function handleCollect(event: Collect): void {
   const tokenId = event.params.tokenId
   
-  // Look up position using mapping (NO ownerOf call!)
+  // Look up position using mapping
   const mappingId = Bytes.fromUTF8("velo-cl-" + tokenId.toString())
   const mapping = NFTPositionMapping.load(mappingId)
   
@@ -148,7 +140,7 @@ export function handleCollect(event: Collect): void {
   }
   
   // Refresh position (fees collected don't change liquidity amounts)
-  refreshVeloCLPosition(tokenId, event.block, event.transaction.hash, false)
+  refreshVeloCLPosition(mapping.positionId, tokenId, event.block, event.transaction.hash, false)
   
   // Trigger portfolio recalculation
   calculatePortfolioMetrics(Address.fromBytes(position.agent), event.block)

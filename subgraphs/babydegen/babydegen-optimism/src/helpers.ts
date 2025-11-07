@@ -351,6 +351,7 @@ export function refreshAllActivePositions(
         )
       } else if (protocol == "velodrome-cl") {
         refreshVeloCLPosition(
+          position.id,
           position.tokenId,
           block,
           Bytes.empty(),
