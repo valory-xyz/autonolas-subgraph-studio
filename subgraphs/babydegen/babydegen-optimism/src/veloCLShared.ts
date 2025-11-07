@@ -284,6 +284,8 @@ export function refreshVeloCLPosition(
     position.entryAmount1USD = BigDecimal.zero()
     position.entryAmountUSD = BigDecimal.zero()
     position.usdCurrent = BigDecimal.zero()
+    position.amount0USD = BigDecimal.zero()
+    position.amount1USD = BigDecimal.zero()
     
     // Initialize cost tracking
     initializePositionCosts(position)
