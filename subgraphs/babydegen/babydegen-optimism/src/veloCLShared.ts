@@ -2,13 +2,14 @@ import { Address, BigDecimal, BigInt, ethereum, Bytes, log } from "@graphprotoco
 import { NonfungiblePositionManager } from "../../../../generated/VeloNFTManager/NonfungiblePositionManager"
 import { VelodromeCLPool } from "../../../../generated/VeloNFTManager/VelodromeCLPool"
 import { VelodromeCLFactory } from "../../../../generated/VeloNFTManager/VelodromeCLFactory"
+import { VeloCLGauge } from "../../../../generated/VeloNFTManager/VeloCLGauge"
 import { LiquidityAmounts } from "./libraries/LiquidityAmounts"
 import { TickMath } from "./libraries/TickMath"
 import { ProtocolPosition, Service, AgentSwapBuffer } from "../../../../generated/schema"
 import { getUsd, refreshPortfolio } from "./common"
 import { addAgentNFTToPool, removeAgentNFTFromPool, getCachedPoolAddress, cachePoolAddress } from "./poolIndexCache"
 import { getTokenPriceUSD } from "./priceDiscovery"
-import { VELO_MANAGER, VELO_FACTORY } from "./constants"
+import { VELO_MANAGER, VELO_FACTORY, VELO } from "./constants"
 import { isServiceAgent, getServiceByAgent } from "./config"
 import { parseTotalSlippageFromBucket, associateSwapsWithPosition } from "./helpers"
 import { getTokenDecimals, getTokenSymbol } from "./tokenUtils"
@@ -325,7 +326,39 @@ export function refreshVeloCLPosition(
   const usd1 = amount1Human.times(token1Price)
   const usd = usd0.plus(usd1)
 
-  position.usdCurrent = usd
+  // Fetch claimable rewards from pool's gauge
+  let rewardAmount = BigDecimal.zero()
+  let rewardUSD = BigDecimal.zero()
+  
+  // Get gauge address
+  let gaugeAddress: Address
+  let rewardsContract = position.rewardsContract
+  if (rewardsContract) {
+    gaugeAddress = Address.fromBytes(position.rewardsContract!)
+  } 
+  else {
+    const gaugeResult = pool.try_gauge()
+    if (!gaugeResult.reverted) {
+      gaugeAddress = gaugeResult.value
+      position.rewardsContract = gaugeAddress
+    } else {
+      position.usdCurrent = usd
+      position.save()
+      return
+    }
+  }
+  
+  // Get claimable rewards from gauge
+  const gauge = VeloCLGauge.bind(gaugeAddress)
+  const earnedResult = gauge.try_earned(nftOwner, tokenId)
+  
+  if (!earnedResult.reverted) {
+    rewardAmount = earnedResult.value.toBigDecimal().div(BigDecimal.fromString("1e18"))
+    const veloPrice = getTokenPriceUSD(VELO, block.timestamp, false)
+    rewardUSD = rewardAmount.times(veloPrice)
+  }
+
+  position.usdCurrent = usd.plus(rewardUSD)
   position.token0 = data.value2
   position.token0Symbol = getTokenSymbol(data.value2)
   position.amount0 = amount0Human

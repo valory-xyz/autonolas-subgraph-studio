@@ -458,6 +458,8 @@ dataSources:
           file: ../../../abis/defi/VelodromeCLPool.json
         - name: VelodromeCLFactory
           file: ../../../abis/defi/VelodromeCLFactory.json
+        - name: VeloCLGauge
+          file: ../../../abis/defi/VeloCLGauge.json
         - name: VelodromeV2Pool
           file: ../../../abis/defi/VelodromeV2Pool.json
         - name: AggregatorV3Interface

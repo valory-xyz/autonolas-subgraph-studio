@@ -79,8 +79,13 @@ type ProtocolPosition @entity(immutable: false) {
   amount1USD: BigDecimal!   # Current USD value of token1
   liquidity: BigInt
   
-  # Velodrome-specific
+  # Rewards tracking
+  reward: BigDecimal        # Current claimable rewards amount
+  rewardUSD: BigDecimal     # Current claimable rewards in USD
+  
+  # Protocol-specific
   tokenId: BigInt!          # NFT token ID
+  rewardsContract: Bytes    # Rewards contract address
   
   # Static position metadata (cached to avoid RPC calls)
   tickLower: Int!           # Lower tick boundary (never changes)
