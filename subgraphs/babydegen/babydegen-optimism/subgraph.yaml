@@ -602,6 +602,10 @@ dataSources:
           file: ../../../abis/BalancerV2Vault.json
         - name: BalancerV2WeightedPool
           file: ../../../abis/BalancerV2WeightedPool.json
+        - name: VeloCLGauge
+          file: ../../../abis/defi/VeloCLGauge.json
+        - name: UniswapV3NFTManager
+          file: ../../../abis/defi/UniswapV3NFTManager.json
       blockHandlers:
         - handler: handleBlock
           filter:
