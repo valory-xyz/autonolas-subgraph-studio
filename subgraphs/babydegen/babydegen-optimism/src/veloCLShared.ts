@@ -371,6 +371,8 @@ export function refreshVeloCLPosition(
   position.amount1 = amount1Human
   position.amount1USD = usd1
   position.liquidity = data.value7
+  position.reward = rewardAmount
+  position.rewardUSD = rewardUSD
   
   if (position.totalCostsUSD.equals(BigDecimal.zero()) && position.swapSlippageUSD.equals(BigDecimal.zero())) {
     if (position.investmentUSD.equals(BigDecimal.zero()) && position.entryAmountUSD.gt(BigDecimal.zero())) {
