@@ -80,8 +80,8 @@ type ProtocolPosition @entity(immutable: false) {
   liquidity: BigInt
   
   # Rewards tracking
-  reward: BigDecimal        # Current claimable rewards amount
-  rewardUSD: BigDecimal     # Current claimable rewards in USD
+  claimableReward: BigDecimal        # Current claimable rewards amount
+  claimableRewardUSD: BigDecimal     # Current claimable rewards in USD
   
   # Protocol-specific
   tokenId: BigInt!          # NFT token ID
