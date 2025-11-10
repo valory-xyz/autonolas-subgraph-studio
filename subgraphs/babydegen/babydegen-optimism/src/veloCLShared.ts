@@ -284,6 +284,7 @@ export function refreshVeloCLPosition(
     position.entryAmount1USD = BigDecimal.zero()
     position.entryAmountUSD = BigDecimal.zero()
     position.usdCurrent = BigDecimal.zero()
+    position.usdCurrentWithRewards = BigDecimal.zero()
     position.amount0USD = BigDecimal.zero()
     position.amount1USD = BigDecimal.zero()
     
@@ -361,7 +362,9 @@ export function refreshVeloCLPosition(
     rewardUSD = rewardAmount.times(veloPrice)
   }
 
-  position.usdCurrent = usd.plus(rewardUSD)
+  // Separate base position value from rewards to avoid double-counting
+  position.usdCurrent = usd  // Base liquidity value only
+  position.usdCurrentWithRewards = usd.plus(rewardUSD)  // Total including rewards
   position.token0 = data.value2
   position.token0Symbol = getTokenSymbol(data.value2)
   position.amount0 = amount0Human

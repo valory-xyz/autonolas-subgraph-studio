@@ -68,7 +68,8 @@ type ProtocolPosition @entity(immutable: false) {
   isActive: Boolean!        # true = open, false = closed
   
   # Current state (only updated for active positions)
-  usdCurrent: BigDecimal!   # Total USD value
+  usdCurrent: BigDecimal!   # Base position USD value (liquidity only)
+  usdCurrentWithRewards: BigDecimal!   # Total USD value including claimable rewards
   token0: Bytes
   token0Symbol: String      # Token0 symbol (e.g., "USDC")
   amount0: BigDecimal       # Current token0 amount
@@ -172,6 +173,10 @@ type AgentPortfolio @entity(immutable: false) {
   apr: BigDecimal!              # Annualized Percentage Return (calculated from roi)
   projectedUnrealisedPnL: BigDecimal!  # APR calculated from unrealisedPnL (portfolio-based)
   
+  # Performance Metrics Including Rewards
+  unrealisedPnLWithRewards: BigDecimal!    # ROI calculation including claimable rewards
+  projectedUnrealisedPnLWithRewards: BigDecimal!  # APR calculation including claimable rewards
+  
   # ETH-adjusted performance metrics
   ethAdjustedRoi: BigDecimal!              # ETH-adjusted actual ROI
   ethAdjustedApr: BigDecimal!              # ETH-adjusted actual APR  
@@ -267,11 +272,15 @@ type ServiceRegistry @entity(immutable: false) {
 type DailyPopulationMetric @entity(immutable: true) {
   id: Bytes!                        # "<timestamp>" for daily snapshots
   
-  # Population Metrics
+  # Population Metrics (Base - without rewards)
   medianPopulationROI: BigDecimal!  # Median of all agent ROI values
   medianPopulationAPR: BigDecimal!  # Median of all agent APR values
   medianUnrealisedPnL: BigDecimal!  # Median of all agent unrealised PnL values
   medianProjectedUnrealisedPnL: BigDecimal!  # Median of all agent projected unrealised PnL values
+  
+  # Population Metrics (Including Rewards)
+  medianUnrealisedPnLWithRewards: BigDecimal!  # Median unrealised PnL including claimable rewards
+  medianProjectedUnrealisedPnLWithRewards: BigDecimal!  # Median projected unrealised PnL including rewards
   
   # ETH-adjusted population metrics
   medianEthAdjustedROI: BigDecimal!        # Median ETH-adjusted actual ROI
