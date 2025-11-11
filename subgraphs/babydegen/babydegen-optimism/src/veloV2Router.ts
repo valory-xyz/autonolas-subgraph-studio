@@ -1,10 +1,10 @@
 import { 
   Mint as RouterMint
-} from "../../../../generated/VeloV2Router/VelodromeV2Router"
+} from "../generated/VeloV2Router/VelodromeV2Router"
 import { 
   VelodromeV2Pool,
   Transfer
-} from "../../../../generated/templates/VeloV2Pool/VelodromeV2Pool"
+} from "../generated/templates/VeloV2Pool/VelodromeV2Pool"
 import { ensureVeloV2PoolTemplate } from "./veloV2Shared"
 import { log, Address } from "@graphprotocol/graph-ts"
 import { isSafe } from "./common"

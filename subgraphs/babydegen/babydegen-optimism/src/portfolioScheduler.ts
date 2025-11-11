@@ -1,5 +1,5 @@
 import { ethereum, BigInt, Bytes, Address, log } from "@graphprotocol/graph-ts"
-import { Service, ServiceRegistry, AgentPortfolio } from "../../../../generated/schema"
+import { Service, ServiceRegistry, AgentPortfolio } from "../generated/schema"
 import { calculatePortfolioMetrics } from "./helpers"
 import { calculateGlobalMetrics } from "./globalMetrics"
 

@@ -2,7 +2,7 @@ import {
   Mint,
   Burn,
   Transfer
-} from "../../../../generated/templates/VeloV2Pool/VelodromeV2Pool"
+} from "../generated/templates/VeloV2Pool/VelodromeV2Pool"
 
 import { 
   refreshVeloV2PositionWithEventAmounts,
@@ -13,7 +13,7 @@ import {
 
 import { BigInt, Bytes, store } from "@graphprotocol/graph-ts"
 import { getServiceByAgent } from "./config"
-import { PendingMintPosition, ProtocolPosition } from "../../../../generated/schema"
+import { PendingMintPosition, ProtocolPosition } from "../generated/schema"
 import { getTokenPriceUSD } from "./priceDiscovery"
 import { getTokenDecimals } from "./tokenUtils"
 import { Address, BigDecimal } from "@graphprotocol/graph-ts"

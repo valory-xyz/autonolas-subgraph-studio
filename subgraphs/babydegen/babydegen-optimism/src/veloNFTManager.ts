@@ -4,12 +4,12 @@ import {
   Collect,
   Transfer,
   NonfungiblePositionManager
-} from "../../../../generated/VeloNFTManager/NonfungiblePositionManager"
+} from "../generated/VeloNFTManager/NonfungiblePositionManager"
 import { VELO_MANAGER } from "./constants"
 import { getServiceByAgent } from "./config"
 import { refreshVeloCLPosition, refreshVeloCLPositionWithEventAmounts, refreshVeloCLPositionWithExitAmounts, getVeloCLPositionId } from "./veloCLShared"
 import { Address, Bytes, BigInt, log } from "@graphprotocol/graph-ts"
-import { ProtocolPosition, NFTPositionMapping } from "../../../../generated/schema"
+import { ProtocolPosition, NFTPositionMapping } from "../generated/schema"
 import { calculatePortfolioMetrics } from "./helpers"
 
 const ZERO_ADDRESS = Address.fromString("0x0000000000000000000000000000000000000000")

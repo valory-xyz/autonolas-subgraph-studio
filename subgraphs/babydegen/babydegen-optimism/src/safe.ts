@@ -4,7 +4,7 @@ import {
   SafeReceived as SafeReceivedEvent,
   ExecutionSuccess as ExecutionSuccessEvent,
   ExecutionFromModuleSuccess as ExecutionFromModuleSuccessEvent
-} from "../../../../generated/templates/Safe/Safe"
+} from "../generated/templates/Safe/Safe"
 import { isFundingSource, getEthUsd } from "./common"
 import { getServiceByAgent } from "./config"
 import { updateFundingBalance } from "./tokenBalances"

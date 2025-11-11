@@ -1,4 +1,4 @@
-import { Transfer } from "../../../../generated/USDC_Native/ERC20"
+import { Transfer } from "../generated/USDC_Native/ERC20"
 import { log } from "@graphprotocol/graph-ts"
 import { handleERC20Transfer } from "./tokenBalances"
 

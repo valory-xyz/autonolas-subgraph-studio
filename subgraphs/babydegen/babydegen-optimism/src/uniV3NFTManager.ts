@@ -4,7 +4,7 @@ import {
   DecreaseLiquidity, 
   Collect, 
   Transfer 
-} from "../../../../generated/UniV3NFTManager/NonfungiblePositionManager"
+} from "../generated/UniV3NFTManager/NonfungiblePositionManager"
 import { 
   ensureUniV3PoolTemplate, 
   refreshUniV3Position, 
@@ -13,7 +13,7 @@ import {
   handleUniV3NFTTransferForCache
 } from "./uniV3Shared"
 import { getServiceByAgent } from "./config"
-import { ProtocolPosition } from "../../../../generated/schema"
+import { ProtocolPosition } from "../generated/schema"
 import { log, Bytes } from "@graphprotocol/graph-ts"
 
 export function handleUniV3IncreaseLiquidity(event: IncreaseLiquidity): void {

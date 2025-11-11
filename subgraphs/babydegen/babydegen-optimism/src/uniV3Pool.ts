@@ -1,5 +1,5 @@
 // NOTE: This import will work once Uniswap V3 is added to subgraph.yaml and types are generated
-import { Swap } from "../../../../generated/templates/UniV3Pool/UniswapV3Pool"
+import { Swap } from "../generated/templates/UniV3Pool/UniswapV3Pool"
 import { getAgentNFTsInPool } from "./poolIndexCache"
 import { refreshUniV3Position } from "./uniV3Shared"
 import { log } from "@graphprotocol/graph-ts"

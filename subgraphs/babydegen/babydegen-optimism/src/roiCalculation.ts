@@ -1,5 +1,5 @@
 import { BigDecimal, BigInt, Address, Bytes, log } from "@graphprotocol/graph-ts"
-import { ProtocolPosition, AgentPortfolio, Service } from "../../../../generated/schema"
+import { ProtocolPosition, AgentPortfolio, Service } from "../generated/schema"
 import { getServiceByAgent } from "./config"
 
 /**

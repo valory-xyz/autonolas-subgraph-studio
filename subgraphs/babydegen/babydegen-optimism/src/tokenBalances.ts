@@ -1,6 +1,6 @@
 import { BigDecimal, Address, Bytes, ethereum, BigInt, log } from "@graphprotocol/graph-ts"
-import { TokenBalance, Service, FundingBalance } from "../../../../generated/schema"
-import { Transfer as TransferEvent } from "../../../../generated/USDC_Native/ERC20"
+import { TokenBalance, Service, FundingBalance } from "../generated/schema"
+import { Transfer as TransferEvent } from "../generated/USDC_Native/ERC20"
 import { TOKENS } from "./tokenConfig"
 import { getServiceByAgent } from "./config"
 import { isFundingSource, getEthUsd } from "./common"

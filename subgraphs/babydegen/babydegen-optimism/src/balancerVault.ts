@@ -10,7 +10,7 @@ import {
 import { 
   ProtocolPosition,
   Service
-} from "../../../../generated/schema"
+} from "../generated/schema"
 
 import { 
   calculatePortfolioMetrics,
@@ -23,7 +23,7 @@ import { getTokenDecimals, getTokenSymbol } from "./tokenUtils"
 import { BALANCER_VAULT } from "./constants"
 
 // Import the generated event types
-import { PoolBalanceChanged } from "../../../../generated/BalancerVault/BalancerV2Vault"
+import { PoolBalanceChanged } from "../generated/BalancerVault/BalancerV2Vault"
 
 // Import shared functions
 import { 
