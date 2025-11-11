@@ -15,6 +15,10 @@ import { getEthUsd } from "./common"
 import { getTokenPriceUSD } from "./priceDiscovery"
 import { WETH, WHITELISTED_TOKENS } from "./constants"
 import { TokenBalance } from "../../../../generated/schema"
+import { refreshVeloV2Position } from "./veloV2Shared"
+import { refreshVeloCLPosition } from "./veloCLShared"
+import { refreshUniV3Position } from "./uniV3Shared"
+import { refreshBalancerPosition } from "./balancerShared"
 
 // ETH-adjusted metrics calculation class
 class EthAdjustedMetrics {
@@ -303,10 +307,85 @@ export function refreshAllUSDValues(
   refreshActivePositionUSDValues(serviceSafe, block)
 }
 
+// Refresh all active positions
+export function refreshAllActivePositions(
+  serviceSafe: Address,
+  block: ethereum.Block,
+  updatePortfolio: boolean
+): void {
+  let service = getServiceByAgent(serviceSafe)
+  if (service == null || service.positionIds == null) {
+    return
+  }
+
+  let positionIds = service.positionIds
+
+  for (let i = 0; i < positionIds.length; i++) {
+    let positionIdString = positionIds[i]
+    let position: ProtocolPosition | null = null
+
+    let directId = Bytes.fromUTF8(positionIdString)
+    position = ProtocolPosition.load(directId)
+
+    if (position == null) {
+      if (positionIdString.startsWith("0x") && positionIdString.length % 2 == 0) {
+        let hexBytes = Bytes.fromHexString(positionIdString)
+        let decodedString = hexBytes.toString()
+        let decodedId = Bytes.fromUTF8(decodedString)
+        position = ProtocolPosition.load(decodedId)
+      }
+    }
+
+    // Only refresh ACTIVE positions
+    if (position != null && position.isActive) {
+      let protocol = position.protocol
+      
+      // Call protocol-specific refresh function with updatePortfolio flag
+      if (protocol == "velodrome-v2") {
+        refreshVeloV2Position(
+          Address.fromBytes(position.agent),
+          Address.fromBytes(position.pool),
+          block,
+          Bytes.empty(),
+          updatePortfolio
+        )
+      } else if (protocol == "velodrome-cl") {
+        refreshVeloCLPosition(
+          position.id,
+          position.tokenId,
+          block,
+          Bytes.empty(),
+          updatePortfolio
+        )
+      } else if (protocol == "uniswap-v3") {
+        refreshUniV3Position(
+          position.tokenId,
+          block,
+          Bytes.empty(),
+          updatePortfolio
+        )
+      } else if (protocol == "balancer") {
+        // For Balancer, tokenId is actually the poolId (stored as BigInt)
+        // We need to convert it back to Bytes
+        let poolIdBytes = changetype<Bytes>(Bytes.fromBigInt(position.tokenId))
+        refreshBalancerPosition(
+          Address.fromBytes(position.agent),
+          Address.fromBytes(position.pool),
+          poolIdBytes,
+          block,
+          Bytes.empty(),
+          updatePortfolio
+        )
+      }
+    }
+  }
+}
+
 // Calculate portfolio metrics for an agent
 export function calculatePortfolioMetrics(
   serviceSafe: Address, 
-  block: ethereum.Block
+  block: ethereum.Block,
+  takeSnapshot: boolean = false
 ): void {
   // Check if this is a valid service
   let service = getServiceByAgent(serviceSafe)
@@ -317,15 +396,22 @@ export function calculatePortfolioMetrics(
   // Ensure portfolio exists (replaces the existing if/else logic)
   let portfolio = ensureAgentPortfolio(serviceSafe, block.timestamp)
 
-  // This ensures that both TokenBalance and ProtocolPosition USD values are current
-  refreshAllUSDValues(serviceSafe, block)
+  if(takeSnapshot){
+    // Refresh all active position amounts
+    refreshAllActivePositions(serviceSafe, block, false)
+    
+    // This ensures that both TokenBalance and ProtocolPosition USD values are current
+    refreshAllUSDValues(serviceSafe, block)
+  }
+
 
   // 1. Get initial investment from FundingBalance (use totalInUsd to preserve baseline)
   let fundingBalance = FundingBalance.load(serviceSafe as Bytes)
   let initialValue = fundingBalance ? fundingBalance.totalInUsd : BigDecimal.zero()
   
-  // 2. Calculate total positions value
+  // 2. Calculate total positions value (base and with rewards)
   let positionsValue = calculatePositionsValue(serviceSafe)
+  let positionsValueWithRewards = calculatePositionsValueWithRewards(serviceSafe)
   
   // 3. Calculate uninvested funds
   let uninvestedValue = calculateUninvestedValue(serviceSafe)
@@ -335,15 +421,22 @@ export function calculatePortfolioMetrics(
   
   // 5. Calculate total portfolio value (positions + uninvested + withdrawn)
   let finalValue = positionsValue.plus(uninvestedValue).plus(totalWithdrawn)
+  let finalValueWithRewards = positionsValueWithRewards.plus(uninvestedValue).plus(totalWithdrawn)
   
-  // 5. Calculate ROI and APR
+  // 5. Calculate ROI and APR (base and with rewards)
   let roi = BigDecimal.zero()
   let apr = BigDecimal.zero()
+  let roiWithRewards = BigDecimal.zero()
+  let aprWithRewards = BigDecimal.zero()
   
   if (initialValue.gt(BigDecimal.zero())) {
-    // ROI = (final_value - initial_value) / initial_value * 100
+    // Base ROI = (final_value - initial_value) / initial_value * 100
     let profit = finalValue.minus(initialValue)
     roi = profit.div(initialValue).times(BigDecimal.fromString("100"))
+    
+    // Reward-inclusive ROI = (final_value_with_rewards - initial_value) / initial_value * 100
+    let profitWithRewards = finalValueWithRewards.minus(initialValue)
+    roiWithRewards = profitWithRewards.div(initialValue).times(BigDecimal.fromString("100"))
     
     // APR calculation - use first trading timestamp or fallback to service creation
     let timestampForAPR = portfolio.firstTradingTimestamp
@@ -367,6 +460,7 @@ export function calculatePortfolioMetrics(
         // APR = roi * (365 / days_invested)
         let annualizationFactor = BigDecimal.fromString("365").div(daysSinceStart)
         apr = roi.times(annualizationFactor)
+        aprWithRewards = roiWithRewards.times(annualizationFactor)
       }
     }
   }
@@ -432,6 +526,11 @@ export function calculatePortfolioMetrics(
   portfolio.roi = actualROI  //Position-based ROI from closed positions
   portfolio.apr = actualAPR  // APR calculated from actual ROI
   portfolio.projectedUnrealisedPnL = apr  // APR calculated from unrealised PnL
+  
+  // Update portfolio with reward-inclusive values
+  portfolio.unrealisedPnLWithRewards = roiWithRewards  // ROI including claimable rewards
+  portfolio.projectedUnrealisedPnLWithRewards = aprWithRewards  // APR including claimable rewards
+  
   portfolio.lastUpdated = block.timestamp
   
   // Update portfolio with ETH-adjusted values
@@ -497,8 +596,11 @@ export function calculatePortfolioMetrics(
   
   portfolio.save()
   
-  // Create snapshot
-  createPortfolioSnapshot(portfolio, block)
+  if(takeSnapshot){
+    // Create snapshot
+    createPortfolioSnapshot(portfolio, block)
+  }
+
   
   log.info("PORTFOLIO: {} USD (ROI: {}%, positions: {}, uninvested: {})", [
     finalValue.toString(),
@@ -546,6 +648,50 @@ function calculatePositionsValue(serviceSafe: Address): BigDecimal {
     // If position found and active, add to total value
     if (position != null && position.isActive) {
       totalValue = totalValue.plus(position.usdCurrent)
+    }
+  }
+  
+  return totalValue
+}
+
+// Calculate total value of all active positions including rewards
+function calculatePositionsValueWithRewards(serviceSafe: Address): BigDecimal {
+  let totalValue = BigDecimal.zero()
+  
+  // Get the service entity
+  let service = Service.load(serviceSafe)
+  if (service == null || service.positionIds == null) {
+    return totalValue
+  }
+  
+  // Iterate through all position IDs
+  let positionIds = service.positionIds
+  
+  for (let i = 0; i < positionIds.length; i++) {
+    let positionIdString = positionIds[i]
+    let position: ProtocolPosition | null = null
+    
+    // Try loading position with different ID formats for robustness
+    
+    // Method 1: Try as direct UTF8 string (standard format)
+    let directId = Bytes.fromUTF8(positionIdString)
+    position = ProtocolPosition.load(directId)
+    
+    if (position == null) {
+      // Method 2: Try as hex-decoded string (for any legacy hex-encoded IDs)
+      // Check if the string looks like hex (starts with 0x and has even length)
+      if (positionIdString.startsWith("0x") && positionIdString.length % 2 == 0) {
+        // Convert hex string back to original string, then to Bytes
+        let hexBytes = Bytes.fromHexString(positionIdString)
+        let decodedString = hexBytes.toString()
+        let decodedId = Bytes.fromUTF8(decodedString)
+        position = ProtocolPosition.load(decodedId)
+      }
+    }
+    
+    // If position found and active, add to total value including rewards
+    if (position != null && position.isActive) {
+      totalValue = totalValue.plus(position.usdCurrentWithRewards)
     }
   }
   
@@ -629,6 +775,10 @@ export function ensureAgentPortfolio(serviceSafe: Address, timestamp: BigInt): A
     portfolio.totalCosts = BigDecimal.zero()
     portfolio.apr = BigDecimal.zero()
     portfolio.projectedUnrealisedPnL = BigDecimal.zero()  //  Initialize projected unrealised PnL
+    
+    // Initialize reward-inclusive performance metrics
+    portfolio.unrealisedPnLWithRewards = BigDecimal.zero()
+    portfolio.projectedUnrealisedPnLWithRewards = BigDecimal.zero()
     
     // Initialize ETH-adjusted performance metrics
     portfolio.ethAdjustedRoi = BigDecimal.zero()

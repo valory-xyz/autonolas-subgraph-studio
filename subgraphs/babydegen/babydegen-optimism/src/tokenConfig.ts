@@ -309,6 +309,23 @@ function initializeTokens(): void {
     ]
   ))
 
+  // VELO - Use Velodrome V2 pool for price discovery
+  TOKENS.set("0x9560e827af36c94d2ac33a39bce1fe78631088db", new TokenConfig(
+    Address.fromString("0x9560e827aF36c94D2Ac33a39bCE1Fe78631088Db"),
+    "VELO",
+    18,
+    [
+      // Priority 1: Velodrome V2 USDC/VELO pool
+      new PriceSourceConfig(
+        Address.fromString("0xa0A215dE234276CAc1b844fD58901351a50fec8A"),
+        "velodrome_v2",
+        1,
+        85,
+        Address.fromString("0x0b2c639c533813f4aa9d7837caf62653d097ff85") // USDC as pair token
+      )
+    ]
+  ))
+
   // Note: These tokens now use pool-based price discovery similar to DOLA
   // Pool addresses provided for accurate price tracking
 }

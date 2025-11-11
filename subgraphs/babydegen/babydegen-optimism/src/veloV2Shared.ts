@@ -12,7 +12,7 @@ import { VelodromeV2Pool } from "../../../../generated/templates/VeloV2Pool/Velo
 import { VeloV2Pool as VeloV2PoolTemplate } from "../../../../generated/templates"
 import { getTokenPriceUSD } from "./priceDiscovery"
 import { getServiceByAgent } from "./config"
-import { parseTotalSlippageFromBucket, associateSwapsWithPosition } from "./helpers"
+import { parseTotalSlippageFromBucket, associateSwapsWithPosition, calculatePortfolioMetrics } from "./helpers"
 import { getTokenDecimals, getTokenSymbol } from "./tokenUtils"
 import { calculatePositionROI } from "./roiCalculation"
 
@@ -114,6 +114,7 @@ export function refreshVeloV2PositionWithEventAmounts(
     
     // Initialize ALL required fields BEFORE calling initializePositionCosts
     pp.usdCurrent = BigDecimal.zero()
+    pp.usdCurrentWithRewards = BigDecimal.zero()  // TODO: Calculate V2 fees later
     pp.amount0 = BigDecimal.zero()
     pp.amount0USD = BigDecimal.zero()
     pp.amount1 = BigDecimal.zero()
@@ -228,7 +229,8 @@ export function refreshVeloV2Position(
   userAddress: Address,
   poolAddress: Address,
   block: ethereum.Block,
-  txHash: Bytes
+  txHash: Bytes,
+  updatePortfolio: boolean = true
 ): void {
   const positionId = getVeloV2PositionId(userAddress, poolAddress)
   
@@ -374,6 +376,7 @@ export function refreshVeloV2Position(
     pp.amount0USD = token0Price.times(pp.amount0!)
     pp.amount1USD = token1Price.times(pp.amount1!)
     pp.usdCurrent = pp.amount0USD.plus(pp.amount1USD)
+    pp.usdCurrentWithRewards = pp.usdCurrent  // TODO: Calculate V2 fees later
     pp.liquidity = userBalance // Store LP token balance as liquidity
     
     pp.isActive = true
@@ -404,6 +407,11 @@ export function refreshVeloV2Position(
   }
   
   pp.save()
+  
+  // Only update portfolio if flag is true (prevents recursion)
+  if (updatePortfolio) {
+    calculatePortfolioMetrics(userAddress, block)
+  }
 }
 
 // Handle VelodromeV2 Burn events (liquidity removal)

@@ -141,6 +141,7 @@ export function refreshBalancerPositionWithEventAmounts(
     
     // Initialize current state fields
     pp.usdCurrent = BigDecimal.zero()
+    pp.usdCurrentWithRewards = BigDecimal.zero()  // TODO: Calculate Balancer fees later
     pp.amount0 = BigDecimal.zero()
     pp.amount0USD = BigDecimal.zero()
     pp.amount1 = BigDecimal.zero()
@@ -307,7 +308,8 @@ export function refreshBalancerPosition(
   poolAddress: Address,
   poolId: Bytes,
   block: ethereum.Block,
-  txHash: Bytes
+  txHash: Bytes,
+  updatePortfolio: boolean = true
 ): void {
   const positionId = getBalancerPositionId(userAddress, poolAddress)
   
@@ -444,6 +446,7 @@ export function refreshBalancerPosition(
         pp.amount0USD = amount0USD
         pp.amount1USD = amount1USD
         pp.usdCurrent = totalUSD
+        pp.usdCurrentWithRewards = totalUSD  // TODO: Calculate Balancer fees later
         
         // Set token information if not already set
         if (!pp.token0 && poolTokens.length >= 1) {
@@ -480,6 +483,7 @@ export function refreshBalancerPosition(
   
   pp.save()
   
-  // Update portfolio metrics
-  calculatePortfolioMetrics(userAddress, block)
+  if (updatePortfolio) {
+    calculatePortfolioMetrics(userAddress, block)
+  }
 }

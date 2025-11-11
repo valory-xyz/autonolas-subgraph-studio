@@ -98,6 +98,8 @@ export function getUsd(token: Address, block: ethereum.Block): BigDecimal {
 }
 
 // Portfolio refresh function
-export function refreshPortfolio(agent: Address, block: ethereum.Block): void {
-  calculatePortfolioMetrics(agent, block)
+export function refreshPortfolio(agent: Address, block: ethereum.Block, updatePortfolio: boolean = true): void {
+  if (updatePortfolio) {
+    calculatePortfolioMetrics(agent, block)
+  }
 }

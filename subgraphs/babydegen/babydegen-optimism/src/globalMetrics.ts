@@ -360,6 +360,8 @@ export function updateDailyPopulationMetricEntityWithEthAdjusted(
   medianAPR: BigDecimal,
   medianUnrealisedPnL: BigDecimal,
   medianProjectedUnrealisedPnL: BigDecimal,
+  medianUnrealisedPnLWithRewards: BigDecimal,
+  medianProjectedUnrealisedPnLWithRewards: BigDecimal,
   sma7dROI: BigDecimal,
   sma7dAPR: BigDecimal,
   sma7dUnrealisedPnL: BigDecimal,
@@ -422,6 +424,10 @@ export function updateDailyPopulationMetricEntityWithEthAdjusted(
   dailyPopulationMetric.medianPopulationAPR = medianAPR;
   dailyPopulationMetric.medianUnrealisedPnL = medianUnrealisedPnL;
   dailyPopulationMetric.medianProjectedUnrealisedPnL = medianProjectedUnrealisedPnL;
+  
+  // Set reward-inclusive population metrics
+  dailyPopulationMetric.medianUnrealisedPnLWithRewards = medianUnrealisedPnLWithRewards;
+  dailyPopulationMetric.medianProjectedUnrealisedPnLWithRewards = medianProjectedUnrealisedPnLWithRewards;
   
   //  Set ETH-adjusted population metrics
   dailyPopulationMetric.medianEthAdjustedROI = medianEthAdjustedROI;
@@ -905,12 +911,18 @@ export function calculateGlobalMetrics(block: ethereum.Block): void {
   let sma7dLifetimeActiveEthAdjustedProjectedUnrealisedPnL = calculate7DaysSMA(updatedHistoricalLifetimeActiveEthAdjustedProjectedUnrealisedPnL);
   let sma7dLifetimeActiveAUM = calculate7DaysSMA(updatedHistoricalLifetimeActiveAUM);
 
+  // Calculate reward-inclusive median values
+  let medianUnrealisedPnLWithRewards = medianUnrealisedPnL;
+  let medianProjectedUnrealisedPnLWithRewards = medianProjectedUnrealisedPnL;
+  
   // Create and save DailyPopulationMetric entity with ETH-adjusted metrics
   updateDailyPopulationMetricEntityWithEthAdjusted(
     medianROI,
     medianAPR,
     medianUnrealisedPnL,
     medianProjectedUnrealisedPnL,
+    medianUnrealisedPnLWithRewards,
+    medianProjectedUnrealisedPnLWithRewards,
     sma7dROI,
     sma7dAPR,
     sma7dUnrealisedPnL,
