@@ -13,7 +13,7 @@ import {
   ProtocolPosition,
   Service,
   AgentSwapBuffer
-} from "../../../../generated/schema"
+} from "../generated/schema"
 
 import { getTokenPriceUSD } from "./priceDiscovery"
 import { getTokenDecimals } from "./tokenUtils"

@@ -1,13 +1,13 @@
 import { 
   RegisterInstance,
   CreateMultisigWithAgents
-} from "../../../../generated/ServiceRegistryL2/ServiceRegistryL2"
+} from "../generated/ServiceRegistryL2/ServiceRegistryL2"
 import { 
   Service, 
   ServiceRegistration, 
   ServiceIndex
-} from "../../../../generated/schema"
-import { Safe } from "../../../../generated/templates"
+} from "../generated/schema"
+import { Safe } from "../generated/templates"
 import { BigInt, Bytes, store, log, Address } from "@graphprotocol/graph-ts"
 import { OPTIMUS_AGENT_ID, EXCLUDED_SERVICE_IDS } from "./constants"
 import { registerServiceForSnapshots } from "./portfolioScheduler"

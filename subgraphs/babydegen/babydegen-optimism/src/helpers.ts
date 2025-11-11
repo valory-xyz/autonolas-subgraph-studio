@@ -7,14 +7,14 @@ import {
   Service,
   AgentSwapBuffer,
   SwapTransaction
-} from "../../../../generated/schema"
+} from "../generated/schema"
 import { calculateUninvestedValue, updateFundingBalance } from "./tokenBalances"
 import { getServiceByAgent } from "./config"
 import { calculateActualROI, aggregateClosedPositionMetrics } from "./roiCalculation"
 import { getEthUsd } from "./common"
 import { getTokenPriceUSD } from "./priceDiscovery"
 import { WETH, WHITELISTED_TOKENS } from "./constants"
-import { TokenBalance } from "../../../../generated/schema"
+import { TokenBalance } from "../generated/schema"
 import { refreshVeloV2Position } from "./veloV2Shared"
 import { refreshVeloCLPosition } from "./veloCLShared"
 import { refreshUniV3Position } from "./uniV3Shared"

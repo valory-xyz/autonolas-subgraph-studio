@@ -1,4 +1,4 @@
-import { Swap } from "../../../../generated/templates/VeloCLPool/VelodromeCLPool"
+import { Swap } from "../generated/templates/VeloCLPool/VelodromeCLPool"
 import { getAgentNFTsInPool } from "./poolIndexCache"        // tiny util map
 import { refreshVeloCLPosition } from "./veloCLShared"
 import { log } from "@graphprotocol/graph-ts"

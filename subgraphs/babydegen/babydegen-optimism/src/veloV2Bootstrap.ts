@@ -1,15 +1,15 @@
 import { 
   Sugar
-} from "../../../../generated/VeloV2Sugar/Sugar"
+} from "../generated/VeloV2Sugar/Sugar"
 import {
   PoolFactory
-} from "../../../../generated/VeloV2Factory/PoolFactory"
+} from "../generated/VeloV2Factory/PoolFactory"
 import {
   PoolCreated as PoolCreatedEvent
-} from "../../../../generated/VeloV2Factory/PoolFactory"
+} from "../generated/VeloV2Factory/PoolFactory"
 import { 
   VeloV2Pool
-} from "../../../../generated/templates"
+} from "../generated/templates"
 import { 
   Address, 
   BigInt,

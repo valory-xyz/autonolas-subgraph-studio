@@ -1,5 +1,5 @@
 import { Address, BigDecimal, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts"
-import { Token, PriceSource, PriceUpdate } from "../../../../generated/schema"
+import { Token, PriceSource, PriceUpdate } from "../generated/schema"
 import { getTokenConfig, TokenConfig, PriceSourceConfig } from "./tokenConfig"
 import { CRITICAL_STABLECOINS, DOLA } from "./constants"
 

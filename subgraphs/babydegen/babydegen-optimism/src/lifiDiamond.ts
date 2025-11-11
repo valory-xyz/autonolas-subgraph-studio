@@ -2,7 +2,7 @@ import { Address, BigInt, ethereum, Bytes } from "@graphprotocol/graph-ts"
 import { getServiceByAgent } from "./config"
 import { updateETHBalance } from "./tokenBalances"
 import { createSwapTransaction } from "./swapTracking"
-import { LiFiGenericSwapCompleted } from "../../../../generated/LiFiDiamond/LiFiDiamond"
+import { LiFiGenericSwapCompleted } from "../generated/LiFiDiamond/LiFiDiamond"
 
 /**
  * Handler for LiFiGenericSwapCompleted events

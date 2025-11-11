@@ -1,4 +1,4 @@
-import { PoolCreated } from "../../../../generated/VeloV2Factory/PoolFactory"
+import { PoolCreated } from "../generated/VeloV2Factory/PoolFactory"
 import { ensureVeloV2PoolTemplate } from "./veloV2Shared"
 import { log } from "@graphprotocol/graph-ts"
 

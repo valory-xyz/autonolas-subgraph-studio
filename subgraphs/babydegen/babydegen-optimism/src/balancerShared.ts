@@ -7,10 +7,10 @@ import {
   log
 } from "@graphprotocol/graph-ts"
 
-import { ProtocolPosition, Service, AgentSwapBuffer } from "../../../../generated/schema"
-import { BalancerV2WeightedPool } from "../../../../generated/BalancerVault/BalancerV2WeightedPool"
-import { BalancerV2Vault } from "../../../../generated/BalancerVault/BalancerV2Vault"
-import { ERC20 } from "../../../../generated/BalancerVault/ERC20"
+import { ProtocolPosition, Service, AgentSwapBuffer } from "../generated/schema"
+import { BalancerV2WeightedPool } from "../generated/BalancerVault/BalancerV2WeightedPool"
+import { BalancerV2Vault } from "../generated/BalancerVault/BalancerV2Vault"
+import { ERC20 } from "../generated/BalancerVault/ERC20"
 import { getTokenPriceUSD } from "./priceDiscovery"
 import { getServiceByAgent } from "./config"
 import { updateFirstTradingTimestamp, calculatePortfolioMetrics, associateSwapsWithPosition } from "./helpers"

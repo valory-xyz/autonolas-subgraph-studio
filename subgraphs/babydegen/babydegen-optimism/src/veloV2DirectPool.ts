@@ -2,7 +2,7 @@ import {
   Mint,
   Burn,
   Transfer
-} from "../../../../generated/VeloV2Pool_USDC_LUSD/VelodromeV2Pool"
+} from "../generated/VeloV2Pool_USDC_LUSD/VelodromeV2Pool"
 
 import { 
   refreshVeloV2Position,

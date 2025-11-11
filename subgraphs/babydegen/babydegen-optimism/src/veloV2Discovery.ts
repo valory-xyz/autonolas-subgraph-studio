@@ -1,12 +1,12 @@
 import { 
   Transfer as TransferEvent
-} from "../../../../generated/USDC_Native/ERC20"
+} from "../generated/USDC_Native/ERC20"
 import { 
   VelodromeV2Pool 
-} from "../../../../generated/templates/VeloV2Pool/VelodromeV2Pool"
+} from "../generated/templates/VeloV2Pool/VelodromeV2Pool"
 import { 
   VeloV2Pool as VeloV2PoolTemplate 
-} from "../../../../generated/templates"
+} from "../generated/templates"
 import { 
   Address, 
   log 

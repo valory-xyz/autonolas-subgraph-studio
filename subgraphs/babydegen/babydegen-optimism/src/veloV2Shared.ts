@@ -7,9 +7,9 @@ import {
   log
 } from "@graphprotocol/graph-ts"
 
-import { ProtocolPosition, Service, AgentSwapBuffer } from "../../../../generated/schema"
-import { VelodromeV2Pool } from "../../../../generated/templates/VeloV2Pool/VelodromeV2Pool"
-import { VeloV2Pool as VeloV2PoolTemplate } from "../../../../generated/templates"
+import { ProtocolPosition, Service, AgentSwapBuffer } from "../generated/schema"
+import { VelodromeV2Pool } from "../generated/templates/VeloV2Pool/VelodromeV2Pool"
+import { VeloV2Pool as VeloV2PoolTemplate } from "../generated/templates"
 import { getTokenPriceUSD } from "./priceDiscovery"
 import { getServiceByAgent } from "./config"
 import { parseTotalSlippageFromBucket, associateSwapsWithPosition, calculatePortfolioMetrics } from "./helpers"

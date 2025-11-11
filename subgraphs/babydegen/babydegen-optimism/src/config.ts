@@ -1,5 +1,5 @@
 import { Address, Bytes } from "@graphprotocol/graph-ts"
-import { Service } from "../../../../generated/schema"
+import { Service } from "../generated/schema"
 
 // =============================================================================
 // DYNAMIC SERVICE CONFIGURATION - Supports multiple services

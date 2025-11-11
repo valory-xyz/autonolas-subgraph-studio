@@ -1,12 +1,12 @@
 import { Address, BigDecimal, BigInt, ethereum, Bytes, log } from "@graphprotocol/graph-ts"
 // NOTE: These imports will work once Uniswap V3 is added to subgraph.yaml and types are generated
-import { NonfungiblePositionManager } from "../../../../generated/UniV3NFTManager/NonfungiblePositionManager"
-import { UniswapV3Pool } from "../../../../generated/UniV3NFTManager/UniswapV3Pool"
-import { UniswapV3Factory } from "../../../../generated/UniV3NFTManager/UniswapV3Factory"
-// import { UniV3Pool } from "../../../../generated/templates" // Removed - using snapshot approach instead of real-time tracking
+import { NonfungiblePositionManager } from "../generated/UniV3NFTManager/NonfungiblePositionManager"
+import { UniswapV3Pool } from "../generated/UniV3NFTManager/UniswapV3Pool"
+import { UniswapV3Factory } from "../generated/UniV3NFTManager/UniswapV3Factory"
+// import { UniV3Pool } from "../generated/templates" // Removed - using snapshot approach instead of real-time tracking
 import { LiquidityAmounts } from "./libraries/LiquidityAmounts"
 import { TickMath } from "./libraries/TickMath"
-import { ProtocolPosition, Service, AgentSwapBuffer } from "../../../../generated/schema"
+import { ProtocolPosition, Service, AgentSwapBuffer } from "../generated/schema"
 import { refreshPortfolio } from "./common"
 import { addAgentNFTToPool, removeAgentNFTFromPool, getCachedPoolAddress, cachePoolAddress } from "./poolIndexCache"
 import { getTokenPriceUSD } from "./priceDiscovery"
