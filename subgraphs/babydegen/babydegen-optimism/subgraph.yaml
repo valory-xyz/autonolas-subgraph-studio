@@ -11,7 +11,7 @@ dataSources:
     source:
       address: "0x3d77596beb0f130a4415df3D2D8232B3d3D31e44"
       abi: ServiceRegistryL2
-      startBlock: 136774000
+      startBlock: 136563000
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -31,6 +31,8 @@ dataSources:
           file: ../../../abis/defi/UniswapV3Pool.json
         - name: NonfungiblePositionManager
           file: ../../../abis/nft/NonfungiblePositionManager.json
+        - name: UniswapV3NFTManager
+          file: ../../../abis/defi/UniswapV3NFTManager.json
         - name: VelodromeCLFactory
           file: ../../../abis/defi/VelodromeCLFactory.json
         - name: AggregatorV3Interface
@@ -49,7 +51,7 @@ dataSources:
     source:
       address: "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85"
       abi: ERC20
-      startBlock: 136774000
+      startBlock: 136563000
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -79,7 +81,7 @@ dataSources:
     source:
       address: "0x4200000000000000000000000000000000000006"
       abi: ERC20
-      startBlock: 136774000
+      startBlock: 136563000
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -107,7 +109,7 @@ dataSources:
     source:
       address: "0xDA10009cBd5D07dd0CeCc66161FC93D7c9000da1"
       abi: ERC20
-      startBlock: 136774000
+      startBlock: 136563000
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -135,7 +137,7 @@ dataSources:
     source:
       address: "0x94b008aA00579c1307B0EF2c499aD98a8ce58e58"
       abi: ERC20
-      startBlock: 136774000
+      startBlock: 136563000
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -163,7 +165,7 @@ dataSources:
     source:
       address: "0x8aE125E8653821E851F12A49F7765db9a9ce7384"
       abi: ERC20
-      startBlock: 136774000
+      startBlock: 136563000
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -191,7 +193,7 @@ dataSources:
     source:
       address: "0x087C440F251ff6cFE62B86dde1be558b95b4bb9b"
       abi: ERC20
-      startBlock: 136774000
+      startBlock: 136563000
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -219,7 +221,7 @@ dataSources:
     source:
       address: "0xc40F949F8a4e094D1b49a23ea9241D289B7b2819"
       abi: ERC20
-      startBlock: 136774000
+      startBlock: 136563000
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -247,7 +249,7 @@ dataSources:
     source:
       address: "0x2E3D870790dC77A83DD1d18184Acc7439A53f475"
       abi: ERC20
-      startBlock: 136774000
+      startBlock: 136563000
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -275,7 +277,7 @@ dataSources:
     source:
       address: "0x2218A117083f5B482B0bB821d27056Ba9c04b1D3"
       abi: ERC20
-      startBlock: 136774000
+      startBlock: 136563000
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -303,7 +305,7 @@ dataSources:
     source:
       address: "0x7F5c764cBc14f9669B88837ca1490cCa17c31607"
       abi: ERC20
-      startBlock: 136774000
+      startBlock: 136563000
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -332,7 +334,7 @@ dataSources:
     source:
       address: "0x01bff41798a0bcf287b996046ca68b395dbc1071"
       abi: ERC20
-      startBlock: 136774000
+      startBlock: 136563000
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -360,7 +362,7 @@ dataSources:
     source:
       address: "0x1217bfe6c773eec6cc4a38b5dc45b92292b6e189"
       abi: ERC20
-      startBlock: 136774000
+      startBlock: 136563000
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -388,7 +390,7 @@ dataSources:
     source:
       address: "0x4f604735c1cf31399c6e711d5962b2b3e0225ad3"
       abi: ERC20
-      startBlock: 136774000
+      startBlock: 136563000
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -416,7 +418,7 @@ dataSources:
     source:
       address: "0x9560e827aF36c94D2Ac33a39bCE1Fe78631088Db"
       abi: ERC20
-      startBlock: 136774000
+      startBlock: 136563000
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -444,7 +446,7 @@ dataSources:
     source:
       address: "0x416b433906b1B72FA758e166e239c43d68dC6F29"
       abi: NonfungiblePositionManager
-      startBlock: 136774000
+      startBlock: 136563000
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -458,6 +460,8 @@ dataSources:
           file: ../../../abis/defi/VelodromeCLPool.json
         - name: VelodromeCLFactory
           file: ../../../abis/defi/VelodromeCLFactory.json
+        - name: VeloCLGauge
+          file: ../../../abis/defi/VeloCLGauge.json
         - name: VelodromeV2Pool
           file: ../../../abis/defi/VelodromeV2Pool.json
         - name: AggregatorV3Interface
@@ -478,7 +482,7 @@ dataSources:
     source:
       address: "0xC36442b4a4522E871399CD717aBDD847Ab11FE88"
       abi: NonfungiblePositionManager
-      startBlock: 136774000
+      startBlock: 136563000
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -517,7 +521,7 @@ dataSources:
     source:
       address: '0xA64db2D254f07977609def75c3A7db3eDc72EE1D'
       abi: Sugar
-      startBlock: 136772000
+      startBlock: 136563000
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -544,7 +548,7 @@ dataSources:
     source:
       address: '0xF1046053aa5682b4F9a81b5481394DA16BE5FF5a'
       abi: PoolFactory
-      startBlock: 136774000
+      startBlock: 136563000
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -569,7 +573,7 @@ dataSources:
     source:
       address: "0x3d77596beb0f130a4415df3D2D8232B3d3D31e44"  # ServiceRegistryL2 address
       abi: ServiceRegistryL2
-      startBlock: 136774000
+      startBlock: 136563000
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -600,6 +604,10 @@ dataSources:
           file: ../../../abis/BalancerV2Vault.json
         - name: BalancerV2WeightedPool
           file: ../../../abis/BalancerV2WeightedPool.json
+        - name: VeloCLGauge
+          file: ../../../abis/defi/VeloCLGauge.json
+        - name: UniswapV3NFTManager
+          file: ../../../abis/defi/UniswapV3NFTManager.json
       blockHandlers:
         - handler: handleBlock
           filter:
@@ -613,7 +621,7 @@ dataSources:
     source:
       address: "0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE"
       abi: LiFiDiamond
-      startBlock: 136774000
+      startBlock: 136563000
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9
@@ -642,7 +650,7 @@ dataSources:
     source:
       address: "0xBA12222222228d8Ba445958a75a0704d566BF2C8"
       abi: BalancerV2Vault
-      startBlock: 136813500
+      startBlock: 136563000
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.9

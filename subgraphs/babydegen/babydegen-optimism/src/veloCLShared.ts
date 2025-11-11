@@ -2,13 +2,14 @@ import { Address, BigDecimal, BigInt, ethereum, Bytes, log } from "@graphprotoco
 import { NonfungiblePositionManager } from "../../../../generated/VeloNFTManager/NonfungiblePositionManager"
 import { VelodromeCLPool } from "../../../../generated/VeloNFTManager/VelodromeCLPool"
 import { VelodromeCLFactory } from "../../../../generated/VeloNFTManager/VelodromeCLFactory"
+import { VeloCLGauge } from "../../../../generated/VeloNFTManager/VeloCLGauge"
 import { LiquidityAmounts } from "./libraries/LiquidityAmounts"
 import { TickMath } from "./libraries/TickMath"
 import { ProtocolPosition, Service, AgentSwapBuffer } from "../../../../generated/schema"
 import { getUsd, refreshPortfolio } from "./common"
 import { addAgentNFTToPool, removeAgentNFTFromPool, getCachedPoolAddress, cachePoolAddress } from "./poolIndexCache"
 import { getTokenPriceUSD } from "./priceDiscovery"
-import { VELO_MANAGER, VELO_FACTORY } from "./constants"
+import { VELO_MANAGER, VELO_FACTORY, VELO } from "./constants"
 import { isServiceAgent, getServiceByAgent } from "./config"
 import { parseTotalSlippageFromBucket, associateSwapsWithPosition } from "./helpers"
 import { getTokenDecimals, getTokenSymbol } from "./tokenUtils"
@@ -21,7 +22,7 @@ function convertTokenAmount(amount: BigInt, tokenAddress: Address): BigDecimal {
 }
 
 export function getVeloCLPositionId(userAddress: Address, tokenId: BigInt): Bytes {
-  const positionId = userAddress.toHex() + "-" + tokenId.toString()
+  const positionId = userAddress.toHex() + "-velo-cl-" + tokenId.toString()
   return Bytes.fromUTF8(positionId)
 }
 
@@ -62,24 +63,6 @@ function getPoolAddress(token0: Address, token1: Address, tickSpacing: i32, toke
   return poolAddress
 }
 
-export function ensurePoolTemplate(tokenId: BigInt): void {
-  const mgr = NonfungiblePositionManager.bind(VELO_MANAGER)
-  const posResult = mgr.try_positions(tokenId)
-  
-  if (posResult.reverted) {
-    return
-  }
-  
-  const pos = posResult.value
-  const poolAddress = getPoolAddress(pos.value2, pos.value3, pos.value4 as i32, tokenId)
-  
-  if (poolAddress.equals(Address.zero())) {
-    return
-  }
-  
-  addAgentNFTToPool("velodrome-cl", poolAddress, tokenId)
-}
-
 function isPositionClosed(liquidity: BigInt, amount0: BigDecimal, amount1: BigDecimal): boolean {
   const isLiquidityZero = liquidity.equals(BigInt.zero())
   const areAmountsZero = amount0.equals(BigDecimal.zero()) && amount1.equals(BigDecimal.zero())
@@ -88,41 +71,27 @@ function isPositionClosed(liquidity: BigInt, amount0: BigDecimal, amount1: BigDe
 }
 
 export function refreshVeloCLPositionWithEventAmounts(
+  positionId: Bytes,
   tokenId: BigInt, 
   block: ethereum.Block, 
   eventAmount0: BigInt,
   eventAmount1: BigInt,
   txHash: Bytes = Bytes.empty()
 ): void {
+  let pp = ProtocolPosition.load(positionId)
+  if (pp == null) {
+    return 
+  }
+  
+  const nftOwner = Address.fromBytes(pp.agent)
   const mgr = NonfungiblePositionManager.bind(VELO_MANAGER)
   
-  // First, get the actual NFT owner
-  const ownerResult = mgr.try_ownerOf(tokenId)
-  if (ownerResult.reverted) {
-    return
-  }
-  
-  const nftOwner = ownerResult.value
-
-  // AGENT FILTERING: Only process positions owned by a service
-  if (!isServiceAgent(nftOwner)) {
-    return
-  }
-
   const dataResult = mgr.try_positions(tokenId)
-  
   if (dataResult.reverted) {
     return
   }
   
   const data = dataResult.value
-
-  // Derive pool address from position data with caching  
-  const poolAddress = getPoolAddress(data.value2, data.value3, data.value4 as i32, tokenId)
-  
-  if (poolAddress.equals(Address.zero())) {
-    return
-  }
 
   // USD pricing for event amounts
   const token0Price = getTokenPriceUSD(data.value2, block.timestamp, false)
@@ -136,38 +105,8 @@ export function refreshVeloCLPositionWithEventAmounts(
   const eventUsd1 = eventAmount1Human.times(token1Price)
   const eventUsd = eventUsd0.plus(eventUsd1)
 
-  // write ProtocolPosition - use consistent ID pattern like Velodrome V2
-  const positionId = getVeloCLPositionId(nftOwner, tokenId)
-  let pp = ProtocolPosition.load(positionId)
-  const isNewPosition = pp == null
-  
-  if (pp == null) {
-    pp = new ProtocolPosition(positionId)
-    pp.agent = nftOwner
-    pp.service = nftOwner
-    pp.protocol = "velodrome-cl"
-    pp.pool = poolAddress
-    pp.tokenId = tokenId
-    pp.isActive = true
-    
-    let service = Service.load(nftOwner)
-    if (service != null) {
-      if (service.positionIds == null) {
-        service.positionIds = []
-      }
-      let positionIds = service.positionIds
-      let positionIdString = positionId.toString()
-      if (positionIds.indexOf(positionIdString) == -1) {
-        positionIds.push(positionIdString)
-        service.positionIds = positionIds
-        service.save()
-      }
-    }
-    
-    pp.tickLower = data.value5 as i32
-    pp.tickUpper = data.value6 as i32
-    pp.tickSpacing = data.value4
-    
+  // Update entry amounts for existing position
+  if (pp.entryAmountUSD.equals(BigDecimal.zero()) && pp.entryTimestamp.equals(BigInt.zero())) {
     pp.entryTxHash = txHash
     pp.entryTimestamp = block.timestamp
     pp.entryAmount0 = eventAmount0Human
@@ -176,23 +115,7 @@ export function refreshVeloCLPositionWithEventAmounts(
     pp.entryAmount1USD = eventUsd1
     pp.entryAmountUSD = eventUsd
     
-    pp.usdCurrent = eventUsd
-    pp.amount0 = eventAmount0Human
-    pp.amount1 = eventAmount1Human
-    pp.amount0USD = eventUsd0
-    pp.amount1USD = eventUsd1
-    pp.token0 = data.value2
-    pp.token1 = data.value3
-    pp.token0Symbol = getTokenSymbol(data.value2)
-    pp.token1Symbol = getTokenSymbol(data.value3)
-    
-    pp.totalCostsUSD = BigDecimal.zero()
-    pp.swapSlippageUSD = BigDecimal.zero()
-    pp.investmentUSD = BigDecimal.zero()
-    pp.grossGainUSD = BigDecimal.zero()
-    pp.netGainUSD = BigDecimal.zero()
-    pp.positionROI = BigDecimal.zero()
-    
+    // Associate swaps for new position
     let totalSlippageUSD = associateSwapsWithPosition(nftOwner, block)
     
     if (totalSlippageUSD.lt(BigDecimal.zero())) {
@@ -202,34 +125,23 @@ export function refreshVeloCLPositionWithEventAmounts(
     pp.swapSlippageUSD = totalSlippageUSD
     pp.totalCostsUSD = totalSlippageUSD
     pp.investmentUSD = eventUsd.plus(totalSlippageUSD)
-    
-    pp.save()
-    return
   } else {
-    if (pp.entryAmountUSD.equals(BigDecimal.zero()) && pp.entryTimestamp.equals(BigInt.zero())) {
-      pp.entryTxHash = txHash
-      pp.entryTimestamp = block.timestamp
-      pp.entryAmount0 = eventAmount0Human
-      pp.entryAmount0USD = eventUsd0
-      pp.entryAmount1 = eventAmount1Human
-      pp.entryAmount1USD = eventUsd1
-      pp.entryAmountUSD = eventUsd
-    } else {
-      pp.entryAmount0 = pp.entryAmount0.plus(eventAmount0Human)
-      pp.entryAmount0USD = pp.entryAmount0USD.plus(eventUsd0)
-      pp.entryAmount1 = pp.entryAmount1.plus(eventAmount1Human)
-      pp.entryAmount1USD = pp.entryAmount1USD.plus(eventUsd1)
-      pp.entryAmountUSD = pp.entryAmountUSD.plus(eventUsd)
-    }
-    
-    pp.save()
-    refreshVeloCLPosition(tokenId, block, txHash)
-    return
+    pp.entryAmount0 = pp.entryAmount0.plus(eventAmount0Human)
+    pp.entryAmount0USD = pp.entryAmount0USD.plus(eventUsd0)
+    pp.entryAmount1 = pp.entryAmount1.plus(eventAmount1Human)
+    pp.entryAmount1USD = pp.entryAmount1USD.plus(eventUsd1)
+    pp.entryAmountUSD = pp.entryAmountUSD.plus(eventUsd)
+    pp.investmentUSD = pp.entryAmountUSD.plus(pp.totalCostsUSD)
   }
+  
+  pp.save()
+  
+  // Refresh current position state
+  refreshVeloCLPosition(positionId, tokenId, block, txHash)
 }
 
-// 2b. Handle position exit with actual event amounts
 export function refreshVeloCLPositionWithExitAmounts(
+  positionId: Bytes,
   tokenId: BigInt, 
   block: ethereum.Block, 
   eventAmount0: BigInt,
@@ -237,30 +149,20 @@ export function refreshVeloCLPositionWithExitAmounts(
   liquidityRemoved: BigInt,
   txHash: Bytes = Bytes.empty()
 ): void {
-  const mgr = NonfungiblePositionManager.bind(VELO_MANAGER)
-  const ownerResult = mgr.try_ownerOf(tokenId)
-  if (ownerResult.reverted) {
-    return
+  let pp = ProtocolPosition.load(positionId)
+  if (pp == null) {
+    return // Position should already exist
   }
   
-  const nftOwner = ownerResult.value
-  if (!isServiceAgent(nftOwner)) {
-    return
-  }
-
+  const nftOwner = Address.fromBytes(pp.agent)
+  const mgr = NonfungiblePositionManager.bind(VELO_MANAGER)
+  
   const dataResult = mgr.try_positions(tokenId)
   if (dataResult.reverted) {
     return
   }
   
   const data = dataResult.value
-  const positionId = getVeloCLPositionId(nftOwner, tokenId)
-  let pp = ProtocolPosition.load(positionId)
-  
-  if (pp == null) {
-    return
-  }
-  
   const remainingLiquidity = data.value7
   const isFullExit = remainingLiquidity.equals(BigInt.zero())
   
@@ -299,40 +201,107 @@ export function refreshVeloCLPositionWithExitAmounts(
     pp.save()
     refreshPortfolio(nftOwner, block)
   } else {
-    refreshVeloCLPosition(tokenId, block, txHash)
+    refreshVeloCLPosition(positionId, tokenId, block, txHash)
   }
 }
 
-export function refreshVeloCLPosition(tokenId: BigInt, block: ethereum.Block, txHash: Bytes = Bytes.empty(), updatePortfolio: boolean = true): void {
-  const mgr = NonfungiblePositionManager.bind(VELO_MANAGER)
-  const ownerResult = mgr.try_ownerOf(tokenId)
-  if (ownerResult.reverted) {
-    return
-  }
-  
-  const nftOwner = ownerResult.value
-  if (!isServiceAgent(nftOwner)) {
-    return
-  }
-
-  const positionId = getVeloCLPositionId(nftOwner, tokenId)
+export function refreshVeloCLPosition(
+  positionId: Bytes,
+  tokenId: BigInt, 
+  block: ethereum.Block, 
+  txHash: Bytes = Bytes.empty(), 
+  updatePortfolio: boolean = true,
+  owner: Address | null = null
+): void {
   let position = ProtocolPosition.load(positionId)
+  let nftOwner: Address
+  let poolAddress: Address
   
-  if (position && !position.isActive) {
-    return
+  if (!position) {
+    if (owner !== null) {
+      nftOwner = owner
+    } else {
+      return
+    }
+    
+    // Verify this is a service agent
+    if (!isServiceAgent(nftOwner)) {
+      return
+    }
+    
+    const mgr = NonfungiblePositionManager.bind(VELO_MANAGER)
+    const dataResult = mgr.try_positions(tokenId)
+    if (dataResult.reverted) {
+      return
+    }
+    
+    const data = dataResult.value
+    poolAddress = getPoolAddress(data.value2, data.value3, data.value4 as i32, tokenId)
+    
+    if (poolAddress.equals(Address.zero())) {
+      return
+    }
+    
+    // Create new position
+    position = new ProtocolPosition(positionId)
+    position.agent = nftOwner
+    position.service = nftOwner
+    position.protocol = "velodrome-cl"
+    position.pool = poolAddress
+    position.tokenId = tokenId
+    position.isActive = true
+    
+    // Update service positionIds array
+    let service = Service.load(nftOwner)
+    if (service != null) {
+      if (service.positionIds == null) {
+        service.positionIds = []
+      }
+      let positionIds = service.positionIds
+      let positionIdString = positionId.toString()
+      if (positionIds.indexOf(positionIdString) == -1) {
+        positionIds.push(positionIdString)
+        service.positionIds = positionIds
+        service.save()
+      }
+    }
+    
+    // Set static metadata
+    position.tickLower = data.value5 as i32
+    position.tickUpper = data.value6 as i32
+    position.tickSpacing = data.value4
+    position.token0 = data.value2
+    position.token1 = data.value3
+    position.token0Symbol = getTokenSymbol(data.value2)
+    position.token1Symbol = getTokenSymbol(data.value3)
+    
+    // Initialize entry tracking fields
+    position.entryTxHash = txHash
+    position.entryTimestamp = block.timestamp
+    position.entryAmount0 = BigDecimal.zero()
+    position.entryAmount0USD = BigDecimal.zero()
+    position.entryAmount1 = BigDecimal.zero()
+    position.entryAmount1USD = BigDecimal.zero()
+    position.entryAmountUSD = BigDecimal.zero()
+    position.usdCurrent = BigDecimal.zero()
+    position.usdCurrentWithRewards = BigDecimal.zero()
+    position.amount0USD = BigDecimal.zero()
+    position.amount1USD = BigDecimal.zero()
+    
+    // Initialize cost tracking
+    initializePositionCosts(position)
+  } else {
+  // Use existing position
+    nftOwner = Address.fromBytes(position.agent)
+    poolAddress = Address.fromBytes(position.pool)
   }
-  
+  const mgr = NonfungiblePositionManager.bind(VELO_MANAGER)
   const dataResult = mgr.try_positions(tokenId)
   if (dataResult.reverted) {
     return
   }
   
   const data = dataResult.value
-  const poolAddress = getPoolAddress(data.value2, data.value3, data.value4 as i32, tokenId)
-  
-  if (poolAddress.equals(Address.zero())) {
-    return
-  }
   
   const pool = VelodromeCLPool.bind(poolAddress)
   const slot0Result = pool.try_slot0()
@@ -361,116 +330,76 @@ export function refreshVeloCLPosition(tokenId: BigInt, block: ethereum.Block, tx
   const usd1 = amount1Human.times(token1Price)
   const usd = usd0.plus(usd1)
 
-  let pp = ProtocolPosition.load(positionId)
-  const isNewPosition = pp == null
+  // Fetch claimable rewards from pool's gauge
+  let rewardAmount = BigDecimal.zero()
+  let rewardUSD = BigDecimal.zero()
   
-  if (pp == null) {
-    pp = new ProtocolPosition(positionId)
-    pp.agent = nftOwner
-    pp.service = nftOwner
-    pp.protocol = "velodrome-cl"
-    pp.pool = poolAddress
-    pp.tokenId = tokenId
-    pp.isActive = true
-    
-    let service = Service.load(nftOwner)
-    if (service != null) {
-      if (service.positionIds == null) {
-        service.positionIds = []
-      }
-      let positionIds = service.positionIds
-      let positionIdString = positionId.toString()
-      if (positionIds.indexOf(positionIdString) == -1) {
-        positionIds.push(positionIdString)
-        service.positionIds = positionIds
-        service.save()
-      }
+  // Get gauge address
+  let gaugeAddress: Address
+  let rewardsContract = position.rewardsContract
+  if (rewardsContract) {
+    gaugeAddress = Address.fromBytes(position.rewardsContract!)
+  } 
+  else {
+    const gaugeResult = pool.try_gauge()
+    if (!gaugeResult.reverted) {
+      gaugeAddress = gaugeResult.value
+      position.rewardsContract = gaugeAddress
+    } else {
+      position.usdCurrent = usd
+      position.save()
+      return
     }
-    
-    pp.tickLower = tickLower
-    pp.tickUpper = tickUpper
-    pp.tickSpacing = data.value4
-    
-    pp.usdCurrent = usd
-    pp.token0 = data.value2
-    pp.token0Symbol = getTokenSymbol(data.value2)
-    pp.amount0 = amount0Human
-    pp.amount0USD = usd0
-    pp.token1 = data.value3
-    pp.token1Symbol = getTokenSymbol(data.value3)
-    pp.amount1 = amount1Human
-    pp.amount1USD = usd1
-    pp.liquidity = data.value7
-    
-    pp.entryTxHash = txHash
-    pp.entryTimestamp = block.timestamp
-    pp.entryAmount0 = BigDecimal.zero()
-    pp.entryAmount0USD = BigDecimal.zero()
-    pp.entryAmount1 = BigDecimal.zero()
-    pp.entryAmount1USD = BigDecimal.zero()
-    pp.entryAmountUSD = BigDecimal.zero()
-    
-    initializePositionCosts(pp)
   }
   
-  pp.usdCurrent = usd
-  pp.token0 = data.value2
-  pp.token0Symbol = getTokenSymbol(data.value2)
-  pp.amount0 = amount0Human
-  pp.amount0USD = usd0
-  pp.token1 = data.value3
-  pp.token1Symbol = getTokenSymbol(data.value3)
-  pp.amount1 = amount1Human
-  pp.amount1USD = usd1
-  pp.liquidity = data.value7
+  // Get claimable rewards from gauge
+  const gauge = VeloCLGauge.bind(gaugeAddress)
+  const earnedResult = gauge.try_earned(nftOwner, tokenId)
   
-  if (pp.totalCostsUSD.equals(BigDecimal.zero()) && pp.swapSlippageUSD.equals(BigDecimal.zero())) {
-    if (pp.investmentUSD.equals(BigDecimal.zero()) && pp.entryAmountUSD.gt(BigDecimal.zero())) {
-      pp.investmentUSD = pp.entryAmountUSD.plus(pp.totalCostsUSD)
+  if (!earnedResult.reverted) {
+    rewardAmount = earnedResult.value.toBigDecimal().div(BigDecimal.fromString("1e18"))
+    const veloPrice = getTokenPriceUSD(VELO, block.timestamp, false)
+    rewardUSD = rewardAmount.times(veloPrice)
+  }
+
+  // Separate base position value from rewards to avoid double-counting
+  position.usdCurrent = usd  // Base liquidity value only
+  position.usdCurrentWithRewards = usd.plus(rewardUSD)  // Total including rewards
+  position.token0 = data.value2
+  position.token0Symbol = getTokenSymbol(data.value2)
+  position.amount0 = amount0Human
+  position.amount0USD = usd0
+  position.token1 = data.value3
+  position.token1Symbol = getTokenSymbol(data.value3)
+  position.amount1 = amount1Human
+  position.amount1USD = usd1
+  position.liquidity = data.value7
+  position.claimableReward = rewardAmount
+  position.claimableRewardUSD = rewardUSD
+  
+  if (position.totalCostsUSD.equals(BigDecimal.zero()) && position.swapSlippageUSD.equals(BigDecimal.zero())) {
+    if (position.investmentUSD.equals(BigDecimal.zero()) && position.entryAmountUSD.gt(BigDecimal.zero())) {
+      position.investmentUSD = position.entryAmountUSD.plus(position.totalCostsUSD)
     }
   }
   
   if (isPositionClosed(data.value7, amount0Human, amount1Human)) {
-    pp.isActive = false
-    pp.exitTxHash = txHash
-    pp.exitTimestamp = block.timestamp
-    pp.exitAmount0 = amount0Human
-    pp.exitAmount0USD = usd0
-    pp.exitAmount1 = amount1Human
-    pp.exitAmount1USD = usd1
-    pp.exitAmountUSD = usd
+    position.isActive = false
+    position.exitTxHash = txHash
+    position.exitTimestamp = block.timestamp
+    position.exitAmount0 = amount0Human
+    position.exitAmount0USD = usd0
+    position.exitAmount1 = amount1Human
+    position.exitAmount1USD = usd1
+    position.exitAmountUSD = usd
     
-    calculatePositionROI(pp)
+    calculatePositionROI(position)
     removeAgentNFTFromPool("velodrome-cl", poolAddress, tokenId)
   }
   
-  pp.save()
+  position.save()
   
   if (updatePortfolio) {
     refreshPortfolio(nftOwner, block, true)
-  }
-}
-
-export function handleNFTTransferForCache(tokenId: BigInt, from: Address, to: Address): void {
-  const mgr = NonfungiblePositionManager.bind(VELO_MANAGER)
-  const posResult = mgr.try_positions(tokenId)
-  
-  if (posResult.reverted) {
-    return
-  }
-  
-  const pos = posResult.value
-  const poolAddress = getPoolAddress(pos.value2, pos.value3, pos.value4 as i32, tokenId)
-  
-  if (poolAddress.equals(Address.zero())) {
-    return
-  }
-  
-  if (!from.equals(Address.zero())) {
-    removeAgentNFTFromPool("velodrome-cl", poolAddress, tokenId)
-  }
-  
-  if (!to.equals(Address.zero())) {
-    addAgentNFTToPool("velodrome-cl", poolAddress, tokenId)
   }
 }

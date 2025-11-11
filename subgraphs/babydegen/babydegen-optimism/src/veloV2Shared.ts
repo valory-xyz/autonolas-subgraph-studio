@@ -114,6 +114,7 @@ export function refreshVeloV2PositionWithEventAmounts(
     
     // Initialize ALL required fields BEFORE calling initializePositionCosts
     pp.usdCurrent = BigDecimal.zero()
+    pp.usdCurrentWithRewards = BigDecimal.zero()  // TODO: Calculate V2 fees later
     pp.amount0 = BigDecimal.zero()
     pp.amount0USD = BigDecimal.zero()
     pp.amount1 = BigDecimal.zero()
@@ -375,6 +376,7 @@ export function refreshVeloV2Position(
     pp.amount0USD = token0Price.times(pp.amount0!)
     pp.amount1USD = token1Price.times(pp.amount1!)
     pp.usdCurrent = pp.amount0USD.plus(pp.amount1USD)
+    pp.usdCurrentWithRewards = pp.usdCurrent  // TODO: Calculate V2 fees later
     pp.liquidity = userBalance // Store LP token balance as liquidity
     
     pp.isActive = true

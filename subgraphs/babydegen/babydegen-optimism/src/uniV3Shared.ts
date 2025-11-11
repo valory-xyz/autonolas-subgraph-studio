@@ -333,6 +333,7 @@ export function refreshUniV3PositionWithExitAmounts(
     pp.amount0USD = BigDecimal.zero()
     pp.amount1USD = BigDecimal.zero()
     pp.usdCurrent = BigDecimal.zero()
+    pp.usdCurrentWithRewards = BigDecimal.zero()
     pp.liquidity = BigInt.zero()
     
     // FIXED: Calculate position ROI when position closes
@@ -466,6 +467,7 @@ export function refreshUniV3Position(tokenId: BigInt, block: ethereum.Block, txH
     // CRITICAL FIX: Set ALL required fields BEFORE calling initializePositionCosts
     // Set current state fields first
     pp.usdCurrent = usd
+    pp.usdCurrentWithRewards = usd  // TODO: Calculate LP fees later
     pp.token0 = data.value2
     pp.token0Symbol = getTokenSymbol(data.value2)
     pp.amount0 = amount0Human
@@ -498,6 +500,7 @@ export function refreshUniV3Position(tokenId: BigInt, block: ethereum.Block, txH
   
   // Update current state (for both new and existing positions)
   pp.usdCurrent = usd
+  pp.usdCurrentWithRewards = usd  // TODO: Calculate LP fees later
   pp.token0 = data.value2
   pp.token0Symbol = getTokenSymbol(data.value2)
   pp.amount0 = amount0Human
