@@ -594,6 +594,8 @@ dataSources:
           file: ../../../abis/defi/UniswapV3Factory.json
         - name: UniswapV3PositionNFTManager
           file: ../../../abis/nft/UniswapV3NFTManager.json
+        - name: VelodromePositionNFTManager
+          file: ../../../abis/nft/VelodromePositionNFTManager.json
         - name: AggregatorV3Interface
           file: ../../../abis/oracles/AggregatorV3Interface.json
         - name: ERC20
