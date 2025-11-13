@@ -30,7 +30,7 @@ dataSources:
         - name: UniswapV3Pool
           file: ../../../abis/defi/UniswapV3Pool.json
         - name: NonfungiblePositionManager
-          file: ../../../abis/nft/NonfungiblePositionManager.json
+          file: ../../../abis/defi/UniswapV3NFTManager.json
         - name: UniswapV3NFTManager
           file: ../../../abis/defi/UniswapV3NFTManager.json
         - name: VelodromeCLFactory
@@ -595,7 +595,7 @@ dataSources:
         - name: UniswapV3Factory
           file: ../../../abis/defi/UniswapV3Factory.json
         - name: NonfungiblePositionManager
-          file: ../../../abis/nft/NonfungiblePositionManager.json
+          file: ../../../abis/defi/UniswapV3NFTManager.json
         - name: AggregatorV3Interface
           file: ../../../abis/oracles/AggregatorV3Interface.json
         - name: ERC20
