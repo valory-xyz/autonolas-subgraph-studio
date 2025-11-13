@@ -29,10 +29,8 @@ dataSources:
           file: ../../../abis/defi/VelodromeCLPool.json
         - name: UniswapV3Pool
           file: ../../../abis/defi/UniswapV3Pool.json
-        - name: UniswapV3PositionNFTManager
-          file: ../../../abis/defi/UniswapV3NFTManager.json
         - name: UniswapV3NFTManager
-          file: ../../../abis/defi/UniswapV3NFTManager.json
+          file: ../../../abis/nft/UniswapV3NFTManager.json
         - name: VelodromeCLFactory
           file: ../../../abis/defi/VelodromeCLFactory.json
         - name: AggregatorV3Interface
@@ -491,7 +489,7 @@ dataSources:
         - ProtocolPosition
       abis:
         - name: UniswapV3PositionNFTManager
-          file: ../../../abis/defi/UniswapV3NFTManager.json
+          file: ../../../abis/nft/UniswapV3NFTManager.json
         - name: UniswapV3Factory
           file: ../../../abis/defi/UniswapV3Factory.json
         - name: UniswapV3Pool
@@ -595,7 +593,7 @@ dataSources:
         - name: UniswapV3Factory
           file: ../../../abis/defi/UniswapV3Factory.json
         - name: UniswapV3PositionNFTManager
-          file: ../../../abis/defi/UniswapV3NFTManager.json
+          file: ../../../abis/nft/UniswapV3NFTManager.json
         - name: AggregatorV3Interface
           file: ../../../abis/oracles/AggregatorV3Interface.json
         - name: ERC20
@@ -607,7 +605,7 @@ dataSources:
         - name: VeloCLGauge
           file: ../../../abis/defi/VeloCLGauge.json
         - name: UniswapV3NFTManager
-          file: ../../../abis/defi/UniswapV3NFTManager.json
+          file: ../../../abis/nft/UniswapV3NFTManager.json
       blockHandlers:
         - handler: handleBlock
           filter:
