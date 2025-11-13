@@ -428,7 +428,7 @@ export function updateDailyPopulationMetricEntityWithEthAdjusted(
   // Set reward-inclusive population metrics
   dailyPopulationMetric.medianUnrealisedPnLWithRewards = medianUnrealisedPnLWithRewards;
   dailyPopulationMetric.medianProjectedUnrealisedPnLWithRewards = medianProjectedUnrealisedPnLWithRewards;
-  
+    
   //  Set ETH-adjusted population metrics
   dailyPopulationMetric.medianEthAdjustedROI = medianEthAdjustedROI;
   dailyPopulationMetric.medianEthAdjustedAPR = medianEthAdjustedAPR;
@@ -826,12 +826,22 @@ export function calculateGlobalMetrics(block: ethereum.Block): void {
     historicalEthAdjustedProjectedROI = previousDailyPopulationMetric.historicalMedianEthAdjustedUnrealisedPnL;
     historicalEthAdjustedProjectedAPR = previousDailyPopulationMetric.historicalMedianEthAdjustedProjectedUnrealisedPnL;
     
-    // Load lifetime active historical data
-    historicalLifetimeActiveUnrealisedPnL = previousDailyPopulationMetric.historicalMedianLifetimeActiveUnrealisedPnL;
-    historicalLifetimeActiveProjectedUnrealisedPnL = previousDailyPopulationMetric.historicalMedianLifetimeActiveProjectedUnrealisedPnL;
-    historicalLifetimeActiveEthAdjustedUnrealisedPnL = previousDailyPopulationMetric.historicalMedianLifetimeActiveEthAdjustedUnrealisedPnL;
-    historicalLifetimeActiveEthAdjustedProjectedUnrealisedPnL = previousDailyPopulationMetric.historicalMedianLifetimeActiveEthAdjustedProjectedUnrealisedPnL;
-    historicalLifetimeActiveAUM = previousDailyPopulationMetric.historicalMedianLifetimeActiveAUM;
+    // Load lifetime active historical data with proper null checks for AssemblyScript
+    if (previousDailyPopulationMetric.historicalMedianLifetimeActiveUnrealisedPnL != null) {
+      historicalLifetimeActiveUnrealisedPnL = previousDailyPopulationMetric.historicalMedianLifetimeActiveUnrealisedPnL!;
+    }
+    if (previousDailyPopulationMetric.historicalMedianLifetimeActiveProjectedUnrealisedPnL != null) {
+      historicalLifetimeActiveProjectedUnrealisedPnL = previousDailyPopulationMetric.historicalMedianLifetimeActiveProjectedUnrealisedPnL!;
+    }
+    if (previousDailyPopulationMetric.historicalMedianLifetimeActiveEthAdjustedUnrealisedPnL != null) {
+      historicalLifetimeActiveEthAdjustedUnrealisedPnL = previousDailyPopulationMetric.historicalMedianLifetimeActiveEthAdjustedUnrealisedPnL!;
+    }
+    if (previousDailyPopulationMetric.historicalMedianLifetimeActiveEthAdjustedProjectedUnrealisedPnL != null) {
+      historicalLifetimeActiveEthAdjustedProjectedUnrealisedPnL = previousDailyPopulationMetric.historicalMedianLifetimeActiveEthAdjustedProjectedUnrealisedPnL!;
+    }
+    if (previousDailyPopulationMetric.historicalMedianLifetimeActiveAUM != null) {
+      historicalLifetimeActiveAUM = previousDailyPopulationMetric.historicalMedianLifetimeActiveAUM!;
+    }
   }
   
   // Update historical arrays with new median values
