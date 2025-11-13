@@ -1,5 +1,5 @@
 import { Address, BigDecimal, BigInt, ethereum, Bytes, log } from "@graphprotocol/graph-ts"
-import { NonfungiblePositionManager } from "../generated/VeloNFTManager/NonfungiblePositionManager"
+import { VelodromePositionNFTManager } from "../generated/VeloNFTManager/VelodromePositionNFTManager"
 import { VelodromeCLPool } from "../generated/VeloNFTManager/VelodromeCLPool"
 import { VelodromeCLFactory } from "../generated/VeloNFTManager/VelodromeCLFactory"
 import { VeloCLGauge } from "../generated/VeloNFTManager/VeloCLGauge"
@@ -84,7 +84,7 @@ export function refreshVeloCLPositionWithEventAmounts(
   }
   
   const nftOwner = Address.fromBytes(pp.agent)
-  const mgr = NonfungiblePositionManager.bind(VELO_MANAGER)
+  const mgr = VelodromePositionNFTManager.bind(VELO_MANAGER)
   
   const dataResult = mgr.try_positions(tokenId)
   if (dataResult.reverted) {
@@ -155,7 +155,7 @@ export function refreshVeloCLPositionWithExitAmounts(
   }
   
   const nftOwner = Address.fromBytes(pp.agent)
-  const mgr = NonfungiblePositionManager.bind(VELO_MANAGER)
+  const mgr = VelodromePositionNFTManager.bind(VELO_MANAGER)
   
   const dataResult = mgr.try_positions(tokenId)
   if (dataResult.reverted) {
@@ -229,7 +229,7 @@ export function refreshVeloCLPosition(
       return
     }
     
-    const mgr = NonfungiblePositionManager.bind(VELO_MANAGER)
+    const mgr = VelodromePositionNFTManager.bind(VELO_MANAGER)
     const dataResult = mgr.try_positions(tokenId)
     if (dataResult.reverted) {
       return
@@ -295,7 +295,7 @@ export function refreshVeloCLPosition(
     nftOwner = Address.fromBytes(position.agent)
     poolAddress = Address.fromBytes(position.pool)
   }
-  const mgr = NonfungiblePositionManager.bind(VELO_MANAGER)
+  const mgr = VelodromePositionNFTManager.bind(VELO_MANAGER)
   const dataResult = mgr.try_positions(tokenId)
   if (dataResult.reverted) {
     return
