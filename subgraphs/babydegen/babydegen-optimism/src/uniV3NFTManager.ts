@@ -4,7 +4,7 @@ import {
   DecreaseLiquidity, 
   Collect, 
   Transfer 
-} from "../generated/UniV3NFTManager/NonfungiblePositionManager"
+} from "../generated/UniV3NFTManager/UniswapV3PositionNFTManager"
 import { 
   ensureUniV3PoolTemplate, 
   refreshUniV3Position, 

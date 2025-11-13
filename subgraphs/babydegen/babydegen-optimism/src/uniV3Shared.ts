@@ -1,6 +1,6 @@
 import { Address, BigDecimal, BigInt, ethereum, Bytes, log } from "@graphprotocol/graph-ts"
 // NOTE: These imports will work once Uniswap V3 is added to subgraph.yaml and types are generated
-import { NonfungiblePositionManager } from "../generated/UniV3NFTManager/NonfungiblePositionManager"
+import { UniswapV3PositionNFTManager } from "../generated/UniV3NFTManager/UniswapV3PositionNFTManager"
 import { UniswapV3Pool } from "../generated/UniV3NFTManager/UniswapV3Pool"
 import { UniswapV3Factory } from "../generated/UniV3NFTManager/UniswapV3Factory"
 // import { UniV3Pool } from "../generated/templates" // Removed - using snapshot approach instead of real-time tracking
@@ -64,7 +64,7 @@ function getUniV3PoolAddress(token0: Address, token1: Address, fee: i32, tokenId
 
 // 1. Register NFT to pool mapping (no template creation - using snapshot approach)
 export function ensureUniV3PoolTemplate(tokenId: BigInt): void {
-  const mgr = NonfungiblePositionManager.bind(UNI_V3_MANAGER)
+  const mgr = UniswapV3PositionNFTManager.bind(UNI_V3_MANAGER)
   const posResult = mgr.try_positions(tokenId)
   
   if (posResult.reverted) {
@@ -105,7 +105,7 @@ export function refreshUniV3PositionWithEventAmounts(
   eventAmount1: BigInt,
   txHash: Bytes = Bytes.empty()
 ): void {
-  const mgr = NonfungiblePositionManager.bind(UNI_V3_MANAGER)
+  const mgr = UniswapV3PositionNFTManager.bind(UNI_V3_MANAGER)
   
   // First, get the actual NFT owner
   const ownerResult = mgr.try_ownerOf(tokenId)
@@ -265,7 +265,7 @@ export function refreshUniV3PositionWithExitAmounts(
   liquidityRemoved: BigInt,
   txHash: Bytes = Bytes.empty()
 ): void {
-  const mgr = NonfungiblePositionManager.bind(UNI_V3_MANAGER)
+  const mgr = UniswapV3PositionNFTManager.bind(UNI_V3_MANAGER)
   
   // First, get the actual NFT owner
   const ownerResult = mgr.try_ownerOf(tokenId)
@@ -353,7 +353,7 @@ export function refreshUniV3PositionWithExitAmounts(
 
 // 2c. Re-price NFT into USD + persist (for non-entry events)
 export function refreshUniV3Position(tokenId: BigInt, block: ethereum.Block, txHash: Bytes = Bytes.empty(), updatePortfolio: boolean = true): void {
-  const mgr = NonfungiblePositionManager.bind(UNI_V3_MANAGER)
+  const mgr = UniswapV3PositionNFTManager.bind(UNI_V3_MANAGER)
   
   // First, get the actual NFT owner
   const ownerResult = mgr.try_ownerOf(tokenId)
@@ -538,7 +538,7 @@ export function refreshUniV3Position(tokenId: BigInt, block: ethereum.Block, txH
 
 // 3. Handle NFT transfers (add/remove from cache)
 export function handleUniV3NFTTransferForCache(tokenId: BigInt, from: Address, to: Address): void {
-  const mgr = NonfungiblePositionManager.bind(UNI_V3_MANAGER)
+  const mgr = UniswapV3PositionNFTManager.bind(UNI_V3_MANAGER)
   const posResult = mgr.try_positions(tokenId)
   
   if (posResult.reverted) {

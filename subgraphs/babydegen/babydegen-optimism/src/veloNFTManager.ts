@@ -3,8 +3,8 @@ import {
   DecreaseLiquidity,
   Collect,
   Transfer,
-  NonfungiblePositionManager
-} from "../generated/VeloNFTManager/NonfungiblePositionManager"
+  VelodromePositionNFTManager
+} from "../generated/VeloNFTManager/VelodromePositionNFTManager"
 import { VELO_MANAGER } from "./constants"
 import { getServiceByAgent } from "./config"
 import { refreshVeloCLPosition, refreshVeloCLPositionWithEventAmounts, refreshVeloCLPositionWithExitAmounts, getVeloCLPositionId } from "./veloCLShared"

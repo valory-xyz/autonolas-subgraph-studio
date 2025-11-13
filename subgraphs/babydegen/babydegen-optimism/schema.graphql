@@ -279,8 +279,8 @@ type DailyPopulationMetric @entity(immutable: true) {
   medianProjectedUnrealisedPnL: BigDecimal!  # Median of all agent projected unrealised PnL values
   
   # Population Metrics (Including Rewards)
-  medianUnrealisedPnLWithRewards: BigDecimal!  # Median unrealised PnL including claimable rewards
-  medianProjectedUnrealisedPnLWithRewards: BigDecimal!  # Median projected unrealised PnL including rewards
+  medianUnrealisedPnLWithRewards: BigDecimal  # Median unrealised PnL including claimable rewards
+  medianProjectedUnrealisedPnLWithRewards: BigDecimal  # Median projected unrealised PnL including rewards
   
   # ETH-adjusted population metrics
   medianEthAdjustedROI: BigDecimal!        # Median ETH-adjusted actual ROI
@@ -289,13 +289,13 @@ type DailyPopulationMetric @entity(immutable: true) {
   medianEthAdjustedProjectedUnrealisedPnL: BigDecimal!   # Median ETH-adjusted projected unrealised PnL
   
   # Lifetime Active Agents Metrics (agents with >2 positions - lifetime active vs stagnant)
-  medianLifetimeActiveUnrealisedPnL: BigDecimal!  # Median unrealised PnL for lifetime active agents (>2 positions)
-  medianLifetimeActiveProjectedUnrealisedPnL: BigDecimal!  # Median projected unrealised PnL for lifetime active agents
-  medianLifetimeActiveEthAdjustedUnrealisedPnL: BigDecimal!  # Median ETH-adjusted unrealised PnL for lifetime active agents
-  medianLifetimeActiveEthAdjustedProjectedUnrealisedPnL: BigDecimal!  # Median ETH-adjusted projected unrealised PnL for lifetime active agents
-  medianLifetimeActiveAUM: BigDecimal!            # Median AUM for lifetime active agents
-  totalLifetimeActiveFundedAUM: BigDecimal!       # Total funded AUM for lifetime active agents
-  totalLifetimeActiveAgents: Int!                 # Number of lifetime active agents (>2 positions)
+  medianLifetimeActiveUnrealisedPnL: BigDecimal  # Median unrealised PnL for lifetime active agents (>2 positions)
+  medianLifetimeActiveProjectedUnrealisedPnL: BigDecimal  # Median projected unrealised PnL for lifetime active agents
+  medianLifetimeActiveEthAdjustedUnrealisedPnL: BigDecimal  # Median ETH-adjusted unrealised PnL for lifetime active agents
+  medianLifetimeActiveEthAdjustedProjectedUnrealisedPnL: BigDecimal  # Median ETH-adjusted projected unrealised PnL for lifetime active agents
+  medianLifetimeActiveAUM: BigDecimal            # Median AUM for lifetime active agents
+  totalLifetimeActiveFundedAUM: BigDecimal       # Total funded AUM for lifetime active agents
+  totalLifetimeActiveAgents: Int                 # Number of lifetime active agents (>2 positions)
   
   # Staking APR Calculation Support
   totalFundedAUM: BigDecimal!       # Sum of all FundingBalance.totalInUsd across active services
@@ -307,6 +307,8 @@ type DailyPopulationMetric @entity(immutable: true) {
   sma7dAPR: BigDecimal!             # 7-day SMA of median population APR
   sma7dUnrealisedPnL: BigDecimal!   # 7-day SMA of median unrealised PnL
   sma7dProjectedUnrealisedPnL: BigDecimal!  # 7-day SMA of median projected unrealised PnL
+  sma7dUnrealisedPnLWithRewards: BigDecimal  # 7-day SMA of median unrealised PnL with rewards
+  sma7dProjectedUnrealisedPnLWithRewards: BigDecimal  # 7-day SMA of median projected unrealised PnL with rewards
   sma7dAUM: BigDecimal!             # 7-day SMA of median AUM
   
   # 7-day Simple Moving Averages for ETH-adjusted metrics
@@ -316,11 +318,11 @@ type DailyPopulationMetric @entity(immutable: true) {
   sma7dEthAdjustedProjectedUnrealisedPnL: BigDecimal!
   
   # 7-Day Simple Moving Averages for Lifetime Active Agents
-  sma7dLifetimeActiveUnrealisedPnL: BigDecimal!   # 7-day SMA of median unrealised PnL for lifetime active agents
-  sma7dLifetimeActiveProjectedUnrealisedPnL: BigDecimal!  # 7-day SMA of median projected unrealised PnL for lifetime active agents
-  sma7dLifetimeActiveEthAdjustedUnrealisedPnL: BigDecimal!  # 7-day SMA of median ETH-adjusted unrealised PnL for lifetime active agents
-  sma7dLifetimeActiveEthAdjustedProjectedUnrealisedPnL: BigDecimal!  # 7-day SMA of median ETH-adjusted projected unrealised PnL for lifetime active agents
-  sma7dLifetimeActiveAUM: BigDecimal!             # 7-day SMA of median AUM for lifetime active agents
+  sma7dLifetimeActiveUnrealisedPnL: BigDecimal   # 7-day SMA of median unrealised PnL for lifetime active agents
+  sma7dLifetimeActiveProjectedUnrealisedPnL: BigDecimal  # 7-day SMA of median projected unrealised PnL for lifetime active agents
+  sma7dLifetimeActiveEthAdjustedUnrealisedPnL: BigDecimal  # 7-day SMA of median ETH-adjusted unrealised PnL for lifetime active agents
+  sma7dLifetimeActiveEthAdjustedProjectedUnrealisedPnL: BigDecimal  # 7-day SMA of median ETH-adjusted projected unrealised PnL for lifetime active agents
+  sma7dLifetimeActiveAUM: BigDecimal             # 7-day SMA of median AUM for lifetime active agents
   
   # Metadata
   timestamp: BigInt!                # UTC midnight timestamp
@@ -341,11 +343,11 @@ type DailyPopulationMetric @entity(immutable: true) {
   historicalMedianEthAdjustedProjectedUnrealisedPnL: [BigDecimal!]!
   
   # Historical arrays for Lifetime Active Agents SMA calculations
-  historicalMedianLifetimeActiveUnrealisedPnL: [BigDecimal!]!  # Last 7 days of median unrealised PnL for lifetime active agents
-  historicalMedianLifetimeActiveProjectedUnrealisedPnL: [BigDecimal!]!  # Last 7 days of median projected unrealised PnL for lifetime active agents
-  historicalMedianLifetimeActiveEthAdjustedUnrealisedPnL: [BigDecimal!]!  # Last 7 days of median ETH-adjusted unrealised PnL for lifetime active agents
-  historicalMedianLifetimeActiveEthAdjustedProjectedUnrealisedPnL: [BigDecimal!]!  # Last 7 days of median ETH-adjusted projected unrealised PnL for lifetime active agents
-  historicalMedianLifetimeActiveAUM: [BigDecimal!]!  # Last 7 days of median AUM for lifetime active agents
+  historicalMedianLifetimeActiveUnrealisedPnL: [BigDecimal!]  # Last 7 days of median unrealised PnL for lifetime active agents
+  historicalMedianLifetimeActiveProjectedUnrealisedPnL: [BigDecimal!]  # Last 7 days of median projected unrealised PnL for lifetime active agents
+  historicalMedianLifetimeActiveEthAdjustedUnrealisedPnL: [BigDecimal!]  # Last 7 days of median ETH-adjusted unrealised PnL for lifetime active agents
+  historicalMedianLifetimeActiveEthAdjustedProjectedUnrealisedPnL: [BigDecimal!]  # Last 7 days of median ETH-adjusted projected unrealised PnL for lifetime active agents
+  historicalMedianLifetimeActiveAUM: [BigDecimal!]  # Last 7 days of median AUM for lifetime active agents
 }
 
 # Swap transaction tracking
