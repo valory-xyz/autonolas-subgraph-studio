@@ -383,7 +383,7 @@ export function calculatePortfolioMetrics(
 
   // 1. Get initial investment from FundingBalance (use totalInUsd to preserve baseline)
   let fundingBalance = FundingBalance.load(serviceSafe as Bytes)
-  let initialValue = fundingBalance ? fundingBalance.totalInUsd : BigDecimal.zero()
+  let initialValue = fundingBalance ? fundingBalance.netUsd : BigDecimal.zero()
   
   // 2. Calculate total positions value (base and with rewards)
   let positionsValue = calculatePositionsValue(serviceSafe)
@@ -653,7 +653,7 @@ function createPortfolioSnapshot(portfolio: AgentPortfolio, block: ethereum.Bloc
   snapshot.block = block.number
   snapshot.totalPositions = portfolio.totalPositions
   snapshot.totalClosedPositions = portfolio.totalClosedPositions
-  
+    
   snapshot.save()
   
   // Update portfolio snapshot tracking
