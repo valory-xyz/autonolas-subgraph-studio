@@ -232,9 +232,6 @@ type AgentPortfolioSnapshot @entity(immutable: true) {
   block: BigInt!                # Block number
   totalPositions: Int!          
   totalClosedPositions: Int!    
-  
-  # Position details at snapshot time
-  positionIds: [String!]        # Array of ProtocolPosition IDs that were active at snapshot
 }
 
 type TokenBalance @entity(immutable: false) {

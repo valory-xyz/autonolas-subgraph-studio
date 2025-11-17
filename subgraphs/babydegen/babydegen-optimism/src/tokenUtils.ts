@@ -10,7 +10,10 @@ import {
   DOLA,
   BOLD,
   SDAI,
-  VELO
+  VELO,
+  USDT0,
+  OUSDT,
+  USDGLO
 } from "./constants"
 
 // Centralized function to get token decimals
@@ -29,6 +32,9 @@ export function getTokenDecimals(tokenAddress: Address): i32 {
   if (tokenHex == BOLD.toHexString().toLowerCase()) return 18         // BOLD
   if (tokenHex == SDAI.toHexString().toLowerCase()) return 18         // sDAI
   if (tokenHex == VELO.toHexString().toLowerCase()) return 18         // VELO
+  if (tokenHex == USDT0.toHexString().toLowerCase()) return 6         // USDT0
+  if (tokenHex == OUSDT.toHexString().toLowerCase()) return 6         // oUSDT
+  if (tokenHex == USDGLO.toHexString().toLowerCase()) return 18       // USDGLO
   
   // Default to 18 decimals for unknown tokens
   log.warning("TOKEN_UTILS: Unknown token decimals for {}, defaulting to 18", [tokenHex])
@@ -51,6 +57,9 @@ export function getTokenSymbol(tokenAddress: Address): string {
   if (tokenHex == BOLD.toHexString().toLowerCase()) return "BOLD"
   if (tokenHex == SDAI.toHexString().toLowerCase()) return "sDAI"
   if (tokenHex == VELO.toHexString().toLowerCase()) return "VELO"
+  if (tokenHex == USDT0.toHexString().toLowerCase()) return "USDT0"
+  if (tokenHex == OUSDT.toHexString().toLowerCase()) return "oUSDT"
+  if (tokenHex == USDGLO.toHexString().toLowerCase()) return "USDGLO"
   
   // Return the address as fallback for unknown tokens
   log.warning("TOKEN_UTILS: Unknown token symbol for {}, using address", [tokenHex])
