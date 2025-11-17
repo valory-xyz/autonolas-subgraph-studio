@@ -120,9 +120,8 @@ export function refreshBalancerPositionWithEventAmounts(
         serviceEntity.positionIds = []
       }
       let positionIds = serviceEntity.positionIds
-      let positionIdString = positionId.toString()
-      if (positionIds.indexOf(positionIdString) == -1) {
-        positionIds.push(positionIdString)
+      if (positionIds.indexOf(positionId) == -1) {
+        positionIds.push(positionId)
         serviceEntity.positionIds = positionIds
         serviceEntity.save()
       }
@@ -337,9 +336,8 @@ export function refreshBalancerPosition(
         serviceEntity.positionIds = []
       }
       let positionIds = serviceEntity.positionIds
-      let positionIdString = positionId.toString()
-      if (positionIds.indexOf(positionIdString) == -1) {
-        positionIds.push(positionIdString)
+      if (positionIds.indexOf(positionId) == -1) {
+        positionIds.push(positionId)
         serviceEntity.positionIds = positionIds
         serviceEntity.save()
       }

@@ -273,20 +273,8 @@ export function refreshActivePositionUSDValues(
   let positionIds = service.positionIds
 
   for (let i = 0; i < positionIds.length; i++) {
-    let positionIdString = positionIds[i]
-    let position: ProtocolPosition | null = null
-
-    let directId = Bytes.fromUTF8(positionIdString)
-    position = ProtocolPosition.load(directId)
-
-    if (position == null) {
-      if (positionIdString.startsWith("0x") && positionIdString.length % 2 == 0) {
-        let hexBytes = Bytes.fromHexString(positionIdString)
-        let decodedString = hexBytes.toString()
-        let decodedId = Bytes.fromUTF8(decodedString)
-        position = ProtocolPosition.load(decodedId)
-      }
-    }
+    let positionId = positionIds[i]
+    let position = ProtocolPosition.load(positionId)
 
     // Only refresh USD values for ACTIVE positions
     if (position != null && position.isActive) {
@@ -321,20 +309,8 @@ export function refreshAllActivePositions(
   let positionIds = service.positionIds
 
   for (let i = 0; i < positionIds.length; i++) {
-    let positionIdString = positionIds[i]
-    let position: ProtocolPosition | null = null
-
-    let directId = Bytes.fromUTF8(positionIdString)
-    position = ProtocolPosition.load(directId)
-
-    if (position == null) {
-      if (positionIdString.startsWith("0x") && positionIdString.length % 2 == 0) {
-        let hexBytes = Bytes.fromHexString(positionIdString)
-        let decodedString = hexBytes.toString()
-        let decodedId = Bytes.fromUTF8(decodedString)
-        position = ProtocolPosition.load(decodedId)
-      }
-    }
+    let positionId = positionIds[i]
+    let position = ProtocolPosition.load(positionId)
 
     // Only refresh ACTIVE positions
     if (position != null && position.isActive) {
@@ -560,26 +536,8 @@ export function calculatePortfolioMetrics(
     // Iterate through all position IDs
     let positionIds = serviceEntity.positionIds
     for (let i = 0; i < positionIds.length; i++) {
-      let positionIdString = positionIds[i]
-      let position: ProtocolPosition | null = null
-      
-      // Try loading position with different ID formats for robustness
-      
-      // Method 1: Try as direct UTF8 string (standard format)
-      let directId = Bytes.fromUTF8(positionIdString)
-      position = ProtocolPosition.load(directId)
-      
-      if (position == null) {
-        // Method 2: Try as hex-decoded string (for any legacy hex-encoded IDs)
-        // Check if the string looks like hex (starts with 0x and has even length)
-        if (positionIdString.startsWith("0x") && positionIdString.length % 2 == 0) {
-          // Convert hex string back to original string, then to Bytes
-          let hexBytes = Bytes.fromHexString(positionIdString)
-          let decodedString = hexBytes.toString()
-          let decodedId = Bytes.fromUTF8(decodedString)
-          position = ProtocolPosition.load(decodedId)
-        }
-      }
+      let positionId = positionIds[i]
+      let position = ProtocolPosition.load(positionId)
       
       if (position != null) {
         if (position.isActive) {
@@ -624,26 +582,8 @@ function calculatePositionsValue(serviceSafe: Address): BigDecimal {
   let positionIds = service.positionIds
   
   for (let i = 0; i < positionIds.length; i++) {
-    let positionIdString = positionIds[i]
-    let position: ProtocolPosition | null = null
-    
-    // Try loading position with different ID formats for robustness
-    
-    // Method 1: Try as direct UTF8 string (standard format)
-    let directId = Bytes.fromUTF8(positionIdString)
-    position = ProtocolPosition.load(directId)
-    
-    if (position == null) {
-      // Method 2: Try as hex-decoded string (for any legacy hex-encoded IDs)
-      // Check if the string looks like hex (starts with 0x and has even length)
-      if (positionIdString.startsWith("0x") && positionIdString.length % 2 == 0) {
-        // Convert hex string back to original string, then to Bytes
-        let hexBytes = Bytes.fromHexString(positionIdString)
-        let decodedString = hexBytes.toString()
-        let decodedId = Bytes.fromUTF8(decodedString)
-        position = ProtocolPosition.load(decodedId)
-      }
-    }
+    let positionId = positionIds[i]
+    let position = ProtocolPosition.load(positionId)
     
     // If position found and active, add to total value
     if (position != null && position.isActive) {
@@ -668,26 +608,8 @@ function calculatePositionsValueWithRewards(serviceSafe: Address): BigDecimal {
   let positionIds = service.positionIds
   
   for (let i = 0; i < positionIds.length; i++) {
-    let positionIdString = positionIds[i]
-    let position: ProtocolPosition | null = null
-    
-    // Try loading position with different ID formats for robustness
-    
-    // Method 1: Try as direct UTF8 string (standard format)
-    let directId = Bytes.fromUTF8(positionIdString)
-    position = ProtocolPosition.load(directId)
-    
-    if (position == null) {
-      // Method 2: Try as hex-decoded string (for any legacy hex-encoded IDs)
-      // Check if the string looks like hex (starts with 0x and has even length)
-      if (positionIdString.startsWith("0x") && positionIdString.length % 2 == 0) {
-        // Convert hex string back to original string, then to Bytes
-        let hexBytes = Bytes.fromHexString(positionIdString)
-        let decodedString = hexBytes.toString()
-        let decodedId = Bytes.fromUTF8(decodedString)
-        position = ProtocolPosition.load(decodedId)
-      }
-    }
+    let positionId = positionIds[i]
+    let position = ProtocolPosition.load(positionId)
     
     // If position found and active, add to total value including rewards
     if (position != null && position.isActive) {
@@ -731,9 +653,6 @@ function createPortfolioSnapshot(portfolio: AgentPortfolio, block: ethereum.Bloc
   snapshot.block = block.number
   snapshot.totalPositions = portfolio.totalPositions
   snapshot.totalClosedPositions = portfolio.totalClosedPositions
-  
-  // Initialize positionIds as empty array to avoid null issues
-  snapshot.positionIds = []
   
   snapshot.save()
   

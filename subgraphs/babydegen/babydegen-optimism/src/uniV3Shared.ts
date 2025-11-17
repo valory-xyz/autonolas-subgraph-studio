@@ -173,14 +173,11 @@ export function refreshUniV3PositionWithEventAmounts(
         service.positionIds = []
       }
       let positionIds = service.positionIds
-      let positionIdString = positionId.toString()  // Get original string before hex encoding
-      if (positionIds.indexOf(positionIdString) == -1) {
-        positionIds.push(positionIdString)
+      if (positionIds.indexOf(positionId) == -1) {
+        positionIds.push(positionId)
         service.positionIds = positionIds
         service.save()
       }
-      
-      // NOTE: firstTradingTimestamp now represents funding time, not position creation
     }
     
     // Set static position metadata
@@ -450,9 +447,8 @@ export function refreshUniV3Position(tokenId: BigInt, block: ethereum.Block, txH
         service.positionIds = []
       }
       let positionIds = service.positionIds
-      let positionIdString = positionId.toString()  // Get original string before hex encoding
-      if (positionIds.indexOf(positionIdString) == -1) {
-        positionIds.push(positionIdString)
+      if (positionIds.indexOf(positionId) == -1) {
+        positionIds.push(positionId)
         service.positionIds = positionIds
         service.save()
       }

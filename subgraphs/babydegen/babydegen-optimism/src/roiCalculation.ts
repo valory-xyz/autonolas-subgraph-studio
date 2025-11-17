@@ -20,8 +20,8 @@ export function calculateActualROI(agent: Address): BigDecimal {
   // Iterate through all positions
   let positionIds = service.positionIds
   for (let i = 0; i < positionIds.length; i++) {
-    let positionIdString = positionIds[i]
-    let position = loadPosition(positionIdString)
+    let positionId = positionIds[i]
+    let position = ProtocolPosition.load(positionId)
     
     if (position != null && !position.isActive) {  // Only closed positions
       // CORRECTED: Separate investments and costs (no double counting)
@@ -104,8 +104,8 @@ export function aggregateClosedPositionMetrics(agent: Address): PositionAggregat
   
   let positionIds = service.positionIds
   for (let i = 0; i < positionIds.length; i++) {
-    let positionIdString = positionIds[i]
-    let position = loadPosition(positionIdString)
+    let positionId = positionIds[i]
+    let position = ProtocolPosition.load(positionId)
     
     if (position != null && !position.isActive) {  // Only closed positions
       totalInvestments = totalInvestments.plus(position.entryAmountUSD)

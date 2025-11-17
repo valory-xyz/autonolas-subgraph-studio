@@ -258,9 +258,8 @@ export function refreshVeloCLPosition(
         service.positionIds = []
       }
       let positionIds = service.positionIds
-      let positionIdString = positionId.toString()
-      if (positionIds.indexOf(positionIdString) == -1) {
-        positionIds.push(positionIdString)
+      if (positionIds.indexOf(positionId) == -1) {
+        positionIds.push(positionId)
         service.positionIds = positionIds
         service.save()
       }

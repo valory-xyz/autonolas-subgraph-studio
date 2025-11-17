@@ -22,7 +22,7 @@ type Service @entity(immutable: false) {
   
   # Position tracking
   positions: [ProtocolPosition!]! @derivedFrom(field: "service")
-  positionIds: [String!]!             # Array of position IDs for iteration
+  positionIds: [Bytes!]!             # Array of position IDs for iteration
 }
 
 type ServiceRegistration @entity(immutable: false) {

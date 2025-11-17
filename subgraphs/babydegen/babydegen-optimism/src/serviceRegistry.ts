@@ -59,12 +59,6 @@ export function handleRegisterInstance(event: RegisterInstance): void {
       service.latestRegistrationTimestamp = event.block.timestamp
       service.latestRegistrationTxHash = event.transaction.hash
       service.updatedAt = event.block.timestamp
-      
-      // Ensure positionIds is initialized (for backward compatibility)
-      if (service.positionIds == null) {
-        service.positionIds = []
-      }
-      
       service.save()
     }
   }
@@ -94,12 +88,6 @@ export function handleCreateMultisigWithAgents(event: CreateMultisigWithAgents):
     let oldService = Service.load(serviceIndex.currentServiceSafe)
     if (oldService != null) {
       oldService.isActive = false
-      
-      // Ensure positionIds is initialized (for backward compatibility)
-      if (oldService.positionIds == null) {
-        oldService.positionIds = []
-      }
-      
       oldService.save()
     }
   } else {
