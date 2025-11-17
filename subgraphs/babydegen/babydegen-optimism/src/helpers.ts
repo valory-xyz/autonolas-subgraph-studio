@@ -13,7 +13,7 @@ import { getServiceByAgent } from "./config"
 import { calculateActualROI, aggregateClosedPositionMetrics } from "./roiCalculation"
 import { getEthUsd } from "./common"
 import { getTokenPriceUSD } from "./priceDiscovery"
-import { WETH, WHITELISTED_TOKENS } from "./constants"
+import { WETH, WHITELISTED_TOKENS, PROTOCOL_VELODROME_V2, PROTOCOL_VELODROME_V3, PROTOCOL_UNISWAP_V3, PROTOCOL_BALANCER } from "./constants"
 import { TokenBalance } from "../generated/schema"
 import { refreshVeloV2Position } from "./veloV2Shared"
 import { refreshVeloCLPosition } from "./veloCLShared"
@@ -341,7 +341,7 @@ export function refreshAllActivePositions(
       let protocol = position.protocol
       
       // Call protocol-specific refresh function with updatePortfolio flag
-      if (protocol == "velodrome-v2") {
+      if (protocol == PROTOCOL_VELODROME_V2) {
         refreshVeloV2Position(
           Address.fromBytes(position.agent),
           Address.fromBytes(position.pool),
@@ -349,7 +349,7 @@ export function refreshAllActivePositions(
           Bytes.empty(),
           updatePortfolio
         )
-      } else if (protocol == "velodrome-cl") {
+      } else if (protocol == PROTOCOL_VELODROME_V3) {
         refreshVeloCLPosition(
           position.id,
           position.tokenId,
@@ -357,14 +357,14 @@ export function refreshAllActivePositions(
           Bytes.empty(),
           updatePortfolio
         )
-      } else if (protocol == "uniswap-v3") {
+      } else if (protocol == PROTOCOL_UNISWAP_V3) {
         refreshUniV3Position(
           position.tokenId,
           block,
           Bytes.empty(),
           updatePortfolio
         )
-      } else if (protocol == "balancer") {
+      } else if (protocol == PROTOCOL_BALANCER) {
         // For Balancer, tokenId is actually the poolId (stored as BigInt)
         // We need to convert it back to Bytes
         let poolIdBytes = changetype<Bytes>(Bytes.fromBigInt(position.tokenId))

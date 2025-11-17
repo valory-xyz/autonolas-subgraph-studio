@@ -5,7 +5,7 @@ import {
   Transfer,
   VelodromePositionNFTManager
 } from "../generated/VeloNFTManager/VelodromePositionNFTManager"
-import { VELO_MANAGER } from "./constants"
+import { PROTOCOL_VELODROME_V3, VELO_MANAGER } from "./constants"
 import { getServiceByAgent } from "./config"
 import { refreshVeloCLPosition, refreshVeloCLPositionWithEventAmounts, refreshVeloCLPositionWithExitAmounts, getVeloCLPositionId } from "./veloCLShared"
 import { Address, Bytes, BigInt, log } from "@graphprotocol/graph-ts"
@@ -27,12 +27,12 @@ export function handleNFTTransfer(event: Transfer): void {
     
     if (toService != null) {
       // Create mapping entity for this NFT
-      const mappingId = Bytes.fromUTF8("velo-cl-" + tokenId.toString())
+      const mappingId = Bytes.fromUTF8(PROTOCOL_VELODROME_V3 + tokenId.toString())
       let mapping = NFTPositionMapping.load(mappingId)
       
       if (mapping == null) {
         mapping = new NFTPositionMapping(mappingId)
-        mapping.protocol = "velo-cl"
+        mapping.protocol = PROTOCOL_VELODROME_V3
         const positionId = getVeloCLPositionId(to, tokenId)
         mapping.positionId = positionId
         mapping.save()
@@ -76,7 +76,7 @@ export function handleIncreaseLiquidity(event: IncreaseLiquidity): void {
   const tokenId = event.params.tokenId
   
   // Look up position using mapping
-  const mappingId = Bytes.fromUTF8("velo-cl-" + tokenId.toString())
+  const mappingId = Bytes.fromUTF8(PROTOCOL_VELODROME_V3 + tokenId.toString())
   const mapping = NFTPositionMapping.load(mappingId)
   
   if (mapping == null) {
@@ -99,7 +99,7 @@ export function handleDecreaseLiquidity(event: DecreaseLiquidity): void {
   const tokenId = event.params.tokenId
   
   // Look up position using mapping
-  const mappingId = Bytes.fromUTF8("velo-cl-" + tokenId.toString())
+  const mappingId = Bytes.fromUTF8(PROTOCOL_VELODROME_V3 + tokenId.toString())
   const mapping = NFTPositionMapping.load(mappingId)
   
   if (mapping == null) {
@@ -125,7 +125,7 @@ export function handleCollect(event: Collect): void {
   const tokenId = event.params.tokenId
   
   // Look up position using mapping
-  const mappingId = Bytes.fromUTF8("velo-cl-" + tokenId.toString())
+  const mappingId = Bytes.fromUTF8(PROTOCOL_VELODROME_V3 + tokenId.toString())
   const mapping = NFTPositionMapping.load(mappingId)
   
   if (mapping == null) {

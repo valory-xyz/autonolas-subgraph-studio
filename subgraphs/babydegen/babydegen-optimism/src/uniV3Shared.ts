@@ -10,10 +10,10 @@ import { ProtocolPosition, Service, AgentSwapBuffer } from "../generated/schema"
 import { refreshPortfolio } from "./common"
 import { addAgentNFTToPool, removeAgentNFTFromPool, getCachedPoolAddress, cachePoolAddress } from "./poolIndexCache"
 import { getTokenPriceUSD } from "./priceDiscovery"
-import { UNI_V3_MANAGER, UNI_V3_FACTORY } from "./constants"
+import { UNI_V3_MANAGER, UNI_V3_FACTORY, PROTOCOL_UNISWAP_V3 } from "./constants"
 import { isServiceAgent, getServiceByAgent } from "./config"
 import { getTokenDecimals, getTokenSymbol } from "./tokenUtils"
-import { parseTotalSlippageFromBucket, associateSwapsWithPosition } from "./helpers"
+import { parseTotalSlippageFromBucket, associateSwapsWithPosition, ensureAgentPortfolio } from "./helpers"
 import { calculatePositionROI } from "./roiCalculation"
 
 // Helper function to convert token amount from wei to human readable
@@ -25,8 +25,8 @@ function convertTokenAmount(amount: BigInt, tokenAddress: Address): BigDecimal {
 
 // Create or get Uniswap V3 position ID (consistent with Velodrome V2 pattern)
 export function getUniV3PositionId(userAddress: Address, tokenId: BigInt): Bytes {
-  // For Uniswap V3, we use user-tokenId combination as position ID
-  const positionId = userAddress.toHex() + "-" + tokenId.toString()
+  // For Uniswap V3, we use user-protocol-tokenId combination as position ID
+  const positionId = userAddress.toHex() + PROTOCOL_UNISWAP_V3 + tokenId.toString()
   return Bytes.fromUTF8(positionId)
 }
 
@@ -34,7 +34,7 @@ export function getUniV3PositionId(userAddress: Address, tokenId: BigInt): Bytes
 function getUniV3PoolAddress(token0: Address, token1: Address, fee: i32, tokenId: BigInt | null = null): Address {
   // Try cache first if we have a tokenId
   if (tokenId !== null) {
-    const cached = getCachedPoolAddress("uniswap-v3", tokenId)
+    const cached = getCachedPoolAddress(PROTOCOL_UNISWAP_V3, tokenId)
     if (cached !== null) {
       return cached
     }
@@ -56,7 +56,7 @@ function getUniV3PoolAddress(token0: Address, token1: Address, fee: i32, tokenId
   
   // Cache the result if we have a tokenId
   if (tokenId !== null) {
-    cachePoolAddress("uniswap-v3", tokenId, poolAddress)
+    cachePoolAddress(PROTOCOL_UNISWAP_V3, tokenId, poolAddress)
   }
   
   return poolAddress
@@ -86,7 +86,7 @@ export function ensureUniV3PoolTemplate(tokenId: BigInt): void {
   // UniV3Pool.create(poolAddress) // REMOVED
   
   // Still maintain the NFT-to-pool mapping for cache purposes
-  addAgentNFTToPool("uniswap-v3", poolAddress, tokenId)
+  addAgentNFTToPool(PROTOCOL_UNISWAP_V3, poolAddress, tokenId)
 }
 
 // Helper function to check if position is closed
@@ -158,7 +158,7 @@ export function refreshUniV3PositionWithEventAmounts(
   if (pp == null) {
     pp = new ProtocolPosition(positionId)
     pp.agent = nftOwner
-    pp.protocol = "uniswap-v3"
+    pp.protocol = PROTOCOL_UNISWAP_V3
     pp.pool = poolAddress
     pp.tokenId = tokenId
     pp.isActive = true
@@ -199,6 +199,7 @@ export function refreshUniV3PositionWithEventAmounts(
     
     // Set additional required fields to ensure they are not null
     pp.usdCurrent = eventUsd
+    pp.usdCurrentWithRewards = eventUsd
     pp.amount0 = eventAmount0Human
     pp.amount1 = eventAmount1Human
     pp.amount0USD = eventUsd0
@@ -341,7 +342,7 @@ export function refreshUniV3PositionWithExitAmounts(
     
     // Remove from cache
     const poolAddress = getUniV3PoolAddress(data.value2, data.value3, data.value4, tokenId)
-    removeAgentNFTFromPool("uniswap-v3", poolAddress, tokenId)
+    removeAgentNFTFromPool(PROTOCOL_UNISWAP_V3, poolAddress, tokenId)
     
     pp.save()
     refreshPortfolio(nftOwner, block)
@@ -434,7 +435,7 @@ export function refreshUniV3Position(tokenId: BigInt, block: ethereum.Block, txH
   if (pp == null) {
     pp = new ProtocolPosition(positionId)
     pp.agent = nftOwner
-    pp.protocol = "uniswap-v3"
+    pp.protocol = PROTOCOL_UNISWAP_V3
     pp.pool = poolAddress
     pp.tokenId = tokenId
     pp.isActive = true
@@ -526,7 +527,7 @@ export function refreshUniV3Position(tokenId: BigInt, block: ethereum.Block, txH
     calculatePositionROI(pp)
     
     // Remove from cache to prevent future swap updates
-    removeAgentNFTFromPool("uniswap-v3", poolAddress, tokenId)
+    removeAgentNFTFromPool(PROTOCOL_UNISWAP_V3, poolAddress, tokenId)
   }
   
   pp.save()
@@ -558,11 +559,11 @@ export function handleUniV3NFTTransferForCache(tokenId: BigInt, from: Address, t
   
   // Remove from cache if transferring out
   if (!from.equals(Address.zero())) {
-    removeAgentNFTFromPool("uniswap-v3", poolAddress, tokenId)
+    removeAgentNFTFromPool(PROTOCOL_UNISWAP_V3, poolAddress, tokenId)
   }
   
   // Add to cache if transferring in
   if (!to.equals(Address.zero())) {
-    addAgentNFTToPool("uniswap-v3", poolAddress, tokenId)
+    addAgentNFTToPool(PROTOCOL_UNISWAP_V3, poolAddress, tokenId)
   }
 }

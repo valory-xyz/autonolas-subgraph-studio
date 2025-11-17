@@ -9,7 +9,7 @@ import { ProtocolPosition, Service, AgentSwapBuffer } from "../generated/schema"
 import { getUsd, refreshPortfolio } from "./common"
 import { addAgentNFTToPool, removeAgentNFTFromPool, getCachedPoolAddress, cachePoolAddress } from "./poolIndexCache"
 import { getTokenPriceUSD } from "./priceDiscovery"
-import { VELO_MANAGER, VELO_FACTORY, VELO } from "./constants"
+import { VELO_MANAGER, VELO_FACTORY, VELO, PROTOCOL_VELODROME_V3 } from "./constants"
 import { isServiceAgent, getServiceByAgent } from "./config"
 import { parseTotalSlippageFromBucket, associateSwapsWithPosition } from "./helpers"
 import { getTokenDecimals, getTokenSymbol } from "./tokenUtils"
@@ -22,14 +22,14 @@ function convertTokenAmount(amount: BigInt, tokenAddress: Address): BigDecimal {
 }
 
 export function getVeloCLPositionId(userAddress: Address, tokenId: BigInt): Bytes {
-  const positionId = userAddress.toHex() + "-velo-cl-" + tokenId.toString()
+  const positionId = userAddress.toHex() + PROTOCOL_VELODROME_V3 + tokenId.toString()
   return Bytes.fromUTF8(positionId)
 }
 
 // Helper function to derive pool address from position data with caching
 function getPoolAddress(token0: Address, token1: Address, tickSpacing: i32, tokenId: BigInt | null = null): Address {
   if (tokenId !== null) {
-    const cached = getCachedPoolAddress("velodrome-cl", tokenId)
+    const cached = getCachedPoolAddress(PROTOCOL_VELODROME_V3, tokenId)
     if (cached !== null) {
       return cached
     }
@@ -48,7 +48,7 @@ function getPoolAddress(token0: Address, token1: Address, tickSpacing: i32, toke
     const poolAddress = reversedResult.value
     
     if (tokenId !== null) {
-      cachePoolAddress("velodrome-cl", tokenId, poolAddress)
+      cachePoolAddress(PROTOCOL_VELODROME_V3, tokenId, poolAddress)
     }
     
     return poolAddress
@@ -57,7 +57,7 @@ function getPoolAddress(token0: Address, token1: Address, tickSpacing: i32, toke
   const poolAddress = poolResult.value
   
   if (tokenId !== null) {
-    cachePoolAddress("velodrome-cl", tokenId, poolAddress)
+    cachePoolAddress(PROTOCOL_VELODROME_V3, tokenId, poolAddress)
   }
   
   return poolAddress
@@ -196,7 +196,7 @@ export function refreshVeloCLPositionWithExitAmounts(
     calculatePositionROI(pp)
     
     const poolAddress = getPoolAddress(data.value2, data.value3, data.value4 as i32, tokenId)
-    removeAgentNFTFromPool("velodrome-cl", poolAddress, tokenId)
+    removeAgentNFTFromPool(PROTOCOL_VELODROME_V3, poolAddress, tokenId)
     
     pp.save()
     refreshPortfolio(nftOwner, block)
@@ -246,7 +246,7 @@ export function refreshVeloCLPosition(
     position = new ProtocolPosition(positionId)
     position.agent = nftOwner
     position.service = nftOwner
-    position.protocol = "velodrome-cl"
+    position.protocol = PROTOCOL_VELODROME_V3
     position.pool = poolAddress
     position.tokenId = tokenId
     position.isActive = true
@@ -394,7 +394,7 @@ export function refreshVeloCLPosition(
     position.exitAmountUSD = usd
     
     calculatePositionROI(position)
-    removeAgentNFTFromPool("velodrome-cl", poolAddress, tokenId)
+    removeAgentNFTFromPool(PROTOCOL_VELODROME_V3, poolAddress, tokenId)
   }
   
   position.save()
