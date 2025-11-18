@@ -26,6 +26,7 @@ export function getOrCreateService(serviceId: BigInt): Service {
   if (service == null) {
     service = new Service(serviceId.toString());
     service.agentIds = [];
+    service.creationTimestamp = BigInt.fromI32(0);
     service.save();
   }
   return service;
