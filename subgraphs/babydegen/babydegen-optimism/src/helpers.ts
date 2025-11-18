@@ -396,7 +396,8 @@ export function calculatePortfolioMetrics(
   let totalWithdrawn = fundingBalance ? fundingBalance.totalWithdrawnUsd : BigDecimal.zero()
   
   // 5. Calculate total portfolio value (positions + uninvested + withdrawn)
-  let finalValue = positionsValue.plus(uninvestedValue).plus(totalWithdrawn)
+  // Use positionsValueWithRewards for unrealised PnL calculation to include rewards
+  let finalValue = positionsValueWithRewards.plus(uninvestedValue).plus(totalWithdrawn)
   let finalValueWithRewards = positionsValueWithRewards.plus(uninvestedValue).plus(totalWithdrawn)
   
   // 5. Calculate ROI and APR (base and with rewards)
