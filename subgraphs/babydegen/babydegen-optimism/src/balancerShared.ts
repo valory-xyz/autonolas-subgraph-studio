@@ -68,7 +68,7 @@ export function detectTransactionType(deltas: Array<BigInt>): string {
 
 // Create or get Balancer position ID
 export function getBalancerPositionId(userAddress: Address, poolAddress: Address): Bytes {
-  const positionId = userAddress.toHex() + PROTOCOL_BALANCER + poolAddress.toHex()
+  const positionId = userAddress.toHex() + "-" + PROTOCOL_BALANCER + "-" + poolAddress.toHex()
   return Bytes.fromUTF8(positionId)
 }
 

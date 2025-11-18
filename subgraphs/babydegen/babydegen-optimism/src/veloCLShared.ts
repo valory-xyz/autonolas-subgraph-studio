@@ -22,7 +22,7 @@ function convertTokenAmount(amount: BigInt, tokenAddress: Address): BigDecimal {
 }
 
 export function getVeloCLPositionId(userAddress: Address, tokenId: BigInt): Bytes {
-  const positionId = userAddress.toHex() + PROTOCOL_VELODROME_V3 + tokenId.toString()
+  const positionId = userAddress.toHex() + "-" + PROTOCOL_VELODROME_V3 + "-" + tokenId.toString()
   return Bytes.fromUTF8(positionId)
 }
 

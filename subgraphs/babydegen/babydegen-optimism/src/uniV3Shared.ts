@@ -25,8 +25,8 @@ function convertTokenAmount(amount: BigInt, tokenAddress: Address): BigDecimal {
 
 // Create or get Uniswap V3 position ID (consistent with Velodrome V2 pattern)
 export function getUniV3PositionId(userAddress: Address, tokenId: BigInt): Bytes {
-  // For Uniswap V3, we use user-protocol-tokenId combination as position ID
-  const positionId = userAddress.toHex() + PROTOCOL_UNISWAP_V3 + tokenId.toString()
+  // For Uniswap V3, we use user-protocol-tokenId combination as position ID with delimiters
+  const positionId = userAddress.toHex() + "-" + PROTOCOL_UNISWAP_V3 + "-" + tokenId.toString()
   return Bytes.fromUTF8(positionId)
 }
 

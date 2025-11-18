@@ -45,7 +45,7 @@ export function ensureVeloV2PoolTemplate(poolAddress: Address): void {
 
 // Create or get VelodromeV2 position ID
 export function getVeloV2PositionId(userAddress: Address, poolAddress: Address): Bytes {
-  let positionId = userAddress.toHex() + PROTOCOL_VELODROME_V2 + poolAddress.toHex()
+  let positionId = userAddress.toHex() + "-" + PROTOCOL_VELODROME_V2 + "-" + poolAddress.toHex()
   return Bytes.fromUTF8(positionId)
 }
 

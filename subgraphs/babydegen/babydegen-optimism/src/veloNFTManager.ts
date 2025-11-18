@@ -27,7 +27,7 @@ export function handleNFTTransfer(event: Transfer): void {
     
     if (toService != null) {
       // Create mapping entity for this NFT
-      const mappingId = Bytes.fromUTF8(PROTOCOL_VELODROME_V3 + tokenId.toString())
+      const mappingId = Bytes.fromUTF8(PROTOCOL_VELODROME_V3 + "-" + tokenId.toString())
       let mapping = NFTPositionMapping.load(mappingId)
       
       if (mapping == null) {
@@ -76,7 +76,7 @@ export function handleIncreaseLiquidity(event: IncreaseLiquidity): void {
   const tokenId = event.params.tokenId
   
   // Look up position using mapping
-  const mappingId = Bytes.fromUTF8(PROTOCOL_VELODROME_V3 + tokenId.toString())
+  const mappingId = Bytes.fromUTF8(PROTOCOL_VELODROME_V3 + "-" + tokenId.toString())
   const mapping = NFTPositionMapping.load(mappingId)
   
   if (mapping == null) {
@@ -99,7 +99,7 @@ export function handleDecreaseLiquidity(event: DecreaseLiquidity): void {
   const tokenId = event.params.tokenId
   
   // Look up position using mapping
-  const mappingId = Bytes.fromUTF8(PROTOCOL_VELODROME_V3 + tokenId.toString())
+  const mappingId = Bytes.fromUTF8(PROTOCOL_VELODROME_V3 + "-" + tokenId.toString())
   const mapping = NFTPositionMapping.load(mappingId)
   
   if (mapping == null) {
