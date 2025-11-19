@@ -341,6 +341,8 @@ export function updateWithdrawalBalance(
     fb.totalWithdrawnUsd = BigDecimal.zero()
     fb.netUsd = BigDecimal.zero()
     fb.firstInTimestamp = ts
+    fb.fundingInTxs = []
+    fb.fundingOutTxs = []
   }
   
   // Track withdrawal separately without affecting netUsd
