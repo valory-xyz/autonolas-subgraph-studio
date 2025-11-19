@@ -496,7 +496,7 @@ export function calculatePortfolioMetrics(
   // Update portfolio with standard values
   portfolio.finalValue = finalValue
   portfolio.initialValue = initialValue  
-  portfolio.positionsValue = positionsValue
+  portfolio.positionsValue = positionsValueWithRewards
   portfolio.uninvestedValue = uninvestedValue
   portfolio.totalWithdrawnUsd = totalWithdrawn  // Total amount withdrawn to EOAs
   portfolio.unrealisedPnL = roi  // Current portfolio-based calculation (unrealized PnL)

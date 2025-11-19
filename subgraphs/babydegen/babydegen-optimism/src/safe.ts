@@ -48,7 +48,7 @@ export function handleSafeReceived(event: SafeReceivedEvent): void {
         .div(BigDecimal.fromString("1e18")) // ETH has 18 decimals
       
       // Update funding balance
-      updateFundingBalance(to, usd, true, event.block.timestamp)
+      updateFundingBalance(to, usd, true, event.block.timestamp, txHash)
       
       // Also update ETH balance in TokenBalance
       updateETHBalance(to, value, true, event.block)
@@ -77,7 +77,7 @@ export function handleSafeReceived(event: SafeReceivedEvent): void {
         // This is Service Safe → Operator Safe transfer
         
         // Update funding balance for the SERVICE safe (outflow)
-        updateFundingBalance(from, usd, false, event.block.timestamp)
+        updateFundingBalance(from, usd, false, event.block.timestamp, txHash)
         
         // Update ETH balance for the service safe (outflow)
         updateETHBalance(from, value, false, event.block)
@@ -138,7 +138,7 @@ function handleSafeEthTransfer(
         .div(BigDecimal.fromString("1e18")) // ETH has 18 decimals
       
       // Update funding balance for ETH outflow
-      updateFundingBalance(serviceSafe, usd, false, block.timestamp)
+      updateFundingBalance(serviceSafe, usd, false, block.timestamp, txHash)
     }
   }
     

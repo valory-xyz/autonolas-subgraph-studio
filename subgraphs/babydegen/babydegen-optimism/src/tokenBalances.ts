@@ -213,7 +213,7 @@ export function handleERC20Transfer(event: TransferEvent): void {
       
       
       // Update funding balance directly to avoid circular dependency
-      updateFundingBalance(to, usdValue, true, event.block.timestamp)
+      updateFundingBalance(to, usdValue, true, event.block.timestamp, txHash)
     } else if (isValidSource) {
       // Calculate values for better logging
       let divisor = BigDecimal.fromString("1" + "0".repeat(tokenConfig.decimals))
@@ -263,7 +263,8 @@ export function updateFundingBalance(
   serviceSafe: Address,
   usd: BigDecimal,
   deposit: boolean,
-  ts: BigInt
+  ts: BigInt,
+  txHash: string = ""
 ): void {
   let id = serviceSafe as Bytes
   let fb = FundingBalance.load(id)
@@ -276,6 +277,8 @@ export function updateFundingBalance(
     fb.totalWithdrawnUsd = BigDecimal.zero()  // Initialize new field
     fb.netUsd = BigDecimal.zero()
     fb.firstInTimestamp = ts
+    fb.fundingInTxs = []
+    fb.fundingOutTxs = []
   }
   
   let oldTotalIn = fb.totalInUsd
@@ -283,6 +286,12 @@ export function updateFundingBalance(
   
   if (deposit) {
     fb.totalInUsd = fb.totalInUsd.plus(usd)
+    
+    if (txHash != "") {
+      let fundingInTxs = fb.fundingInTxs
+      fundingInTxs.push(txHash)
+      fb.fundingInTxs = fundingInTxs
+    }
     
     //  Set firstTradingTimestamp and capture ETH price on first funding
     if (oldTotalIn.equals(BigDecimal.zero())) {
@@ -299,6 +308,12 @@ export function updateFundingBalance(
     }
   } else {
     fb.totalOutUsd = fb.totalOutUsd.plus(usd)
+    
+    if (txHash != "") {
+      let fundingOutTxs = fb.fundingOutTxs
+      fundingOutTxs.push(txHash)
+      fb.fundingOutTxs = fundingOutTxs
+    }
   }
   
   fb.netUsd = fb.totalInUsd.minus(fb.totalOutUsd)

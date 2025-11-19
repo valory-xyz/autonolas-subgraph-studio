@@ -55,6 +55,8 @@ type FundingBalance @entity(immutable: false) {
   netUsd: BigDecimal!
   firstInTimestamp: BigInt!
   lastChangeTs: BigInt!
+  fundingInTxs: [String!]!      # Array of funding in transaction hashes
+  fundingOutTxs: [String!]!     # Array of funding out transaction hashes
 }
 
 type ProtocolPosition @entity(immutable: false) {
