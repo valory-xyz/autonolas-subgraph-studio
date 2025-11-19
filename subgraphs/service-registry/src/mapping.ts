@@ -102,8 +102,7 @@ function updateGlobalMetrics(event: ethereum.Event): void {
 }
 
 export function handleCreateService(event: CreateService): void {
-  let service = getOrCreateService(event.params.serviceId);
-  service.creationTimestamp = event.block.timestamp;
+  let service = getOrCreateService(event.params.serviceId, event.block.timestamp);
   service.configHash = event.params.configHash;
   service.save();
 }
