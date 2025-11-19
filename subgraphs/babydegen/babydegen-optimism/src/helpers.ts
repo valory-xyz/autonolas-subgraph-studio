@@ -396,7 +396,8 @@ export function calculatePortfolioMetrics(
   let totalWithdrawn = fundingBalance ? fundingBalance.totalWithdrawnUsd : BigDecimal.zero()
   
   // 5. Calculate total portfolio value (positions + uninvested + withdrawn)
-  // Use positionsValueWithRewards for unrealised PnL calculation to include rewards
+  // Calculate both with and without rewards
+  let finalValueWithoutRewards = positionsValue.plus(uninvestedValue).plus(totalWithdrawn)
   let finalValue = positionsValueWithRewards.plus(uninvestedValue).plus(totalWithdrawn)
   let finalValueWithRewards = positionsValueWithRewards.plus(uninvestedValue).plus(totalWithdrawn)
   
@@ -495,6 +496,7 @@ export function calculatePortfolioMetrics(
   
   // Update portfolio with standard values
   portfolio.finalValue = finalValue
+  portfolio.finalValueWithoutRewards = finalValueWithoutRewards
   portfolio.initialValue = initialValue  
   portfolio.positionsValue = positionsValueWithRewards
   portfolio.uninvestedValue = uninvestedValue
@@ -684,6 +686,7 @@ export function ensureAgentPortfolio(serviceSafe: Address, timestamp: BigInt): A
     portfolio.totalClosedPositions = 0
     // Initialize with default values
     portfolio.finalValue = BigDecimal.zero()
+    portfolio.finalValueWithoutRewards = BigDecimal.zero()
     portfolio.initialValue = BigDecimal.zero()
     portfolio.positionsValue = BigDecimal.zero()
     portfolio.uninvestedValue = BigDecimal.zero()
