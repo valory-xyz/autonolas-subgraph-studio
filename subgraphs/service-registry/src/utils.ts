@@ -21,11 +21,15 @@ export function getDayTimestamp(event: ethereum.Event): BigInt {
   return event.block.timestamp.div(ONE_DAY).times(ONE_DAY);
 }
 
-export function getOrCreateService(serviceId: BigInt): Service {
+export function getOrCreateService(
+  serviceId: BigInt,
+  timestamp: BigInt = BigInt.fromI32(0)
+): Service {
   let service = Service.load(serviceId.toString());
   if (service == null) {
     service = new Service(serviceId.toString());
     service.agentIds = [];
+    service.creationTimestamp = timestamp;
     service.save();
   }
   return service;
