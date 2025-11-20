@@ -13,7 +13,7 @@ import { getServiceByAgent } from "./config"
 import { calculateActualROI, aggregateClosedPositionMetrics } from "./roiCalculation"
 import { getEthUsd } from "./common"
 import { getTokenPriceUSD } from "./priceDiscovery"
-import { WETH, WHITELISTED_TOKENS } from "./constants"
+import { WETH, WHITELISTED_TOKENS, PROTOCOL_VELODROME_V2, PROTOCOL_VELODROME_V3, PROTOCOL_UNISWAP_V3, PROTOCOL_BALANCER } from "./constants"
 import { TokenBalance } from "../generated/schema"
 import { refreshVeloV2Position } from "./veloV2Shared"
 import { refreshVeloCLPosition } from "./veloCLShared"
@@ -273,20 +273,8 @@ export function refreshActivePositionUSDValues(
   let positionIds = service.positionIds
 
   for (let i = 0; i < positionIds.length; i++) {
-    let positionIdString = positionIds[i]
-    let position: ProtocolPosition | null = null
-
-    let directId = Bytes.fromUTF8(positionIdString)
-    position = ProtocolPosition.load(directId)
-
-    if (position == null) {
-      if (positionIdString.startsWith("0x") && positionIdString.length % 2 == 0) {
-        let hexBytes = Bytes.fromHexString(positionIdString)
-        let decodedString = hexBytes.toString()
-        let decodedId = Bytes.fromUTF8(decodedString)
-        position = ProtocolPosition.load(decodedId)
-      }
-    }
+    let positionId = positionIds[i]
+    let position = ProtocolPosition.load(positionId)
 
     // Only refresh USD values for ACTIVE positions
     if (position != null && position.isActive) {
@@ -321,27 +309,15 @@ export function refreshAllActivePositions(
   let positionIds = service.positionIds
 
   for (let i = 0; i < positionIds.length; i++) {
-    let positionIdString = positionIds[i]
-    let position: ProtocolPosition | null = null
-
-    let directId = Bytes.fromUTF8(positionIdString)
-    position = ProtocolPosition.load(directId)
-
-    if (position == null) {
-      if (positionIdString.startsWith("0x") && positionIdString.length % 2 == 0) {
-        let hexBytes = Bytes.fromHexString(positionIdString)
-        let decodedString = hexBytes.toString()
-        let decodedId = Bytes.fromUTF8(decodedString)
-        position = ProtocolPosition.load(decodedId)
-      }
-    }
+    let positionId = positionIds[i]
+    let position = ProtocolPosition.load(positionId)
 
     // Only refresh ACTIVE positions
     if (position != null && position.isActive) {
       let protocol = position.protocol
       
       // Call protocol-specific refresh function with updatePortfolio flag
-      if (protocol == "velodrome-v2") {
+      if (protocol == PROTOCOL_VELODROME_V2) {
         refreshVeloV2Position(
           Address.fromBytes(position.agent),
           Address.fromBytes(position.pool),
@@ -349,7 +325,7 @@ export function refreshAllActivePositions(
           Bytes.empty(),
           updatePortfolio
         )
-      } else if (protocol == "velodrome-cl") {
+      } else if (protocol == PROTOCOL_VELODROME_V3) {
         refreshVeloCLPosition(
           position.id,
           position.tokenId,
@@ -357,14 +333,14 @@ export function refreshAllActivePositions(
           Bytes.empty(),
           updatePortfolio
         )
-      } else if (protocol == "uniswap-v3") {
+      } else if (protocol == PROTOCOL_UNISWAP_V3) {
         refreshUniV3Position(
           position.tokenId,
           block,
           Bytes.empty(),
           updatePortfolio
         )
-      } else if (protocol == "balancer") {
+      } else if (protocol == PROTOCOL_BALANCER) {
         // For Balancer, tokenId is actually the poolId (stored as BigInt)
         // We need to convert it back to Bytes
         let poolIdBytes = changetype<Bytes>(Bytes.fromBigInt(position.tokenId))
@@ -407,7 +383,7 @@ export function calculatePortfolioMetrics(
 
   // 1. Get initial investment from FundingBalance (use totalInUsd to preserve baseline)
   let fundingBalance = FundingBalance.load(serviceSafe as Bytes)
-  let initialValue = fundingBalance ? fundingBalance.totalInUsd : BigDecimal.zero()
+  let initialValue = fundingBalance ? fundingBalance.netUsd : BigDecimal.zero()
   
   // 2. Calculate total positions value (base and with rewards)
   let positionsValue = calculatePositionsValue(serviceSafe)
@@ -420,7 +396,9 @@ export function calculatePortfolioMetrics(
   let totalWithdrawn = fundingBalance ? fundingBalance.totalWithdrawnUsd : BigDecimal.zero()
   
   // 5. Calculate total portfolio value (positions + uninvested + withdrawn)
-  let finalValue = positionsValue.plus(uninvestedValue).plus(totalWithdrawn)
+  // Calculate both with and without rewards
+  let finalValueWithoutRewards = positionsValue.plus(uninvestedValue).plus(totalWithdrawn)
+  let finalValue = positionsValueWithRewards.plus(uninvestedValue).plus(totalWithdrawn)
   let finalValueWithRewards = positionsValueWithRewards.plus(uninvestedValue).plus(totalWithdrawn)
   
   // 5. Calculate ROI and APR (base and with rewards)
@@ -518,8 +496,9 @@ export function calculatePortfolioMetrics(
   
   // Update portfolio with standard values
   portfolio.finalValue = finalValue
+  portfolio.finalValueWithoutRewards = finalValueWithoutRewards
   portfolio.initialValue = initialValue  
-  portfolio.positionsValue = positionsValue
+  portfolio.positionsValue = positionsValueWithRewards
   portfolio.uninvestedValue = uninvestedValue
   portfolio.totalWithdrawnUsd = totalWithdrawn  // Total amount withdrawn to EOAs
   portfolio.unrealisedPnL = roi  // Current portfolio-based calculation (unrealized PnL)
@@ -560,26 +539,8 @@ export function calculatePortfolioMetrics(
     // Iterate through all position IDs
     let positionIds = serviceEntity.positionIds
     for (let i = 0; i < positionIds.length; i++) {
-      let positionIdString = positionIds[i]
-      let position: ProtocolPosition | null = null
-      
-      // Try loading position with different ID formats for robustness
-      
-      // Method 1: Try as direct UTF8 string (standard format)
-      let directId = Bytes.fromUTF8(positionIdString)
-      position = ProtocolPosition.load(directId)
-      
-      if (position == null) {
-        // Method 2: Try as hex-decoded string (for any legacy hex-encoded IDs)
-        // Check if the string looks like hex (starts with 0x and has even length)
-        if (positionIdString.startsWith("0x") && positionIdString.length % 2 == 0) {
-          // Convert hex string back to original string, then to Bytes
-          let hexBytes = Bytes.fromHexString(positionIdString)
-          let decodedString = hexBytes.toString()
-          let decodedId = Bytes.fromUTF8(decodedString)
-          position = ProtocolPosition.load(decodedId)
-        }
-      }
+      let positionId = positionIds[i]
+      let position = ProtocolPosition.load(positionId)
       
       if (position != null) {
         if (position.isActive) {
@@ -624,26 +585,8 @@ function calculatePositionsValue(serviceSafe: Address): BigDecimal {
   let positionIds = service.positionIds
   
   for (let i = 0; i < positionIds.length; i++) {
-    let positionIdString = positionIds[i]
-    let position: ProtocolPosition | null = null
-    
-    // Try loading position with different ID formats for robustness
-    
-    // Method 1: Try as direct UTF8 string (standard format)
-    let directId = Bytes.fromUTF8(positionIdString)
-    position = ProtocolPosition.load(directId)
-    
-    if (position == null) {
-      // Method 2: Try as hex-decoded string (for any legacy hex-encoded IDs)
-      // Check if the string looks like hex (starts with 0x and has even length)
-      if (positionIdString.startsWith("0x") && positionIdString.length % 2 == 0) {
-        // Convert hex string back to original string, then to Bytes
-        let hexBytes = Bytes.fromHexString(positionIdString)
-        let decodedString = hexBytes.toString()
-        let decodedId = Bytes.fromUTF8(decodedString)
-        position = ProtocolPosition.load(decodedId)
-      }
-    }
+    let positionId = positionIds[i]
+    let position = ProtocolPosition.load(positionId)
     
     // If position found and active, add to total value
     if (position != null && position.isActive) {
@@ -668,26 +611,8 @@ function calculatePositionsValueWithRewards(serviceSafe: Address): BigDecimal {
   let positionIds = service.positionIds
   
   for (let i = 0; i < positionIds.length; i++) {
-    let positionIdString = positionIds[i]
-    let position: ProtocolPosition | null = null
-    
-    // Try loading position with different ID formats for robustness
-    
-    // Method 1: Try as direct UTF8 string (standard format)
-    let directId = Bytes.fromUTF8(positionIdString)
-    position = ProtocolPosition.load(directId)
-    
-    if (position == null) {
-      // Method 2: Try as hex-decoded string (for any legacy hex-encoded IDs)
-      // Check if the string looks like hex (starts with 0x and has even length)
-      if (positionIdString.startsWith("0x") && positionIdString.length % 2 == 0) {
-        // Convert hex string back to original string, then to Bytes
-        let hexBytes = Bytes.fromHexString(positionIdString)
-        let decodedString = hexBytes.toString()
-        let decodedId = Bytes.fromUTF8(decodedString)
-        position = ProtocolPosition.load(decodedId)
-      }
-    }
+    let positionId = positionIds[i]
+    let position = ProtocolPosition.load(positionId)
     
     // If position found and active, add to total value including rewards
     if (position != null && position.isActive) {
@@ -731,10 +656,7 @@ function createPortfolioSnapshot(portfolio: AgentPortfolio, block: ethereum.Bloc
   snapshot.block = block.number
   snapshot.totalPositions = portfolio.totalPositions
   snapshot.totalClosedPositions = portfolio.totalClosedPositions
-  
-  // Initialize positionIds as empty array to avoid null issues
-  snapshot.positionIds = []
-  
+    
   snapshot.save()
   
   // Update portfolio snapshot tracking
@@ -764,6 +686,7 @@ export function ensureAgentPortfolio(serviceSafe: Address, timestamp: BigInt): A
     portfolio.totalClosedPositions = 0
     // Initialize with default values
     portfolio.finalValue = BigDecimal.zero()
+    portfolio.finalValueWithoutRewards = BigDecimal.zero()
     portfolio.initialValue = BigDecimal.zero()
     portfolio.positionsValue = BigDecimal.zero()
     portfolio.uninvestedValue = BigDecimal.zero()

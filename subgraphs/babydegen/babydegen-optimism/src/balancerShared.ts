@@ -15,7 +15,7 @@ import { getTokenPriceUSD } from "./priceDiscovery"
 import { getServiceByAgent } from "./config"
 import { updateFirstTradingTimestamp, calculatePortfolioMetrics, associateSwapsWithPosition } from "./helpers"
 import { getTokenDecimals, getTokenSymbol } from "./tokenUtils"
-import { BALANCER_VAULT } from "./constants"
+import { BALANCER_VAULT, PROTOCOL_BALANCER } from "./constants"
 import { calculatePositionROI } from "./roiCalculation"
 
 // Helper function to convert token amount to human readable format
@@ -68,7 +68,7 @@ export function detectTransactionType(deltas: Array<BigInt>): string {
 
 // Create or get Balancer position ID
 export function getBalancerPositionId(userAddress: Address, poolAddress: Address): Bytes {
-  const positionId = userAddress.toHex() + "-balancer-" + poolAddress.toHex()
+  const positionId = userAddress.toHex() + "-" + PROTOCOL_BALANCER + "-" + poolAddress.toHex()
   return Bytes.fromUTF8(positionId)
 }
 
@@ -108,7 +108,7 @@ export function refreshBalancerPositionWithEventAmounts(
     pp = new ProtocolPosition(positionId)
     pp.agent = userAddress
     pp.service = userAddress // Link to service
-    pp.protocol = "balancer"
+    pp.protocol = PROTOCOL_BALANCER
     pp.pool = poolAddress
     pp.isActive = true
     pp.tokenId = BigInt.fromUnsignedBytes(poolId)
@@ -120,9 +120,8 @@ export function refreshBalancerPositionWithEventAmounts(
         serviceEntity.positionIds = []
       }
       let positionIds = serviceEntity.positionIds
-      let positionIdString = positionId.toString()
-      if (positionIds.indexOf(positionIdString) == -1) {
-        positionIds.push(positionIdString)
+      if (positionIds.indexOf(positionId) == -1) {
+        positionIds.push(positionId)
         serviceEntity.positionIds = positionIds
         serviceEntity.save()
       }
@@ -325,7 +324,7 @@ export function refreshBalancerPosition(
     pp = new ProtocolPosition(positionId)
     pp.agent = userAddress
     pp.service = userAddress // Link to service
-    pp.protocol = "balancer"
+    pp.protocol = PROTOCOL_BALANCER
     pp.pool = poolAddress
     pp.isActive = true
     pp.tokenId = BigInt.fromUnsignedBytes(poolId)
@@ -337,9 +336,8 @@ export function refreshBalancerPosition(
         serviceEntity.positionIds = []
       }
       let positionIds = serviceEntity.positionIds
-      let positionIdString = positionId.toString()
-      if (positionIds.indexOf(positionIdString) == -1) {
-        positionIds.push(positionIdString)
+      if (positionIds.indexOf(positionId) == -1) {
+        positionIds.push(positionId)
         serviceEntity.positionIds = positionIds
         serviceEntity.save()
       }

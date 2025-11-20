@@ -1,10 +1,11 @@
 import { Swap } from "../generated/templates/VeloCLPool/VelodromeCLPool"
+import { PROTOCOL_VELODROME_V3 } from "./constants"
 import { getAgentNFTsInPool } from "./poolIndexCache"        // tiny util map
 import { refreshVeloCLPosition } from "./veloCLShared"
 import { log } from "@graphprotocol/graph-ts"
 
 export function handleSwap(ev: Swap): void {
-  const ids = getAgentNFTsInPool("velodrome-cl", ev.address)                // BigInt[]
+  const ids = getAgentNFTsInPool(PROTOCOL_VELODROME_V3, ev.address)                // BigInt[]
   
   for (let i = 0; i < ids.length; i++) {
     const tokenId = ids[i]

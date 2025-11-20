@@ -15,6 +15,7 @@ import { getServiceByAgent } from "./config"
 import { parseTotalSlippageFromBucket, associateSwapsWithPosition, calculatePortfolioMetrics } from "./helpers"
 import { getTokenDecimals, getTokenSymbol } from "./tokenUtils"
 import { calculatePositionROI } from "./roiCalculation"
+import { PROTOCOL_VELODROME_V2 } from "./constants"
 
 // VelodromeV2 Router address on Optimism
 const VELODROME_V2_ROUTER = Address.fromString("0xa062ae8a9c5e11aaa026fc2670b0d65ccc8b2858")
@@ -44,8 +45,7 @@ export function ensureVeloV2PoolTemplate(poolAddress: Address): void {
 
 // Create or get VelodromeV2 position ID
 export function getVeloV2PositionId(userAddress: Address, poolAddress: Address): Bytes {
-  // For VelodromeV2, we use user-pool combination as position ID since there are no NFTs
-  const positionId = userAddress.toHex() + "-velodromev2-" + poolAddress.toHex()
+  let positionId = userAddress.toHex() + "-" + PROTOCOL_VELODROME_V2 + "-" + poolAddress.toHex()
   return Bytes.fromUTF8(positionId)
 }
 
@@ -71,7 +71,7 @@ export function refreshVeloV2PositionWithEventAmounts(
     pp = new ProtocolPosition(positionId)
     pp.agent = userAddress
     pp.service = userAddress // Link to service
-    pp.protocol = "velodrome-v2"
+    pp.protocol = PROTOCOL_VELODROME_V2
     pp.pool = poolAddress
     pp.isActive = true
     pp.tokenId = BigInt.zero() // VelodromeV2 doesn't use tokenIds
@@ -83,9 +83,8 @@ export function refreshVeloV2PositionWithEventAmounts(
         serviceEntity.positionIds = []
       }
       let positionIds = serviceEntity.positionIds
-      let positionIdString = positionId.toString()
-      if (positionIds.indexOf(positionIdString) == -1) {
-        positionIds.push(positionIdString)
+      if (positionIds.indexOf(positionId) == -1) {
+        positionIds.push(positionId)
         serviceEntity.positionIds = positionIds
         serviceEntity.save()
       }
@@ -247,7 +246,7 @@ export function refreshVeloV2Position(
     pp = new ProtocolPosition(positionId)
     pp.agent = userAddress
     pp.service = userAddress // Link to service
-    pp.protocol = "velodrome-v2"
+    pp.protocol = PROTOCOL_VELODROME_V2
     pp.pool = poolAddress
     pp.isActive = true
     pp.tokenId = BigInt.zero() // VelodromeV2 doesn't use tokenIds
@@ -259,9 +258,8 @@ export function refreshVeloV2Position(
         serviceEntity.positionIds = []
       }
       let positionIds = serviceEntity.positionIds
-      let positionIdString = positionId.toString()
-      if (positionIds.indexOf(positionIdString) == -1) {
-        positionIds.push(positionIdString)
+      if (positionIds.indexOf(positionId) == -1) {
+        positionIds.push(positionId)
         serviceEntity.positionIds = positionIds
         serviceEntity.save()
       }

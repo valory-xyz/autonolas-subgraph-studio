@@ -22,7 +22,7 @@ type Service @entity(immutable: false) {
   
   # Position tracking
   positions: [ProtocolPosition!]! @derivedFrom(field: "service")
-  positionIds: [String!]!             # Array of position IDs for iteration
+  positionIds: [Bytes!]!             # Array of position IDs for iteration
 }
 
 type ServiceRegistration @entity(immutable: false) {
@@ -55,6 +55,8 @@ type FundingBalance @entity(immutable: false) {
   netUsd: BigDecimal!
   firstInTimestamp: BigInt!
   lastChangeTs: BigInt!
+  fundingInTxs: [String!]!      # Array of funding in transaction hashes
+  fundingOutTxs: [String!]!     # Array of funding out transaction hashes
 }
 
 type ProtocolPosition @entity(immutable: false) {
@@ -161,9 +163,10 @@ type AgentPortfolio @entity(immutable: false) {
   service: Service!             # Link to service
   
   # Portfolio Values
-  finalValue: BigDecimal!       # Total current value (positions + uninvested + withdrawn)
+  finalValue: BigDecimal!       # Total current value (positions + uninvested + withdrawn) - with rewards
+  finalValueWithoutRewards: BigDecimal!  # Total current value without rewards
   initialValue: BigDecimal!     # Initial investment from FundingBalance
-  positionsValue: BigDecimal!   # Current value of all active positions
+  positionsValue: BigDecimal!   # Current value of all active positions (with rewards)
   uninvestedValue: BigDecimal!  # Token balances in safe
   totalWithdrawnUsd: BigDecimal! # Total amount withdrawn to EOAs
   
@@ -232,9 +235,6 @@ type AgentPortfolioSnapshot @entity(immutable: true) {
   block: BigInt!                # Block number
   totalPositions: Int!          
   totalClosedPositions: Int!    
-  
-  # Position details at snapshot time
-  positionIds: [String!]        # Array of ProtocolPosition IDs that were active at snapshot
 }
 
 type TokenBalance @entity(immutable: false) {

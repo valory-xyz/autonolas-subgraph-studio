@@ -58,6 +58,12 @@ export const OPTIMUS_AGENT_ID = BigInt.fromI32(40)
 // Balancer V2 configuration
 export const BALANCER_VAULT = Address.fromString("0xBA12222222228d8Ba445958a75a0704d566BF2C8")
 
+// PROTOCOL NAME CONSTANTS
+export const PROTOCOL_BALANCER = "balancer"
+export const PROTOCOL_VELODROME_V2 = "velodrome-v2"
+export const PROTOCOL_VELODROME_V3 = "velodrome-v3"
+export const PROTOCOL_UNISWAP_V3 = "uniswap-v3"
+
 // Excluded service IDs - these are testing agents
 export const EXCLUDED_SERVICE_IDS: BigInt[] = [
   BigInt.fromI32(29),
