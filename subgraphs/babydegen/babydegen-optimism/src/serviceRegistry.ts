@@ -81,19 +81,34 @@ export function handleCreateMultisigWithAgents(event: CreateMultisigWithAgents):
     return // Not an Optimus service
   }
   
-  // Check if we already have a service for this serviceId
-  let serviceIndex = ServiceIndex.load(tempId)
-  if (serviceIndex != null) {
-    // Mark old service as inactive
-    let oldService = Service.load(serviceIndex.currentServiceSafe)
-    if (oldService != null) {
-      oldService.isActive = false
-      oldService.save()
+  // Check if service already exists with this multisig address
+  let existingService = Service.load(multisig)
+  
+  if (existingService != null) {
+    // Service already exists - this is just an ownership update, not a new service
+    existingService.operatorSafe = registration.operatorSafe
+    existingService.latestRegistrationBlock = registration.registrationBlock
+    existingService.latestRegistrationTimestamp = registration.registrationTimestamp
+    existingService.latestRegistrationTxHash = registration.registrationTxHash
+    existingService.latestMultisigBlock = event.block.number
+    existingService.latestMultisigTimestamp = event.block.timestamp
+    existingService.latestMultisigTxHash = event.transaction.hash
+    existingService.updatedAt = event.block.timestamp
+    existingService.save()
+    
+    // Update ServiceIndex if it exists
+    let serviceIndex = ServiceIndex.load(tempId)
+    if (serviceIndex != null) {
+      serviceIndex.currentServiceSafe = multisig
+      serviceIndex.save()
     }
-  } else {
-    // Create new index
-    serviceIndex = new ServiceIndex(tempId)
-    serviceIndex.serviceId = serviceId
+    
+    log.info("SERVICE REGISTRY: Updated existing service {} with new operator {}", [
+      multisig.toHexString(),
+      registration.operatorSafe.toHexString()
+    ])
+    
+    return
   }
   
   // Create new service with multisig address as ID
@@ -120,7 +135,12 @@ export function handleCreateMultisigWithAgents(event: CreateMultisigWithAgents):
   service.updatedAt = event.block.timestamp
   service.save()
   
-  // Update index to point to new service
+  // Create or update ServiceIndex
+  let serviceIndex = ServiceIndex.load(tempId)
+  if (serviceIndex == null) {
+    serviceIndex = new ServiceIndex(tempId)
+    serviceIndex.serviceId = serviceId
+  }
   serviceIndex.currentServiceSafe = multisig
   serviceIndex.save()
   
