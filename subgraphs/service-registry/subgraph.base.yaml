@@ -61,7 +61,7 @@ templates:
         - Operator
       abis:
         - name: GnosisSafe
-          file: ./abis/GnosisSafe.json
+          file: ../../abis/GnosisSafe.json
       eventHandlers:
         - event: ExecutionSuccess(bytes32,uint256)
           handler: handleExecutionSuccess

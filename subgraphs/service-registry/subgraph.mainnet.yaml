@@ -26,7 +26,7 @@ dataSources:
         - Operator
       abis:
         - name: ServiceRegistry
-          file: ../../../abis/ServiceRegistry.json
+          file: ../../abis/ServiceRegistry.json
       eventHandlers:
         - event: CreateService(indexed uint256)
           handler: handleCreateService
@@ -62,7 +62,7 @@ templates:
         - Operator
       abis:
         - name: GnosisSafe
-          file: ../../../abis/GnosisSafe.json
+          file: ../../abis/GnosisSafe.json
       eventHandlers:
         - event: ExecutionSuccess(bytes32,uint256)
           handler: handleExecutionSuccess
