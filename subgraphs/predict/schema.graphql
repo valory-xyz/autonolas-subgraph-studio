@@ -55,6 +55,21 @@ type FixedProductMarketMakerCreation @entity (immutable: false) {
   currentAnswer: Bytes
   currentAnswerTimestamp: BigInt
   bets: [Bet!]! @derivedFrom(field: "fixedProductMarketMaker")
+  participants: [MarketParticipant!]! @derivedFrom(field: "fixedProductMarketMaker")
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+type MarketParticipant @entity (immutable: false) {
+  id: ID! # address_marketId
+  traderAgent: TraderAgent!
+  fixedProductMarketMaker: FixedProductMarketMakerCreation!
+  bets: [Bet!]!
+  totalBets: Int!
+  totalTraded: BigInt!
+  totalPayout: BigInt!
+  totalFees: BigInt!
   blockNumber: BigInt!
   blockTimestamp: BigInt!
   transactionHash: Bytes!
