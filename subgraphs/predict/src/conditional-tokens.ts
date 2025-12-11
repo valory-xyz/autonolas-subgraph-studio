@@ -1,9 +1,10 @@
+import { Bytes } from "@graphprotocol/graph-ts";
 import {
   ConditionPreparation as ConditionPreparationEvent,
   PayoutRedemption as PayoutRedemptionEvent,
 } from "../generated/ConditionalTokens/ConditionalTokens";
 import { ConditionPreparation, Question } from "../generated/schema";
-import { updateTraderAgentPayout } from "./utils";
+import { updateTraderAgentPayout, updateMarketParticipantPayout, updateGlobalPayout } from "./utils";
 
 export function handleConditionPreparation(
   event: ConditionPreparationEvent
@@ -29,4 +30,22 @@ export function handleConditionPreparation(
 
 export function handlePayoutRedemption(event: PayoutRedemptionEvent): void {
   updateTraderAgentPayout(event.params.redeemer, event.params.payout);
+  updateGlobalPayout(event.params.payout)
+
+  // Find the related market by traversing: condition → question → fixedProductMarketMaker
+  let condition = ConditionPreparation.load(event.params.conditionId.toHexString());
+  if (condition === null) {
+    return;
+  }
+
+  let question = Question.load(condition.questionId.toHexString());
+  if (question === null || question.fixedProductMarketMaker === null) {
+    return;
+  }
+
+  updateMarketParticipantPayout(
+    event.params.redeemer,
+    question.fixedProductMarketMaker as Bytes,
+    event.params.payout
+  );
 }

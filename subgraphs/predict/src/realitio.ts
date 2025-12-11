@@ -11,6 +11,7 @@ import {
   TraderAgent,
   FixedProductMarketMakerCreation,
   LogNotifyOfArbitrationRequest,
+  MarketParticipant,
 } from "../generated/schema";
 import { CREATOR_ADDRESSES, INVALID_ANSWER_HEX } from "./constants";
 import { getGlobal } from "./utils";
@@ -66,12 +67,24 @@ export function handleLogNewAnswer(event: LogNewAnswerEvent): void {
         if (bet !== null && bet.countedInTotal === false) {
           let agent = TraderAgent.load(bet.bettor);
           if (agent !== null) {
+            // Update trader agent statistic
             agent.totalTraded = agent.totalTraded.plus(bet.amount);
             agent.totalFees = agent.totalFees.plus(bet.feeAmount);
             agent.save();
+
+            // Update market participant statistic ()
+            let participantId = bet.bettor.toHexString() + "_" + fpmm.id.toHexString();
+            let participant = MarketParticipant.load(participantId);
+            if (participant != null) {
+              participant.totalTraded = participant.totalTraded.plus(bet.amount);
+              participant.totalFees = participant.totalFees.plus(bet.feeAmount);
+              participant.save();
+            }
+
             bet.countedInTotal = true;
             bet.save();
 
+            // Update global statistic
             let global = getGlobal();
             global.totalTraded = global.totalTraded.plus(bet.amount);
             global.totalFees = global.totalFees.plus(bet.feeAmount);
