@@ -44,6 +44,7 @@ export function updateMarketParticipantActivity(
     participant.totalTraded = BigInt.zero();
     participant.totalPayout = BigInt.zero();
     participant.totalFees = BigInt.zero();
+    participant.createdAt = blockTimestamp;
     participant.bets = [];
   }
   let bets = participant.bets;

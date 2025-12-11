@@ -70,6 +70,7 @@ type MarketParticipant @entity (immutable: false) {
   totalTraded: BigInt!
   totalPayout: BigInt!
   totalFees: BigInt!
+  createdAt: BigInt!
   blockNumber: BigInt!
   blockTimestamp: BigInt!
   transactionHash: Bytes!
