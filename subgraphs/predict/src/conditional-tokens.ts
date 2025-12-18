@@ -30,7 +30,6 @@ export function handleConditionPreparation(
 
 export function handlePayoutRedemption(event: PayoutRedemptionEvent): void {
   updateTraderAgentPayout(event.params.redeemer, event.params.payout);
-  updateGlobalPayout(event.params.payout)
 
   // Find the related market by traversing: condition → question → fixedProductMarketMaker
   let condition = ConditionPreparation.load(event.params.conditionId.toHexString());
@@ -42,6 +41,9 @@ export function handlePayoutRedemption(event: PayoutRedemptionEvent): void {
   if (question === null || question.fixedProductMarketMaker === null) {
     return;
   }
+
+  // Update global payouts only for our market participants
+  updateGlobalPayout( event.params.payout)
 
   updateMarketParticipantPayout(
     event.params.redeemer,
