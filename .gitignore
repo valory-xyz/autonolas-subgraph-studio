@@ -8,3 +8,6 @@ generated-l2/
 /temp-garbage
 
 /.cursor
+
+.bin/
+.latest.json

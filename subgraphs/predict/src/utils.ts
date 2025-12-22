@@ -1,10 +1,11 @@
 import { Address, BigInt, Bytes } from "@graphprotocol/graph-ts";
-import { Global, TraderAgent, MarketParticipant } from "../generated/schema";
+import { Global, TraderAgent, MarketParticipant, DailyProfitStatistic } from "../generated/schema";
+import { ONE_DAY } from "./constants";
 
-export function updateTraderAgentActivity(
-  address: Address,
-  blockTimestamp: BigInt
-): void {
+/**
+ * Track agent activity (first and latest participation) and total agent bets
+ * */
+export function updateTraderAgentActivity(address: Address, blockTimestamp: BigInt): void {
   let agent = TraderAgent.load(address);
   if (agent !== null) {
     if (agent.firstParticipation === null) {
@@ -20,10 +21,10 @@ export function updateTraderAgentActivity(
   }
 }
 
-export function updateTraderAgentPayout(
-  address: Address,
-  payout: BigInt
-): void {
+/**
+ * Track payment for market in case of won bet
+ **/
+export function updateTraderAgentPayout(address: Address, payout: BigInt): void {
   let agent = TraderAgent.load(address);
   if (agent !== null) {
     agent.totalPayout = agent.totalPayout.plus(payout);
@@ -31,8 +32,18 @@ export function updateTraderAgentPayout(
   }
 }
 
+/**
+ * Track activity of each participant of a market (all done bets)
+ * Traded and fees are updated on market settlement (log new anser)
+ * Payouts are added separately if won
+ **/
 export function updateMarketParticipantActivity(
-  trader: Address, market: Address, betId: string, blockTimestamp: BigInt, blockNumber: BigInt, txHash: Bytes
+  trader: Address,
+  market: Address,
+  betId: string,
+  blockTimestamp: BigInt,
+  blockNumber: BigInt,
+  txHash: Bytes
 ): void {
   let participantId = trader.toHexString() + "_" + market.toHexString();
   let participant = MarketParticipant.load(participantId);
@@ -57,9 +68,10 @@ export function updateMarketParticipantActivity(
   participant.save();
 }
 
-export function updateMarketParticipantPayout(
-  trader: Address, market: Bytes, payout: BigInt
-): void {
+/**
+ * Update market participant payout in case of winning
+ **/
+export function updateMarketParticipantPayout(trader: Address, market: Bytes, payout: BigInt): void {
   let participantId = trader.toHexString() + "_" + market.toHexString();
   let participant = MarketParticipant.load(participantId);
   if (participant != null) {
@@ -68,6 +80,10 @@ export function updateMarketParticipantPayout(
   }
 }
 
+/**
+ * Return global entity for updates
+ * Create new if doesn't exist
+ */
 export function getGlobal(): Global {
   let global = Global.load("");
   if (global == null) {
@@ -82,14 +98,70 @@ export function getGlobal(): Global {
   return global as Global;
 }
 
+/**
+ * Increase total bets in global entity
+ */
 export function incrementGlobalTotalBets(): void {
   let global = getGlobal();
   global.totalBets += 1;
   global.save();
 }
 
+/**
+ * Update total payout in global entity
+ * Should be used only for payouts for our markets
+ */
 export function updateGlobalPayout(payout: BigInt): void {
   let global = getGlobal();
   global.totalPayout = global.totalPayout.plus(payout);
   global.save();
+}
+
+/**
+ * Get the timestamp for the start of the day (UTC midnight)
+ */
+function getDayTimestamp(timestamp: BigInt): BigInt {
+  return timestamp.div(ONE_DAY).times(ONE_DAY);
+}
+
+export function bytesToBigInt(bytes: Bytes): BigInt {
+  let reversed = Bytes.fromUint8Array(bytes.slice().reverse());
+  return BigInt.fromUnsignedBytes(reversed);
+}
+
+/**
+ * Get daily profit entity
+ */
+export function getDailyProfitStatistic(agentAddress: Bytes, timestamp: BigInt): DailyProfitStatistic {
+  let dayTimestamp = getDayTimestamp(timestamp);
+  let id = agentAddress.toHexString() + "_" + dayTimestamp.toString();
+  let statistic = DailyProfitStatistic.load(id);
+
+  if (statistic == null) {
+    statistic = new DailyProfitStatistic(id);
+    statistic.traderAgent = agentAddress;
+    statistic.date = dayTimestamp;
+    statistic.totalBets = 0;
+    statistic.totalTraded = BigInt.zero();
+    statistic.totalFees = BigInt.zero();
+    statistic.totalPayout = BigInt.zero();
+    statistic.dailyProfit = BigInt.zero();
+
+    statistic.profitParticipants = [];
+  }
+  return statistic as DailyProfitStatistic;
+}
+
+/**
+ * add profit participant into profit statistic
+ * should be called when profit changes:
+ * - on market settlement if bets were incorrect
+ * - on payout if bets were correct
+ */
+export function addProfitParticipant(statistic: DailyProfitStatistic, marketId: Bytes): void {
+  let participants = statistic.profitParticipants;
+  if (participants.indexOf(marketId) == -1) {
+    participants.push(marketId);
+    statistic.profitParticipants = participants;
+  }
 }
