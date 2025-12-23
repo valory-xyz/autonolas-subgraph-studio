@@ -14,14 +14,11 @@ import {
   MarketParticipant,
 } from "../generated/schema";
 import { CREATOR_ADDRESSES, INVALID_ANSWER_HEX } from "./constants";
-import { getGlobal } from "./utils";
+import { addProfitParticipant, bytesToBigInt, getDailyProfitStatistic, getGlobal } from "./utils";
 
 export function handleLogNewQuestion(event: LogNewQuestionEvent): void {
   // only safe questions for our creators
-  if (
-    CREATOR_ADDRESSES.indexOf(event.params.user.toHexString().toLowerCase()) ===
-    -1
-  ) {
+  if (CREATOR_ADDRESSES.indexOf(event.params.user.toHexString().toLowerCase()) === -1) {
     return;
   }
 
@@ -64,10 +61,12 @@ export function handleLogNewAnswer(event: LogNewAnswerEvent): void {
       let bets = fpmm.bets.load();
       for (let i = 0; i < bets.length; i++) {
         let bet = bets[i];
-        if (bet !== null && bet.countedInTotal === false) {
+        if (bet === null) return;
+
+        if (bet.countedInTotal === false) {
           let agent = TraderAgent.load(bet.bettor);
           if (agent !== null) {
-            // Update trader agent statistic
+            // Update global trader agent statistic
             agent.totalTraded = agent.totalTraded.plus(bet.amount);
             agent.totalFees = agent.totalFees.plus(bet.feeAmount);
             agent.save();
@@ -84,12 +83,25 @@ export function handleLogNewAnswer(event: LogNewAnswerEvent): void {
             bet.countedInTotal = true;
             bet.save();
 
-            // Update global statistic
+            // Update global statistic across all agents
             let global = getGlobal();
             global.totalTraded = global.totalTraded.plus(bet.amount);
             global.totalFees = global.totalFees.plus(bet.feeAmount);
             global.save();
           }
+        }
+
+        // Update daily profit statistic if answer is incorrect
+        let answerBigInt = bytesToBigInt(event.params.answer);
+        if (bet.outcomeIndex != answerBigInt && bet.countedInProfit === false) {
+          let dailyStat = getDailyProfitStatistic(bet.bettor, event.block.timestamp);
+
+          let lossAmount = bet.amount.plus(bet.feeAmount);
+          dailyStat.dailyProfit = dailyStat.dailyProfit.minus(lossAmount);
+          addProfitParticipant(dailyStat, fpmm.id);
+          bet.countedInProfit = true;
+          bet.save();
+          dailyStat.save();
         }
       }
     }
@@ -104,23 +116,17 @@ export function handleLogAnswerReveal(event: LogAnswerRevealEvent): void {
     return;
   }
 
-  let questionFinalized = QuestionFinalized.load(
-    event.params.question_id.toHexString()
-  );
+  let questionFinalized = QuestionFinalized.load(event.params.question_id.toHexString());
 
   if (questionFinalized === null) {
-    questionFinalized = new QuestionFinalized(
-      event.params.question_id.toHexString()
-    );
+    questionFinalized = new QuestionFinalized(event.params.question_id.toHexString());
   }
   questionFinalized.currentAnswer = event.params.answer;
   questionFinalized.currentAnswerTimestamp = event.block.timestamp;
   questionFinalized.save();
 }
 
-export function handleLogNotifyOfArbitrationRequest(
-  event: LogNotifyOfArbitrationRequestEvent
-): void {
+export function handleLogNotifyOfArbitrationRequest(event: LogNotifyOfArbitrationRequestEvent): void {
   let question = Question.load(event.params.question_id.toHexString());
 
   if (question === null || question.fixedProductMarketMaker === null) {
@@ -128,9 +134,7 @@ export function handleLogNotifyOfArbitrationRequest(
     return;
   }
 
-  let entity = new LogNotifyOfArbitrationRequest(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  );
+  let entity = new LogNotifyOfArbitrationRequest(event.transaction.hash.concatI32(event.logIndex.toI32()));
   entity.question_id = event.params.question_id;
   entity.user = event.params.user;
 
@@ -149,9 +153,7 @@ export function handleLogFinalize(event: LogFinalizeEvent): void {
     return;
   }
 
-  let questionFinalized = new QuestionFinalized(
-    event.params.question_id.toHexString()
-  );
+  let questionFinalized = new QuestionFinalized(event.params.question_id.toHexString());
   questionFinalized.currentAnswer = event.params.answer;
   questionFinalized.currentAnswerTimestamp = event.block.timestamp;
   questionFinalized.save();

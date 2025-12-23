@@ -4,10 +4,11 @@ type TraderAgent @entity (immutable: false) {
   firstParticipation: BigInt
   lastActive: BigInt
   totalBets: Int!
-  totalTraded: BigInt!
-  totalPayout: BigInt!
-  totalFees: BigInt!
+  totalTraded: BigInt! # trades amount for settled markets (when we have answer)
+  totalPayout: BigInt! # all bets including for open markets
+  totalFees: BigInt! # fees amount for settled markets (when we have answer)
   bets: [Bet!]! @derivedFrom(field: "bettor")
+  dailyProfitStatistics: [DailyProfitStatistic!]! @derivedFrom(field: "traderAgent")
   blockNumber: BigInt!
   blockTimestamp: BigInt!
   transactionHash: Bytes!
@@ -19,9 +20,11 @@ type Bet @entity (immutable: false) {
   outcomeIndex: BigInt!
   amount: BigInt!
   feeAmount: BigInt!
+  countedInProfit: Boolean!
   countedInTotal: Boolean
   fixedProductMarketMaker: FixedProductMarketMakerCreation
-  timestamp: BigInt! 
+  dailyStatistic: DailyProfitStatistic
+  timestamp: BigInt!
 }
 
 type CreatorAgent @entity (immutable: false) {
@@ -80,10 +83,10 @@ type Global @entity (immutable: false) {
   id: ID!
   totalTraderAgents: Int!
   totalActiveTraderAgents: Int!
-  totalBets: Int!
+  totalBets: Int! # all bets including for open markets
   totalPayout: BigInt!
-  totalTraded: BigInt!
-  totalFees: BigInt!
+  totalTraded: BigInt! # trades amount for settled markets (when we have answer)
+  totalFees: BigInt! # fees amount for settled markets (when we have answer)
 }
 
 type LogSetQuestionFee @entity(immutable: true) {
@@ -132,4 +135,25 @@ type LogNotifyOfArbitrationRequest @entity (immutable: true) {
   blockNumber: BigInt!
   blockTimestamp: BigInt!
   transactionHash: Bytes!
+}
+
+type DailyProfitStatistic @entity(immutable: false) {
+  id: ID! # traderAgent_address + "_" + day_timestamp
+  traderAgent: TraderAgent!
+  date: BigInt! 
+  
+  # Activity of the day
+  bets: [Bet!]! @derivedFrom(field: "dailyStatistic") # Bets placed today
+  totalBets: Int! # total Bets placed today
+  totalTraded: BigInt! # total traded today, regardless of market settlement
+  totalFees: BigInt! # total fees today, regardless of market settlement
+  totalPayout: BigInt! # Payouts received today
+  
+  # Profit
+  dailyProfit: BigInt!
+  
+  # Markets participated in profit calculation today
+  # in case of Loss - markets on the day of settlement
+  # in case of Win - markets on the day of payout (can be next day after settlement)
+  profitParticipants: [FixedProductMarketMakerCreation!]!
 }
