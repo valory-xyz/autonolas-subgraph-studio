@@ -169,6 +169,7 @@ export function handleTerminateService(event: TerminateService): void {
   let service = Service.load(event.params.serviceId.toString());
   if (service != null) {
     service.agentIds = [];
+    service.multisig = null;
     service.save();
   }
 }
