@@ -104,6 +104,7 @@ function updateGlobalMetrics(event: ethereum.Event): void {
 export function handleCreateService(event: CreateService): void {
   let service = getOrCreateService(event.params.serviceId, event.block.timestamp);
   service.configHash = event.params.configHash;
+  service.state = "PreRegistration";
   service.save();
 }
 
@@ -136,6 +137,7 @@ export function handleCreateMultisig(event: CreateMultisigWithAgents): void {
   if (service != null) {
     const multisig = getOrCreateMultisig(event.params.multisig, event);
     service.multisig = multisig.id;
+    service.state = "Deployed";
     service.save();
 
     GnosisSafeTemplate.create(event.params.multisig);
@@ -169,47 +171,45 @@ export function handleTerminateService(event: TerminateService): void {
   let service = Service.load(event.params.serviceId.toString());
   if (service != null) {
     service.agentIds = [];
-    service.multisig = null;
+    service.state = "TerminatedBonded";
     service.save();
   }
 }
 
 export function handleExecutionSuccess(event: ExecutionSuccess): void {
   let multisig = Multisig.load(event.address);
-  if (multisig != null) {
-    let service = Service.load(multisig.serviceId.toString());
-    if (service != null) {
-      updateDailyActivity(service, event, multisig);
-      updateDailyUniqueAgents(event, multisig);
-      updateDailyAgentPerformance(event, multisig);
-      updateDailyActiveMultisigs(event, multisig);
-      updateGlobalMetrics(event);
-    } else {
-      log.error("Service {} not found for multisig {}", [
-        multisig.serviceId.toString(),
-        event.address.toHexString(),
-      ]);
-    }
+  if (multisig == null) {
+    return;
   }
+
+  let service = Service.load(multisig.serviceId.toString());
+  if (service == null || service.state != "Deployed") {
+    return;
+  }
+
+  updateDailyActivity(service, event, multisig);
+  updateDailyUniqueAgents(event, multisig);
+  updateDailyAgentPerformance(event, multisig);
+  updateDailyActiveMultisigs(event, multisig);
+  updateGlobalMetrics(event);
 }
 
 export function handleExecutionFromModuleSuccess(
   event: ExecutionFromModuleSuccess
 ): void {
   let multisig = Multisig.load(event.address);
-  if (multisig != null) {
-    let service = Service.load(multisig.serviceId.toString());
-    if (service != null) {
-      updateDailyActivity(service, event, multisig);
-      updateDailyUniqueAgents(event, multisig);
-      updateDailyAgentPerformance(event, multisig);
-      updateDailyActiveMultisigs(event, multisig);
-      updateGlobalMetrics(event);
-    } else {
-      log.error("Service {} not found for multisig {}", [
-        multisig.serviceId.toString(),
-        event.address.toHexString(),
-      ]);
-    }
+  if (multisig == null) {
+    return;
   }
+
+  let service = Service.load(multisig.serviceId.toString());
+  if (service == null || service.state != "Deployed") {
+    return;
+  }
+
+  updateDailyActivity(service, event, multisig);
+  updateDailyUniqueAgents(event, multisig);
+  updateDailyAgentPerformance(event, multisig);
+  updateDailyActiveMultisigs(event, multisig);
+  updateGlobalMetrics(event);
 }
