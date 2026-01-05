@@ -10,7 +10,7 @@ dataSources:
     source:
       address: "0x9338b5153AE39BB89f50468E608eD9d764B755fD"
       abi: ServiceRegistryL2
-      startBlock: 27871084
+      startBlock: 43967678
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -30,7 +30,7 @@ dataSources:
     source:
       address: "0xCeAfDD6bc0bEF976fdCd1112955828E00543c0Ce"
       abi: ConditionalTokens
-      startBlock: 28900000
+      startBlock: 43967678
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -54,7 +54,7 @@ dataSources:
     source:
       address: "0x9083A2B699c0a4AD06F63580BDE2635d26a3eeF0"
       abi: FPMMDeterministicFactory
-      startBlock: 28900000
+      startBlock: 43967678
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -79,7 +79,7 @@ dataSources:
     source:
       address: "0x79e32aE03fb27B07C89c0c568F80287C01ca2E57"
       abi: Realitio
-      startBlock: 28900000
+      startBlock: 43967678
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -128,3 +128,8 @@ templates:
         - event: FPMMSell(indexed address,uint256,uint256,indexed uint256,uint256)
           handler: handleSell
       file: ./src/FixedProductMarketMakerMapping.ts
+features:
+  - grafting
+graft:
+  base: QmVtjmVsJ4jnTcx5Qi3Yaant8U3Mxj64bjAYpXSMfKiJqn
+  block: 43967677

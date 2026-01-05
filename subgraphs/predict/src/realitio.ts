@@ -1,3 +1,4 @@
+import { BigInt } from "@graphprotocol/graph-ts";
 import {
   LogNewQuestion as LogNewQuestionEvent,
   LogNewAnswer as LogNewAnswerEvent,
@@ -58,11 +59,22 @@ export function handleLogNewAnswer(event: LogNewAnswerEvent): void {
       fpmm.currentAnswerTimestamp = event.block.timestamp;
       fpmm.save();
 
+      // Pre-compute values outside the loop to avoid redundant calculations
+      let answerBigInt = bytesToBigInt(event.params.answer);
+      let global = getGlobal();
+      let globalTradedDelta = BigInt.zero();
+      let globalFeesDelta = BigInt.zero();
+      let fpmmIdHex = fpmm.id.toHexString();
+
       let bets = fpmm.bets.load();
       for (let i = 0; i < bets.length; i++) {
         let bet = bets[i];
-        if (bet === null) return;
-
+        if (bet === null) continue;
+        
+        // use boolean to track if bet was modified to save it in the end
+        // needed for optimization in case of too many bets
+        let betModified = false;
+        
         if (bet.countedInTotal === false) {
           let agent = TraderAgent.load(bet.bettor);
           if (agent !== null) {
@@ -71,8 +83,8 @@ export function handleLogNewAnswer(event: LogNewAnswerEvent): void {
             agent.totalFees = agent.totalFees.plus(bet.feeAmount);
             agent.save();
 
-            // Update market participant statistic ()
-            let participantId = bet.bettor.toHexString() + "_" + fpmm.id.toHexString();
+            // Update market participant statistic
+            let participantId = bet.bettor.toHexString() + "_" + fpmmIdHex;
             let participant = MarketParticipant.load(participantId);
             if (participant != null) {
               participant.totalTraded = participant.totalTraded.plus(bet.amount);
@@ -81,28 +93,38 @@ export function handleLogNewAnswer(event: LogNewAnswerEvent): void {
             }
 
             bet.countedInTotal = true;
-            bet.save();
+            betModified = true;
 
-            // Update global statistic across all agents
-            let global = getGlobal();
-            global.totalTraded = global.totalTraded.plus(bet.amount);
-            global.totalFees = global.totalFees.plus(bet.feeAmount);
-            global.save();
+            // Accumulate global deltas
+            globalTradedDelta = globalTradedDelta.plus(bet.amount);
+            globalFeesDelta = globalFeesDelta.plus(bet.feeAmount);
           }
         }
 
         // Update daily profit statistic if answer is incorrect
-        let answerBigInt = bytesToBigInt(event.params.answer);
-        if (bet.outcomeIndex != answerBigInt && bet.countedInProfit === false) {
-          let dailyStat = getDailyProfitStatistic(bet.bettor, event.block.timestamp);
-
-          let lossAmount = bet.amount.plus(bet.feeAmount);
-          dailyStat.dailyProfit = dailyStat.dailyProfit.minus(lossAmount);
-          addProfitParticipant(dailyStat, fpmm.id);
-          bet.countedInProfit = true;
-          bet.save();
-          dailyStat.save();
+        if (bet.countedInProfit === false) {
+          if (!bet.outcomeIndex.equals(answerBigInt)) {
+            let dailyStat = getDailyProfitStatistic(bet.bettor, event.block.timestamp);
+            let lossAmount = bet.amount.plus(bet.feeAmount);
+            dailyStat.dailyProfit = dailyStat.dailyProfit.minus(lossAmount);
+            addProfitParticipant(dailyStat, fpmm.id);
+            bet.countedInProfit = true;
+            betModified = true;
+            dailyStat.save();
+          }
         }
+
+        // Save bet once at the end if it was modified
+        if (betModified) {
+          bet.save();
+        }
+      }
+
+      // Update global statistics once at the end
+      if (!globalTradedDelta.equals(BigInt.zero()) || !globalFeesDelta.equals(BigInt.zero())) {
+        global.totalTraded = global.totalTraded.plus(globalTradedDelta);
+        global.totalFees = global.totalFees.plus(globalFeesDelta);
+        global.save();
       }
     }
   }
