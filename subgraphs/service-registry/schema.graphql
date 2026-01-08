@@ -1,9 +1,18 @@
+enum ServiceState {
+  PreRegistration
+  ActiveRegistration
+  FinishedRegistration
+  Deployed
+  TerminatedBonded
+}
+
 type Service @entity(immutable: false) {
   id: ID! # service ID
   multisig: Bytes
   agentIds: [Int!]!
   creationTimestamp: BigInt!
   configHash: Bytes
+  state: ServiceState!
 }
 
 type AgentRegistration @entity(immutable: false) {

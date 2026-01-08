@@ -30,6 +30,7 @@ export function getOrCreateService(
     service = new Service(serviceId.toString());
     service.agentIds = [];
     service.creationTimestamp = timestamp;
+    service.state = "PreRegistration";
     service.save();
   }
   return service;
