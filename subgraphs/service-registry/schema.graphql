@@ -4,6 +4,7 @@ type Service @entity(immutable: false) {
   agentIds: [Int!]!
   creationTimestamp: BigInt!
   configHash: Bytes
+  creator: Creator
 }
 
 type AgentRegistration @entity(immutable: false) {
@@ -21,6 +22,12 @@ type Multisig @entity(immutable: false) {
   txHash: Bytes!
   agentIds: [Int!]!
 }
+
+type Creator @entity(immutable: false) {
+  id: Bytes! # creator address
+  services: [Service!]! @derivedFrom(field: "creator")
+}
+
 type DailyServiceActivity @entity(immutable: false) {
   id: ID!
   service: Service!
