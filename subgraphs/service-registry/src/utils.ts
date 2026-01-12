@@ -166,10 +166,10 @@ export function updateUniqueOperators(operatorAddress: Bytes): void {
   }
 }
 
-export function getOrCreateCreator(creatorAddress: Bytes): Creator {
-  let creator = Creator.load(creatorAddress);
+export function getOrCreateServiceCreator(address: Bytes): Creator {
+  let creator = Creator.load(address);
   if (creator == null) {
-    creator = new Creator(creatorAddress);
+    creator = new Creator(address);
     creator.save();
   }
   return creator;

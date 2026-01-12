@@ -26,7 +26,7 @@ import {
   createOrUpdateAgentRegistration,
   getMostRecentAgentId,
   updateUniqueOperators,
-  getOrCreateCreator,
+  getOrCreateServiceCreator,
 } from './utils';
 
 function updateDailyAgentPerformance(
@@ -136,7 +136,7 @@ export function handleCreateMultisig(event: CreateMultisigWithAgents): void {
 
   if (service != null) {
     // Set creator's relationship with the service
-    const creator = getOrCreateCreator(event.transaction.from);
+    const creator = getOrCreateServiceCreator(event.transaction.from);
     service.creator = creator.id;
 
     const multisig = getOrCreateMultisig(event.params.multisig, event);
