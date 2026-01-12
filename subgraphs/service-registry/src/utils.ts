@@ -1,7 +1,8 @@
-import { BigInt, ethereum, Bytes } from "@graphprotocol/graph-ts";
+import { BigInt, ethereum, Bytes } from '@graphprotocol/graph-ts';
 import {
   AgentPerformance,
   AgentRegistration,
+  Creator,
   DailyActiveMultisig,
   DailyActiveMultisigs,
   DailyAgentMultisig,
@@ -13,7 +14,7 @@ import {
   Multisig,
   Service,
   Operator,
-} from "../generated/schema";
+} from '../generated/schema';
 
 const ONE_DAY = BigInt.fromI32(86400);
 
@@ -57,9 +58,9 @@ export function getOrCreateDailyServiceActivity(
   event: ethereum.Event
 ): DailyServiceActivity {
   const dayTimestamp = getDayTimestamp(event);
-  const id = "day-"
+  const id = 'day-'
     .concat(dayTimestamp.toString())
-    .concat("-service-")
+    .concat('-service-')
     .concat(serviceId);
   let dailyActivity = DailyServiceActivity.load(id);
   if (dailyActivity == null) {
@@ -76,7 +77,7 @@ export function getOrCreateDailyUniqueAgents(
   event: ethereum.Event
 ): DailyUniqueAgents {
   const dayTimestamp = getDayTimestamp(event);
-  const id = "day-".concat(dayTimestamp.toString());
+  const id = 'day-'.concat(dayTimestamp.toString());
   let dailyUniqueAgents = DailyUniqueAgents.load(id);
   if (dailyUniqueAgents == null) {
     dailyUniqueAgents = new DailyUniqueAgents(id);
@@ -92,9 +93,9 @@ export function getOrCreateDailyAgentPerformance(
   agentId: i32
 ): DailyAgentPerformance {
   const dayTimestamp = getDayTimestamp(event);
-  const id = "day-"
+  const id = 'day-'
     .concat(dayTimestamp.toString())
-    .concat("-agent-")
+    .concat('-agent-')
     .concat(agentId.toString());
   let entity = DailyAgentPerformance.load(id);
   if (entity == null) {
@@ -112,7 +113,7 @@ export function getOrCreateDailyActiveMultisigs(
   event: ethereum.Event
 ): DailyActiveMultisigs {
   const dayTimestamp = getDayTimestamp(event);
-  const dailyId = "day-" + dayTimestamp.toString();
+  const dailyId = 'day-' + dayTimestamp.toString();
   let dailyEntity = DailyActiveMultisigs.load(dailyId);
   if (dailyEntity == null) {
     dailyEntity = new DailyActiveMultisigs(dailyId);
@@ -124,9 +125,9 @@ export function getOrCreateDailyActiveMultisigs(
 }
 
 export function getGlobal(): Global {
-  let global = Global.load("");
+  let global = Global.load('');
   if (global == null) {
-    global = new Global("");
+    global = new Global('');
     global.txCount = BigInt.fromI32(0);
     global.lastUpdated = BigInt.fromI32(0);
     global.totalOperators = 0;
@@ -135,9 +136,7 @@ export function getGlobal(): Global {
   return global;
 }
 
-export function getOrCreateAgentPerformance(
-  agentId: i32
-): AgentPerformance {
+export function getOrCreateAgentPerformance(agentId: i32): AgentPerformance {
   let agent = AgentPerformance.load(agentId.toString());
   if (agent == null) {
     agent = new AgentPerformance(agentId.toString());
@@ -167,6 +166,15 @@ export function updateUniqueOperators(operatorAddress: Bytes): void {
   }
 }
 
+export function getOrCreateCreator(creatorAddress: Bytes): Creator {
+  let creator = Creator.load(creatorAddress);
+  if (creator == null) {
+    creator = new Creator(creatorAddress);
+    creator.save();
+  }
+  return creator;
+}
+
 export function createDailyUniqueAgent(
   dailyUniqueAgents: DailyUniqueAgents,
   agent: AgentPerformance
@@ -174,9 +182,7 @@ export function createDailyUniqueAgent(
   // Links an agent to the daily unique agents list for deduplication
   // Ensures each agent is counted only once per day, regardless of how many transactions they made
   // Updates the daily unique agent count automatically
-  const id = dailyUniqueAgents.id
-    .concat("-")
-    .concat(agent.id);
+  const id = dailyUniqueAgents.id.concat('-').concat(agent.id);
   let dailyUniqueAgent = DailyUniqueAgent.load(id);
   if (dailyUniqueAgent == null) {
     dailyUniqueAgent = new DailyUniqueAgent(id);
@@ -197,7 +203,7 @@ export function createDailyAgentMultisig(
   // Example: Agent 40 worked with Multisig A and B today, so we create 2 links
   // Used for agent performance analytics: "How many different multisigs did this agent work with?"
   const id = dailyAgentPerformance.id
-    .concat("-")
+    .concat('-')
     .concat(multisig.id.toHexString());
   let dailyAgentMultisig = DailyAgentMultisig.load(id);
   if (dailyAgentMultisig == null) {
@@ -220,7 +226,7 @@ export function createDailyActiveMultisig(
   // Example: Today Multisig A and B were active, regardless of which agents used them
   // Used for system analytics: "How many total multisigs were active today?"
   const id = dailyActiveMultisigs.id
-    .concat("-")
+    .concat('-')
     .concat(multisig.id.toHexString());
   let dailyActiveMultisig = DailyActiveMultisig.load(id);
   if (dailyActiveMultisig == null) {
@@ -239,7 +245,7 @@ export function createOrUpdateAgentRegistration(
   agentId: i32,
   timestamp: BigInt
 ): void {
-  const id = serviceId.toString().concat("-").concat(agentId.toString());
+  const id = serviceId.toString().concat('-').concat(agentId.toString());
   let registration = AgentRegistration.load(id);
   if (registration == null) {
     registration = new AgentRegistration(id);
@@ -268,7 +274,7 @@ export function getMostRecentAgentId(
     const agentId = agentIds[i];
     const registrationId = serviceId
       .toString()
-      .concat("-")
+      .concat('-')
       .concat(agentId.toString());
     const registration = AgentRegistration.load(registrationId);
 

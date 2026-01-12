@@ -1,19 +1,16 @@
-import { BigInt, ethereum, log } from "@graphprotocol/graph-ts";
+import { BigInt, ethereum, log } from '@graphprotocol/graph-ts';
 import {
   CreateMultisigWithAgents,
   CreateService,
   RegisterInstance,
   TerminateService,
-} from "../generated/ServiceRegistry/ServiceRegistry";
+} from '../generated/ServiceRegistry/ServiceRegistry';
 import {
   ExecutionSuccess,
   ExecutionFromModuleSuccess,
-} from "../generated/templates/GnosisSafe/GnosisSafe";
-import {
-  Multisig,
-  Service,
-} from "../generated/schema";
-import { GnosisSafe as GnosisSafeTemplate } from "../generated/templates";
+} from '../generated/templates/GnosisSafe/GnosisSafe';
+import { Multisig, Service } from '../generated/schema';
+import { GnosisSafe as GnosisSafeTemplate } from '../generated/templates';
 import {
   getOrCreateService,
   getOrCreateMultisig,
@@ -29,7 +26,8 @@ import {
   createOrUpdateAgentRegistration,
   getMostRecentAgentId,
   updateUniqueOperators,
-} from "./utils";
+  getOrCreateCreator,
+} from './utils';
 
 function updateDailyAgentPerformance(
   event: ethereum.Event,
@@ -44,7 +42,7 @@ function updateDailyAgentPerformance(
     // This prevents cross-agent contamination
     if (entity.agentId != agentId) {
       log.error(
-        "CRITICAL BUG: Agent ID mismatch! Entity {} has agentId {} but expected {}",
+        'CRITICAL BUG: Agent ID mismatch! Entity {} has agentId {} but expected {}',
         [entity.id, entity.agentId.toString(), agentId.toString()]
       );
       // Skip this update to prevent data corruption
@@ -132,6 +130,10 @@ export function handleCreateMultisig(event: CreateMultisigWithAgents): void {
   let service = Service.load(event.params.serviceId.toString());
 
   if (service != null) {
+    // Set creator's relationship with the service
+    const creator = getOrCreateCreator(event.transaction.from);
+    service.creator = creator.id;
+
     const multisig = getOrCreateMultisig(event.params.multisig, event);
     service.multisig = multisig.id;
     service.save();
@@ -153,7 +155,7 @@ export function handleCreateMultisig(event: CreateMultisigWithAgents): void {
       multisig.agentIds = [mostRecentAgentId];
     } else {
       // Fallback to existing logic if no agent found
-      log.warning("No recent agent found for service {}, using all agents", [
+      log.warning('No recent agent found for service {}, using all agents', [
         event.params.serviceId.toString(),
       ]);
       multisig.agentIds = service.agentIds;
@@ -167,6 +169,8 @@ export function handleTerminateService(event: TerminateService): void {
   let service = Service.load(event.params.serviceId.toString());
   if (service != null) {
     service.agentIds = [];
+    service.multisig = null;
+    service.creator = null;
     service.save();
   }
 }
@@ -182,7 +186,7 @@ export function handleExecutionSuccess(event: ExecutionSuccess): void {
       updateDailyActiveMultisigs(event, multisig);
       updateGlobalMetrics(event);
     } else {
-      log.error("Service {} not found for multisig {}", [
+      log.error('Service {} not found for multisig {}', [
         multisig.serviceId.toString(),
         event.address.toHexString(),
       ]);
@@ -203,7 +207,7 @@ export function handleExecutionFromModuleSuccess(
       updateDailyActiveMultisigs(event, multisig);
       updateGlobalMetrics(event);
     } else {
-      log.error("Service {} not found for multisig {}", [
+      log.error('Service {} not found for multisig {}', [
         multisig.serviceId.toString(),
         event.address.toHexString(),
       ]);
