@@ -120,7 +120,7 @@ export function updateGlobalPayout(payout: BigInt): void {
 /**
  * Get the timestamp for the start of the day (UTC midnight)
  */
-function getDayTimestamp(timestamp: BigInt): BigInt {
+export function getDayTimestamp(timestamp: BigInt): BigInt {
   return timestamp.div(ONE_DAY).times(ONE_DAY);
 }
 
@@ -163,5 +163,14 @@ export function addProfitParticipant(statistic: DailyProfitStatistic, marketId: 
   if (participants.indexOf(marketId) == -1) {
     participants.push(marketId);
     statistic.profitParticipants = participants;
+  }
+}
+
+// Helper for saving entities in sets
+export function saveMapValues<T>(map: Map<string, T>): void {
+  let values = map.values();
+  for (let i = 0; i < values.length; i++) {
+    // @ts-ignore - Graph-cli entities have a .save() method
+    values[i].save();
   }
 }

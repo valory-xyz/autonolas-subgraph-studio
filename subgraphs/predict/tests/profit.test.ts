@@ -211,4 +211,46 @@ describe("Profit Chart Integration", () => {
     assert.fieldEquals("DailyProfitStatistic", day5Id, "dailyProfit", "650");
     assert.fieldEquals("DailyProfitStatistic", day5Id, "profitParticipants", "[" + MARKET_A.toHexString() + "]");
   });
+
+  test("Edge Case: Multiple losing bets in one market resolution should only create ONE DailyProfitStatistic", () => {
+    setupMarket(MARKET_LOST, MARKET_LOST.toHexString());
+
+    // Place 3 DIFFERENT bets from the SAME agent in the SAME market
+    // Use different logIndexes (the last param) to ensure they are unique bets
+    handleBuy(createBuyEvent(AGENT, BigInt.fromI32(100), BigInt.fromI32(10), ANSWER_0, MARKET_LOST, START_TS, 0));
+    handleBuy(createBuyEvent(AGENT, BigInt.fromI32(100), BigInt.fromI32(10), ANSWER_0, MARKET_LOST, START_TS, 1));
+    handleBuy(createBuyEvent(AGENT, BigInt.fromI32(100), BigInt.fromI32(10), ANSWER_0, MARKET_LOST, START_TS, 2));
+
+    // Resolve market (this triggers the loop over all 3 bets)
+    let day3TS = START_TS.plus(BigInt.fromI32(DAY * 2));
+    handleLogNewAnswer(createNewAnswerEvent(MARKET_LOST, ANSWER_1_HEX, day3TS));
+
+    let day3Id = AGENT.toHexString() + "_" + NORMALIZED_TS.plus(BigInt.fromI32(DAY * 2)).toString();
+    
+    // This is the key check: If the bug exists, Matchstick *might* still pass, 
+    // but in production, this is where the duplication happened.
+    assert.fieldEquals("DailyProfitStatistic", day3Id, "dailyProfit", "-330");
+  });
+
+  test("Aggregation: Two different markets resolving on the same day for same agent", () => {
+    // Use the address as the ID string to match your setupMarket logic
+    let qIdA = MARKET_WON.toHexString();
+    let qIdB = MARKET_LOST.toHexString();
+    
+    setupMarket(MARKET_WON, qIdA);
+    setupMarket(MARKET_LOST, qIdB);
+
+    handleBuy(createBuyEvent(AGENT, BigInt.fromI32(1000), BigInt.fromI32(100), ANSWER_0, MARKET_WON, START_TS, 0));
+    handleBuy(createBuyEvent(AGENT, BigInt.fromI32(2000), BigInt.fromI32(200), ANSWER_0, MARKET_LOST, START_TS, 1));
+
+    let day3TS = START_TS.plus(BigInt.fromI32(DAY * 2));
+    
+    // IMPORTANT: Pass the address as Bytes so toHexString() inside the handler works
+    handleLogNewAnswer(createNewAnswerEvent(Bytes.fromUint8Array(MARKET_WON), ANSWER_1_HEX, day3TS));
+    handleLogNewAnswer(createNewAnswerEvent(Bytes.fromUint8Array(MARKET_LOST), ANSWER_1_HEX, day3TS));
+
+    let day3Id = AGENT.toHexString() + "_" + NORMALIZED_TS.plus(BigInt.fromI32(DAY * 2)).toString();
+
+    assert.fieldEquals("DailyProfitStatistic", day3Id, "dailyProfit", "-3300");
+});
 });
