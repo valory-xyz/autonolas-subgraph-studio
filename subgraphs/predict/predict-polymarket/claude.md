@@ -180,7 +180,7 @@ List all registered agents.
 
 ```graphql
 {
-  global(id: "1") {
+  global(id: "") {
     totalTraderAgents
     totalActiveTraderAgents
     totalBets

@@ -58,7 +58,7 @@ Track an individual agent's performance.
 ### Global Statistics
 ```graphql
 {
-  global(id: "1") {
+  global(id: "") {
     totalTraderAgents
     totalActiveTraderAgents
     totalBets
