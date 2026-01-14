@@ -1,255 +1,107 @@
-# Predict Subgraph
+# Autonolas Predict Subgraph
 
-This subgraph tracks prediction markets and trading activity on Gnosis Chain, specifically monitoring the OLAS prediction market ecosystem. It indexes events from prediction market contracts, question/answer systems, and trading activities to provide comprehensive analytics for prediction market participants.
+A streamlined GraphQL API for tracking prediction markets and Autonolas agent performance on Gnosis Chain.
 
-## Overview
+## Core Business Rules
 
-The predict subgraph provides real-time indexing of prediction market activities, tracking:
+1.  **Selective Tracking**: 
+    * **Agents**: Only tracks agents registered through the `ServiceRegistryL2` contract.
+    * **Markets**: Only indexes binary markets created by whitelisted creator agents.
+2.  **Market Lifecycle**: Markets are typically open for **4 days**. Payouts generally occur **24+ hours** after closing.
+3.  **Accounting & Statistics**:
+    * **Settlement-Based Totals**: Global and agent `totalTraded` and `totalFees` are updated **only when a market closes** (settles), not at the time of the bet.
+    * **Profit Attribution**:
+        * **Losses** are recorded on the **market settlement day** (for all incorrect bets).
+        * **Wins** are recorded on the **payout redemption day**.
+4.  **No Arbitration / Single Answer**: We assume a simplified oracle flow with **no arbitration**. The subgraph expects `LogNewAnswer` to occur only once per question. Events like `LogAnswerReveal` or `LogNotifyOfArbitrationRequest` are not expected, and tracked only for debugging.
+5.  **Invalid Markets**: If a market is closed with an "Invalid" answer from the oracle, it is treated as a settlement. Because the invalid answer will not match the agents' `outcomeIndex`, spends (amount + fees) are automatically deducted as losses on the market settlement day.
+6.  **Profit Participants & Fee Analysis**: The `DailyProfitStatistic` entity maintains a list of `profitParticipants` (market IDs). This allows for granular downstream analysis, such as calculating **Mech fees** separately by correlating these market IDs with their titles or external metadata.
 
-- **Prediction Market Creation**: Fixed Product Market Maker (FPMM) markets created by authorized agents
-- **Trading Activity**: Buy/sell transactions and bet placements
-- **Question Management**: Realitio question creation, answering, and finalization
-- **Agent Analytics**: Trader and creator agent performance metrics
-- **Market Outcomes**: Final answers and payout distributions
+---
 
-## Data Sources
+## Primary Entities
 
-The subgraph monitors multiple contracts on Gnosis Chain:
+### TraderAgent
+Represents an Autonolas trading agent. It tracks cumulative performance metrics.
+* `totalTraded` / `totalFees`: Volume/Fees for **settled** markets only.
+* `totalPayout`: All xDAI reclaimed by the agent via redemptions.
 
-### Core Contracts
-- **ServiceRegistryL2** (`0x9338b5153AE39BB89f50468E608eD9d764B755fD`)
-  - Tracks agent creation and multisig setups
-  - Start Block: 27871084
+### Bet
+An individual trade (Buy or Sell).
+* `amount`: Positive for buys, negative for sells.
+* `countedInTotal`: Flag ensuring volume is added to totals only once (at settlement).
+* `countedInProfit`: Flag ensuring PnL impact is processed only once (either at settlement or payout).
 
-- **ConditionalTokens** (`0xCeAfDD6bc0bEF976fdCd1112955828E00543c0Ce`)
-  - Manages prediction market conditions and payouts
-  - Start Block: 28900000
+### DailyProfitStatistic
+Tracks day-to-day performance for an agent.
+* **Activity**: `totalTraded` reflects volume **placed** on that specific day.
+* **PnL**: `dailyProfit` is adjusted on the day of settlement (losses) or payout (wins).
+* **Profit Participants**: List of market IDs that contributed to the PnL on this specific date.
 
-- **FPMMDeterministicFactory** (`0x9083A2B699c0a4AD06F63580BDE2635d26a3eeF0`)
-  - Creates Fixed Product Market Maker prediction markets
-  - Start Block: 28900000
+---
 
-- **Realitio** (`0x79e32aE03fb27B07C89c0c568F80287C01ca2E57`)
-  - Handles question creation, answering, and finalization
-  - Start Block: 28900000
+## Technical Data Flow
 
-### Market Templates
-- **FixedProductMarketMaker**: Individual prediction market contracts created by the factory
+The subgraph uses two primary handlers to manage the transition from "Active Bet" to "Realized PnL":
 
-## Entities
+### 1. Market Closing (`handleLogNewAnswer`)
+Triggered when the Oracle provides the final answer.
+* **Update Totals**: It iterates through all market bets. If `countedInTotal` is false, it increments `totalTraded` and `totalFees` for the Agent and the Global state.
+* **Realize Losses**: For every **incorrect** bet (where `outcomeIndex != answer`), the cost (`amount + fee`) is subtracted from the agent's `dailyProfit` for the **settlement date**.
+* **Tracking**: The market ID is added to the day's `profitParticipants` to mark that a loss was realized for this market.
 
-### Core Market Entities
 
-#### `FixedProductMarketMakerCreation`
-Represents a prediction market with:
-- **id**: Market contract address
-- **creator**: Address that created the market
-- **conditionalTokens**: Conditional tokens contract address
-- **collateralToken**: Token used for trading
-- **conditionIds**: Array of condition identifiers
-- **question**: Human-readable question text
-- **outcomes**: Array of possible outcome options
-- **fee**: Trading fee percentage
-- **currentAnswer**: Final resolved answer
-- **currentAnswerTimestamp**: When the answer was finalized
 
-#### `Question`
-Represents a prediction question:
-- **id**: Question identifier
-- **question**: Full question text
-- **currentAnswer**: Resolved answer
-- **currentAnswerTimestamp**: Answer timestamp
-- **fixedProductMarketMaker**: Associated market contract
+### 2. Payout Redemption (`handlePayoutRedemption`)
+Triggered when an agent claims winnings.
+* **Net Profit Calculation**: The subgraph identifies the costs (`amount + fee`) of the winning bets that haven't been "counted in profit" yet.
+* **Update PnL**: `Profit = Payout - TotalCosts`. This net value is added to the agent's `dailyProfit` on the **redemption date**.
+* **Tracking**: The market ID is added to the day's `profitParticipants` to mark that a win was realized for this market.
 
-### Trading Entities
+---
 
-#### `TraderAgent`
-Represents a trading agent with performance metrics:
-- **id**: Agent address
-- **serviceId**: Associated service identifier
-- **firstParticipation**: First trading activity timestamp
-- **lastActive**: Most recent activity timestamp
-- **totalBets**: Number of bets placed
-- **totalTraded**: Total volume traded
-- **totalPayout**: Total winnings received
-- **totalFees**: Total fees paid
+## Common Queries
 
-#### `Bet`
-Individual trading transactions:
-- **id**: Unique bet identifier
-- **bettor**: Trader agent address
-- **outcomeIndex**: Selected outcome index
-- **amount**: Bet amount (positive for buy, negative for sell)
-- **feeAmount**: Fee paid for the transaction
-- **countedInTotal**: Whether counted in global totals
-- **fixedProductMarketMaker**: Associated market
-- **timestamp**: Transaction timestamp
-
-### Creator Entities
-
-#### `CreatorAgent`
-Represents market creators:
-- **id**: Creator address
-- **totalQuestions**: Number of markets created
-- **blockNumber/blockTimestamp**: Creation details
-
-### Event Entities
-
-#### Market Lifecycle Events
-- `ConditionPreparation`: When a prediction condition is prepared
-- `PayoutRedemption`: When payouts are redeemed
-
-#### Question Management Events
-- `LogNewQuestion`: New question creation
-- `LogNewAnswer`: Answer submission
-- `QuestionFinalized`: Question finalization
-- `LogNotifyOfArbitrationRequest`: Arbitration requests
-
-#### Trading Events
-- `FPMMBuy`: Market buy transactions
-- `FPMMSell`: Market sell transactions
-
-### Global Analytics
-
-#### `Global`
-Aggregate statistics across all markets:
-- **totalTraderAgents**: Total number of trading agents
-- **totalActiveTraderAgents**: Agents with recent activity
-- **totalBets**: Total number of bets placed
-- **totalPayout**: Total payouts distributed
-- **totalTraded**: Total trading volume
-- **totalFees**: Total fees collected
-
-## Key Features
-
-### Authorized Agent Filtering
-The subgraph only tracks markets created by authorized agents:
-- Creator addresses are whitelisted in `constants.ts`
-- Blacklisted markets are excluded from tracking
-- Ensures data quality and relevance
-
-### Real-time Trading Analytics
-- Tracks individual agent performance metrics
-- Maintains global trading statistics
-- Updates activity timestamps for agent engagement
-
-### Question-Answer Integration
-- Links prediction markets to Realitio questions
-- Tracks answer finalization and market resolution
-- Maintains question text and outcome options
-
-### Comprehensive Market Data
-- Full market lifecycle from creation to resolution
-- Trading volume and fee tracking
-- Payout distribution monitoring
-
-## Usage Examples
-
-### Query Recent Prediction Markets
+### Agent PnL & Involved Markets
+Track an agent's financial performance and see which markets were settled or paid out on a given day.
 ```graphql
 {
-  fixedProductMarketMakerCreations(
-    orderBy: blockTimestamp
-    orderDirection: desc
-    first: 10
-  ) {
-    id
-    creator
-    question
-    outcomes
-    fee
-    currentAnswer
-    currentAnswerTimestamp
+  dailyProfitStatistics(where: { traderAgent: "0x..." }, orderBy: date) {
+    date
+    dailyProfit
+    profitParticipants {
+      id
+      question # Used to correlate and calculate Mech fees
+    }
   }
 }
 ```
 
-### Get Top Trading Agents
-```graphql
-{
-  traderAgents(
-    orderBy: totalTraded
-    orderDirection: desc
-    first: 10
-  ) {
-    id
-    totalBets
-    totalTraded
-    totalPayout
-    totalFees
-    lastActive
-  }
-}
-```
-
-### Monitor Global Statistics
+### Global Statistics
 ```graphql
 {
   globals {
-    totalTraderAgents
     totalActiveTraderAgents
     totalBets
+    totalTraded # Settled volume only
     totalPayout
-    totalTraded
-    totalFees
-  }
-}
-```
-
-### Get Bets for a Specific Market
-```graphql
-{
-  bets(
-    where: { fixedProductMarketMaker: "0x..." }
-    orderBy: timestamp
-  ) {
-    bettor
-    outcomeIndex
-    amount
-    feeAmount
-    timestamp
-  }
-}
-```
-
-### Query Recent Questions
-```graphql
-{
-  questions(
-    orderBy: currentAnswerTimestamp
-    orderDirection: desc
-    first: 10
-  ) {
-    id
-    question
-    currentAnswer
-    currentAnswerTimestamp
   }
 }
 ```
 
 ## Development
 
-### Prerequisites
-- Graph CLI: `yarn global add @graphprotocol/graph-cli`
-- Dependencies: `yarn install`
+### Performance Optimizations
+The subgraph implements high-performance patterns to handle large volumes of trading data:
+* **Caching Strategy**: The `handleLogNewAnswer` handler uses internal `Map` caches to store `TraderAgent`, `MarketParticipant`, and `DailyProfitStatistic` entities during execution. This ensures each entity is loaded from the database once and saved once, regardless of the number of bets being processed.
+* **Batch Saves**: Using the `saveMapValues()` utility, the subgraph performs bulk updates at the end of execution to minimize I/O overhead.
+* **Selective Indexing**: To keep the database lean, the subgraph returns early if a market creator is not on the whitelist or if an agent is not registered via `ServiceRegistryL2`.
 
-### Building and Deploying
-1. Generate types: `yarn codegen`
-2. Build the subgraph: `yarn build`
-3. Deploy: `graph deploy --studio [SUBGRAPH_NAME]`
+### Project Structure
+* `src/service-registry-l-2.ts`: Handles agent registration and multisig creation.
+* `src/conditional-tokens.ts`: Manages condition preparation and payout redemption logic.
+* `src/realitio.ts`: Processes oracle answers, updates market status, and triggers settlement accounting.
+* `src/FixedProductMarketMakerMapping.ts`: Records real-time buy/sell activity and updates daily volume stats.
 
-### Local Development
-- The subgraph uses AssemblyScript for mapping logic
-- Event handlers are organized by contract in `src/`
-- Constants and filtering logic are in `src/constants.ts`
-- Utility functions are in `src/utils.ts`
-
-## Contributing
-
-When adding new features or modifying the subgraph:
-1. Update the schema in `schema.graphql`
-2. Add corresponding event handlers in the appropriate `src/` files
-3. Update the subgraph configuration in `subgraph.yaml`
-4. Test thoroughly before deployment
-5. Update constants in `src/constants.ts` if needed
+### Setup & Deployment
+** Check in the [root README](/README.md).**
