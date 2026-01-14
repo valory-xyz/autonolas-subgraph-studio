@@ -1,4 +1,4 @@
-# Autonolas Predict Subgraph - Technical Implementation Guide
+# Autonolas Predict Omen Subgraph - Technical Implementation Guide
 
 > **AI Assistant Context**: This document provides comprehensive technical details about the Predict subgraph's architecture, patterns, and implementation for AI-assisted development.
 

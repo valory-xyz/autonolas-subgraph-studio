@@ -1,4 +1,4 @@
-# Autonolas Predict Subgraph
+# Autonolas Predict Omen Subgraph
 
 A streamlined GraphQL API for tracking prediction markets and Autonolas agent performance on Gnosis Chain.
 

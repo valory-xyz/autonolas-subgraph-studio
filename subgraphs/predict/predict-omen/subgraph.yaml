@@ -19,7 +19,7 @@ dataSources:
         - CreateMultisigWithAgents
       abis:
         - name: ServiceRegistryL2
-          file: ../../abis/ServiceRegistryL2.json
+          file: ../../../abis/ServiceRegistryL2.json
       eventHandlers:
         - event: CreateMultisigWithAgents(indexed uint256,indexed address)
           handler: handleCreateMultisigWithAgents
@@ -40,7 +40,7 @@ dataSources:
         - PayoutRedemption
       abis:
         - name: ConditionalTokens
-          file: ../../abis/ConditionalTokens.json
+          file: ../../../abis/ConditionalTokens.json
       eventHandlers:
         - event: ConditionPreparation(indexed bytes32,indexed address,indexed bytes32,uint256)
           handler: handleConditionPreparation
@@ -67,7 +67,7 @@ dataSources:
         - Global
       abis:
         - name: FPMMDeterministicFactory
-          file: ../../abis/FPMMDeterministicFactory.json
+          file: ../../../abis/FPMMDeterministicFactory.json
       eventHandlers:
         - event: FixedProductMarketMakerCreation(indexed
             address,address,address,address,bytes32[],uint256)
@@ -92,7 +92,7 @@ dataSources:
         - LogFinalize
       abis:
         - name: Realitio
-          file: ../../abis/Realitio.json
+          file: ../../../abis/Realitio.json
       eventHandlers:
         - event: LogNewQuestion(indexed bytes32,indexed address,uint256,string,indexed
             bytes32,address,uint32,uint32,uint256,uint256)
@@ -119,9 +119,9 @@ templates:
         - Global
       abis:
         - name: FixedProductMarketMaker
-          file: ../../abis/FixedProductMarketMaker.json
+          file: ../../../abis/FixedProductMarketMaker.json
         - name: ERC20Detailed
-          file: ../../abis/ERC20Detailed.json
+          file: ../../../abis/ERC20Detailed.json
       eventHandlers:
         - event: FPMMBuy(indexed address,uint256,uint256,indexed uint256,uint256)
           handler: handleBuy
