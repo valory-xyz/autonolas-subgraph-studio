@@ -44,6 +44,21 @@ subgraphs/predict/
 3. **FPMMDeterministicFactory** (0x9083A2B699c0a4AD06F63580BDE2635d26a3eeF0) - Market creation
 4. **Realitio** (0x79e32aE03fb27B07C89c0c568F80287C01ca2E57) - Oracle
 
+### Core Business Rules
+
+1.  **Selective Tracking**: 
+    * **Agents**: Only tracks agents registered through `ServiceRegistryL2`.
+    * **Markets**: Only indexes binary markets created by whitelisted creator agents.
+2.  **Market Lifecycle**: 4-day trading window; payouts 24+ hours after closing.
+3.  **Accounting & Statistics**:
+    * **Settlement-Based Totals**: Global/agent `totalTraded` and `totalFees` update ONLY when a market closes.
+    * **Split Profit Attribution**: 
+        * **Losses**: Recorded on **Market Settlement Day** (for incorrect bets).
+        * **Wins**: Recorded on **Payout Redemption Day** (Net: Payout - Costs).
+4.  **No Arbitration**: Expected single `LogNewAnswer` per market. Arbitration events are ignored.
+5.  **Invalid Markets**: Handled automatically. If "Invalid", all bets are treated as losses during settlement.
+6.  **Mech Fee Analysis**: `profitParticipants` allows correlation between PnL events and market metadata for external fee tracking.
+
 ---
 
 ## Core Data Model
