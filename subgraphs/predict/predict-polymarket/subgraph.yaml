@@ -6,7 +6,7 @@ schema:
 dataSources:
   - kind: ethereum
     name: ServiceRegistryL2
-    network: gnosis
+    network: matic
     source:
       address: "0xE3607b00E75f6405248323A9417ff6b39B244b50"
       abi: ServiceRegistryL2
