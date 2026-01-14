@@ -1,0 +1,25 @@
+type TraderAgent @entity (immutable: false) {
+  id: Bytes!
+  serviceId: BigInt!
+  firstParticipation: BigInt
+  lastActive: BigInt
+  totalBets: Int!
+  totalTraded: BigInt! # trades amount for settled markets (when we have answer)
+  totalPayout: BigInt! # all bets including for open markets
+  totalFees: BigInt! # fees amount for settled markets (when we have answer)
+  # bets: [Bet!]! @derivedFrom(field: "bettor")
+  # dailyProfitStatistics: [DailyProfitStatistic!]! @derivedFrom(field: "traderAgent")
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+type Global @entity (immutable: false) {
+  id: ID!
+  totalTraderAgents: Int!
+  totalActiveTraderAgents: Int!
+  totalBets: Int! # all bets including for open markets
+  totalPayout: BigInt!
+  totalTraded: BigInt! # trades amount for settled markets (when we have answer)
+  totalFees: BigInt! # fees amount for settled markets (when we have answer)
+}

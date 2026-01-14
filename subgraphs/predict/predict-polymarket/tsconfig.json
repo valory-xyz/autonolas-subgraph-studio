@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.json",
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "build"],
+  "compilerOptions": {
+    "rootDirs": ["src"],
+    "outDir": "generated",
+    "target": "es2017",
+    "module": "commonjs",
+    "strict": true,
+    "esModuleInterop": true
+  }
+}
