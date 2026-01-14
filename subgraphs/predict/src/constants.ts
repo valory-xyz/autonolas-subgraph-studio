@@ -9,9 +9,6 @@ export const BLACKLISTED_MARKETS = [
   "0xbfa584b29891941c8950ce975c1f7fa595ce1b99",
 ];
 
-export const INVALID_ANSWER_HEX =
-  "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
-
 export const QUESTION_SEPARATOR = "\u241f";
 
-export const ONE_DAY = BigInt.fromI32(86400)
+export const ONE_DAY = BigInt.fromI32(86400);

@@ -13,9 +13,10 @@ import {
   FixedProductMarketMakerCreation,
   LogNotifyOfArbitrationRequest,
   MarketParticipant,
+  DailyProfitStatistic,
 } from "../generated/schema";
-import { CREATOR_ADDRESSES, INVALID_ANSWER_HEX } from "./constants";
-import { addProfitParticipant, bytesToBigInt, getDailyProfitStatistic, getGlobal } from "./utils";
+import { CREATOR_ADDRESSES } from "./constants";
+import { addProfitParticipant, bytesToBigInt, getDailyProfitStatistic, getDayTimestamp, getGlobal, saveMapValues } from "./utils";
 
 export function handleLogNewQuestion(event: LogNewQuestionEvent): void {
   // only safe questions for our creators
@@ -29,10 +30,6 @@ export function handleLogNewQuestion(event: LogNewQuestionEvent): void {
 }
 
 export function handleLogNewAnswer(event: LogNewAnswerEvent): void {
-  if (event.params.answer.toHexString() === INVALID_ANSWER_HEX) {
-    return;
-  }
-
   if (event.params.is_commitment) {
     // only record confirmed answers
     return;
@@ -50,83 +47,101 @@ export function handleLogNewAnswer(event: LogNewAnswerEvent): void {
   question.save();
 
   let id = question.fixedProductMarketMaker;
+  if (id === null) return;
 
-  if (id !== null) {
-    let fpmm = FixedProductMarketMakerCreation.load(id);
+  let fpmm = FixedProductMarketMakerCreation.load(id);
+  if (fpmm === null) return;
 
-    if (fpmm !== null) {
-      fpmm.currentAnswer = event.params.answer;
-      fpmm.currentAnswerTimestamp = event.block.timestamp;
-      fpmm.save();
+  fpmm.currentAnswer = event.params.answer;
+  fpmm.currentAnswerTimestamp = event.block.timestamp;
+  fpmm.save();
 
-      // Pre-compute values outside the loop to avoid redundant calculations
-      let answerBigInt = bytesToBigInt(event.params.answer);
-      let global = getGlobal();
-      let globalTradedDelta = BigInt.zero();
-      let globalFeesDelta = BigInt.zero();
-      let fpmmIdHex = fpmm.id.toHexString();
+  // 1. Pre-compute values outside the loop to avoid redundant calculations
+  // needed for performance and data integrity
+  let answerBigInt = bytesToBigInt(event.params.answer);
+  let global = getGlobal();
+  let globalTradedDelta = BigInt.zero();
+  let globalFeesDelta = BigInt.zero();
+  let fpmmIdHex = fpmm.id.toHexString();
+  let dailyStatsCache = new Map<string, DailyProfitStatistic>();
+  let agentCache = new Map<string, TraderAgent>();
+  let participantCache = new Map<string, MarketParticipant>();
 
-      let bets = fpmm.bets.load();
-      for (let i = 0; i < bets.length; i++) {
-        let bet = bets[i];
-        if (bet === null) continue;
-        
-        // use boolean to track if bet was modified to save it in the end
-        // needed for optimization in case of too many bets
-        let betModified = false;
-        
-        if (bet.countedInTotal === false) {
-          let agent = TraderAgent.load(bet.bettor);
-          if (agent !== null) {
-            // Update global trader agent statistic
-            agent.totalTraded = agent.totalTraded.plus(bet.amount);
-            agent.totalFees = agent.totalFees.plus(bet.feeAmount);
-            agent.save();
+  let bets = fpmm.bets.load();
+  for (let i = 0; i < bets.length; i++) {
+    let bet = bets[i];
+    if (bet === null) continue;
 
-            // Update market participant statistic
-            let participantId = bet.bettor.toHexString() + "_" + fpmmIdHex;
-            let participant = MarketParticipant.load(participantId);
-            if (participant != null) {
-              participant.totalTraded = participant.totalTraded.plus(bet.amount);
-              participant.totalFees = participant.totalFees.plus(bet.feeAmount);
-              participant.save();
-            }
+    // use boolean to track if bet was modified to save it in the end
+    let betModified = false;
 
-            bet.countedInTotal = true;
-            betModified = true;
+    // 2. Process Trading Volume
+    if (bet.countedInTotal === false) {
+      // Use cache for TraderAgent
+      let agentId = bet.bettor.toHexString();
+      let agent = agentCache.has(agentId) 
+        ? agentCache.get(agentId)! 
+        : TraderAgent.load(bet.bettor);
 
-            // Accumulate global deltas
-            globalTradedDelta = globalTradedDelta.plus(bet.amount);
-            globalFeesDelta = globalFeesDelta.plus(bet.feeAmount);
-          }
+      if (agent !== null) {
+        agent.totalTraded = agent.totalTraded.plus(bet.amount);
+        agent.totalFees = agent.totalFees.plus(bet.feeAmount);
+        agentCache.set(agentId, agent); // Put back in cache
+
+        // Use cache for MarketParticipant
+        let participantId = bet.bettor.toHexString() + "_" + fpmmIdHex;
+        let participant = participantCache.has(participantId) 
+          ? participantCache.get(participantId)! 
+          : MarketParticipant.load(participantId);
+
+        if (participant != null) {
+          participant.totalTraded = participant.totalTraded.plus(bet.amount);
+          participant.totalFees = participant.totalFees.plus(bet.feeAmount);
+          participantCache.set(participantId, participant);
         }
 
-        // Update daily profit statistic if answer is incorrect
-        if (bet.countedInProfit === false) {
-          if (!bet.outcomeIndex.equals(answerBigInt)) {
-            let dailyStat = getDailyProfitStatistic(bet.bettor, event.block.timestamp);
-            let lossAmount = bet.amount.plus(bet.feeAmount);
-            dailyStat.dailyProfit = dailyStat.dailyProfit.minus(lossAmount);
-            addProfitParticipant(dailyStat, fpmm.id);
-            bet.countedInProfit = true;
-            betModified = true;
-            dailyStat.save();
-          }
-        }
-
-        // Save bet once at the end if it was modified
-        if (betModified) {
-          bet.save();
-        }
-      }
-
-      // Update global statistics once at the end
-      if (!globalTradedDelta.equals(BigInt.zero()) || !globalFeesDelta.equals(BigInt.zero())) {
-        global.totalTraded = global.totalTraded.plus(globalTradedDelta);
-        global.totalFees = global.totalFees.plus(globalFeesDelta);
-        global.save();
+        bet.countedInTotal = true;
+        betModified = true;
+        globalTradedDelta = globalTradedDelta.plus(bet.amount);
+        globalFeesDelta = globalFeesDelta.plus(bet.feeAmount);
       }
     }
+
+    // 3. Process Profit Statistics
+    if (bet.countedInProfit === false) {
+      if (!bet.outcomeIndex.equals(answerBigInt)) {
+        let dayTimestamp = getDayTimestamp(event.block.timestamp);
+        let statId = bet.bettor.toHexString() + "_" + dayTimestamp.toString();
+        
+        let dailyStat = dailyStatsCache.has(statId)
+          ? dailyStatsCache.get(statId)!
+          : getDailyProfitStatistic(bet.bettor, event.block.timestamp);
+
+        let lossAmount = bet.amount.plus(bet.feeAmount);
+        dailyStat.dailyProfit = dailyStat.dailyProfit.minus(lossAmount);
+        addProfitParticipant(dailyStat, fpmm.id);
+        
+        dailyStatsCache.set(statId, dailyStat);
+        bet.countedInProfit = true;
+        betModified = true;
+      }
+    }
+
+    if (betModified) {
+      bet.save();
+    }
+  }
+
+  // 4. Final Batch Saves
+  saveMapValues(agentCache);
+  saveMapValues(participantCache);
+  saveMapValues(dailyStatsCache);
+
+  // Update global statistics once at the end
+  if (!globalTradedDelta.equals(BigInt.zero()) || !globalFeesDelta.equals(BigInt.zero())) {
+    global.totalTraded = global.totalTraded.plus(globalTradedDelta);
+    global.totalFees = global.totalFees.plus(globalFeesDelta);
+    global.save();
   }
 }
 
