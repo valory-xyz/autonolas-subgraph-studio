@@ -1,3 +1,9 @@
+# Entity is only created if trader agent (with id 86) is registered in a service
+# Allows tracking TraderAgent properly
+type TraderService @entity (immutable: true) {
+  id: ID! # serviceId
+}
+
 type TraderAgent @entity (immutable: false) {
   id: Bytes!
   serviceId: BigInt!
@@ -12,6 +18,33 @@ type TraderAgent @entity (immutable: false) {
   blockNumber: BigInt!
   blockTimestamp: BigInt!
   transactionHash: Bytes!
+}
+
+type ConditionPreparation @entity(immutable: true) {
+  id: ID!
+  conditionId: Bytes! # bytes32
+  oracle: Bytes! # address
+  questionId: Bytes! # bytes32
+  outcomeSlotCount: BigInt! # uint256
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+type Question @entity(immutable: false) {
+  id: Bytes!
+  conditionId: Bytes! # bytes32
+  metadata: MarketMetadata
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+type MarketMetadata @entity(immutable: true) {
+  id: Bytes! # questionId
+  title: String!
+  outcomes: [String!]!
+  description: String
 }
 
 type Global @entity (immutable: false) {
