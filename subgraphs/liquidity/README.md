@@ -57,7 +57,7 @@ npx graph deploy --studio your-subgraph-name
 Get current metrics:
 ```graphql
 {
-  lpTokenMetrics(id: "global") {
+  lpTokenMetrics(id: "") {
     totalSupply
     treasurySupply
     treasuryPercentage
@@ -138,7 +138,7 @@ The implementation maintains these guarantees:
 Get current USD valuations:
 ```graphql
 {
-  lpTokenMetrics(id: "global") {
+  lpTokenMetrics(id: "") {
     poolLiquidityUsd
     protocolOwnedLiquidityUsd
     lastEthPriceUsd

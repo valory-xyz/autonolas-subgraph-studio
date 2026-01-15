@@ -21,7 +21,7 @@ export const TREASURY_ADDRESS = Address.fromString(
 
 export const SECONDS_PER_DAY = BigInt.fromI32(86400);
 export const BASIS_POINTS = BigInt.fromI32(10000); // 100% = 10000 basis points
-export const GLOBAL_ID = 'global';
+export const GLOBAL_ID = '';
 
 /**
  * Get day timestamp by truncating to start of day (UTC)

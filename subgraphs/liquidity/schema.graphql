@@ -31,7 +31,7 @@ type TreasuryHoldings @entity(immutable: false) {
 
 # Global LP token metrics
 type LPTokenMetrics @entity(immutable: false) {
-  id: ID! # "global"
+  id: ID! # "" (empty string singleton)
   
   # Supply metrics
   totalSupply: BigInt! # current total LP supply

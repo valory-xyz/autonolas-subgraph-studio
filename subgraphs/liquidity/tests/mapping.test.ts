@@ -75,7 +75,7 @@ describe('handleSync', () => {
     handleSync(syncEvent);
 
     // Check LPTokenMetrics has USD values
-    const metrics = LPTokenMetrics.load('global');
+    const metrics = LPTokenMetrics.load('');
     assert.assertNotNull(metrics);
 
     // Pool liquidity USD should be 2 * 100 ETH * $2000 = $400,000
@@ -99,7 +99,7 @@ describe('handleSync', () => {
     const syncEvent = createSyncEvent(reserve0, reserve1);
     handleSync(syncEvent);
 
-    const metrics = LPTokenMetrics.load('global');
+    const metrics = LPTokenMetrics.load('');
     assert.assertNotNull(metrics);
 
     // Pool liquidity USD: 2 * 50 ETH * $1800 = $180,000
@@ -130,7 +130,7 @@ describe('handleSync', () => {
     assert.assertNotNull(poolReserves);
     assert.bigIntEquals(poolReserves!.reserve1, ethToWei(200));
 
-    const metrics = LPTokenMetrics.load('global');
+    const metrics = LPTokenMetrics.load('');
     // Pool liquidity USD: 2 * 200 ETH * $2500 = $1,000,000
     assert.stringEquals(metrics!.poolLiquidityUsd.toString(), '1000000');
   });
@@ -147,7 +147,7 @@ describe('handleLPTransfer', () => {
 
     handleLPTransfer(mintEvent);
 
-    const metrics = LPTokenMetrics.load('global');
+    const metrics = LPTokenMetrics.load('');
     assert.assertNotNull(metrics);
     assert.bigIntEquals(metrics!.totalSupply, mintAmount);
     assert.bigIntEquals(metrics!.totalMinted, mintAmount);
@@ -169,7 +169,7 @@ describe('handleLPTransfer', () => {
     );
     handleLPTransfer(burnEvent);
 
-    const metrics = LPTokenMetrics.load('global');
+    const metrics = LPTokenMetrics.load('');
     assert.assertNotNull(metrics);
     assert.bigIntEquals(metrics!.totalSupply, BigInt.fromI32(2500));
     assert.bigIntEquals(metrics!.totalBurned, burnAmount);
@@ -193,7 +193,7 @@ describe('handleLPTransfer', () => {
     );
     handleLPTransfer(transferEvent);
 
-    const metrics = LPTokenMetrics.load('global');
+    const metrics = LPTokenMetrics.load('');
     assert.assertNotNull(metrics);
     // Treasury should have 10000 - 3000 = 7000
     assert.bigIntEquals(metrics!.treasurySupply, BigInt.fromI32(7000));
@@ -213,7 +213,7 @@ describe('handleLPTransfer', () => {
     const mintToOther = createMintEvent(otherAddress, otherMint);
     handleLPTransfer(mintToOther);
 
-    const metrics = LPTokenMetrics.load('global');
+    const metrics = LPTokenMetrics.load('');
     assert.assertNotNull(metrics);
     // Treasury owns 3000/10000 = 30% = 3000 basis points
     assert.bigIntEquals(metrics!.treasuryPercentage, BigInt.fromI32(3000));
@@ -249,7 +249,7 @@ describe('Integration: Transfer + Sync', () => {
     );
     handleSync(syncEvent);
 
-    const metrics = LPTokenMetrics.load('global');
+    const metrics = LPTokenMetrics.load('');
     assert.assertNotNull(metrics);
 
     // Pool liquidity: 2 * 100 ETH * $2000 = $400,000
