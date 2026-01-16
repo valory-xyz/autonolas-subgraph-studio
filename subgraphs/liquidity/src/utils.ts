@@ -1,4 +1,5 @@
-import { BigInt, BigDecimal, Address, Bytes, log } from '@graphprotocol/graph-ts';
+import { BigInt, BigDecimal, Address, Bytes, log, dataSource } from '@graphprotocol/graph-ts';
+import { getOlasTokenAddress } from '../../../shared/constants';
 import {
   TreasuryHoldings,
   LPTokenMetrics,
@@ -6,8 +7,9 @@ import {
 } from '../generated/schema';
 import { AggregatorV3Interface } from '../generated/OLASETHPair/AggregatorV3Interface';
 
-// Chainlink ETH/USD price feed on mainnet (8 decimals)
+// Chainlink price feeds (8 decimals)
 export const CHAINLINK_PRICE_FEED_ADDRESS_MAINNET_ETH_USD = '0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419';
+export const CHAINLINK_PRICE_FEED_ADDRESS_CELO_CELO_USD = '0x022F9dCC73C5Fb43F2b4eF2EF9ad3eDD1D853946';
 export const CHAINLINK_DECIMALS = 8;
 export const ETH_DECIMALS = 18;
 export const PRICE_DECIMALS = CHAINLINK_DECIMALS + ETH_DECIMALS; // 26
@@ -124,18 +126,28 @@ export function getOrCreatePoolReserves(poolAddress: Address): PoolReserves {
 }
 
 /**
- * Fetch ETH/USD price from Chainlink mainnet feed.
+ * Fetch native token/USD price from Chainlink feed.
+ *
+ * Mainnet: ETH/USD feed for OLAS-ETH pool.
+ * Celo: CELO/USD feed for OLAS-CELO pool (Ubeswap uses native CELO, not ETH).
  *
  * Returns price in 8 decimals (e.g., 180000000000 = $1800.00).
  * Returns zero on Chainlink call failure (safe default: USD values remain zero).
  */
-export function getEthPriceUsd(txHash: Bytes): BigInt {
-  const priceFeedAddress = Address.fromString(CHAINLINK_PRICE_FEED_ADDRESS_MAINNET_ETH_USD);
+export function getNativeTokenPriceUsd(txHash: Bytes): BigInt {
+  const network = dataSource.network();
+  let priceFeedAddr = CHAINLINK_PRICE_FEED_ADDRESS_MAINNET_ETH_USD;
+
+  if (network == 'celo') {
+    priceFeedAddr = CHAINLINK_PRICE_FEED_ADDRESS_CELO_CELO_USD;
+  }
+
+  const priceFeedAddress = Address.fromString(priceFeedAddr);
   const priceFeed = AggregatorV3Interface.bind(priceFeedAddress);
 
   const result = priceFeed.try_latestRoundData();
   if (result.reverted) {
-    log.error('Chainlink ETH/USD price fetch failed for tx {}', [txHash.toHexString()]);
+    log.error('Chainlink price fetch failed for tx {} on network {}', [txHash.toHexString(), network]);
     return BigInt.zero();
   }
 
@@ -200,7 +212,7 @@ export function calculateUsdMetrics(
   treasurySupply: BigInt,
   totalSupply: BigInt
 ): UsdMetrics {
-  const ethPrice = getEthPriceUsd(txHash);
+  const ethPrice = getNativeTokenPriceUsd(txHash);
   const poolLiquidityUsd = calculatePoolLiquidityUsd(reserve1, ethPrice);
   const protocolOwnedLiquidityUsd = calculateProtocolOwnedLiquidityUsd(
     poolLiquidityUsd, treasurySupply, totalSupply
@@ -304,4 +316,86 @@ export function updateGlobalMetricsAfterSync(
   metrics.lastUpdated = timestamp;
 
   metrics.save();
+}
+
+/**
+ * Pool balance extraction result.
+ * Valid flag prevents zeroing metrics on temporary failures.
+ */
+export class PoolBalances {
+  olasBalance: BigInt;
+  stablecoinBalance: BigInt;
+  stablecoinDecimals: i32;
+  valid: boolean;
+}
+
+/**
+ * Extract OLAS and stablecoin balances from Balancer pool tokens.
+ *
+ * Validates exactly 2 tokens: pool structure assumption from Balancer weighted pool design.
+ * Returns invalid result (valid=false) on validation failure to preserve last known value.
+ */
+export function extractPoolBalances(
+  tokens: Address[],
+  balances: BigInt[]
+): PoolBalances {
+  if (tokens.length != 2) {
+    log.error('Pool has {} tokens, expected 2', [tokens.length.toString()]);
+    return { olasBalance: BigInt.zero(), stablecoinBalance: BigInt.zero(), stablecoinDecimals: 18, valid: false };
+  }
+
+  const network = dataSource.network();
+  // WXDAI=18 decimals (Gnosis), USDC=6 decimals (Polygon, Arbitrum, Optimism, Base)
+  let stablecoinDecimals = 18;
+  if (network == 'matic' || network == 'arbitrum-one' || network == 'optimism' || network == 'base') {
+    stablecoinDecimals = 6;
+  }
+
+  const olasAddr = getOlasTokenAddress().toHexString().toLowerCase();
+  let olasBalance = BigInt.zero();
+  let stablecoinBalance = BigInt.zero();
+  let olasFound = false;
+
+  for (let i = 0; i < tokens.length; i++) {
+    if (tokens[i].toHexString().toLowerCase() == olasAddr) {
+      olasBalance = balances[i];
+      olasFound = true;
+    } else {
+      stablecoinBalance = balances[i];
+    }
+  }
+
+  if (!olasFound) {
+    log.error('OLAS token not found in pool tokens', []);
+    return { olasBalance: BigInt.zero(), stablecoinBalance: BigInt.zero(), stablecoinDecimals: 18, valid: false };
+  }
+
+  return { olasBalance, stablecoinBalance, stablecoinDecimals, valid: true };
+}
+
+/**
+ * Calculate OLAS price from Balancer pool spot price.
+ *
+ * Formula: stablecoinBalance / olasBalance (normalized for decimals).
+ * Assumes stablecoin = $1 USD (WXDAI, USDC).
+ *
+ * Why pool spot price: eliminates Chainlink dependency on L2s where ETH pools don't exist.
+ * Trade-off: less accurate during low liquidity periods vs external price oracles.
+ */
+export function calculateBalancerPoolPrice(
+  olasBalance: BigInt,
+  stablecoinBalance: BigInt,
+  stablecoinDecimals: i32
+): BigDecimal {
+  if (olasBalance.isZero()) {
+    return BigDecimal.zero();
+  }
+
+  // Normalize: OLAS=18 decimals, WXDAI=18, USDC=6
+  const olasBD = olasBalance.toBigDecimal().div(BigDecimal.fromString('1000000000000000000'));
+  const stableBD = stablecoinBalance.toBigDecimal().div(
+    BigInt.fromI32(10).pow(stablecoinDecimals as u8).toBigDecimal()
+  );
+
+  return stableBD.div(olasBD);
 }
