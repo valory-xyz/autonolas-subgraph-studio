@@ -1,0 +1,58 @@
+specVersion: 1.0.0
+indexerHints:
+  prune: auto
+schema:
+  file: ./schema.graphql
+dataSources:
+  # OLAS-CELO LP Token (ERC20 Transfer events)
+  - kind: ethereum/contract
+    name: OLASETHLPToken
+    network: celo
+    source:
+      address: "0x2D9223B2B98Ed5919A7Bf6d28Cdd8FeaCF0744dC"
+      abi: ERC20
+      startBlock: 26000000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - LPTransfer
+        - DailyLPSupplyChange
+        - TreasuryHoldings
+        - LPTokenMetrics
+        - DailyMetrics
+      abis:
+        - name: ERC20
+          file: ../../abis/ERC20Detailed.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleLPTransfer
+      file: ./src/mapping.ts
+
+  # OLAS-CELO Ubeswap Pair (Sync events for reserves)
+  - kind: ethereum/contract
+    name: OLASETHPair
+    network: celo
+    source:
+      address: "0x2D9223B2B98Ed5919A7Bf6d28Cdd8FeaCF0744dC"
+      abi: UniswapV2Pair
+      startBlock: 26000000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - PoolReserves
+        - ReservesSnapshot
+        - LPTokenMetrics
+        - DailyMetrics
+      abis:
+        - name: UniswapV2Pair
+          file: ../../abis/UniswapV2Pair.json
+        - name: AggregatorV3Interface
+          file: ../../abis/AggregatorV3Interface.json
+      eventHandlers:
+        - event: Sync(uint112,uint112)
+          handler: handleSync
+      file: ./src/mapping.ts
