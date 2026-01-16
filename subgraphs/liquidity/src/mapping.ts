@@ -1,7 +1,11 @@
 import { Transfer } from '../generated/OLASETHLPToken/ERC20';
 import { Sync } from '../generated/OLASETHPair/UniswapV2Pair';
+import { PoolBalanceChanged } from '../generated/BalancerVault/BalancerV2Vault';
+import { BalancerV2Vault } from '../generated/BalancerVault/BalancerV2Vault';
+import { log, Bytes, BigDecimal, dataSource } from '@graphprotocol/graph-ts';
 
 import { LPTransfer } from '../generated/schema';
+import { getBalancerVaultAddress, getOlasPoolId } from '../../../shared/constants';
 
 import {
   isZeroAddress,
@@ -12,6 +16,9 @@ import {
   updateGlobalMetricsAfterSync,
   calculateUsdMetrics,
   getOrCreateLPTokenMetrics,
+  extractPoolBalances,
+  calculateBalancerPoolPrice,
+  calculateProtocolOwnedLiquidityUsd,
 } from './utils';
 
 /**
@@ -82,5 +89,65 @@ export function handleSync(event: Sync): void {
     usdMetrics.poolLiquidityUsd,
     usdMetrics.protocolOwnedLiquidityUsd,
     usdMetrics.lastEthPriceUsd
+  );
+}
+
+/**
+ * Handle Balancer V2 PoolBalanceChanged events.
+ * Tracks pool balance changes for OLAS pools on Balancer V2 chains.
+ *
+ * Filters by poolId because Balancer Vault emits events for 100+ pools per chain.
+ * Early returns on validation failure to preserve last known USD value when RPC fails.
+ */
+export function handlePoolBalanceChanged(event: PoolBalanceChanged): void {
+  const configuredPoolId = getOlasPoolId();
+  if (configuredPoolId.equals(Bytes.empty())) {
+    log.critical('Network not supported for Balancer pools: {}', [dataSource.network()]);
+    return;
+  }
+
+  if (!event.params.poolId.equals(configuredPoolId)) {
+    return;
+  }
+
+  const vault = BalancerV2Vault.bind(getBalancerVaultAddress());
+  const poolTokensResult = vault.try_getPoolTokens(event.params.poolId);
+  if (poolTokensResult.reverted) {
+    log.error('Vault.getPoolTokens() failed for pool {}', [event.params.poolId.toHexString()]);
+    return;
+  }
+
+  const balances = extractPoolBalances(
+    poolTokensResult.value.getTokens(),
+    poolTokensResult.value.getBalances()
+  );
+  if (!balances.valid) {
+    return;
+  }
+
+  // Pool spot price assumes stablecoin = $1 USD (WXDAI, USDC)
+  const olasPrice = calculateBalancerPoolPrice(
+    balances.olasBalance,
+    balances.stablecoinBalance,
+    balances.stablecoinDecimals
+  );
+
+  const metrics = getOrCreateLPTokenMetrics();
+  const poolLiquidityUsd = olasPrice
+    .times(balances.olasBalance.toBigDecimal().div(BigDecimal.fromString('1000000000000000000')))
+    .times(BigDecimal.fromString('2'));
+  const protocolOwnedLiquidityUsd = calculateProtocolOwnedLiquidityUsd(
+    poolLiquidityUsd,
+    metrics.treasurySupply,
+    metrics.totalSupply
+  );
+
+  updateGlobalMetricsAfterSync(
+    balances.olasBalance,
+    balances.stablecoinBalance,
+    event.block.timestamp,
+    poolLiquidityUsd,
+    protocolOwnedLiquidityUsd,
+    olasPrice
   );
 }
