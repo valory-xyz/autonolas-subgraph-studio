@@ -3,13 +3,12 @@
  * Calculate Pool Liquidity USD using both methods
  *
  * Usage:
- *   node scripts/calculate-usd.js --olas-price 0.08446
- *   DUNE_API_KEY=xxx node scripts/calculate-usd.js  # fetches OLAS price from Dune
+ *   node scripts/calculate-usd.js
+ *   node scripts/calculate-usd.js --olas-price 0.08446  # override price
  */
 
 const SUBGRAPH_URL = 'https://api.studio.thegraph.com/query/115860/liquidity-eth/version/latest';
-const DUNE_API_BASE = 'https://api.dune.com/api/v1';
-const DUNE_OLAS_PRICE_QUERY_ID = '2767077'; // OLAS: Latest Price
+const COINGECKO_API = 'https://api.coingecko.com/api/v3/simple/price?ids=autonolas&vs_currencies=usd';
 
 async function fetchSubgraphData() {
   const query = `{
@@ -32,44 +31,29 @@ async function fetchSubgraphData() {
   return json.data?.lptokenMetrics || null;
 }
 
-async function fetchOlasPriceFromDune(apiKey) {
-  const url = `${DUNE_API_BASE}/query/${DUNE_OLAS_PRICE_QUERY_ID}/results`;
-
-  const response = await fetch(url, {
-    method: 'GET',
-    headers: { 'x-dune-api-key': apiKey },
-  });
+async function fetchOlasPriceFromCoingecko() {
+  const response = await fetch(COINGECKO_API);
 
   if (!response.ok) {
     const error = await response.text();
-    throw new Error(`Dune API error (${response.status}): ${error}`);
+    throw new Error(`CoinGecko API error (${response.status}): ${error}`);
   }
 
   const json = await response.json();
-  const rows = json.result?.rows || [];
-
-  // Find latest_price in the results
-  if (rows.length > 0) {
-    return rows[0].latest_price || rows[0].price || null;
-  }
-
-  return null;
+  return json.autonolas?.usd || null;
 }
 
 function parseArgs() {
   const args = process.argv.slice(2);
   let olasPrice = null;
-  let apiKey = process.env.DUNE_API_KEY || null;
 
   for (let i = 0; i < args.length; i += 2) {
     if (args[i] === '--olas-price') {
       olasPrice = parseFloat(args[i + 1]);
-    } else if (args[i] === '--dune-api-key') {
-      apiKey = args[i + 1];
     }
   }
 
-  return { olasPrice, apiKey };
+  return { olasPrice };
 }
 
 function formatUsd(num) {
@@ -77,27 +61,25 @@ function formatUsd(num) {
 }
 
 async function main() {
-  let { olasPrice, apiKey } = parseArgs();
+  let { olasPrice } = parseArgs();
 
-  // Try to fetch OLAS price from Dune if not provided
-  if (!olasPrice && apiKey) {
-    console.log('Fetching OLAS price from Dune...');
+  // Fetch OLAS price from CoinGecko if not provided
+  if (!olasPrice) {
+    console.log('Fetching OLAS price from CoinGecko...');
     try {
-      olasPrice = await fetchOlasPriceFromDune(apiKey);
+      olasPrice = await fetchOlasPriceFromCoingecko();
       if (olasPrice) {
-        console.log(`✓ OLAS price from Dune: ${formatUsd(olasPrice)}\n`);
+        console.log(`✓ OLAS price: ${formatUsd(olasPrice)}\n`);
       }
     } catch (error) {
-      console.error(`✗ Failed to fetch OLAS price: ${error.message}\n`);
+      console.error(`✗ Failed to fetch OLAS price: ${error.message}`);
+      console.log('Use --olas-price <price> to provide manually');
+      process.exit(1);
     }
   }
 
   if (!olasPrice) {
-    console.log('Usage:');
-    console.log('  node scripts/calculate-usd.js --olas-price <price>');
-    console.log('  DUNE_API_KEY=xxx node scripts/calculate-usd.js');
-    console.log('\nExample:');
-    console.log('  node scripts/calculate-usd.js --olas-price 0.08446');
+    console.error('Could not fetch OLAS price. Use --olas-price <price> to provide manually');
     process.exit(1);
   }
 
@@ -139,7 +121,7 @@ async function main() {
   console.log(`  Reserve0 (OLAS):   ${reserve0.toLocaleString()} OLAS`);
   console.log(`  Reserve1 (ETH):    ${reserve1.toLocaleString()} ETH`);
   console.log(`  ETH Price:         ${formatUsd(ethPrice)} (Chainlink)`);
-  console.log(`  OLAS Price:        ${formatUsd(olasPrice)} (${apiKey ? 'Dune' : 'provided'})`);
+  console.log(`  OLAS Price:        ${formatUsd(olasPrice)} (CoinGecko)`);
   console.log(`  Treasury %:        ${(treasuryPct * 100).toFixed(4)}%`);
   console.log();
 
