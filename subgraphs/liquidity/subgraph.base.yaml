@@ -1,0 +1,29 @@
+specVersion: 1.0.0
+indexerHints:
+  prune: auto
+schema:
+  file: ./schema.graphql
+dataSources:
+  - kind: ethereum/contract
+    name: BalancerVault
+    network: base
+    source:
+      address: "0xBA12222222228d8Ba445958a75a0704d566BF2C8"
+      abi: BalancerV2Vault
+      startBlock: 14000000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - LPTokenMetrics
+        - PoolReserves
+      abis:
+        - name: BalancerV2Vault
+          file: ../../abis/BalancerV2Vault.json
+        - name: BalancerV2WeightedPool
+          file: ../../abis/BalancerV2WeightedPool.json
+      eventHandlers:
+        - event: PoolBalanceChanged(indexed bytes32,indexed address,address[],int256[],uint256[])
+          handler: handlePoolBalanceChanged
+      file: ./src/mapping.ts
