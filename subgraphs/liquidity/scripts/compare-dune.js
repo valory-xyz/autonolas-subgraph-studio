@@ -5,15 +5,44 @@
  * Dune Query: https://dune.com/queries/4963482
  *
  * Usage:
- *   DUNE_API_KEY=xxx node scripts/compare-dune.js
- *   node scripts/compare-dune.js --dune-api-key xxx
+ *   DUNE_API_KEY=xxx node scripts/compare-dune.js --chain ethereum
+ *   node scripts/compare-dune.js --chain gnosis --dune-api-key xxx
  */
 
-const SUBGRAPH_URL = 'https://api.studio.thegraph.com/query/115860/liquidity-eth/version/latest';
 const DUNE_API_BASE = 'https://api.dune.com/api/v1';
-const DUNE_QUERY_ID = '4963482'; // Liquidity and Protocol-owned-liquidity ETH
 
-async function fetchSubgraphData() {
+const CHAIN_CONFIG = {
+  ethereum: {
+    subgraphUrl: 'https://api.studio.thegraph.com/query/115860/liquidity-eth/version/latest',
+    duneQueryId: '4963482',
+  },
+  gnosis: {
+    subgraphUrl: 'https://api.studio.thegraph.com/query/115860/liquidity-gnosis/version/latest',
+    duneQueryId: '5383248',
+  },
+  polygon: {
+    subgraphUrl: 'https://api.studio.thegraph.com/query/115860/liquidity-polygon/version/latest',
+    duneQueryId: '5383248',
+  },
+  arbitrum: {
+    subgraphUrl: 'https://api.studio.thegraph.com/query/115860/liquidity-arbitrum/version/latest',
+    duneQueryId: '5383248',
+  },
+  optimism: {
+    subgraphUrl: 'https://api.studio.thegraph.com/query/115860/liquidity-optimism/version/latest',
+    duneQueryId: '5383248',
+  },
+  base: {
+    subgraphUrl: 'https://api.studio.thegraph.com/query/115860/liquidity-base/version/latest',
+    duneQueryId: '5383248',
+  },
+  celo: {
+    subgraphUrl: 'https://api.studio.thegraph.com/query/115860/liquidity-celo/version/latest',
+    duneQueryId: '5383248',
+  },
+};
+
+async function fetchSubgraphData(subgraphUrl) {
   const query = `{
     lptokenMetrics(id: "") {
       totalSupply
@@ -27,7 +56,7 @@ async function fetchSubgraphData() {
     }
   }`;
 
-  const response = await fetch(SUBGRAPH_URL, {
+  const response = await fetch(subgraphUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ query }),
@@ -37,8 +66,8 @@ async function fetchSubgraphData() {
   return json.data?.lptokenMetrics || null;
 }
 
-async function fetchDuneData(apiKey) {
-  const url = `${DUNE_API_BASE}/query/${DUNE_QUERY_ID}/results`;
+async function fetchDuneData(apiKey, duneQueryId) {
+  const url = `${DUNE_API_BASE}/query/${duneQueryId}/results`;
 
   const response = await fetch(url, {
     method: 'GET',
@@ -71,15 +100,20 @@ async function fetchDuneData(apiKey) {
 
 function parseArgs() {
   const args = process.argv.slice(2);
+  let chain = 'ethereum';
   let apiKey = process.env.DUNE_API_KEY || null;
 
-  for (let i = 0; i < args.length; i += 2) {
-    if (args[i] === '--dune-api-key') {
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--chain' && args[i + 1]) {
+      chain = args[i + 1];
+      i++;
+    } else if (args[i] === '--dune-api-key' && args[i + 1]) {
       apiKey = args[i + 1];
+      i++;
     }
   }
 
-  return { apiKey };
+  return { chain, apiKey };
 }
 
 function formatNumber(num, decimals = 2) {
@@ -100,17 +134,24 @@ function calculateDiff(subgraph, dune) {
 }
 
 async function main() {
-  const { apiKey } = parseArgs();
+  const { chain, apiKey } = parseArgs();
+
+  const config = CHAIN_CONFIG[chain];
+  if (!config) {
+    console.error(`Unknown chain: ${chain}`);
+    console.error(`Supported chains: ${Object.keys(CHAIN_CONFIG).join(', ')}`);
+    process.exit(1);
+  }
 
   console.log('='.repeat(70));
-  console.log('Liquidity Subgraph vs Dune Query Comparison (Real-time)');
-  console.log('Dune Query: https://dune.com/queries/4963482');
+  console.log(`Liquidity Subgraph vs Dune Query Comparison (${chain})`);
+  console.log(`Dune Query: https://dune.com/queries/${config.duneQueryId}`);
   console.log('='.repeat(70));
   console.log();
 
   // Fetch subgraph data
   console.log('Fetching subgraph data...');
-  const subgraph = await fetchSubgraphData();
+  const subgraph = await fetchSubgraphData(config.subgraphUrl);
 
   if (!subgraph) {
     console.error('Failed to fetch subgraph data. Is the subgraph synced?');
@@ -122,7 +163,7 @@ async function main() {
   if (apiKey) {
     console.log('Fetching Dune data (real-time)...');
     try {
-      dune = await fetchDuneData(apiKey);
+      dune = await fetchDuneData(apiKey, config.duneQueryId);
       console.log('✓ Dune data fetched successfully\n');
     } catch (error) {
       console.error(`✗ Failed to fetch Dune data: ${error.message}`);
@@ -159,8 +200,8 @@ async function main() {
   console.log(`  Total Supply:      ${formatNumber(sgTotalSupply, 6)} LP tokens`);
   console.log(`  Treasury Supply:   ${formatNumber(sgTreasurySupply, 6)} LP tokens`);
   console.log(`  Reserve0 (OLAS):   ${formatNumber(sgReserve0, 6)} OLAS`);
-  console.log(`  Reserve1 (ETH):    ${formatNumber(sgReserve1, 6)} ETH`);
-  console.log(`  ETH Price:         ${formatUsd(sgEthPrice)}`);
+  console.log(`  Reserve1:          ${formatNumber(sgReserve1, 6)}`);
+  console.log(`  Price:             ${formatUsd(sgEthPrice)}`);
   console.log(`  Pool Liquidity:    ${formatUsd(sgPoolLiquidityUsd)}`);
   console.log(`  POL USD:           ${formatUsd(sgPolUsd)}`);
   console.log();
@@ -220,8 +261,8 @@ async function main() {
   console.log('='.repeat(70));
   console.log('NOTES:');
   console.log('-'.repeat(70));
-  console.log('  - Subgraph uses ETH price from Chainlink (ETH reserves x ETH price x 2)');
-  console.log('  - Dune uses OLAS price from DEX trades (OLAS reserves x OLAS price x 2)');
+  console.log(`  - Chain: ${chain}`);
+  console.log('  - Subgraph: Chainlink for Uniswap chains, pool spot price for Balancer chains');
   console.log('  - Both methods should yield similar results for balanced AMM pools');
   console.log('='.repeat(70));
 }
