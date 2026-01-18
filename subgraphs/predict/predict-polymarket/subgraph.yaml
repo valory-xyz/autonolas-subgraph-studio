@@ -72,5 +72,50 @@ dataSources:
       eventHandlers:
         - event: QuestionInitialized(indexed bytes32,indexed uint256,indexed address,bytes,address,uint256,uint256)
           handler: handleQuestionInitialized
+  - kind: ethereum/contract
+    name: CTFExchange
+    network: matic
+    source:
+      address: "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982e"
+      abi: CTFExchange
+      startBlock: 80360433
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      file: ./src/ctf-exchange.ts
+      entities:
+        - Bet
+        - TokenRegistry
+      abis:
+        - name: CTFExchange
+          file: ../../../abis/CTFExchange.json
+      eventHandlers:
+        - event: OrderFilled(indexed bytes32,indexed address,indexed address,uint256,uint256,uint256,uint256,uint256)
+          handler: handleOrderFilled
+        - event: TokenRegistered(indexed uint256,indexed uint256,indexed bytes32)
+          handler: handleTokenRegistered
+  - kind: ethereum/contract
+    name: NegRiskCTFExchange
+    network: matic
+    source:
+      address: "0xC5d563A36AE78145C45a50134d48A1215220f80a"
+      abi: CTFExchange
+      startBlock: 80360433
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      file: ./src/ctf-exchange.ts
+      entities:
+        - Bet
+        - TokenRegistry
+      abis:
+        - name: CTFExchange
+          file: ../../../abis/CTFExchange.json
+      eventHandlers:
+        - event: OrderFilled(indexed bytes32,indexed address,indexed address,uint256,uint256,uint256,uint256,uint256)
+          handler: handleOrderFilled
+        - event: TokenRegistered(indexed uint256,indexed uint256,indexed bytes32)
+          handler: handleTokenRegistered
 
-  

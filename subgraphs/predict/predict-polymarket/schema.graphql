@@ -47,6 +47,27 @@ type MarketMetadata @entity(immutable: true) {
   description: String
 }
 
+type Bet @entity (immutable: false) {
+  id: ID!
+  bettor: TraderAgent!
+  outcomeIndex: BigInt!
+  amount: BigInt!   # USDC spent (e.g., 1.00)
+  shares: BigInt!   # Tokens received (e.g., 2.17)
+  # countedInProfit: Boolean!
+  countedInTotal: Boolean
+  question: Question
+  # dailyStatistic: DailyProfitStatistic
+  timestamp: BigInt!
+}
+
+# Maps tokenId to conditionId and outcome index for tracking trades
+type TokenRegistry @entity(immutable: true) {
+  id: ID! # tokenId as string
+  tokenId: BigInt!
+  conditionId: Bytes!
+  outcomeIndex: BigInt! # 0 or 1 for binary markets
+}
+
 type Global @entity (immutable: false) {
   id: ID!
   totalTraderAgents: Int!
