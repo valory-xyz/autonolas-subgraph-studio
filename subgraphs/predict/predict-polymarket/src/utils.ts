@@ -14,7 +14,6 @@ export function getGlobal(): Global {
     global.totalBets = 0;
     global.totalTraded = BigInt.zero();
     global.totalTradedSettled = BigInt.zero();
-    global.totalFees = BigInt.zero();
     global.totalPayout = BigInt.zero();
   }
   return global as Global;
@@ -107,7 +106,6 @@ export function updateMarketParticipantActivity(
     participant.totalBets = 0;
     participant.totalTraded = BigInt.zero();
     participant.totalTradedSettled = BigInt.zero();
-    participant.totalFees = BigInt.zero();
     participant.totalPayout = BigInt.zero();
     participant.createdAt = blockTimestamp;
     participant.bets = [];

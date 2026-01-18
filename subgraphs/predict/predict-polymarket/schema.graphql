@@ -86,7 +86,6 @@ type MarketParticipant @entity (immutable: false) {
   totalBets: Int!
   totalTraded: BigInt!
   totalTradedSettled: BigInt!
-  totalFees: BigInt!
   totalPayout: BigInt!
   bets: [String!]!
   createdAt: BigInt!
@@ -103,5 +102,4 @@ type Global @entity (immutable: false) {
   totalPayout: BigInt!
   totalTraded: BigInt!
   totalTradedSettled: BigInt!
-  totalFees: BigInt!
 }

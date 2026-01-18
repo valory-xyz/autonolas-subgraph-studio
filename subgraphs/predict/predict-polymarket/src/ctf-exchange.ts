@@ -13,7 +13,7 @@ import { getGlobal, updateTraderAgentActivity, updateMarketParticipantActivity }
 
 export function handleTokenRegistered(event: TokenRegisteredEvent): void {
   // Register Outcome 0 (Usually "No")
-  let token0Id = Bytes.fromBigInt(event.params.token0);
+  let token0Id = Bytes.fromByteArray(Bytes.fromBigInt(event.params.token0));
   let registry0 = new TokenRegistry(token0Id);
   registry0.tokenId = event.params.token0;
   registry0.conditionId = event.params.conditionId;
@@ -21,7 +21,7 @@ export function handleTokenRegistered(event: TokenRegisteredEvent): void {
   registry0.save();
 
   // Register Outcome 1 (Usually "Yes")
-  let token1Id = Bytes.fromBigInt(event.params.token1);
+  let token1Id = Bytes.fromByteArray(Bytes.fromBigInt(event.params.token1));
   let registry1 = new TokenRegistry(token1Id);
   registry1.tokenId = event.params.token1;
   registry1.conditionId = event.params.conditionId;
@@ -51,7 +51,7 @@ export function handleOrderFilled(event: OrderFilledEvent): void {
   let outcomeTokenId = isBuying ? event.params.makerAssetId : event.params.takerAssetId;
 
   // 3. Lookup the outcome index from our Registry
-  let tokenRegistry = TokenRegistry.load(Bytes.fromBigInt(outcomeTokenId));
+  let tokenRegistry = TokenRegistry.load(Bytes.fromByteArray(Bytes.fromBigInt(outcomeTokenId)));
   if (tokenRegistry === null) {
     log.warning("TokenRegistry missing for token {} in tx {}", [
       outcomeTokenId.toString(),

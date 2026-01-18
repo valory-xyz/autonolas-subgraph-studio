@@ -6,7 +6,7 @@ import {
   MarketMetadata,
   Question,
   QuestionIdToConditionId,
-  QuestionFinalized,
+  QuestionResolution,
   TraderAgent,
   MarketParticipant,
   QuestionResolution
@@ -199,7 +199,7 @@ export function handleQuestionResolved(event: QuestionResolvedEvent): void {
     let agentId = bet.bettor.toHexString();
 
     let agent = agentCache.has(agentId)
-      ? agentCache.get(agentId)!
+      ? agentCache.get(agentId)
       : TraderAgent.load(bet.bettor);
 
     if (agent !== null) {
@@ -210,7 +210,7 @@ export function handleQuestionResolved(event: QuestionResolvedEvent): void {
         // Update Participant
         let participantId = agentId + "-" + bridge.conditionId.toHexString();
         let participant = participantCache.has(participantId) 
-          ? participantCache.get(participantId)! 
+          ? participantCache.get(participantId)
           : MarketParticipant.load(participantId);
         
         if (participant != null) {

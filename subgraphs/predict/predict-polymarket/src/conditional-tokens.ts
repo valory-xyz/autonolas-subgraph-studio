@@ -42,7 +42,7 @@ export function handlePayoutRedemption(event: PayoutRedemptionEvent): void {
     let bet = bets[i];
     if (bet && bet.bettor == redeemer && bet.countedInProfit == false) {
       // This is a winning bet being redeemed
-      totalCosts = totalCosts.plus(bet.amount).plus(bet.feeAmount);
+      totalCosts = totalCosts.plus(bet.amount);
       bet.countedInProfit = true;
       bet.save();
     }

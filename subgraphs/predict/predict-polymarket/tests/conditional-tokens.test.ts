@@ -2,7 +2,7 @@ import { assert, describe, test, clearStore, beforeEach, newMockEvent } from "ma
 import { Address, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts";
 import { handleConditionPreparation, handlePayoutRedemption } from "../src/conditional-tokens";
 import { ConditionPreparation as ConditionPreparationEvent, PayoutRedemption as PayoutRedemptionEvent } from "../generated/ConditionalTokens/ConditionalTokens";
-import { ConditionPreparation, Question, MarketMetadata } from "../generated/schema";
+import { QuestionIdToConditionId } from "../generated/schema";
 
 const ORACLE = Address.fromString("0x1234567890123456789012345678901234567890");
 const QUESTION_ID = Bytes.fromHexString("0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890");
@@ -52,28 +52,15 @@ describe("ConditionalTokens - ConditionPreparation Handler", () => {
     clearStore();
   });
 
-  test("Should create ConditionPreparation and Question for binary outcome (2 outcomes)", () => {
+  test("Should create QuestionIdToConditionId bridge for binary outcome (2 outcomes)", () => {
     let event = createConditionPreparationEvent(CONDITION_ID, ORACLE, QUESTION_ID, 2);
 
     handleConditionPreparation(event);
 
-    // Check ConditionPreparation entity
-    let conditionIdHex = CONDITION_ID.toHexString();
-    assert.fieldEquals("ConditionPreparation", conditionIdHex, "id", conditionIdHex);
-    assert.fieldEquals("ConditionPreparation", conditionIdHex, "conditionId", CONDITION_ID.toHexString());
-    assert.fieldEquals("ConditionPreparation", conditionIdHex, "oracle", ORACLE.toHexString());
-    assert.fieldEquals("ConditionPreparation", conditionIdHex, "questionId", QUESTION_ID.toHexString());
-    assert.fieldEquals("ConditionPreparation", conditionIdHex, "outcomeSlotCount", "2");
-    assert.fieldEquals("ConditionPreparation", conditionIdHex, "blockNumber", "1");
-    assert.fieldEquals("ConditionPreparation", conditionIdHex, "blockTimestamp", "1");
-
-    // Check Question entity
+    // Check QuestionIdToConditionId bridge entity
     let questionIdHex = QUESTION_ID.toHexString();
-    assert.fieldEquals("Question", questionIdHex, "id", questionIdHex);
-    assert.fieldEquals("Question", questionIdHex, "conditionId", CONDITION_ID.toHexString());
-    assert.fieldEquals("Question", questionIdHex, "metadata", "null");
-    assert.fieldEquals("Question", questionIdHex, "blockNumber", "1");
-    assert.fieldEquals("Question", questionIdHex, "blockTimestamp", "1");
+    assert.fieldEquals("QuestionIdToConditionId", questionIdHex, "id", questionIdHex);
+    assert.fieldEquals("QuestionIdToConditionId", questionIdHex, "conditionId", CONDITION_ID.toHexString());
   });
 
   test("Should not create entities for non-binary outcomes (3 outcomes)", () => {
@@ -82,8 +69,7 @@ describe("ConditionalTokens - ConditionPreparation Handler", () => {
     handleConditionPreparation(event);
 
     // Should not create any entities
-    assert.notInStore("ConditionPreparation", CONDITION_ID.toHexString());
-    assert.notInStore("Question", QUESTION_ID.toHexString());
+    assert.notInStore("QuestionIdToConditionId", QUESTION_ID.toHexString());
   });
 
   test("Should not create entities for single outcome (1 outcome)", () => {
@@ -92,8 +78,7 @@ describe("ConditionalTokens - ConditionPreparation Handler", () => {
     handleConditionPreparation(event);
 
     // Should not create any entities
-    assert.notInStore("ConditionPreparation", CONDITION_ID.toHexString());
-    assert.notInStore("Question", QUESTION_ID.toHexString());
+    assert.notInStore("QuestionIdToConditionId", QUESTION_ID.toHexString());
   });
 
   test("Should handle multiple binary conditions correctly", () => {
@@ -108,31 +93,27 @@ describe("ConditionalTokens - ConditionPreparation Handler", () => {
     handleConditionPreparation(event1);
     handleConditionPreparation(event2);
 
-    // Check both ConditionPreparations exist
-    assert.fieldEquals("ConditionPreparation", conditionId1.toHexString(), "id", conditionId1.toHexString());
-    assert.fieldEquals("ConditionPreparation", conditionId2.toHexString(), "id", conditionId2.toHexString());
-
-    // Check both Questions exist
-    assert.fieldEquals("Question", questionId1.toHexString(), "id", questionId1.toHexString());
-    assert.fieldEquals("Question", questionId2.toHexString(), "id", questionId2.toHexString());
+    // Check both bridge entities exist
+    assert.fieldEquals("QuestionIdToConditionId", questionId1.toHexString(), "id", questionId1.toHexString());
+    assert.fieldEquals("QuestionIdToConditionId", questionId2.toHexString(), "id", questionId2.toHexString());
   });
 
-  test("Question should link to correct conditionId", () => {
+  test("Bridge should link questionId to correct conditionId", () => {
     let event = createConditionPreparationEvent(CONDITION_ID, ORACLE, QUESTION_ID, 2);
 
     handleConditionPreparation(event);
 
     let questionIdHex = QUESTION_ID.toHexString();
-    assert.fieldEquals("Question", questionIdHex, "conditionId", CONDITION_ID.toHexString());
+    assert.fieldEquals("QuestionIdToConditionId", questionIdHex, "conditionId", CONDITION_ID.toHexString());
   });
 
-  test("Should handle zero address oracle", () => {
+  test("Should create bridge entity with any oracle address", () => {
     let event = createConditionPreparationEvent(CONDITION_ID, Address.zero(), QUESTION_ID, 2);
 
     handleConditionPreparation(event);
 
-    let conditionIdHex = CONDITION_ID.toHexString();
-    assert.fieldEquals("ConditionPreparation", conditionIdHex, "oracle", Address.zero().toHexString());
+    let questionIdHex = QUESTION_ID.toHexString();
+    assert.fieldEquals("QuestionIdToConditionId", questionIdHex, "id", questionIdHex);
   });
 });
 
@@ -162,80 +143,33 @@ describe("ConditionalTokens - PayoutRedemption Handler", () => {
   });
 });
 
-describe("ConditionalTokens - Integration with MarketMetadata", () => {
-  beforeEach(() => {
-    clearStore();
-  });
-
-  test("Question can be linked to MarketMetadata after creation", () => {
-    // First create the condition and question
-    let event = createConditionPreparationEvent(CONDITION_ID, ORACLE, QUESTION_ID, 2);
-    handleConditionPreparation(event);
-
-    // Manually create and link metadata (simulating UMA handler)
-    let metadata = new MarketMetadata(QUESTION_ID);
-    metadata.title = "Will BTC hit 100k?";
-    metadata.outcomes = ["Yes", "No"];
-    metadata.save();
-
-    // Update the question to link to metadata
-    let question = Question.load(QUESTION_ID);
-    if (question != null) {
-      question.metadata = QUESTION_ID;
-      question.save();
-    }
-
-    // Verify the link
-    assert.fieldEquals("Question", QUESTION_ID.toHexString(), "metadata", QUESTION_ID.toHexString());
-    assert.fieldEquals("MarketMetadata", QUESTION_ID.toHexString(), "title", "Will BTC hit 100k?");
-  });
-
-  test("Question without metadata should have null metadata field", () => {
-    let event = createConditionPreparationEvent(CONDITION_ID, ORACLE, QUESTION_ID, 2);
-    handleConditionPreparation(event);
-
-    // Question created but no metadata attached yet
-    assert.fieldEquals("Question", QUESTION_ID.toHexString(), "metadata", "null");
-  });
-});
-
 describe("ConditionalTokens - Edge Cases", () => {
   beforeEach(() => {
     clearStore();
   });
 
-  test("Should handle maximum BigInt values", () => {
-    let largeOutcomeCount = 2; // Still binary, but testing with edge case context
-    let event = createConditionPreparationEvent(CONDITION_ID, ORACLE, QUESTION_ID, largeOutcomeCount);
-
-    handleConditionPreparation(event);
-
-    assert.fieldEquals("ConditionPreparation", CONDITION_ID.toHexString(), "outcomeSlotCount", "2");
-  });
-
-  test("Should use questionId correctly as unique identifier", () => {
+  test("Should use questionId correctly as unique identifier for bridge", () => {
     let event = createConditionPreparationEvent(CONDITION_ID, ORACLE, QUESTION_ID, 2);
 
     handleConditionPreparation(event);
 
-    // The Question entity uses questionId as its ID
-    let question = Question.load(QUESTION_ID);
-    assert.assertTrue(question !== null, "Question should exist");
-    if (question != null) {
-      assert.bytesEquals(question.id, QUESTION_ID);
+    // The QuestionIdToConditionId entity uses questionId as its ID
+    let bridge = QuestionIdToConditionId.load(QUESTION_ID);
+    assert.assertTrue(bridge !== null, "Bridge should exist");
+    if (bridge != null) {
+      assert.bytesEquals(bridge.id, QUESTION_ID);
+      assert.bytesEquals(bridge.conditionId, CONDITION_ID);
     }
   });
 
-  test("Should use conditionId correctly as unique identifier for ConditionPreparation", () => {
-    let event = createConditionPreparationEvent(CONDITION_ID, ORACLE, QUESTION_ID, 2);
+  test("Should handle different questionId and conditionId combinations", () => {
+    let questionId = Bytes.fromHexString("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    let conditionId = Bytes.fromHexString("0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
 
+    let event = createConditionPreparationEvent(conditionId, ORACLE, questionId, 2);
     handleConditionPreparation(event);
 
-    // The ConditionPreparation entity uses conditionId.toHexString() as its ID
-    let condition = ConditionPreparation.load(CONDITION_ID.toHexString());
-    assert.assertTrue(condition !== null, "ConditionPreparation should exist");
-    if (condition != null) {
-      assert.stringEquals(condition.id, CONDITION_ID.toHexString());
-    }
+    assert.fieldEquals("QuestionIdToConditionId", questionId.toHexString(), "id", questionId.toHexString());
+    assert.fieldEquals("QuestionIdToConditionId", questionId.toHexString(), "conditionId", conditionId.toHexString());
   });
 });
