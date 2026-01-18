@@ -9,7 +9,7 @@ import {
   TokenRegistry,
   TraderAgent,
 } from "../generated/schema";
-import { getGlobal, updateTraderAgentActivity } from "./utils";
+import { getGlobal, updateTraderAgentActivity, updateMarketParticipantActivity } from "./utils";
 
 export function handleTokenRegistered(event: TokenRegisteredEvent): void {
   // Register Outcome 0 (Usually "No")
@@ -65,12 +65,13 @@ export function handleOrderFilled(event: OrderFilledEvent): void {
   let bet = new Bet(betId);
   bet.bettor = agent.id;
   bet.outcomeIndex = tokenRegistry.outcomeIndex;
-  
+
   bet.amount = usdcAmount;     // USDC value
   bet.shares = sharesAmount;   // Token quantity
-
-  bet.timestamp = event.block.timestamp;
+  bet.blockTimestamp = event.block.timestamp;
+  bet.transactionHash = event.transaction.hash;
   bet.countedInTotal = false;
+  bet.countedInProfit = false;
 
   // 5. Link to the Question
   let question = Question.load(tokenRegistry.conditionId);
@@ -79,13 +80,25 @@ export function handleOrderFilled(event: OrderFilledEvent): void {
   }
   bet.save();
 
-  // 6. Update TraderAgent Statistics
+  // 6. Update MarketParticipant
+  if (question !== null) {
+    updateMarketParticipantActivity(
+      event.params.taker,
+      tokenRegistry.conditionId,
+      betId.toHexString(),
+      event.block.timestamp,
+      event.block.number,
+      event.transaction.hash
+    );
+  }
+
+  // 7. Update TraderAgent Statistics
   updateTraderAgentActivity(event.params.taker, event.block.timestamp);
   agent.totalBets += 1;
   agent.totalTraded = agent.totalTraded.plus(usdcAmount);
   agent.save();
 
-  // 7. Update Global Statistics
+  // 8. Update Global Statistics
   let global = getGlobal();
   global.totalBets += 1;
   global.totalTraded = global.totalTraded.plus(usdcAmount);

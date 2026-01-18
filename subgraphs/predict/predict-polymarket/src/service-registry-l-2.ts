@@ -35,7 +35,7 @@ export function handleCreateMultisigWithAgents(
     traderAgent.serviceId = event.params.serviceId;
     traderAgent.totalPayout = BigInt.zero();
     traderAgent.totalTraded = BigInt.zero();
-    traderAgent.totalFees = BigInt.zero();
+    traderAgent.totalTradedSettled = BigInt.zero();
 
     traderAgent.blockNumber = event.block.number;
     traderAgent.blockTimestamp = event.block.timestamp;
