@@ -1,19 +1,19 @@
-import { BigInt, log } from "@graphprotocol/graph-ts";
+import { BigInt, Bytes, log } from "@graphprotocol/graph-ts";
 import {
   OrderFilled as OrderFilledEvent,
   TokenRegistered as TokenRegisteredEvent,
 } from "../generated/CTFExchange/CTFExchange";
 import {
   Bet,
+  Question,
   TokenRegistry,
   TraderAgent,
-  ConditionPreparation,
 } from "../generated/schema";
 import { getGlobal, updateTraderAgentActivity } from "./utils";
 
 export function handleTokenRegistered(event: TokenRegisteredEvent): void {
   // Register Outcome 0 (Usually "No")
-  let token0Id = event.params.token0.toString();
+  let token0Id = Bytes.fromBigInt(event.params.token0);
   let registry0 = new TokenRegistry(token0Id);
   registry0.tokenId = event.params.token0;
   registry0.conditionId = event.params.conditionId;
@@ -21,7 +21,7 @@ export function handleTokenRegistered(event: TokenRegisteredEvent): void {
   registry0.save();
 
   // Register Outcome 1 (Usually "Yes")
-  let token1Id = event.params.token1.toString();
+  let token1Id = Bytes.fromBigInt(event.params.token1);
   let registry1 = new TokenRegistry(token1Id);
   registry1.tokenId = event.params.token1;
   registry1.conditionId = event.params.conditionId;
@@ -51,7 +51,7 @@ export function handleOrderFilled(event: OrderFilledEvent): void {
   let outcomeTokenId = isBuying ? event.params.makerAssetId : event.params.takerAssetId;
 
   // 3. Lookup the outcome index from our Registry
-  let tokenRegistry = TokenRegistry.load(outcomeTokenId.toString());
+  let tokenRegistry = TokenRegistry.load(Bytes.fromBigInt(outcomeTokenId));
   if (tokenRegistry === null) {
     log.warning("TokenRegistry missing for token {} in tx {}", [
       outcomeTokenId.toString(),
@@ -61,7 +61,7 @@ export function handleOrderFilled(event: OrderFilledEvent): void {
   }
 
   // 4. Create the Bet entity
-  let betId = event.transaction.hash.toHexString().concat("-").concat(event.logIndex.toString());
+  let betId = event.transaction.hash.concat(Bytes.fromI32(event.logIndex.toI32()));
   let bet = new Bet(betId);
   bet.bettor = agent.id;
   bet.outcomeIndex = tokenRegistry.outcomeIndex;
@@ -73,9 +73,9 @@ export function handleOrderFilled(event: OrderFilledEvent): void {
   bet.countedInTotal = false;
 
   // 5. Link to the Question
-  let condition = ConditionPreparation.load(tokenRegistry.conditionId.toHexString());
-  if (condition !== null) {
-    bet.question = condition.questionId;
+  let question = Question.load(tokenRegistry.conditionId);
+  if (question !== null) {
+    bet.question = question.id;
   }
   bet.save();
 

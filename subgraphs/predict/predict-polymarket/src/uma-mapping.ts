@@ -1,5 +1,5 @@
 import { QuestionInitialized } from "../generated/OptimisticOracleV3/OptimisticOracleV3"
-import { MarketMetadata } from "../generated/schema"
+import { MarketMetadata, Question, QuestionIdToConditionId } from "../generated/schema"
 
 /**
  * Extracts the title from UMA ancillaryData string.
@@ -42,6 +42,19 @@ export function extractTitle(rawData: string): string {
 }
 
 /**
+ * Helper to verify the outcome pair is strictly binary Yes/No
+ */
+function isYesNoPair(out1: string, out2: string): boolean {
+  let val1 = out1.toLowerCase();
+  let val2 = out2.toLowerCase();
+
+  return (
+    (val1 == "yes" && val2 == "no") || 
+    (val1 == "no" && val2 == "yes")
+  );
+}
+
+/**
  * Extracts the outcomes array.
  * Example input: "... outcomes: [Yes, No]" or
  * res_data: p1: 0, p2: 1, p3: 0.5. Outcome Mapping: Where p1 corresponds to Team WE, p2 to EDward Gaming, p3 to unknown/50-50
@@ -55,6 +68,8 @@ export function extractBinaryOutcomes(rawData: string): string[] {
   let p1Idx = rawData.indexOf(p1Key);
   let p2Idx = rawData.indexOf(p2Key);
 
+  let res: string[] = [];
+
   if (p1Idx != -1 && p2Idx != -1) {
     let p1Start = p1Idx + p1Key.length;
     let p1End = rawData.indexOf(",", p1Start);
@@ -67,7 +82,7 @@ export function extractBinaryOutcomes(rawData: string): string[] {
       let out1 = rawData.substring(p1Start, p1End).trim();
       let out2 = rawData.substring(p2Start, p2End != -1 ? p2End : rawData.length).trim();
 
-      return [out1, out2];
+      res = [out1, out2];
     }
   }
 
@@ -85,22 +100,45 @@ export function extractBinaryOutcomes(rawData: string): string[] {
         let out1 = list[0].trim();
         let out2 = list[1].trim();
         
-        return [out1, out2];
+        res = [out1, out2];
       }
     }
   }
+
+  if (res.length === 2 && isYesNoPair(res[0], res[1])) 
+    return res;
 
   return []; 
 }
 
 export function handleQuestionInitialized(event: QuestionInitialized): void {
-  let metadata = new MarketMetadata(event.params.questionID)
-  
-  // The ancillaryData is a hex string of the UTF-8 text
-  // format: "q: title: Will BTC hit 100k?, res_data: p1: 0, p2: 1, outcomes: [Yes, No]"
-  let rawData = event.params.ancillaryData.toString() 
-  
-  metadata.title = extractTitle(rawData)
-  metadata.outcomes = extractBinaryOutcomes(rawData)
-  metadata.save()
+  let rawData = event.params.ancillaryData.toString();
+  let outcomes = extractBinaryOutcomes(rawData);
+
+  // 1. Check if it's a Yes/No market
+  if (outcomes.length == 0) {
+    // Optional: Delete the bridge here if you want to be 100% clean, 
+    // but leaving a 32-byte string is very cheap.
+    return; 
+  }
+
+  // 2. Find the ConditionID using our bridge
+  let bridge = QuestionIdToConditionId.load(event.params.questionID);
+  if (bridge == null) return;
+
+  // 3. Create the MarketMetadata
+  let metadata = new MarketMetadata(event.params.questionID);
+  metadata.title = extractTitle(rawData);
+  metadata.outcomes = outcomes;
+  metadata.rawAncillaryData = rawData;
+  metadata.save();
+
+  // 4. Create the Question using ConditionID as the ID
+  let question = new Question(bridge.conditionId);
+  question.questionId = event.params.questionID;
+  question.metadata = metadata.id;
+  question.blockNumber = event.block.number;
+  question.blockTimestamp = event.block.timestamp;
+  question.transactionHash = event.transaction.hash;
+  question.save();
 }
