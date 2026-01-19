@@ -14,32 +14,53 @@
 ## Architecture Overview
 
 ### Purpose
-A GraphQL API for tracking Autonolas agent activity on Polymarket prediction markets on Polygon. This is a **minimal initial implementation** that focuses on agent registration and basic statistics tracking.
+A GraphQL API for tracking Autonolas agent activity on Polymarket prediction markets on Polygon. Tracks agent registration, market metadata, and trading statistics.
 
 ### Directory Structure
 ```
 subgraphs/predict/predict-polymarket/
-├── schema.graphql           # GraphQL schema definitions
-├── subgraph.yaml            # Subgraph configuration & event mappings
+├── schema.graphql                   # GraphQL schema definitions
+├── subgraph.yaml                    # Subgraph configuration & event mappings
 ├── src/
-│   └── service-registry-l-2.ts  # Agent registration handler
-└── generated/                    # Auto-generated bindings
+│   ├── service-registry-l-2.ts      # Agent registration
+│   ├── conditional-tokens.ts        # Condition preparation and payout handling
+│   ├── uma-mapping.ts               # Market metadata extraction from UMA events
+│   ├── constants.ts                 # Constants
+│   └── utils.ts                     # Utility functions
+└── generated/                       # Auto-generated bindings
 ```
 
 ### Key Contracts
 1. **ServiceRegistryL2** (0xE3607b00E75f6405248323A9417ff6b39B244b50) - Agent registration on Polygon
+2. **ConditionalTokens** (0x4D97DCd97eC945f40cF65F87097ACe5EA0476045) - Condition preparation and payouts
+3. **OptimisticOracleV3** (0x65070BE91477460D8A7AeEb94ef92fe056C2f2A7) - UMA oracle for market metadata
 
 ### Core Business Rules
 
 1.  **Selective Tracking**:
-    * **Agents**: Only tracks agents registered through the `ServiceRegistryL2` contract on Polygon.
-    * **Scope**: This initial version includes only TraderAgent and Global entities for basic tracking.
+    * **Agents**: Only tracks services with agent ID 86 registered through the `ServiceRegistryL2` contract on Polygon.
+    * **Markets**: Binary markets (2 outcomes) tracked via UMA OptimisticOracleV3 and ConditionalTokens.
+    * **Financial Metrics**: `totalTraded` and `totalFees` only count settled markets (when answer is known).
 
 ---
 
 ## Core Data Model
 
 ### Primary Entities (schema.graphql)
+
+#### TraderService
+Helper entity for filtering agents with ID 86.
+
+**Key Fields:**
+```graphql
+type TraderService @entity(immutable: true) {
+  id: ID!                       # serviceId
+}
+```
+
+**Pattern**: Only created when a service registers with agent ID 86, allowing proper TraderAgent filtering.
+
+---
 
 #### TraderAgent
 Represents an Autonolas trading agent with basic tracking information.
@@ -56,9 +77,9 @@ type TraderAgent @entity {
   totalBets: Int!
 
   # Financial metrics
-  totalTraded: BigInt!          # Total trading volume
-  totalFees: BigInt!            # Total fees paid
-  totalPayout: BigInt!          # Total payouts received
+  totalTraded: BigInt!          # Total trading volume for settled markets only
+  totalFees: BigInt!            # Total fees paid for settled markets only
+  totalPayout: BigInt!          # Total payouts (all bets including open markets)
 
   # Block metadata
   blockNumber: BigInt!
@@ -66,6 +87,65 @@ type TraderAgent @entity {
   transactionHash: Bytes!
 }
 ```
+
+**Important**: `totalTraded` and `totalFees` only count settled markets (when we have an answer), while `totalPayout` includes all bets including open markets.
+
+---
+
+#### ConditionPreparation
+Immutable record of condition setup from ConditionalTokens.
+
+**Key Fields:**
+```graphql
+type ConditionPreparation @entity(immutable: true) {
+  id: ID!                       # conditionId as hex string
+  conditionId: Bytes!           # bytes32
+  oracle: Bytes!                # address
+  questionId: Bytes!            # bytes32
+  outcomeSlotCount: BigInt!     # uint256 (only 2 outcomes tracked)
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+```
+
+**Pattern**: Only conditions with 2 outcomes are stored (binary markets).
+
+---
+
+#### Question
+Links market questions to conditions with metadata.
+
+**Key Fields:**
+```graphql
+type Question @entity {
+  id: Bytes!                    # questionId
+  conditionId: Bytes!           # bytes32
+  metadata: MarketMetadata      # Market details (nullable until UMA event)
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+```
+
+**Pattern**: Created during ConditionPreparation, metadata populated later by UMA QuestionInitialized event.
+
+---
+
+#### MarketMetadata
+Market details extracted from UMA ancillary data.
+
+**Key Fields:**
+```graphql
+type MarketMetadata @entity(immutable: true) {
+  id: Bytes!                    # questionId
+  title: String!                # Market question title
+  outcomes: [String!]!          # Array of outcome names (e.g., ["Yes", "No"])
+  description: String           # Optional market description
+}
+```
+
+**Pattern**: Parsed from UMA OptimisticOracleV3 ancillary data string format.
 
 ---
 
@@ -79,14 +159,16 @@ type Global @entity {
 
   totalTraderAgents: Int!
   totalActiveTraderAgents: Int!
-  totalBets: Int!
+  totalBets: Int!               # All bets including open markets
 
   # Financial metrics
-  totalTraded: BigInt!
-  totalFees: BigInt!
-  totalPayout: BigInt!
+  totalTraded: BigInt!          # Trading volume for settled markets only
+  totalFees: BigInt!            # Fees for settled markets only
+  totalPayout: BigInt!          # All payouts
 }
 ```
+
+**Important**: Like TraderAgent, `totalTraded` and `totalFees` only count settled markets.
 
 ---
 
@@ -94,36 +176,140 @@ type Global @entity {
 
 ### 1. Agent Registration (service-registry-l-2.ts)
 
-**Event**: `CreateMultisigWithAgents(serviceId, multisig)`
+#### Event 1: `RegisterInstance(operator, serviceId, agentInstance, agentId)`
+
+**Handler**: `handleRegisterInstance`
+
+```typescript
+export function handleRegisterInstance(event: RegisterInstanceEvent): void {
+  let agentId = event.params.agentId.toI32();
+  // Only create TraderService if it has agent ID 86
+  if (agentId !== PREDICT_AGENT_ID) return;
+
+  let serviceId = event.params.serviceId.toString();
+  let traderService = TraderService.load(serviceId);
+  if (traderService !== null) return;
+
+  traderService = new TraderService(serviceId);
+  traderService.save()
+}
+```
+
+**Pattern**: Creates TraderService marker entity only for services with agent ID 86, enabling selective tracking in the next handler.
+
+---
+
+#### Event 2: `CreateMultisigWithAgents(serviceId, multisig)`
 
 **Handler**: `handleCreateMultisigWithAgents`
 
 ```typescript
-export function handleCreateMultisigWithAgents(event: CreateMultisigWithAgents): void {
-  let agent = new TraderAgent(event.params.multisig);
-  agent.serviceId = event.params.serviceId;
-  agent.totalBets = 0;
-  agent.totalTraded = BigInt.fromI32(0);
-  agent.totalFees = BigInt.fromI32(0);
-  agent.totalPayout = BigInt.fromI32(0);
-  agent.blockNumber = event.block.number;
-  agent.blockTimestamp = event.block.timestamp;
-  agent.transactionHash = event.transaction.hash;
-  agent.save();
+export function handleCreateMultisigWithAgents(event: CreateMultisigWithAgentsEvent): void {
+  // Skip non-trader services
+  let traderService = TraderService.load(event.params.serviceId.toString())
+  if (traderService === null) return;
 
-  let global = getGlobal();
-  global.totalTraderAgents = global.totalTraderAgents + 1;
-  global.save();
+  let traderAgent = TraderAgent.load(event.params.multisig);
+  if (traderAgent === null) {
+    traderAgent = new TraderAgent(event.params.multisig);
+    traderAgent.totalBets = 0;
+    traderAgent.serviceId = event.params.serviceId;
+    traderAgent.totalPayout = BigInt.zero();
+    traderAgent.totalTraded = BigInt.zero();
+    traderAgent.totalFees = BigInt.zero();
+    traderAgent.blockNumber = event.block.number;
+    traderAgent.blockTimestamp = event.block.timestamp;
+    traderAgent.transactionHash = event.transaction.hash;
+    traderAgent.save();
+
+    let global = getGlobal();
+    global.totalTraderAgents += 1;
+    global.save();
+  }
 }
 ```
 
-**Pattern**: Only registered agents are tracked (selective indexing).
+**Pattern**: Two-step filtering ensures only services with agent ID 86 create TraderAgent entities. Uses TraderService as a gate.
 
-**Note**: This initial version focuses solely on agent registration. Future versions will add handlers for:
-- Trading activity tracking
-- Market settlements
-- Payout redemptions
-- Daily profit statistics
+---
+
+### 2. Market Condition Setup (conditional-tokens.ts)
+
+**Event**: `ConditionPreparation(conditionId, oracle, questionId, outcomeSlotCount)`
+
+**Handler**: `handleConditionPreparation`
+
+```typescript
+export function handleConditionPreparation(event: ConditionPreparationEvent): void {
+  // Only handle binary markets (2 outcomes)
+  if (event.params.outcomeSlotCount.toI32() != 2) {
+    return;
+  }
+
+  let entity = new ConditionPreparation(event.params.conditionId.toHexString());
+  entity.conditionId = event.params.conditionId;
+  entity.oracle = event.params.oracle;
+  entity.questionId = event.params.questionId;
+  entity.outcomeSlotCount = event.params.outcomeSlotCount;
+  entity.blockNumber = event.block.number;
+  entity.blockTimestamp = event.block.timestamp;
+  entity.transactionHash = event.transaction.hash;
+  entity.save();
+
+  let question = new Question(event.params.questionId)
+  question.conditionId = event.params.conditionId;
+  question.metadata = null; // Will be populated by UMA event
+  question.blockNumber = event.block.number;
+  question.blockTimestamp = event.block.timestamp;
+  question.transactionHash = event.transaction.hash;
+  question.save();
+}
+```
+
+**Pattern**: Only binary markets tracked. Question entity created with null metadata, waiting for UMA event.
+
+---
+
+### 3. Market Metadata Extraction (uma-mapping.ts)
+
+**Event**: `QuestionInitialized(questionID, timestamp, requester, ancillaryData, rewardToken, reward, proposalBond)`
+
+**Handler**: `handleQuestionInitialized`
+
+```typescript
+export function handleQuestionInitialized(event: QuestionInitialized): void {
+  let metadata = new MarketMetadata(event.params.questionID)
+
+  // ancillaryData format: "q: title: Will BTC hit 100k?, res_data: p1: 0, p2: 1, outcomes: [Yes, No]"
+  let rawData = event.params.ancillaryData.toString()
+
+  metadata.title = extractTitle(rawData)
+  metadata.outcomes = extractBinaryOutcomes(rawData)
+  metadata.save()
+}
+```
+
+**Helper Functions**:
+- `extractTitle(rawData)`: Parses title from UMA ancillary data string
+- `extractBinaryOutcomes(rawData)`: Extracts outcome names from "p1 corresponds to X, p2 to Y" or "outcomes: [X, Y]" format
+
+**Pattern**: Parses UMA's structured ancillary data format to extract human-readable market information.
+
+---
+
+### 4. Payout Handling (conditional-tokens.ts)
+
+**Event**: `PayoutRedemption(redeemer, collateralToken, conditionId, indexSets, payout)`
+
+**Handler**: `handlePayoutRedemption`
+
+```typescript
+export function handlePayoutRedemption(event: PayoutRedemptionEvent): void {
+  // TODO: Implementation pending
+}
+```
+
+**Status**: Not yet implemented. Will track agent payouts when completed.
 
 ---
 
@@ -149,6 +335,26 @@ Track an individual agent's performance.
 ```
 
 **Use Case**: Get basic statistics for a specific agent.
+
+---
+
+### Market Information
+Query market metadata and conditions.
+
+```graphql
+{
+  question(id: "0x...") {
+    conditionId
+    metadata {
+      title
+      outcomes
+      description
+    }
+  }
+}
+```
+
+**Use Case**: Get human-readable market information linked to a condition.
 
 ---
 
@@ -197,6 +403,13 @@ List all registered agents.
 
 ## Development Workflow
 
+### Project Structure
+This subgraph is part of the autonolas-subgraph-studio monorepo:
+- `src/service-registry-l-2.ts`: Agent registration (services with agent ID 86 only)
+- `src/conditional-tokens.ts`: Condition preparation and payout handling
+- `src/uma-mapping.ts`: Market metadata extraction from UMA events
+- `schema.graphql`: GraphQL schema
+
 ### Setup
 ```bash
 npm install
@@ -213,6 +426,8 @@ npm run build     # Compile AssemblyScript to WASM
 graph deploy --studio autonolas-predict-polymarket
 ```
 
+**Note**: Check the [root README](../../../README.md) for detailed build and deployment instructions.
+
 ---
 
 ## Configuration Reference (subgraph.yaml)
@@ -222,26 +437,38 @@ graph deploy --studio autonolas-predict-polymarket
 1. **ServiceRegistryL2** (0xE3607b00E75f6405248323A9417ff6b39B244b50)
    - Network: Polygon (matic)
    - Start block: 80360433
-   - Events: `CreateMultisigWithAgents`
+   - Events: `RegisterInstance`, `CreateMultisigWithAgents`
+   - Handler: [src/service-registry-l-2.ts](src/service-registry-l-2.ts)
+
+2. **ConditionalTokens** (0x4D97DCd97eC945f40cF65F87097ACe5EA0476045)
+   - Network: Polygon (matic)
+   - Start block: 80360433
+   - Events: `ConditionPreparation`, `PayoutRedemption`
+   - Handler: [src/conditional-tokens.ts](src/conditional-tokens.ts)
+
+3. **OptimisticOracleV3** (0x65070BE91477460D8A7AeEb94ef92fe056C2f2A7)
+   - Network: Polygon (matic)
+   - Start block: 80360433
+   - Events: `QuestionInitialized`
+   - Handler: [src/uma-mapping.ts](src/uma-mapping.ts)
 
 ---
 
 ## Future Enhancements
 
-This is a minimal initial implementation. Future versions will include:
+This is an initial implementation with basic infrastructure. Future versions may include:
 
-### Phase 2 - Trading Activity
-- **Bet** entity: Track individual trades
-- **Market** entity: Track Polymarket markets
-- Trade event handlers (buys/sells)
+### Trading Activity Tracking
+- **Bet** entity: Track individual trades per agent
+- Detailed bet tracking per agent
 
-### Phase 3 - Profitability Tracking
+### Profitability Tracking
 - **DailyProfitStatistic** entity: Day-to-day performance
 - **MarketParticipant** entity: Per-market agent statistics
-- Settlement and payout handlers
+- Complete payout redemption handler implementation
 - Profit/loss calculation
 
-### Phase 4 - Advanced Features
+### Advanced Features
 - Market creation tracking
 - Detailed fee analysis
 - Time-series aggregations
@@ -253,10 +480,11 @@ This is a minimal initial implementation. Future versions will include:
 
 This Polymarket subgraph differs from the Omen implementation:
 
-1. **Minimal Scope**: Only TraderAgent and Global entities (vs. full suite in Omen)
+1. **Agent Filtering**: Only tracks services with agent ID 86 using TraderService helper entity
 2. **Network**: Polygon instead of Gnosis Chain
-3. **Platform**: Polymarket instead of Omen
-4. **Future Integration**: Will need to integrate with Polymarket-specific contracts and events
+3. **Platform**: Polymarket (UMA + ConditionalTokens) instead of Omen
+4. **Market Metadata**: Extracts market info from UMA OptimisticOracleV3 ancillary data
+5. **Financial Metrics**: Distinguishes between settled market metrics (`totalTraded`, `totalFees`) and all-market metrics (`totalPayout`, `totalBets`)
 
 ---
 
@@ -323,6 +551,8 @@ export function getGlobal(): Global {
 
 **ABIs Used**:
 - ServiceRegistryL2.json
+- ConditionalTokens.json
+- OptimisticOracleV3.json
 
 ---
 
@@ -338,10 +568,12 @@ export function getGlobal(): Global {
 
 ### Critical Points to Remember
 
-1. **Minimal Implementation**: Only agent registration tracking in this version
-2. **Polygon Network**: Different from Omen (Gnosis Chain)
-3. **Selective Indexing**: Only registered agents tracked via ServiceRegistryL2
-4. **Future Expansion**: Designed to be extended with trading, settlement, and profit tracking
+1. **Agent ID 86 Only**: Two-step filtering via TraderService + TraderAgent entities
+2. **Binary Markets Only**: Only tracks markets with 2 outcomes via ConditionalTokens
+3. **Settled vs All Markets**: `totalTraded`/`totalFees` count only settled markets; `totalPayout`/`totalBets` count all markets
+4. **UMA Metadata Parsing**: Market titles/outcomes extracted from OptimisticOracleV3 ancillary data
+5. **Polygon Network**: Deployed on Polygon, different from Omen (Gnosis Chain)
+6. **Incomplete Payout Handler**: `handlePayoutRedemption` is a TODO stub
 
 ### Common Modification Patterns
 
@@ -352,10 +584,14 @@ export function getGlobal(): Global {
 4. Rebuild and deploy
 
 **When Expanding to Track Trading:**
-1. Add new entities (Bet, Market, etc.)
-2. Add new data sources for Polymarket contracts
-3. Implement trading event handlers
-4. Add settlement and payout logic
+1. Add new entities (Bet, Market, MarketParticipant, DailyProfitStatistic)
+2. Implement `handlePayoutRedemption` in [src/conditional-tokens.ts](src/conditional-tokens.ts)
+3. Add trading event handlers for CTF Exchange or other trading contracts
+4. Update `totalTraded`, `totalFees`, `firstParticipation`, `lastActive` fields based on activity
+
+**Constants Reference:**
+- `PREDICT_AGENT_ID = 86` in [src/constants.ts](src/constants.ts)
+- `ONE_DAY = 86400` for daily statistics calculations
 
 ---
 

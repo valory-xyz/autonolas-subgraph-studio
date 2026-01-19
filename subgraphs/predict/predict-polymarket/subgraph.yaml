@@ -16,12 +16,109 @@ dataSources:
       apiVersion: 0.0.7
       language: wasm/assemblyscript
       entities:
-        - CreateMultisigWithAgents
+        - Service
+        - TraderAgent
       abis:
         - name: ServiceRegistryL2
           file: ../../../abis/ServiceRegistryL2.json
       eventHandlers:
+        - event: RegisterInstance(indexed address,indexed uint256,indexed address,uint256)
+          handler: handleRegisterInstance
         - event: CreateMultisigWithAgents(indexed uint256,indexed address)
           handler: handleCreateMultisigWithAgents
       file: ./src/service-registry-l-2.ts
-  
+  - kind: ethereum
+    name: ConditionalTokens
+    network: matic
+    source:
+      address: "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045"
+      abi: ConditionalTokens
+      startBlock: 80360433
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Condition
+        - Question
+        - PayoutRedemption
+      abis:
+        - name: ConditionalTokens
+          file: ../../../abis/ConditionalTokens.json
+      eventHandlers:
+        - event: ConditionPreparation(indexed bytes32,indexed address,indexed bytes32,uint256)
+          handler: handleConditionPreparation
+        - event: PayoutRedemption(indexed address,indexed address,indexed
+            bytes32,bytes32,uint256[],uint256)
+          handler: handlePayoutRedemption
+      file: ./src/conditional-tokens.ts
+  - kind: ethereum/contract
+    name: OptimisticOracleV3
+    network: matic
+    source:
+      address: "0x65070BE91477460D8A7AeEb94ef92fe056C2f2A7" # UMA OO V3
+      abi: OptimisticOracleV3
+      startBlock: 80360433
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      file: ./src/uma-mapping.ts
+      entities:
+        - MarketMetadata
+        - QuestionResolution
+      abis:
+        - name: OptimisticOracleV3
+          file: ../../../abis/OptimisticOracleV3.json
+      eventHandlers:
+        - event: QuestionInitialized(indexed bytes32,indexed uint256,indexed address,bytes,address,uint256,uint256)
+          handler: handleQuestionInitialized
+        - event: QuestionResolved(indexed bytes32,indexed int256,uint256[])
+          handler: handleQuestionResolved
+  - kind: ethereum/contract
+    name: CTFExchange
+    network: matic
+    source:
+      address: "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982e"
+      abi: CTFExchange
+      startBlock: 80360433
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      file: ./src/ctf-exchange.ts
+      entities:
+        - Bet
+        - TokenRegistry
+      abis:
+        - name: CTFExchange
+          file: ../../../abis/CTFExchange.json
+      eventHandlers:
+        - event: OrderFilled(indexed bytes32,indexed address,indexed address,uint256,uint256,uint256,uint256,uint256)
+          handler: handleOrderFilled
+        - event: TokenRegistered(indexed uint256,indexed uint256,indexed bytes32)
+          handler: handleTokenRegistered
+  - kind: ethereum/contract
+    name: NegRiskCTFExchange
+    network: matic
+    source:
+      address: "0xC5d563A36AE78145C45a50134d48A1215220f80a"
+      abi: CTFExchange
+      startBlock: 80360433
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      file: ./src/ctf-exchange.ts
+      entities:
+        - Bet
+        - TokenRegistry
+      abis:
+        - name: CTFExchange
+          file: ../../../abis/CTFExchange.json
+      eventHandlers:
+        - event: OrderFilled(indexed bytes32,indexed address,indexed address,uint256,uint256,uint256,uint256,uint256)
+          handler: handleOrderFilled
+        - event: TokenRegistered(indexed uint256,indexed uint256,indexed bytes32)
+          handler: handleTokenRegistered
+
