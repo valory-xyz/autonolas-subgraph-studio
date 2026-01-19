@@ -66,12 +66,15 @@ dataSources:
       file: ./src/uma-mapping.ts
       entities:
         - MarketMetadata
+        - QuestionResolution
       abis:
         - name: OptimisticOracleV3
           file: ../../../abis/OptimisticOracleV3.json
       eventHandlers:
         - event: QuestionInitialized(indexed bytes32,indexed uint256,indexed address,bytes,address,uint256,uint256)
           handler: handleQuestionInitialized
+        - event: QuestionResolved(indexed bytes32,indexed int256,uint256[])
+          handler: handleQuestionResolved
   - kind: ethereum/contract
     name: CTFExchange
     network: matic

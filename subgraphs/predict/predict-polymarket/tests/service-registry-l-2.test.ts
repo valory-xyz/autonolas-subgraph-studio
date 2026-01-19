@@ -1,5 +1,5 @@
 import { assert, describe, test, clearStore, beforeEach, newMockEvent } from "matchstick-as/assembly/index";
-import { Address, BigInt, ethereum } from "@graphprotocol/graph-ts";
+import { Address, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts";
 import { handleRegisterInstance, handleCreateMultisigWithAgents } from "../src/service-registry-l-2";
 import { RegisterInstance, CreateMultisigWithAgents } from "../generated/ServiceRegistryL2/ServiceRegistryL2";
 import { PREDICT_AGENT_ID } from "../src/constants";
@@ -10,6 +10,10 @@ const MULTISIG_1 = Address.fromString("0x123456789012345678901234567890123456789
 const MULTISIG_2 = Address.fromString("0x2234567890123456789012345678901234567890");
 const OPERATOR = Address.fromString("0x3234567890123456789012345678901234567890");
 const AGENT_INSTANCE = Address.fromString("0x4234567890123456789012345678901234567890");
+
+function getServiceIdAsBytes(serviceId: BigInt): string {
+  return Bytes.fromByteArray(Bytes.fromBigInt(serviceId)).toHexString();
+}
 
 function createRegisterInstanceEvent(
   operator: Address,
@@ -51,7 +55,7 @@ describe("ServiceRegistryL2 - RegisterInstance Handler", () => {
 
     handleRegisterInstance(event);
 
-    let serviceId = SERVICE_ID_1.toString();
+    let serviceId = getServiceIdAsBytes(SERVICE_ID_1);
     assert.fieldEquals("TraderService", serviceId, "id", serviceId);
   });
 
@@ -61,7 +65,7 @@ describe("ServiceRegistryL2 - RegisterInstance Handler", () => {
 
     handleRegisterInstance(event);
 
-    let serviceId = SERVICE_ID_1.toString();
+    let serviceId = getServiceIdAsBytes(SERVICE_ID_1);
     assert.notInStore("TraderService", serviceId);
   });
 
@@ -74,7 +78,7 @@ describe("ServiceRegistryL2 - RegisterInstance Handler", () => {
     let event2 = createRegisterInstanceEvent(OPERATOR, SERVICE_ID_1, AGENT_INSTANCE, PREDICT_AGENT_ID);
     handleRegisterInstance(event2);
 
-    let serviceId = SERVICE_ID_1.toString();
+    let serviceId = getServiceIdAsBytes(SERVICE_ID_1);
     assert.fieldEquals("TraderService", serviceId, "id", serviceId);
     // Test passes if no error occurs - duplicate prevention works
   });
@@ -86,8 +90,8 @@ describe("ServiceRegistryL2 - RegisterInstance Handler", () => {
     handleRegisterInstance(event1);
     handleRegisterInstance(event2);
 
-    assert.fieldEquals("TraderService", SERVICE_ID_1.toString(), "id", SERVICE_ID_1.toString());
-    assert.fieldEquals("TraderService", SERVICE_ID_2.toString(), "id", SERVICE_ID_2.toString());
+    assert.fieldEquals("TraderService", getServiceIdAsBytes(SERVICE_ID_1), "id", getServiceIdAsBytes(SERVICE_ID_1));
+    assert.fieldEquals("TraderService", getServiceIdAsBytes(SERVICE_ID_2), "id", getServiceIdAsBytes(SERVICE_ID_2));
   });
 });
 
@@ -110,7 +114,6 @@ describe("ServiceRegistryL2 - CreateMultisigWithAgents Handler", () => {
     assert.fieldEquals("TraderAgent", MULTISIG_1.toHexString(), "totalBets", "0");
     assert.fieldEquals("TraderAgent", MULTISIG_1.toHexString(), "totalPayout", "0");
     assert.fieldEquals("TraderAgent", MULTISIG_1.toHexString(), "totalTraded", "0");
-    assert.fieldEquals("TraderAgent", MULTISIG_1.toHexString(), "totalFees", "0");
     assert.fieldEquals("TraderAgent", MULTISIG_1.toHexString(), "blockNumber", "1");
     assert.fieldEquals("TraderAgent", MULTISIG_1.toHexString(), "blockTimestamp", "1");
   });
@@ -175,7 +178,6 @@ describe("ServiceRegistryL2 - CreateMultisigWithAgents Handler", () => {
     assert.fieldEquals("Global", "", "totalBets", "0");
     assert.fieldEquals("Global", "", "totalPayout", "0");
     assert.fieldEquals("Global", "", "totalTraded", "0");
-    assert.fieldEquals("Global", "", "totalFees", "0");
   });
 });
 
@@ -190,7 +192,8 @@ describe("ServiceRegistryL2 - Integration Tests", () => {
     handleRegisterInstance(registerEvent);
 
     // Verify TraderService created
-    assert.fieldEquals("TraderService", SERVICE_ID_1.toString(), "id", SERVICE_ID_1.toString());
+    let serviceId = getServiceIdAsBytes(SERVICE_ID_1);
+    assert.fieldEquals("TraderService", serviceId, "id", serviceId);
 
     // Step 2: Create multisig
     let multisigEvent = createCreateMultisigWithAgentsEvent(SERVICE_ID_1, MULTISIG_1);
@@ -213,7 +216,7 @@ describe("ServiceRegistryL2 - Integration Tests", () => {
     handleCreateMultisigWithAgents(multisigEvent);
 
     // No TraderService or TraderAgent should exist
-    assert.notInStore("TraderService", SERVICE_ID_1.toString());
+    assert.notInStore("TraderService", getServiceIdAsBytes(SERVICE_ID_1));
     assert.notInStore("TraderAgent", MULTISIG_1.toHexString());
   });
 });

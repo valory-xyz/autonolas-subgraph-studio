@@ -2,13 +2,20 @@ import { assert, describe, test, clearStore, beforeEach, newMockEvent } from "ma
 import { Address, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts";
 import { extractTitle, extractBinaryOutcomes, handleQuestionInitialized } from "../src/uma-mapping";
 import { QuestionInitialized } from "../generated/OptimisticOracleV3/OptimisticOracleV3";
-import { MarketMetadata } from "../generated/schema";
+import { MarketMetadata, QuestionIdToConditionId } from "../generated/schema";
 
 const QUESTION_ID = Bytes.fromHexString("0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890");
+const CONDITION_ID = Bytes.fromHexString("0x1111111111111111111111111111111111111111111111111111111111111111");
 const TIMESTAMP = BigInt.fromI32(1710000000);
 const REWARD = BigInt.fromI32(1000000);
 const REQUESTER = Address.fromString("0x1234567890123456789012345678901234567890");
 const CURRENCY = Address.fromString("0x2234567890123456789012345678901234567890");
+
+function createBridge(questionId: Bytes, conditionId: Bytes): void {
+  let bridge = new QuestionIdToConditionId(questionId);
+  bridge.conditionId = conditionId;
+  bridge.save();
+}
 
 function createQuestionInitializedEvent(
   questionID: Bytes,
@@ -108,13 +115,11 @@ describe("UMA Mapping - extractBinaryOutcomes function", () => {
     assert.stringEquals(outcomes[1], "No");
   });
 
-  test("Should handle custom team names in p1/p2 format", () => {
+  test("Should return empty array for non Yes/No outcomes", () => {
     let rawData = "res_data: p1: 0, p2: 1, p3: 0.5. Outcome Mapping: Where p1 corresponds to Team WE, p2 to EDward Gaming, p3 to unknown/50-50";
     let outcomes = extractBinaryOutcomes(rawData);
 
-    assert.i32Equals(outcomes.length, 2);
-    assert.stringEquals(outcomes[0], "Team WE");
-    assert.stringEquals(outcomes[1], "EDward Gaming");
+    assert.i32Equals(outcomes.length, 0);
   });
 
   test("Should return empty array when no outcomes found", () => {
@@ -122,15 +127,6 @@ describe("UMA Mapping - extractBinaryOutcomes function", () => {
     let outcomes = extractBinaryOutcomes(rawData);
 
     assert.i32Equals(outcomes.length, 0);
-  });
-
-  test("Should handle outcomes with trailing period", () => {
-    let rawData = "res_data: p1: 0, p2: 1. Where p1 corresponds to Winner, p2 to Loser.";
-    let outcomes = extractBinaryOutcomes(rawData);
-
-    assert.i32Equals(outcomes.length, 2);
-    assert.stringEquals(outcomes[0], "Winner");
-    assert.stringEquals(outcomes[1], "Loser");
   });
 
   test("Should handle outcomes array with extra spaces", () => {
@@ -142,15 +138,6 @@ describe("UMA Mapping - extractBinaryOutcomes function", () => {
     assert.stringEquals(outcomes[1], "No");
   });
 
-  test("Should prioritize 'p1 corresponds to' format over 'outcomes: []'", () => {
-    let rawData = "outcomes: [Wrong1, Wrong2], p1 corresponds to Right1, p2 to Right2, p3 to unknown";
-    let outcomes = extractBinaryOutcomes(rawData);
-
-    assert.i32Equals(outcomes.length, 2);
-    assert.stringEquals(outcomes[0], "Right1");
-    assert.stringEquals(outcomes[1], "Right2");
-  });
-
   test("Should handle real Polymarket outcome format", () => {
     let rawData = "q: title: Will Israel invade Rafah by March 31?, description: test, res_data: p1: 0, p2: 1, p3: 0.5. Where p1 corresponds to Yes, p2 to No, p3 to unknown/50-50";
     let outcomes = extractBinaryOutcomes(rawData);
@@ -160,21 +147,11 @@ describe("UMA Mapping - extractBinaryOutcomes function", () => {
     assert.stringEquals(outcomes[1], "No");
   });
 
-  test("Should return empty array for non-binary outcomes in array format", () => {
+  test("Should return empty array for non-binary outcomes", () => {
     let rawData = "outcomes: [Yes, No, Maybe], res_data: p1: 0";
     let outcomes = extractBinaryOutcomes(rawData);
 
-    // The function specifically checks for length == 2
     assert.i32Equals(outcomes.length, 0);
-  });
-
-  test("Should handle outcomes with special characters", () => {
-    let rawData = "p1 corresponds to Team A/B, p2 to Team C/D, p3 to unknown";
-    let outcomes = extractBinaryOutcomes(rawData);
-
-    assert.i32Equals(outcomes.length, 2);
-    assert.stringEquals(outcomes[0], "Team A/B");
-    assert.stringEquals(outcomes[1], "Team C/D");
   });
 });
 
@@ -184,6 +161,8 @@ describe("UMA Mapping - handleQuestionInitialized", () => {
   });
 
   test("Should create MarketMetadata with title and outcomes", () => {
+    createBridge(QUESTION_ID, CONDITION_ID);
+
     let ancillaryDataString = "q: title: Will BTC hit 100k?, description: Test, res_data: p1: 0, p2: 1. Where p1 corresponds to Yes, p2 to No, p3 to unknown";
     let ancillaryData = Bytes.fromUTF8(ancillaryDataString);
 
@@ -205,7 +184,9 @@ describe("UMA Mapping - handleQuestionInitialized", () => {
     assert.fieldEquals("MarketMetadata", questionIdHex, "outcomes", "[Yes, No]");
   });
 
-  test("Should handle metadata with outcomes array format", () => {
+  test("Should not create entities for non Yes/No outcomes array format", () => {
+    createBridge(QUESTION_ID, CONDITION_ID);
+
     let ancillaryDataString = "q: title: Simple Question, outcomes: [Option A, Option B], res_data: test";
     let ancillaryData = Bytes.fromUTF8(ancillaryDataString);
 
@@ -222,11 +203,12 @@ describe("UMA Mapping - handleQuestionInitialized", () => {
     handleQuestionInitialized(event);
 
     let questionIdHex = QUESTION_ID.toHexString();
-    assert.fieldEquals("MarketMetadata", questionIdHex, "title", "Simple Question");
-    assert.fieldEquals("MarketMetadata", questionIdHex, "outcomes", "[Option A, Option B]");
+    assert.notInStore("MarketMetadata", questionIdHex);
   });
 
   test("Should create MarketMetadata with 'Unknown Market' title when title not found", () => {
+    createBridge(QUESTION_ID, CONDITION_ID);
+
     let ancillaryDataString = "q: some_field: value, res_data: p1 corresponds to Yes, p2 to No";
     let ancillaryData = Bytes.fromUTF8(ancillaryDataString);
 
@@ -246,7 +228,9 @@ describe("UMA Mapping - handleQuestionInitialized", () => {
     assert.fieldEquals("MarketMetadata", questionIdHex, "title", "Unknown Market");
   });
 
-  test("Should create MarketMetadata with empty outcomes when not found", () => {
+  test("Should not create entities when outcomes not found", () => {
+    createBridge(QUESTION_ID, CONDITION_ID);
+
     let ancillaryDataString = "q: title: Test Question, res_data: p1: 0, p2: 1";
     let ancillaryData = Bytes.fromUTF8(ancillaryDataString);
 
@@ -263,11 +247,12 @@ describe("UMA Mapping - handleQuestionInitialized", () => {
     handleQuestionInitialized(event);
 
     let questionIdHex = QUESTION_ID.toHexString();
-    assert.fieldEquals("MarketMetadata", questionIdHex, "title", "Test Question");
-    assert.fieldEquals("MarketMetadata", questionIdHex, "outcomes", "[]");
+    assert.notInStore("MarketMetadata", questionIdHex);
   });
 
   test("Should handle real Polymarket ancillary data format", () => {
+    createBridge(QUESTION_ID, CONDITION_ID);
+
     let ancillaryDataString = "q: title: Will Israel invade Rafah by March 31?, description: This market will resolve to \"Yes\" if Israeli ground forces enter and conduct military operations in Rafah before March 31, 2024 11:59 PM ET., res_data: p1: 0, p2: 1, p3: 0.5. Where p1 corresponds to Yes, p2 to No, p3 to unknown/50-50";
     let ancillaryData = Bytes.fromUTF8(ancillaryDataString);
 
@@ -288,7 +273,9 @@ describe("UMA Mapping - handleQuestionInitialized", () => {
     assert.fieldEquals("MarketMetadata", questionIdHex, "outcomes", "[Yes, No]");
   });
 
-  test("Should handle team-based market format", () => {
+  test("Should not create entities for non Yes/No team-based market format", () => {
+    createBridge(QUESTION_ID, CONDITION_ID);
+
     let ancillaryDataString = "q: title: Who will win the match?, res_data: p1: 0, p2: 1, p3: 0.5. Outcome Mapping: Where p1 corresponds to Team Alpha, p2 to Team Beta, p3 to unknown/50-50";
     let ancillaryData = Bytes.fromUTF8(ancillaryDataString);
 
@@ -305,11 +292,12 @@ describe("UMA Mapping - handleQuestionInitialized", () => {
     handleQuestionInitialized(event);
 
     let questionIdHex = QUESTION_ID.toHexString();
-    assert.fieldEquals("MarketMetadata", questionIdHex, "title", "Who will win the match?");
-    assert.fieldEquals("MarketMetadata", questionIdHex, "outcomes", "[Team Alpha, Team Beta]");
+    assert.notInStore("MarketMetadata", questionIdHex);
   });
 
   test("Should use questionID as entity ID", () => {
+    createBridge(QUESTION_ID, CONDITION_ID);
+
     let ancillaryDataString = "q: title: Test, p1 corresponds to Yes, p2 to No";
     let ancillaryData = Bytes.fromUTF8(ancillaryDataString);
 
@@ -335,9 +323,14 @@ describe("UMA Mapping - handleQuestionInitialized", () => {
   test("Should handle multiple questions with different IDs", () => {
     let questionId1 = Bytes.fromHexString("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
     let questionId2 = Bytes.fromHexString("0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb");
+    let conditionId1 = Bytes.fromHexString("0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc");
+    let conditionId2 = Bytes.fromHexString("0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd");
+
+    createBridge(questionId1, conditionId1);
+    createBridge(questionId2, conditionId2);
 
     let ancillaryData1 = Bytes.fromUTF8("q: title: Question 1, p1 corresponds to Yes, p2 to No");
-    let ancillaryData2 = Bytes.fromUTF8("q: title: Question 2, p1 corresponds to Agree, p2 to Disagree");
+    let ancillaryData2 = Bytes.fromUTF8("q: title: Question 2, p1 corresponds to Yes, p2 to No");
 
     let event1 = createQuestionInitializedEvent(questionId1, TIMESTAMP, REQUESTER, ancillaryData1, CURRENCY, REWARD, BigInt.fromI32(1000));
     let event2 = createQuestionInitializedEvent(questionId2, TIMESTAMP, REQUESTER, ancillaryData2, CURRENCY, REWARD, BigInt.fromI32(1000));
@@ -348,7 +341,7 @@ describe("UMA Mapping - handleQuestionInitialized", () => {
     assert.fieldEquals("MarketMetadata", questionId1.toHexString(), "title", "Question 1");
     assert.fieldEquals("MarketMetadata", questionId1.toHexString(), "outcomes", "[Yes, No]");
     assert.fieldEquals("MarketMetadata", questionId2.toHexString(), "title", "Question 2");
-    assert.fieldEquals("MarketMetadata", questionId2.toHexString(), "outcomes", "[Agree, Disagree]");
+    assert.fieldEquals("MarketMetadata", questionId2.toHexString(), "outcomes", "[Yes, No]");
   });
 });
 
@@ -365,8 +358,10 @@ describe("UMA Mapping - Edge Cases and Error Handling", () => {
     assert.i32Equals(outcomes.length, 0);
   });
 
-  test("Should handle empty ancillary data", () => {
+  test("Should not create entities for empty ancillary data", () => {
     clearStore();
+    createBridge(QUESTION_ID, CONDITION_ID);
+
     let ancillaryData = Bytes.fromUTF8("");
 
     let event = createQuestionInitializedEvent(
@@ -382,12 +377,13 @@ describe("UMA Mapping - Edge Cases and Error Handling", () => {
     handleQuestionInitialized(event);
 
     let questionIdHex = QUESTION_ID.toHexString();
-    assert.fieldEquals("MarketMetadata", questionIdHex, "title", "Unknown Market");
-    assert.fieldEquals("MarketMetadata", questionIdHex, "outcomes", "[]");
+    assert.notInStore("MarketMetadata", questionIdHex);
   });
 
-  test("Should handle ancillary data with only title", () => {
+  test("Should not create entities for ancillary data with only title", () => {
     clearStore();
+    createBridge(QUESTION_ID, CONDITION_ID);
+
     let ancillaryData = Bytes.fromUTF8("title: Only a title here");
 
     let event = createQuestionInitializedEvent(
@@ -403,7 +399,6 @@ describe("UMA Mapping - Edge Cases and Error Handling", () => {
     handleQuestionInitialized(event);
 
     let questionIdHex = QUESTION_ID.toHexString();
-    assert.fieldEquals("MarketMetadata", questionIdHex, "title", "Only a title here");
-    assert.fieldEquals("MarketMetadata", questionIdHex, "outcomes", "[]");
+    assert.notInStore("MarketMetadata", questionIdHex);
   });
 });

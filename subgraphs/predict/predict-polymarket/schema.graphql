@@ -9,11 +9,14 @@ type TraderAgent @entity (immutable: false) {
   serviceId: BigInt!
   firstParticipation: BigInt
   lastActive: BigInt
-  totalBets: Int!
-  totalTraded: BigInt! # trades amount for settled markets (when we have answer)
+  totalBets: Int! # all bets done regardless of settlement
+  totalTraded: BigInt!
+  # trades amount for settled markets
+  # for incorrect bets on settlement day
+  # for correct - on payout)
+  totalTradedSettled: BigInt!
   totalPayout: BigInt! # all bets including for open markets
-  totalFees: BigInt! # fees amount for settled markets (when we have answer)
-  # bets: [Bet!]! @derivedFrom(field: "bettor")
+  bets: [Bet!]! @derivedFrom(field: "bettor")
   # dailyProfitStatistics: [DailyProfitStatistic!]! @derivedFrom(field: "traderAgent")
   blockNumber: BigInt!
   blockTimestamp: BigInt!
@@ -25,10 +28,12 @@ type QuestionIdToConditionId @entity(immutable: true) {
   conditionId: Bytes! # bytes32
 }
 
-type Question @entity(immutable: false) {
+type Question @entity(immutable: true) {
   id: Bytes! # conditionId
   questionId: Bytes! # bytes32
-  metadata: MarketMetadata
+  metadata: MarketMetadata!
+  bets: [Bet!]! @derivedFrom(field: "question")
+  resolution: QuestionResolution @derivedFrom(field: "question")
   blockNumber: BigInt!
   blockTimestamp: BigInt!
   transactionHash: Bytes!
@@ -47,11 +52,11 @@ type Bet @entity (immutable: false) {
   outcomeIndex: BigInt!
   amount: BigInt!   # USDC spent (e.g., 1.00)
   shares: BigInt!   # Tokens received (e.g., 2.17)
-  # countedInProfit: Boolean!
-  countedInTotal: Boolean
+  countedInTotal: Boolean!
+  countedInProfit: Boolean!
   question: Question
-  # dailyStatistic: DailyProfitStatistic
-  timestamp: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
 }
 
 # Maps tokenId to conditionId and outcome index for tracking trades
@@ -62,12 +67,39 @@ type TokenRegistry @entity(immutable: true) {
   outcomeIndex: BigInt! # 0 or 1 for binary markets
 }
 
+# Tracks market finalization when UMA resolves the question
+type QuestionResolution @entity (immutable: true) {
+  id: Bytes! # conditionId
+  question: Question!
+  winningIndex: BigInt!
+  settledPrice: BigInt!
+  payouts: [BigInt!]!
+  blockNumber: BigInt!
+  timestamp: BigInt!
+}
+
+# Tracks per-market statistics for each agent
+type MarketParticipant @entity (immutable: false) {
+  id: ID! # agentAddress_conditionId
+  traderAgent: TraderAgent!
+  question: Question!
+  totalBets: Int!
+  totalTraded: BigInt!
+  totalTradedSettled: BigInt!
+  totalPayout: BigInt!
+  bets: [String!]!
+  createdAt: BigInt!
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
 type Global @entity (immutable: false) {
   id: ID!
   totalTraderAgents: Int!
   totalActiveTraderAgents: Int!
   totalBets: Int! # all bets including for open markets
   totalPayout: BigInt!
-  totalTraded: BigInt! # trades amount for settled markets (when we have answer)
-  totalFees: BigInt! # fees amount for settled markets (when we have answer)
+  totalTraded: BigInt!
+  totalTradedSettled: BigInt!
 }

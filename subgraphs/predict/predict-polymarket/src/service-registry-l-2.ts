@@ -12,8 +12,8 @@ export function handleRegisterInstance(event: RegisterInstanceEvent): void {
   // Only create TraderService if it has relevant agent id
   // Allows then to track TraderAgent properly
   if (agentId !== PREDICT_AGENT_ID) return;
- 
-  let serviceId = Bytes.fromBigInt(event.params.serviceId);
+
+  let serviceId = Bytes.fromByteArray(Bytes.fromBigInt(event.params.serviceId));
   let traderService = TraderService.load(serviceId);
   if (traderService !== null) return;
 
@@ -25,7 +25,7 @@ export function handleCreateMultisigWithAgents(
   event: CreateMultisigWithAgentsEvent
 ): void {
   // Skip non-trader services
-  let traderService = TraderService.load(Bytes.fromBigInt(event.params.serviceId))
+  let traderService = TraderService.load(Bytes.fromByteArray(Bytes.fromBigInt(event.params.serviceId)))
   if (traderService === null) return;
   
   let traderAgent = TraderAgent.load(event.params.multisig);
@@ -35,7 +35,7 @@ export function handleCreateMultisigWithAgents(
     traderAgent.serviceId = event.params.serviceId;
     traderAgent.totalPayout = BigInt.zero();
     traderAgent.totalTraded = BigInt.zero();
-    traderAgent.totalFees = BigInt.zero();
+    traderAgent.totalTradedSettled = BigInt.zero();
 
     traderAgent.blockNumber = event.block.number;
     traderAgent.blockTimestamp = event.block.timestamp;
