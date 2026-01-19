@@ -208,7 +208,7 @@ export function handleQuestionResolved(event: QuestionResolvedEvent): void {
         global.totalTradedSettled = global.totalTradedSettled.plus(bet.amount);
         
         // Update Participant
-        let participantId = agentId + "-" + bridge.conditionId.toHexString();
+        let participantId = agentId + "_" + bridge.conditionId.toHexString();
         let participant = participantCache.has(participantId) 
           ? participantCache.get(participantId)
           : MarketParticipant.load(participantId);

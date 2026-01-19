@@ -40,10 +40,11 @@ export function handlePayoutRedemption(event: PayoutRedemptionEvent): void {
   // 4. Process winning bets (countedInProfit == false)
   for (let i = 0; i < bets.length; i++) {
     let bet = bets[i];
-    if (bet && bet.bettor == redeemer && bet.countedInProfit == false) {
+    if (bet && bet.bettor.toHexString() == redeemer.toHexString() && bet.countedInProfit == false) {
       // This is a winning bet being redeemed
       totalCosts = totalCosts.plus(bet.amount);
       bet.countedInProfit = true;
+      // TODO: handle profit and daily statistics update
       bet.save();
     }
   }
