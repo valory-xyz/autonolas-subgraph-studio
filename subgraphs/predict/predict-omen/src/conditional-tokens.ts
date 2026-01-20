@@ -3,13 +3,11 @@ import {
   ConditionPreparation as ConditionPreparationEvent,
   PayoutRedemption as PayoutRedemptionEvent,
 } from "../generated/ConditionalTokens/ConditionalTokens";
-import { Bet, ConditionPreparation, MarketParticipant, Question } from "../generated/schema";
+import { Bet, ConditionPreparation, MarketParticipant, Question, TraderAgent } from "../generated/schema";
 import {
-  updateTraderAgentPayout,
-  updateMarketParticipantPayout,
-  updateGlobalPayout,
   getDailyProfitStatistic,
   addProfitParticipant,
+  getGlobal,
 } from "./utils";
 
 export function handleConditionPreparation(event: ConditionPreparationEvent): void {
@@ -33,8 +31,6 @@ export function handleConditionPreparation(event: ConditionPreparationEvent): vo
 }
 
 export function handlePayoutRedemption(event: PayoutRedemptionEvent): void {
-  updateTraderAgentPayout(event.params.redeemer, event.params.payout);
-
   // Find the related market by traversing: condition → question → fixedProductMarketMaker
   let condition = ConditionPreparation.load(event.params.conditionId.toHexString());
   if (condition === null) {
@@ -45,40 +41,67 @@ export function handlePayoutRedemption(event: PayoutRedemptionEvent): void {
   if (question === null || question.fixedProductMarketMaker === null) {
     return;
   }
+  
+  const fpmmId = question.fixedProductMarketMaker as Bytes;
+  const redeemer = event.params.redeemer;
+  const participantId = redeemer.toHexString() + "_" + fpmmId.toHexString();
+  const participant = MarketParticipant.load(participantId);
+  
+  if (participant === null) return;
 
-  // Update global payouts only for our markets
-  updateGlobalPayout(event.params.payout);
+  let agent = TraderAgent.load(redeemer);
+  if (agent === null) return;
 
-  // Update payout for market participant
-  updateMarketParticipantPayout(event.params.redeemer, question.fixedProductMarketMaker as Bytes, event.params.payout);
+  let global = getGlobal();
 
-  // Update daily profit for agent (for won bets)
-  let fpmmId = question.fixedProductMarketMaker as Bytes;
-  let participantId = event.params.redeemer.toHexString() + "_" + fpmmId.toHexString();
+  // 2. Identify the amount that needs to be moved to 'Settled'
+  // (Total Traded - Already Settled)
+  let amountToSettle = participant.totalTraded.minus(participant.totalTradedSettled);
+  let feesToSettle = participant.totalFees.minus(participant.totalFeesSettled);
 
-  let fpmm = MarketParticipant.load(participantId);
-  if (fpmm != null) {
-    let bets = fpmm.bets;
-    let totalCosts = BigInt.zero();
+  if (amountToSettle.gt(BigInt.zero())) {
+    // Update Agent Totals
+    agent.totalTradedSettled = agent.totalTradedSettled.plus(amountToSettle);
+    agent.totalFeesSettled = agent.totalFeesSettled.plus(feesToSettle);
+    agent.totalPayout = agent.totalPayout.plus(event.params.payout);
 
-    for (let i = 0; i < bets.length; i++) {
-      let bet = Bet.load(bets[i]);
-      if (bet === null) {
-        return;
-      }
+    // Update Participant Totals
+    participant.totalTradedSettled = participant.totalTradedSettled.plus(amountToSettle);
+    participant.totalFeesSettled = participant.totalFeesSettled.plus(feesToSettle);
+    participant.totalPayout = participant.totalPayout.plus(event.params.payout);
 
-      if (bet.bettor == event.params.redeemer && bet.countedInProfit == false) {
-        totalCosts = totalCosts.plus(bet.amount).plus(bet.feeAmount);
-        bet.countedInProfit = true; // Mark as settled now that profit is recorded
-        bet.save();
-      }
-    }
-
-    let dailyStat = getDailyProfitStatistic(event.params.redeemer, event.block.timestamp);
-    // Profit = Payout - Total Invested in this market
-    dailyStat.totalPayout = dailyStat.totalPayout.plus(event.params.payout);
-    dailyStat.dailyProfit = dailyStat.dailyProfit.plus(event.params.payout.minus(totalCosts));
-    addProfitParticipant(dailyStat, fpmmId);
-    dailyStat.save();
+    // Update Global Totals
+    global.totalTradedSettled = global.totalTradedSettled.plus(amountToSettle);
+    global.totalFeesSettled = global.totalFeesSettled.plus(feesToSettle);
+    global.totalPayout = global.totalPayout.plus(event.params.payout);
   }
+
+  // 3. Update 'countedInProfit' for all bets in this specific market
+  // We use participant.bets to avoid loading the agent's entire history
+  let betIds = participant.bets;
+  for (let i = 0; i < betIds.length; i++) {
+    let bet = Bet.load(betIds[i]);
+    if (bet !== null && !bet.countedInProfit) {
+      bet.countedInProfit = true;
+      // Also ensure countedInTotal is flipped if it wasn't already
+      bet.countedInTotal = true; 
+      bet.save();
+    }
+  }
+
+  // 4. Update Daily Statistics
+  let dailyStat = getDailyProfitStatistic(redeemer, event.block.timestamp);
+  dailyStat.totalPayout = dailyStat.totalPayout.plus(event.params.payout);
+  
+  // Profit Calculation: Payout - (Investment + Fees)
+  let totalCost = amountToSettle.plus(feesToSettle);
+  dailyStat.dailyProfit = dailyStat.dailyProfit.plus(event.params.payout.minus(totalCost));
+  
+  addProfitParticipant(dailyStat, fpmmId);
+
+  // 5. Save cached entities
+  agent.save();
+  participant.save();
+  global.save();
+  dailyStat.save();
 }

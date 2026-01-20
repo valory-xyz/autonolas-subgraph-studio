@@ -25,6 +25,8 @@ function setupAgent(): void {
   agent.totalTraded = BigInt.zero();
   agent.totalPayout = BigInt.zero();
   agent.totalFees = BigInt.zero();
+  agent.totalTradedSettled = BigInt.zero();
+  agent.totalFeesSettled = BigInt.zero();
   agent.blockNumber = BigInt.fromI32(1000);
   agent.blockTimestamp = START_TS;
   agent.transactionHash = DUMMY_HASH;
@@ -236,7 +238,7 @@ describe("Profit Chart Integration", () => {
     // Use the address as the ID string to match your setupMarket logic
     let qIdA = MARKET_WON.toHexString();
     let qIdB = MARKET_LOST.toHexString();
-    
+
     setupMarket(MARKET_WON, qIdA);
     setupMarket(MARKET_LOST, qIdB);
 
@@ -244,7 +246,7 @@ describe("Profit Chart Integration", () => {
     handleBuy(createBuyEvent(AGENT, BigInt.fromI32(2000), BigInt.fromI32(200), ANSWER_0, MARKET_LOST, START_TS, 1));
 
     let day3TS = START_TS.plus(BigInt.fromI32(DAY * 2));
-    
+
     // IMPORTANT: Pass the address as Bytes so toHexString() inside the handler works
     handleLogNewAnswer(createNewAnswerEvent(Bytes.fromUint8Array(MARKET_WON), ANSWER_1_HEX, day3TS));
     handleLogNewAnswer(createNewAnswerEvent(Bytes.fromUint8Array(MARKET_LOST), ANSWER_1_HEX, day3TS));
@@ -252,5 +254,400 @@ describe("Profit Chart Integration", () => {
     let day3Id = AGENT.toHexString() + "_" + NORMALIZED_TS.plus(BigInt.fromI32(DAY * 2)).toString();
 
     assert.fieldEquals("DailyProfitStatistic", day3Id, "dailyProfit", "-3300");
-});
+  });
+
+  /**
+   * Test: Settled totals remain zero until market resolves (incorrect bet)
+   * - Day 1: Place bet (1000 + 100 fees)
+   * - Check: totalTraded and totalFees are updated, but settled versions remain zero
+   * - Day 3: Market resolves with different answer (bet loses)
+   * - Check: totalTradedSettled and totalFeesSettled are now updated for TraderAgent, MarketParticipant, and Global
+   */
+  test("Settled totals remain zero until market resolves (incorrect bet)", () => {
+    setupMarket(MARKET_LOST, MARKET_LOST.toHexString());
+
+    // Day 1: Place bet
+    handleBuy(createBuyEvent(AGENT, BigInt.fromI32(1000), BigInt.fromI32(100), ANSWER_0, MARKET_LOST, START_TS));
+
+    // Check TraderAgent: totalTraded and totalFees updated, settled versions zero
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalTraded", "1000");
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalFees", "100");
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalTradedSettled", "0");
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalFeesSettled", "0");
+
+    // Check MarketParticipant
+    let participantId = AGENT.toHexString() + "_" + MARKET_LOST.toHexString();
+    assert.fieldEquals("MarketParticipant", participantId, "totalTraded", "1000");
+    assert.fieldEquals("MarketParticipant", participantId, "totalFees", "100");
+    assert.fieldEquals("MarketParticipant", participantId, "totalTradedSettled", "0");
+    assert.fieldEquals("MarketParticipant", participantId, "totalFeesSettled", "0");
+
+    // Check Global
+    assert.fieldEquals("Global", "", "totalTraded", "1000");
+    assert.fieldEquals("Global", "", "totalFees", "100");
+    assert.fieldEquals("Global", "", "totalTradedSettled", "0");
+    assert.fieldEquals("Global", "", "totalFeesSettled", "0");
+
+    // Day 3: Market resolves with different answer
+    let day3TS = START_TS.plus(BigInt.fromI32(DAY * 2));
+    handleLogNewAnswer(createNewAnswerEvent(MARKET_LOST, ANSWER_1_HEX, day3TS));
+
+    // Check TraderAgent: settled totals now updated
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalTradedSettled", "1000");
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalFeesSettled", "100");
+
+    // Check MarketParticipant: settled totals now updated
+    assert.fieldEquals("MarketParticipant", participantId, "totalTradedSettled", "1000");
+    assert.fieldEquals("MarketParticipant", participantId, "totalFeesSettled", "100");
+
+    // Check Global: settled totals now updated
+    assert.fieldEquals("Global", "", "totalTradedSettled", "1000");
+    assert.fieldEquals("Global", "", "totalFeesSettled", "100");
+  });
+
+  /**
+   * Test: Settled totals remain zero until payout (correct bet)
+   * - Day 1: Place winning bet
+   * - Check: totalTraded/totalFees updated, settled versions remain zero
+   * - Day 3: Market resolves with correct answer
+   * - Check: Settled totals still zero (waiting for payout)
+   * - Day 7: Redeem payout
+   * - Check: totalTradedSettled and totalFeesSettled now updated
+   */
+  test("Settled totals remain zero until payout (correct bet)", () => {
+    setupMarket(MARKET_WON, MARKET_WON.toHexString());
+
+    // Day 1: Place winning bet
+    handleBuy(createBuyEvent(AGENT, BigInt.fromI32(1000), BigInt.fromI32(100), ANSWER_0, MARKET_WON, START_TS));
+
+    // Check settled totals are zero
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalTradedSettled", "0");
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalFeesSettled", "0");
+
+    let participantId = AGENT.toHexString() + "_" + MARKET_WON.toHexString();
+    assert.fieldEquals("MarketParticipant", participantId, "totalTradedSettled", "0");
+    assert.fieldEquals("MarketParticipant", participantId, "totalFeesSettled", "0");
+
+    assert.fieldEquals("Global", "", "totalTradedSettled", "0");
+    assert.fieldEquals("Global", "", "totalFeesSettled", "0");
+
+    // Day 3: Market resolves with correct answer
+    let day3TS = START_TS.plus(BigInt.fromI32(DAY * 2));
+    handleLogNewAnswer(createNewAnswerEvent(MARKET_WON, ANSWER_0_HEX, day3TS));
+
+    // Check settled totals still zero (waiting for payout)
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalTradedSettled", "0");
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalFeesSettled", "0");
+    assert.fieldEquals("MarketParticipant", participantId, "totalTradedSettled", "0");
+    assert.fieldEquals("MarketParticipant", participantId, "totalFeesSettled", "0");
+    assert.fieldEquals("Global", "", "totalTradedSettled", "0");
+    assert.fieldEquals("Global", "", "totalFeesSettled", "0");
+
+    // Day 7: Redeem payout
+    let day7TS = START_TS.plus(BigInt.fromI32(DAY * 6));
+    handlePayoutRedemption(createPayoutRedemptionEvent(AGENT, BigInt.fromI32(2500), MARKET_WON, day7TS));
+
+    // Check settled totals now updated
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalTradedSettled", "1000");
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalFeesSettled", "100");
+    assert.fieldEquals("MarketParticipant", participantId, "totalTradedSettled", "1000");
+    assert.fieldEquals("MarketParticipant", participantId, "totalFeesSettled", "100");
+    assert.fieldEquals("Global", "", "totalTradedSettled", "1000");
+    assert.fieldEquals("Global", "", "totalFeesSettled", "100");
+  });
+
+  /**
+   * Test: Mixed bets in same market - settled totals updated at different times
+   * - Place two bets in same market (one will win, one will lose)
+   * - On resolution: only the losing bet's amounts move to settled totals
+   * - On payout: the winning bet's amounts move to settled totals
+   * - Verify final settled totals equal total traded/fees
+   */
+  test("Mixed bets: settled totals updated at different times", () => {
+    setupMarket(MARKET_WON, MARKET_WON.toHexString());
+
+    // Place two bets on different outcomes
+    handleBuy(createBuyEvent(AGENT, BigInt.fromI32(500), BigInt.fromI32(50), ANSWER_0, MARKET_WON, START_TS, 0)); // Will win
+    handleBuy(createBuyEvent(AGENT, BigInt.fromI32(300), BigInt.fromI32(30), ANSWER_1, MARKET_WON, START_TS, 1)); // Will lose
+
+    // Check totals after bets
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalTraded", "800"); // 500 + 300
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalFees", "80"); // 50 + 30
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalTradedSettled", "0");
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalFeesSettled", "0");
+
+    // Market resolves to Outcome 0 (first bet wins, second bet loses)
+    let day3TS = START_TS.plus(BigInt.fromI32(DAY * 2));
+    handleLogNewAnswer(createNewAnswerEvent(MARKET_WON, ANSWER_0_HEX, day3TS));
+
+    // Check: only losing bet moved to settled (300 + 30)
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalTradedSettled", "300");
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalFeesSettled", "30");
+
+    // Payout for winning bet
+    let day7TS = START_TS.plus(BigInt.fromI32(DAY * 6));
+    handlePayoutRedemption(createPayoutRedemptionEvent(AGENT, BigInt.fromI32(1200), MARKET_WON, day7TS));
+
+    // Check: now all bets are settled (300 + 500 = 800, 30 + 50 = 80)
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalTradedSettled", "800");
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalFeesSettled", "80");
+
+    // Verify settled equals total
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalTraded", "800");
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalFees", "80");
+  });
+
+  /**
+   * Test: Multiple markets - settled totals aggregate correctly
+   * - Place bets in multiple markets
+   * - Resolve markets at different times
+   * - Verify settled totals accumulate correctly
+   */
+  test("Multiple markets: settled totals aggregate correctly", () => {
+    setupMarket(MARKET_WON, MARKET_WON.toHexString());
+    setupMarket(MARKET_LOST, MARKET_LOST.toHexString());
+
+    // Place bets in both markets
+    handleBuy(createBuyEvent(AGENT, BigInt.fromI32(1000), BigInt.fromI32(100), ANSWER_0, MARKET_WON, START_TS, 0));
+    handleBuy(createBuyEvent(AGENT, BigInt.fromI32(2000), BigInt.fromI32(200), ANSWER_0, MARKET_LOST, START_TS, 1));
+
+    // Check totals
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalTraded", "3000");
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalFees", "300");
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalTradedSettled", "0");
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalFeesSettled", "0");
+
+    // Day 3: Market LOST resolves (bet loses)
+    let day3TS = START_TS.plus(BigInt.fromI32(DAY * 2));
+    handleLogNewAnswer(createNewAnswerEvent(MARKET_LOST, ANSWER_1_HEX, day3TS));
+
+    // Only MARKET_LOST bet settled
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalTradedSettled", "2000");
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalFeesSettled", "200");
+
+    // Day 5: Market WON resolves (bet wins)
+    let day5TS = START_TS.plus(BigInt.fromI32(DAY * 4));
+    handleLogNewAnswer(createNewAnswerEvent(MARKET_WON, ANSWER_0_HEX, day5TS));
+
+    // Still only MARKET_LOST settled (WON bet waits for payout)
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalTradedSettled", "2000");
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalFeesSettled", "200");
+
+    // Day 7: Payout for MARKET_WON
+    let day7TS = START_TS.plus(BigInt.fromI32(DAY * 6));
+    handlePayoutRedemption(createPayoutRedemptionEvent(AGENT, BigInt.fromI32(2500), MARKET_WON, day7TS));
+
+    // Now both markets settled
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalTradedSettled", "3000");
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalFeesSettled", "300");
+  });
+
+  /**
+   * Test: Global entity - settled totals track all agents
+   * - Create multiple agents
+   * - Place bets from different agents
+   * - Resolve markets
+   * - Verify Global totals aggregate correctly
+   */
+  test("Global entity: settled totals track all agents", () => {
+    let AGENT2 = Address.fromString("0x2234567890123456789012345678901234567890");
+
+    // Setup second agent
+    let agent2 = new TraderAgent(AGENT2);
+    agent2.totalBets = 0;
+    agent2.serviceId = BigInt.fromI32(2);
+    agent2.totalTraded = BigInt.zero();
+    agent2.totalPayout = BigInt.zero();
+    agent2.totalFees = BigInt.zero();
+    agent2.totalTradedSettled = BigInt.zero();
+    agent2.totalFeesSettled = BigInt.zero();
+    agent2.blockNumber = BigInt.fromI32(1000);
+    agent2.blockTimestamp = START_TS;
+    agent2.transactionHash = DUMMY_HASH;
+    agent2.save();
+
+    setupMarket(MARKET_LOST, MARKET_LOST.toHexString());
+
+    // Agent 1 places bet
+    handleBuy(createBuyEvent(AGENT, BigInt.fromI32(1000), BigInt.fromI32(100), ANSWER_0, MARKET_LOST, START_TS, 0));
+
+    // Agent 2 places bet
+    handleBuy(createBuyEvent(AGENT2, BigInt.fromI32(500), BigInt.fromI32(50), ANSWER_0, MARKET_LOST, START_TS, 1));
+
+    // Check Global totals
+    assert.fieldEquals("Global", "", "totalTraded", "1500");
+    assert.fieldEquals("Global", "", "totalFees", "150");
+    assert.fieldEquals("Global", "", "totalTradedSettled", "0");
+    assert.fieldEquals("Global", "", "totalFeesSettled", "0");
+
+    // Market resolves (both bets lose)
+    let day3TS = START_TS.plus(BigInt.fromI32(DAY * 2));
+    handleLogNewAnswer(createNewAnswerEvent(MARKET_LOST, ANSWER_1_HEX, day3TS));
+
+    // Check Global settled totals aggregate from both agents
+    assert.fieldEquals("Global", "", "totalTradedSettled", "1500");
+    assert.fieldEquals("Global", "", "totalFeesSettled", "150");
+  });
+
+  /**
+   * Test: Comprehensive totals tracking across all entities
+   * Scenario:
+   * - Agent1 bets on Market A (will win)
+   * - Agent2 bets on Market A (will lose) and Market B (will lose)
+   * - Verify totals are correct at each stage:
+   *   1. After betting (historical totals updated, settled totals zero)
+   *   2. After Market A resolution (Agent2's bet settled, Agent1's not)
+   *   3. After Market B resolution (Agent2's second bet settled)
+   *   4. After Agent1 payout (all bets settled)
+   * - Verify TraderAgent, MarketParticipant, and Global totals correspond correctly
+   */
+  test("Comprehensive: TraderAgent, MarketParticipant, and Global totals tracking", () => {
+    let AGENT1 = AGENT;
+    let AGENT2 = Address.fromString("0x2234567890123456789012345678901234567890");
+    let MARKET_A = MARKET_WON;
+    let MARKET_B = MARKET_LOST;
+
+    // Setup second agent
+    let agent2 = new TraderAgent(AGENT2);
+    agent2.totalBets = 0;
+    agent2.serviceId = BigInt.fromI32(2);
+    agent2.totalTraded = BigInt.zero();
+    agent2.totalPayout = BigInt.zero();
+    agent2.totalFees = BigInt.zero();
+    agent2.totalTradedSettled = BigInt.zero();
+    agent2.totalFeesSettled = BigInt.zero();
+    agent2.blockNumber = BigInt.fromI32(1000);
+    agent2.blockTimestamp = START_TS;
+    agent2.transactionHash = DUMMY_HASH;
+    agent2.save();
+
+    setupMarket(MARKET_A, MARKET_A.toHexString());
+    setupMarket(MARKET_B, MARKET_B.toHexString());
+
+    // === PHASE 1: BETTING ===
+    // Agent1 bets 1000+100 on Market A, Outcome 0 (will win)
+    handleBuy(createBuyEvent(AGENT1, BigInt.fromI32(1000), BigInt.fromI32(100), ANSWER_0, MARKET_A, START_TS, 0));
+
+    // Agent2 bets 500+50 on Market A, Outcome 1 (will lose)
+    handleBuy(createBuyEvent(AGENT2, BigInt.fromI32(500), BigInt.fromI32(50), ANSWER_1, MARKET_A, START_TS, 1));
+
+    // Agent2 bets 2000+200 on Market B, Outcome 0 (will lose)
+    handleBuy(createBuyEvent(AGENT2, BigInt.fromI32(2000), BigInt.fromI32(200), ANSWER_0, MARKET_B, START_TS, 2));
+
+    // Check Agent1 totals after betting
+    assert.fieldEquals("TraderAgent", AGENT1.toHexString(), "totalBets", "1");
+    assert.fieldEquals("TraderAgent", AGENT1.toHexString(), "totalTraded", "1000");
+    assert.fieldEquals("TraderAgent", AGENT1.toHexString(), "totalFees", "100");
+    assert.fieldEquals("TraderAgent", AGENT1.toHexString(), "totalTradedSettled", "0");
+    assert.fieldEquals("TraderAgent", AGENT1.toHexString(), "totalFeesSettled", "0");
+
+    // Check Agent2 totals after betting
+    assert.fieldEquals("TraderAgent", AGENT2.toHexString(), "totalBets", "2");
+    assert.fieldEquals("TraderAgent", AGENT2.toHexString(), "totalTraded", "2500"); // 500 + 2000
+    assert.fieldEquals("TraderAgent", AGENT2.toHexString(), "totalFees", "250"); // 50 + 200
+    assert.fieldEquals("TraderAgent", AGENT2.toHexString(), "totalTradedSettled", "0");
+    assert.fieldEquals("TraderAgent", AGENT2.toHexString(), "totalFeesSettled", "0");
+
+    // Check MarketParticipant for Agent1-MarketA
+    let participant1A = AGENT1.toHexString() + "_" + MARKET_A.toHexString();
+    assert.fieldEquals("MarketParticipant", participant1A, "totalBets", "1");
+    assert.fieldEquals("MarketParticipant", participant1A, "totalTraded", "1000");
+    assert.fieldEquals("MarketParticipant", participant1A, "totalFees", "100");
+    assert.fieldEquals("MarketParticipant", participant1A, "totalTradedSettled", "0");
+    assert.fieldEquals("MarketParticipant", participant1A, "totalFeesSettled", "0");
+
+    // Check MarketParticipant for Agent2-MarketA
+    let participant2A = AGENT2.toHexString() + "_" + MARKET_A.toHexString();
+    assert.fieldEquals("MarketParticipant", participant2A, "totalBets", "1");
+    assert.fieldEquals("MarketParticipant", participant2A, "totalTraded", "500");
+    assert.fieldEquals("MarketParticipant", participant2A, "totalFees", "50");
+    assert.fieldEquals("MarketParticipant", participant2A, "totalTradedSettled", "0");
+    assert.fieldEquals("MarketParticipant", participant2A, "totalFeesSettled", "0");
+
+    // Check MarketParticipant for Agent2-MarketB
+    let participant2B = AGENT2.toHexString() + "_" + MARKET_B.toHexString();
+    assert.fieldEquals("MarketParticipant", participant2B, "totalBets", "1");
+    assert.fieldEquals("MarketParticipant", participant2B, "totalTraded", "2000");
+    assert.fieldEquals("MarketParticipant", participant2B, "totalFees", "200");
+    assert.fieldEquals("MarketParticipant", participant2B, "totalTradedSettled", "0");
+    assert.fieldEquals("MarketParticipant", participant2B, "totalFeesSettled", "0");
+
+    // Check Global totals after all bets
+    assert.fieldEquals("Global", "", "totalBets", "3");
+    assert.fieldEquals("Global", "", "totalTraded", "3500"); // 1000 + 500 + 2000
+    assert.fieldEquals("Global", "", "totalFees", "350"); // 100 + 50 + 200
+    assert.fieldEquals("Global", "", "totalTradedSettled", "0");
+    assert.fieldEquals("Global", "", "totalFeesSettled", "0");
+
+    // === PHASE 2: MARKET A RESOLVES (Outcome 0 wins) ===
+    let day3TS = START_TS.plus(BigInt.fromI32(DAY * 2));
+    handleLogNewAnswer(createNewAnswerEvent(MARKET_A, ANSWER_0_HEX, day3TS));
+
+    // Agent1's bet on Market A was correct - NOT settled yet (waiting for payout)
+    assert.fieldEquals("TraderAgent", AGENT1.toHexString(), "totalTradedSettled", "0");
+    assert.fieldEquals("TraderAgent", AGENT1.toHexString(), "totalFeesSettled", "0");
+    assert.fieldEquals("MarketParticipant", participant1A, "totalTradedSettled", "0");
+    assert.fieldEquals("MarketParticipant", participant1A, "totalFeesSettled", "0");
+
+    // Agent2's bet on Market A was incorrect - settled immediately
+    assert.fieldEquals("TraderAgent", AGENT2.toHexString(), "totalTradedSettled", "500");
+    assert.fieldEquals("TraderAgent", AGENT2.toHexString(), "totalFeesSettled", "50");
+    assert.fieldEquals("MarketParticipant", participant2A, "totalTradedSettled", "500");
+    assert.fieldEquals("MarketParticipant", participant2A, "totalFeesSettled", "50");
+
+    // Agent2's Market B bet not settled yet
+    assert.fieldEquals("MarketParticipant", participant2B, "totalTradedSettled", "0");
+    assert.fieldEquals("MarketParticipant", participant2B, "totalFeesSettled", "0");
+
+    // Global: only Agent2's Market A bet settled
+    assert.fieldEquals("Global", "", "totalTradedSettled", "500");
+    assert.fieldEquals("Global", "", "totalFeesSettled", "50");
+
+    // === PHASE 3: MARKET B RESOLVES (Outcome 1 wins) ===
+    let day5TS = START_TS.plus(BigInt.fromI32(DAY * 4));
+    handleLogNewAnswer(createNewAnswerEvent(MARKET_B, ANSWER_1_HEX, day5TS));
+
+    // Agent2's bet on Market B was incorrect - now settled
+    assert.fieldEquals("TraderAgent", AGENT2.toHexString(), "totalTradedSettled", "2500"); // 500 + 2000
+    assert.fieldEquals("TraderAgent", AGENT2.toHexString(), "totalFeesSettled", "250"); // 50 + 200
+    assert.fieldEquals("MarketParticipant", participant2B, "totalTradedSettled", "2000");
+    assert.fieldEquals("MarketParticipant", participant2B, "totalFeesSettled", "200");
+
+    // Agent2's total settled should equal total traded (all bets lost)
+    assert.fieldEquals("TraderAgent", AGENT2.toHexString(), "totalTraded", "2500");
+    assert.fieldEquals("TraderAgent", AGENT2.toHexString(), "totalFees", "250");
+
+    // Agent1 still not settled
+    assert.fieldEquals("TraderAgent", AGENT1.toHexString(), "totalTradedSettled", "0");
+    assert.fieldEquals("TraderAgent", AGENT1.toHexString(), "totalFeesSettled", "0");
+
+    // Global: Agent2's both bets settled
+    assert.fieldEquals("Global", "", "totalTradedSettled", "2500");
+    assert.fieldEquals("Global", "", "totalFeesSettled", "250");
+
+    // === PHASE 4: AGENT1 REDEEMS PAYOUT ===
+    let day7TS = START_TS.plus(BigInt.fromI32(DAY * 6));
+    handlePayoutRedemption(createPayoutRedemptionEvent(AGENT1, BigInt.fromI32(2500), MARKET_A, day7TS));
+
+    // Agent1's winning bet now settled
+    assert.fieldEquals("TraderAgent", AGENT1.toHexString(), "totalTradedSettled", "1000");
+    assert.fieldEquals("TraderAgent", AGENT1.toHexString(), "totalFeesSettled", "100");
+    assert.fieldEquals("TraderAgent", AGENT1.toHexString(), "totalPayout", "2500");
+    assert.fieldEquals("MarketParticipant", participant1A, "totalTradedSettled", "1000");
+    assert.fieldEquals("MarketParticipant", participant1A, "totalFeesSettled", "100");
+    assert.fieldEquals("MarketParticipant", participant1A, "totalPayout", "2500");
+
+    // Agent1's settled totals should equal total traded (bet won and paid out)
+    assert.fieldEquals("TraderAgent", AGENT1.toHexString(), "totalTraded", "1000");
+    assert.fieldEquals("TraderAgent", AGENT1.toHexString(), "totalFees", "100");
+
+    // Global: all bets now settled
+    assert.fieldEquals("Global", "", "totalTradedSettled", "3500"); // 500 + 2000 + 1000
+    assert.fieldEquals("Global", "", "totalFeesSettled", "350"); // 50 + 200 + 100
+    assert.fieldEquals("Global", "", "totalPayout", "2500");
+
+    // Verify Global settled equals Global total (all markets settled)
+    assert.fieldEquals("Global", "", "totalTraded", "3500");
+    assert.fieldEquals("Global", "", "totalFees", "350");
+  });
 });

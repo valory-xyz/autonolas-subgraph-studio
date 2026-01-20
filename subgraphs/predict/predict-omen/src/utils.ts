@@ -3,25 +3,6 @@ import { Global, TraderAgent, MarketParticipant, DailyProfitStatistic } from "..
 import { ONE_DAY } from "./constants";
 
 /**
- * Track agent activity (first and latest participation) and total agent bets
- * */
-export function updateTraderAgentActivity(address: Address, blockTimestamp: BigInt): void {
-  let agent = TraderAgent.load(address);
-  if (agent !== null) {
-    if (agent.firstParticipation === null) {
-      agent.firstParticipation = blockTimestamp;
-      let global = getGlobal();
-      global.totalActiveTraderAgents += 1;
-      global.save();
-    }
-
-    agent.totalBets += 1;
-    agent.lastActive = blockTimestamp;
-    agent.save();
-  }
-}
-
-/**
  * Track payment for market in case of won bet
  **/
 export function updateTraderAgentPayout(address: Address, payout: BigInt): void {
@@ -33,38 +14,66 @@ export function updateTraderAgentPayout(address: Address, payout: BigInt): void 
 }
 
 /**
- * Track activity of each participant of a market (all done bets)
- * Traded and fees are updated on market settlement (log new anser)
- * Payouts are added separately if won
- **/
-export function updateMarketParticipantActivity(
-  trader: Address,
+ * Consolidates all activity and volume updates into a single pass.
+ */
+export function processTradeActivity(
+  agent: TraderAgent,
   market: Address,
   betId: string,
-  blockTimestamp: BigInt,
+  amount: BigInt,
+  fees: BigInt,
+  timestamp: BigInt,
   blockNumber: BigInt,
   txHash: Bytes
 ): void {
-  let participantId = trader.toHexString() + "_" + market.toHexString();
+  let global = getGlobal();
+
+  // 1. Update Global
+  global.totalBets += 1;
+  global.totalTraded = global.totalTraded.plus(amount);
+  global.totalFees = global.totalFees.plus(fees);
+
+  // 2. Update TraderAgent
+  if (agent.firstParticipation === null) {
+    agent.firstParticipation = timestamp;
+    global.totalActiveTraderAgents += 1;
+  }
+  agent.totalBets += 1;
+  agent.lastActive = timestamp;
+  agent.totalTraded = agent.totalTraded.plus(amount);
+  agent.totalFees = agent.totalFees.plus(fees);
+
+  // 3. Update or Create MarketParticipant
+  let participantId = agent.id.toHexString() + "_" + market.toHexString();
   let participant = MarketParticipant.load(participantId);
+  
   if (participant == null) {
     participant = new MarketParticipant(participantId);
-    participant.traderAgent = trader;
+    participant.traderAgent = agent.id;
     participant.fixedProductMarketMaker = market;
     participant.totalBets = 0;
     participant.totalTraded = BigInt.zero();
     participant.totalPayout = BigInt.zero();
     participant.totalFees = BigInt.zero();
-    participant.createdAt = blockTimestamp;
+    participant.totalTradedSettled = BigInt.zero();
+    participant.totalFeesSettled = BigInt.zero();
+    participant.createdAt = timestamp;
     participant.bets = [];
   }
+
   let bets = participant.bets;
   bets.push(betId);
   participant.bets = bets;
   participant.totalBets += 1;
-  participant.blockTimestamp = blockTimestamp;
+  participant.totalTraded = participant.totalTraded.plus(amount);
+  participant.totalFees = participant.totalFees.plus(fees);
+  participant.blockTimestamp = timestamp;
   participant.blockNumber = blockNumber;
   participant.transactionHash = txHash;
+
+  // 4. Save all
+  global.save();
+  agent.save();
   participant.save();
 }
 
@@ -94,17 +103,10 @@ export function getGlobal(): Global {
     global.totalTraded = BigInt.zero();
     global.totalFees = BigInt.zero();
     global.totalPayout = BigInt.zero();
+    global.totalTradedSettled = BigInt.zero();
+    global.totalFeesSettled = BigInt.zero();
   }
   return global as Global;
-}
-
-/**
- * Increase total bets in global entity
- */
-export function incrementGlobalTotalBets(): void {
-  let global = getGlobal();
-  global.totalBets += 1;
-  global.save();
 }
 
 /**

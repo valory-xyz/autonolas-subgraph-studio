@@ -5,28 +5,26 @@ import {
   FPMMSell as FPMMSellEvent,
 } from "../generated/templates/FixedProductMarketMaker/FixedProductMarketMaker";
 import {
-  updateTraderAgentActivity,
-  updateMarketParticipantActivity,
-  incrementGlobalTotalBets,
   getDailyProfitStatistic,
+  processTradeActivity,
 } from "./utils";
 
 export function handleBuy(event: FPMMBuyEvent): void {
-  let betId = event.transaction.hash.concatI32(event.logIndex.toI32()).toHexString();
-  let bet = new Bet(betId);
   let fixedProductMarketMaker = FixedProductMarketMakerCreation.load(event.address);
   let traderAgent = TraderAgent.load(event.params.buyer);
 
   if (fixedProductMarketMaker !== null && traderAgent !== null) {
-    // Update daily profit statistic
+    let betId = event.transaction.hash.concatI32(event.logIndex.toI32()).toHexString();
     let dailyStat = getDailyProfitStatistic(event.params.buyer, event.block.timestamp);
 
+    // 1. Update Daily Stats
     dailyStat.totalBets += 1;
     dailyStat.totalTraded = dailyStat.totalTraded.plus(event.params.investmentAmount);
     dailyStat.totalFees = dailyStat.totalFees.plus(event.params.feeAmount);
     dailyStat.save();
 
-    // Update bet
+    // 2. Initialize Bet
+    let bet = new Bet(betId);
     bet.bettor = event.params.buyer;
     bet.outcomeIndex = event.params.outcomeIndex;
     bet.amount = event.params.investmentAmount;
@@ -38,39 +36,42 @@ export function handleBuy(event: FPMMBuyEvent): void {
     bet.countedInProfit = false;
     bet.save();
 
-    // Update agent, agent-market and global statistics
-    updateTraderAgentActivity(event.params.buyer, event.block.timestamp);
-    updateMarketParticipantActivity(
-      event.params.buyer,
+    // 3. Process Agent, Participant, and Global atomically
+    processTradeActivity(
+      traderAgent,
       event.address,
       betId,
+      event.params.investmentAmount,
+      event.params.feeAmount,
       event.block.timestamp,
       event.block.number,
       event.transaction.hash
     );
-    incrementGlobalTotalBets();
   }
 }
 
 export function handleSell(event: FPMMSellEvent): void {
-  let betId = event.transaction.hash.concatI32(event.logIndex.toI32()).toHexString();
-  let bet = new Bet(betId);
   let fixedProductMarketMaker = FixedProductMarketMakerCreation.load(event.address);
   let traderAgent = TraderAgent.load(event.params.seller);
 
   if (fixedProductMarketMaker !== null && traderAgent !== null) {
-    // Update daily profit statistic
+    let betId = event.transaction.hash.concatI32(event.logIndex.toI32()).toHexString();
     let dailyStat = getDailyProfitStatistic(event.params.seller, event.block.timestamp);
 
+    // Sells use negative investment amounts for volume tracking
+    let negAmount = BigInt.zero().minus(event.params.returnAmount);
+
+    // 1. Update Daily Stats
     dailyStat.totalBets += 1;
-    dailyStat.totalTraded = dailyStat.totalTraded.minus(event.params.returnAmount);
+    dailyStat.totalTraded = dailyStat.totalTraded.plus(negAmount);
     dailyStat.totalFees = dailyStat.totalFees.plus(event.params.feeAmount);
     dailyStat.save();
 
-    // Update bet
+    // 2. Initialize Bet
+    let bet = new Bet(betId);
     bet.bettor = event.params.seller;
     bet.outcomeIndex = event.params.outcomeIndex;
-    bet.amount = BigInt.zero().minus(event.params.returnAmount);
+    bet.amount = negAmount;
     bet.feeAmount = event.params.feeAmount;
     bet.timestamp = event.block.timestamp;
     bet.fixedProductMarketMaker = event.address;
@@ -79,16 +80,16 @@ export function handleSell(event: FPMMSellEvent): void {
     bet.countedInProfit = false;
     bet.save();
 
-    // Update agent, agent-market and global statistics
-    updateTraderAgentActivity(event.params.seller, event.block.timestamp);
-    updateMarketParticipantActivity(
-      event.params.seller,
+    // 3. Process Agent, Participant, and Global atomically
+    processTradeActivity(
+      traderAgent,
       event.address,
       betId,
+      negAmount,
+      event.params.feeAmount,
       event.block.timestamp,
       event.block.number,
       event.transaction.hash
     );
-    incrementGlobalTotalBets();
   }
 }

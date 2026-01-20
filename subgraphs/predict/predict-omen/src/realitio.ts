@@ -56,13 +56,13 @@ export function handleLogNewAnswer(event: LogNewAnswerEvent): void {
   fpmm.currentAnswerTimestamp = event.block.timestamp;
   fpmm.save();
 
-  // 1. Pre-compute values outside the loop to avoid redundant calculations
+   // 1. Pre-compute values outside the loop to avoid redundant calculations
   // needed for performance and data integrity
   let answerBigInt = bytesToBigInt(event.params.answer);
   let global = getGlobal();
-  let globalTradedDelta = BigInt.zero();
-  let globalFeesDelta = BigInt.zero();
-  let fpmmIdHex = fpmm.id.toHexString();
+  let globalTradedSettledDelta = BigInt.zero();
+  let globalFeesSettledDelta = BigInt.zero();
+  
   let dailyStatsCache = new Map<string, DailyProfitStatistic>();
   let agentCache = new Map<string, TraderAgent>();
   let participantCache = new Map<string, MarketParticipant>();
@@ -74,45 +74,44 @@ export function handleLogNewAnswer(event: LogNewAnswerEvent): void {
 
     // use boolean to track if bet was modified to save it in the end
     let betModified = false;
+    let agentId = bet.bettor.toHexString();
 
-    // 2. Process Trading Volume
-    if (bet.countedInTotal === false) {
-      // Use cache for TraderAgent
-      let agentId = bet.bettor.toHexString();
-      let agent = agentCache.has(agentId) 
-        ? agentCache.get(agentId)! 
-        : TraderAgent.load(bet.bettor);
+    // 2. Load Agent, use cache if available
+    let agent = agentCache.has(agentId)
+      ? agentCache.get(agentId)!
+      : TraderAgent.load(bet.bettor);
+    if (agent === null) continue;
 
-      if (agent !== null) {
-        agent.totalTraded = agent.totalTraded.plus(bet.amount);
-        agent.totalFees = agent.totalFees.plus(bet.feeAmount);
-        agentCache.set(agentId, agent); // Put back in cache
-
-        // Use cache for MarketParticipant
-        let participantId = bet.bettor.toHexString() + "_" + fpmmIdHex;
-        let participant = participantCache.has(participantId) 
-          ? participantCache.get(participantId)! 
-          : MarketParticipant.load(participantId);
+    // 3. Process Incorrect Bets Only
+    // Correct bets are ignored here and handled in handlePayoutRedemption
+    if (!bet.outcomeIndex.equals(answerBigInt)) {
+      
+      // Update Settlement Totals (Volume & Fees)
+      if (bet.countedInTotal === false) {
+        agent.totalTradedSettled = agent.totalTradedSettled.plus(bet.amount);
+        agent.totalFeesSettled = agent.totalFeesSettled.plus(bet.feeAmount);
+        
+        let partId = agentId + "_" + fpmm.id.toHexString();
+        let participant = participantCache.has(partId)
+          ? participantCache.get(partId)!
+          : MarketParticipant.load(partId);
 
         if (participant != null) {
-          participant.totalTraded = participant.totalTraded.plus(bet.amount);
-          participant.totalFees = participant.totalFees.plus(bet.feeAmount);
-          participantCache.set(participantId, participant);
+          participant.totalTradedSettled = participant.totalTradedSettled.plus(bet.amount);
+          participant.totalFeesSettled = participant.totalFeesSettled.plus(bet.feeAmount);
+          participantCache.set(partId, participant);
         }
 
+        globalTradedSettledDelta = globalTradedSettledDelta.plus(bet.amount);
+        globalFeesSettledDelta = globalFeesSettledDelta.plus(bet.feeAmount);
+        
         bet.countedInTotal = true;
         betModified = true;
-        globalTradedDelta = globalTradedDelta.plus(bet.amount);
-        globalFeesDelta = globalFeesDelta.plus(bet.feeAmount);
       }
-    }
 
-    // 3. Process Profit Statistics
-    if (bet.countedInProfit === false) {
-      if (!bet.outcomeIndex.equals(answerBigInt)) {
-        let dayTimestamp = getDayTimestamp(event.block.timestamp);
-        let statId = bet.bettor.toHexString() + "_" + dayTimestamp.toString();
-        
+      // Update Profit Statistics
+      if (bet.countedInProfit === false) {
+        let statId = agentId + "_" + getDayTimestamp(event.block.timestamp).toString();
         let dailyStat = dailyStatsCache.has(statId)
           ? dailyStatsCache.get(statId)!
           : getDailyProfitStatistic(bet.bettor, event.block.timestamp);
@@ -129,18 +128,18 @@ export function handleLogNewAnswer(event: LogNewAnswerEvent): void {
 
     if (betModified) {
       bet.save();
+      agentCache.set(agentId, agent);
     }
   }
 
-  // 4. Final Batch Saves
+  // 4. Finalizing cached data and global
   saveMapValues(agentCache);
   saveMapValues(participantCache);
   saveMapValues(dailyStatsCache);
 
-  // Update global statistics once at the end
-  if (!globalTradedDelta.equals(BigInt.zero()) || !globalFeesDelta.equals(BigInt.zero())) {
-    global.totalTraded = global.totalTraded.plus(globalTradedDelta);
-    global.totalFees = global.totalFees.plus(globalFeesDelta);
+  if (globalTradedSettledDelta.gt(BigInt.zero()) || globalFeesSettledDelta.gt(BigInt.zero())) {
+    global.totalTradedSettled = global.totalTradedSettled.plus(globalTradedSettledDelta);
+    global.totalFeesSettled = global.totalFeesSettled.plus(globalFeesSettledDelta);
     global.save();
   }
 }
