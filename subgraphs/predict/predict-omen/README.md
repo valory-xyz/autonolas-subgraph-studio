@@ -4,15 +4,20 @@ A streamlined GraphQL API for tracking prediction markets and Autonolas agent pe
 
 ## Core Business Rules
 
-1.  **Selective Tracking**: 
+1.  **Selective Tracking**:
     * **Agents**: Only tracks agents registered through the `ServiceRegistryL2` contract.
     * **Markets**: Only indexes binary markets created by whitelisted creator agents.
 2.  **Market Lifecycle**: Markets are typically open for **4 days**. Payouts generally occur **24+ hours** after closing.
 3.  **Accounting & Statistics**:
-    * **Settlement-Based Totals**: Global and agent `totalTraded` and `totalFees` are updated **only when a market closes** (settles), not at the time of the bet.
+    * **Historical vs Settled Totals**:
+        * `totalTraded` and `totalFees` track **all bets** regardless of settlement status (updated immediately when bets are placed)
+        * `totalTradedSettled` and `totalFeesSettled` track **settled markets only** (updated based on settlement timing)
+    * **Settlement Timing for Settled Totals**:
+        * **Incorrect bets**: Updated on **market settlement day** (when `LogNewAnswer` is recorded)
+        * **Correct bets**: Updated on **payout redemption day** (when agent claims winnings)
     * **Profit Attribution**:
-        * **Losses** are recorded on the **market settlement day** (for all incorrect bets).
-        * **Wins** are recorded on the **payout redemption day**.
+        * **Losses** are recorded on the **market settlement day** (for all incorrect bets)
+        * **Wins** are recorded on the **payout redemption day**
 4.  **No Arbitration / Single Answer**: We assume a simplified oracle flow with **no arbitration**. The subgraph expects `LogNewAnswer` to occur only once per question. Events like `LogAnswerReveal` or `LogNotifyOfArbitrationRequest` are not expected, and tracked only for debugging.
 5.  **Invalid Markets**: If a market is closed with an "Invalid" answer from the oracle, it is treated as a settlement. Because the invalid answer will not match the agents' `outcomeIndex`, spends (amount + fees) are automatically deducted as losses on the market settlement day.
 6.  **Profit Participants & Fee Analysis**: The `DailyProfitStatistic` entity maintains a list of `profitParticipants` (market IDs). This allows for granular downstream analysis, such as calculating **Mech fees** separately by correlating these market IDs with their titles or external metadata.
@@ -23,14 +28,15 @@ A streamlined GraphQL API for tracking prediction markets and Autonolas agent pe
 
 ### TraderAgent
 Represents an Autonolas trading agent. It tracks cumulative performance metrics.
-* `totalTraded` / `totalFees`: Volume/Fees for **settled** markets only.
-* `totalPayout`: All xDAI reclaimed by the agent via redemptions.
+* `totalTraded` / `totalFees`: All bets volume and fees (updated immediately when bets are placed)
+* `totalTradedSettled` / `totalFeesSettled`: Volume/Fees for **settled** markets only (updated at settlement or payout)
+* `totalPayout`: All xDAI reclaimed by the agent via redemptions
 
 ### Bet
 An individual trade (Buy or Sell).
-* `amount`: Positive for buys, negative for sells.
-* `countedInTotal`: Flag ensuring volume is added to totals only once (at settlement).
-* `countedInProfit`: Flag ensuring PnL impact is processed only once (either at settlement or payout).
+* `amount`: Positive for buys, negative for sells
+* `countedInTotal`: Flag ensuring volume is added to settled totals only once (at settlement for incorrect bets, at payout for correct bets)
+* `countedInProfit`: Flag ensuring PnL impact is processed only once (either at settlement or payout)
 
 ### DailyProfitStatistic
 Tracks day-to-day performance for an agent.
@@ -46,14 +52,16 @@ The subgraph uses two primary handlers to manage the transition from "Active Bet
 
 ### 1. Market Closing (`handleLogNewAnswer`)
 Triggered when the Oracle provides the final answer.
-* **Update Totals**: It iterates through all market bets. If `countedInTotal` is false, it increments `totalTraded` and `totalFees` for the Agent and the Global state.
-* **Realize Losses**: For every **incorrect** bet (where `outcomeIndex != answer`), the cost (`amount + fee`) is subtracted from the agent's `dailyProfit` for the **settlement date**.
+* **Update Settled Totals** (for incorrect bets only): For each **incorrect** bet (where `outcomeIndex != answer`), if `countedInTotal` is false, it increments `totalTradedSettled` and `totalFeesSettled` for the Agent, MarketParticipant, and Global entities.
+* **Realize Losses**: For every **incorrect** bet, the cost (`amount + fee`) is subtracted from the agent's `dailyProfit` for the **settlement date**.
 * **Tracking**: The market ID is added to the day's `profitParticipants` to mark that a loss was realized for this market.
+* **Note**: Correct bets are **not** processed here - their settled totals are updated during payout redemption.
 
 
 
 ### 2. Payout Redemption (`handlePayoutRedemption`)
 Triggered when an agent claims winnings.
+* **Update Settled Totals** (for correct bets): The amount and fees from winning bets that haven't been counted yet (unsettled amount = `totalTraded - totalTradedSettled` for this market participant) are added to `totalTradedSettled` and `totalFeesSettled` for Agent, MarketParticipant, and Global entities.
 * **Net Profit Calculation**: The subgraph identifies the costs (`amount + fee`) of the winning bets that haven't been "counted in profit" yet.
 * **Update PnL**: `Profit = Payout - TotalCosts`. This net value is added to the agent's `dailyProfit` on the **redemption date**.
 * **Tracking**: The market ID is added to the day's `profitParticipants` to mark that a win was realized for this market.
@@ -83,7 +91,10 @@ Track an agent's financial performance and see which markets were settled or pai
   globals {
     totalActiveTraderAgents
     totalBets
-    totalTraded # Settled volume only
+    totalTraded           # All bets volume
+    totalTradedSettled    # Settled markets volume only
+    totalFees             # All bets fees
+    totalFeesSettled      # Settled markets fees only
     totalPayout
   }
 }
