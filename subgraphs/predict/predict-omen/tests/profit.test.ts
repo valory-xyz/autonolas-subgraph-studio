@@ -490,6 +490,69 @@ describe("Profit Chart Integration", () => {
   });
 
   /**
+   * Test: Second answer event with invalid answer doesn't affect settled totals
+   * - Day 1: Place losing bet (1000 + 100 fees)
+   * - Day 3: First answer event resolves market (bet loses, totals settle)
+   * - Day 5: Second answer event with different invalid answer
+   * - Check: Settled totals remain the same after second event (no double-counting)
+   */
+  test("Second answer event with invalid answer doesn't affect settled totals", () => {
+    setupMarket(MARKET_LOST, MARKET_LOST.toHexString());
+
+    // Day 1: Place bet on Outcome 0
+    handleBuy(createBuyEvent(AGENT, BigInt.fromI32(1000), BigInt.fromI32(100), ANSWER_0, MARKET_LOST, START_TS));
+
+    // Verify initial state - settled totals are zero
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalTradedSettled", "0");
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalFeesSettled", "0");
+
+    let participantId = AGENT.toHexString() + "_" + MARKET_LOST.toHexString();
+    assert.fieldEquals("MarketParticipant", participantId, "totalTradedSettled", "0");
+    assert.fieldEquals("MarketParticipant", participantId, "totalFeesSettled", "0");
+
+    assert.fieldEquals("Global", "", "totalTradedSettled", "0");
+    assert.fieldEquals("Global", "", "totalFeesSettled", "0");
+
+    // Day 3: First answer event - market resolves to Outcome 1 (bet loses)
+    let day3TS = START_TS.plus(BigInt.fromI32(DAY * 2));
+    handleLogNewAnswer(createNewAnswerEvent(MARKET_LOST, ANSWER_1_HEX, day3TS));
+
+    // Verify totals are settled after first answer
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalTradedSettled", "1000");
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalFeesSettled", "100");
+    assert.fieldEquals("MarketParticipant", participantId, "totalTradedSettled", "1000");
+    assert.fieldEquals("MarketParticipant", participantId, "totalFeesSettled", "100");
+    assert.fieldEquals("Global", "", "totalTradedSettled", "1000");
+    assert.fieldEquals("Global", "", "totalFeesSettled", "100");
+
+    // Verify profit statistics for Day 3
+    let day3Id = AGENT.toHexString() + "_" + NORMALIZED_TS.plus(BigInt.fromI32(DAY * 2)).toString();
+    assert.fieldEquals("DailyProfitStatistic", day3Id, "dailyProfit", "-1100");
+
+    // Day 5: Second answer event with different invalid answer
+    // This simulates the invalid answer scenario where a second answer is logged
+    let day5TS = START_TS.plus(BigInt.fromI32(DAY * 4));
+    let ANSWER_2_HEX = Bytes.fromHexString("0x0000000000000000000000000000000000000000000000000000000000000002");
+    handleLogNewAnswer(createNewAnswerEvent(MARKET_LOST, ANSWER_2_HEX, day5TS));
+
+    // CRITICAL VERIFICATION: Settled totals should remain unchanged after second event
+    // The countedInTotal flag should prevent double-counting
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalTradedSettled", "1000");
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalFeesSettled", "100");
+    assert.fieldEquals("MarketParticipant", participantId, "totalTradedSettled", "1000");
+    assert.fieldEquals("MarketParticipant", participantId, "totalFeesSettled", "100");
+    assert.fieldEquals("Global", "", "totalTradedSettled", "1000");
+    assert.fieldEquals("Global", "", "totalFeesSettled", "100");
+
+    // Verify profit statistics for Day 5 - should not have new entry since bet was already counted
+    let day5Id = AGENT.toHexString() + "_" + NORMALIZED_TS.plus(BigInt.fromI32(DAY * 4)).toString();
+    assert.notInStore("DailyProfitStatistic", day5Id);
+
+    // Verify Day 3 profit remains unchanged
+    assert.fieldEquals("DailyProfitStatistic", day3Id, "dailyProfit", "-1100");
+  });
+
+  /**
    * Test: Comprehensive totals tracking across all entities
    * Scenario:
    * - Agent1 bets on Market A (will win)

@@ -51,10 +51,6 @@ export function handleLogNewAnswer(event: LogNewAnswerEvent): void {
 
   let fpmm = FixedProductMarketMakerCreation.load(id);
   if (fpmm === null) return;
-  if (fpmm.currentAnswer !== null) {
-    log.critical("More than one Log New Answer event happened for fpmmId: {}", [id.toHexString()]);
-    return;
-  }
 
   fpmm.currentAnswer = event.params.answer;
   fpmm.currentAnswerTimestamp = event.block.timestamp;
