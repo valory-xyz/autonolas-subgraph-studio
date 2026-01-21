@@ -51,10 +51,15 @@ subgraphs/predict/
     * **Markets**: Only indexes binary markets created by whitelisted creator agents.
 2.  **Market Lifecycle**: 4-day trading window; payouts 24+ hours after closing.
 3.  **Accounting & Statistics**:
-    * **Settlement-Based Totals**: Global/agent `totalTraded` and `totalFees` update ONLY when a market closes.
-    * **Split Profit Attribution**: 
-        * **Losses**: Recorded on **Market Settlement Day** (for incorrect bets).
-        * **Wins**: Recorded on **Payout Redemption Day** (Net: Payout - Costs).
+    * **Historical vs Settled Totals**:
+        * `totalTraded` and `totalFees`: Track **all bets** immediately when placed
+        * `totalTradedSettled` and `totalFeesSettled`: Track **settled markets only**, updated based on bet outcome
+    * **Settlement Timing for Settled Totals**:
+        * **Incorrect bets**: Updated on **Market Settlement Day** (when `LogNewAnswer` is recorded)
+        * **Correct bets**: Updated on **Payout Redemption Day** (when agent claims winnings)
+    * **Split Profit Attribution**:
+        * **Losses**: Recorded on **Market Settlement Day** (for incorrect bets)
+        * **Wins**: Recorded on **Payout Redemption Day** (Net: Payout - Costs)
 4.  **No Arbitration**: Expected single `LogNewAnswer` per market. Arbitration events are ignored.
 5.  **Invalid Markets**: Handled automatically. If "Invalid", all bets are treated as losses during settlement.
 6.  **Mech Fee Analysis**: `profitParticipants` allows correlation between PnL events and market metadata for external fee tracking.
@@ -77,12 +82,16 @@ type TraderAgent @entity {
   # Activity tracking
   firstParticipation: BigInt!
   lastActive: BigInt!
-  totalBets: BigInt!
+  totalBets: Int!
 
-  # Financial metrics (SETTLED MARKETS ONLY)
-  totalTraded: BigDecimal!      # Volume (added at settlement)
-  totalFees: BigDecimal!        # Fees (added at settlement)
-  totalPayout: BigDecimal!      # All xDAI reclaimed
+  # Financial metrics - Historical (ALL BETS)
+  totalTraded: BigInt!          # All bets volume (immediate)
+  totalFees: BigInt!            # All bets fees (immediate)
+  totalPayout: BigInt!          # All xDAI reclaimed
+
+  # Financial metrics - Settled (SETTLED MARKETS ONLY)
+  totalTradedSettled: BigInt!   # Settled volume (at settlement/payout)
+  totalFeesSettled: BigInt!     # Settled fees (at settlement/payout)
 
   # Relationships
   bets: [Bet!]! @derivedFrom(field: "bettor")
@@ -90,7 +99,11 @@ type TraderAgent @entity {
 }
 ```
 
-**Critical Rule**: `totalTraded` and `totalFees` are updated **only when a market closes**, not when bets are placed.
+**Critical Rules**:
+- `totalTraded` and `totalFees` are updated **immediately** when bets are placed
+- `totalTradedSettled` and `totalFeesSettled` are updated **only when markets settle**:
+  - For incorrect bets: at market settlement (`handleLogNewAnswer`)
+  - For correct bets: at payout redemption (`handlePayoutRedemption`)
 
 ---
 
@@ -119,8 +132,8 @@ type Bet @entity {
 ```
 
 **Critical Flags:**
-- `countedInTotal`: Prevents double-counting volume in agent/global totals
-- `countedInProfit`: Prevents double-processing PnL impact
+- `countedInTotal`: Prevents double-counting volume in settled totals (set to true at settlement for incorrect bets, at payout for correct bets)
+- `countedInProfit`: Prevents double-processing PnL impact (set to true at settlement for losses, at payout for wins)
 
 ---
 
@@ -190,10 +203,12 @@ type MarketParticipant @entity {
   fpmm: FixedProductMarketMakerCreation!
 
   # Per-market statistics
-  totalBets: BigInt!
-  totalTraded: BigDecimal!
-  totalPayout: BigDecimal!
-  totalFees: BigDecimal!
+  totalBets: Int!
+  totalTraded: BigInt!          # All bets (immediate)
+  totalPayout: BigInt!
+  totalFees: BigInt!            # All bets (immediate)
+  totalTradedSettled: BigInt!   # Settled only
+  totalFeesSettled: BigInt!     # Settled only
 }
 ```
 
@@ -205,16 +220,20 @@ Aggregate statistics across all agents.
 **Key Fields:**
 ```graphql
 type Global @entity {
-  id: ID!                       # Singleton: "1"
+  id: ID!                       # Singleton: ""
 
-  totalTraderAgents: BigInt!
-  totalActiveTraderAgents: BigInt!
-  totalBets: BigInt!
+  totalTraderAgents: Int!
+  totalActiveTraderAgents: Int!
+  totalBets: Int!
 
-  # Financial metrics (SETTLED MARKETS ONLY)
-  totalTraded: BigDecimal!
-  totalFees: BigDecimal!
-  totalPayout: BigDecimal!
+  # Financial metrics - Historical (ALL BETS)
+  totalTraded: BigInt!          # All bets (immediate)
+  totalFees: BigInt!            # All bets (immediate)
+  totalPayout: BigInt!
+
+  # Financial metrics - Settled (SETTLED MARKETS ONLY)
+  totalTradedSettled: BigInt!   # Settled only
+  totalFeesSettled: BigInt!     # Settled only
 }
 ```
 
@@ -232,14 +251,19 @@ type Global @entity {
 export function handleCreateMultisigWithAgents(event: CreateMultisigWithAgents): void {
   let agent = new TraderAgent(event.params.multisig);
   agent.serviceId = event.params.serviceId;
-  agent.totalBets = BigInt.fromI32(0);
-  agent.totalTraded = BigDecimal.fromString("0");
-  agent.totalFees = BigDecimal.fromString("0");
-  agent.totalPayout = BigDecimal.fromString("0");
+  agent.totalBets = 0;
+  agent.totalTraded = BigInt.zero();
+  agent.totalFees = BigInt.zero();
+  agent.totalPayout = BigInt.zero();
+  agent.totalTradedSettled = BigInt.zero();
+  agent.totalFeesSettled = BigInt.zero();
+  agent.blockNumber = event.block.number;
+  agent.blockTimestamp = event.block.timestamp;
+  agent.transactionHash = event.transaction.hash;
   agent.save();
 
   let global = getGlobal();
-  global.totalTraderAgents = global.totalTraderAgents.plus(BigInt.fromI32(1));
+  global.totalTraderAgents += 1;
   global.save();
 }
 ```
@@ -330,7 +354,7 @@ export function handleBuy(event: FPMMBuy): void {
 }
 ```
 
-**Key Pattern**: Activity is recorded immediately, but `totalTraded`/`totalFees` for agent/global are deferred until settlement.
+**Key Pattern**: Activity and historical totals (`totalTraded`, `totalFees`) are recorded immediately. Settled totals (`totalTradedSettled`, `totalFeesSettled`) are deferred until settlement/payout.
 
 ---
 
@@ -372,65 +396,84 @@ export function handleLogNewAnswer(event: LogNewAnswer): void {
   let participantCache = new Map<string, MarketParticipant>();
 
   let global = getGlobal();
+  let globalTradedSettledDelta = BigInt.zero();
+  let globalFeesSettledDelta = BigInt.zero();
 
   // Process all bets in the market
-  for (let i = 0; i < fpmm.bets.length; i++) {
-    let bet = Bet.load(fpmm.bets[i]);
+  let bets = fpmm.bets.load();
+  for (let i = 0; i < bets.length; i++) {
+    let bet = bets[i];
     if (!bet) continue;
 
-    // Load agent from cache (or database if not cached)
+    let betModified = false;
     let agentId = bet.bettor.toHexString();
+
+    // Load agent from cache (or database if not cached)
     let agent = agentCache.has(agentId)
       ? agentCache.get(agentId)!
-      : TraderAgent.load(bet.bettor)!;
+      : TraderAgent.load(bet.bettor);
+    if (!agent) continue;
 
-    // Load market participant from cache (or database)
-    let participantId = agentId + "_" + fpmm.id.toHexString();
-    let participant = participantCache.has(participantId)
-      ? participantCache.get(participantId)!
-      : MarketParticipant.load(Bytes.fromUTF8(participantId))!;
+    // PROCESS INCORRECT BETS ONLY
+    // (Correct bets are handled in handlePayoutRedemption)
+    if (!bet.outcomeIndex.equals(answerBigInt)) {
 
-    // UPDATE TOTALS (if not already counted)
-    if (!bet.countedInTotal) {
-      agent.totalTraded = agent.totalTraded.plus(bet.amount.abs());
-      agent.totalFees = agent.totalFees.plus(bet.feeAmount);
-      participant.totalTraded = participant.totalTraded.plus(bet.amount.abs());
-      participant.totalFees = participant.totalFees.plus(bet.feeAmount);
-      global.totalTraded = global.totalTraded.plus(bet.amount.abs());
-      global.totalFees = global.totalFees.plus(bet.feeAmount);
-      bet.countedInTotal = true;
+      // UPDATE SETTLED TOTALS (if not already counted)
+      if (!bet.countedInTotal) {
+        agent.totalTradedSettled = agent.totalTradedSettled.plus(bet.amount);
+        agent.totalFeesSettled = agent.totalFeesSettled.plus(bet.feeAmount);
+
+        let partId = agentId + "_" + fpmm.id.toHexString();
+        let participant = participantCache.has(partId)
+          ? participantCache.get(partId)!
+          : MarketParticipant.load(partId);
+
+        if (participant) {
+          participant.totalTradedSettled = participant.totalTradedSettled.plus(bet.amount);
+          participant.totalFeesSettled = participant.totalFeesSettled.plus(bet.feeAmount);
+          participantCache.set(partId, participant);
+        }
+
+        globalTradedSettledDelta = globalTradedSettledDelta.plus(bet.amount);
+        globalFeesSettledDelta = globalFeesSettledDelta.plus(bet.feeAmount);
+
+        bet.countedInTotal = true;
+        betModified = true;
+      }
+
+      // REALIZE LOSSES (if not already counted)
+      if (!bet.countedInProfit) {
+        let statId = agentId + "_" + getDayTimestamp(event.block.timestamp).toString();
+        let dailyStat = dailyStatsCache.has(statId)
+          ? dailyStatsCache.get(statId)!
+          : getDailyProfitStatistic(bet.bettor, event.block.timestamp);
+
+        let lossAmount = bet.amount.plus(bet.feeAmount);
+        dailyStat.dailyProfit = dailyStat.dailyProfit.minus(lossAmount);
+        addProfitParticipant(dailyStat, fpmm.id);
+
+        dailyStatsCache.set(statId, dailyStat);
+        bet.countedInProfit = true;
+        betModified = true;
+      }
     }
 
-    // REALIZE LOSSES (if bet was wrong and not already counted)
-    if (!bet.countedInProfit && bet.outcomeIndex != answerBigInt) {
-      // Load daily stat from cache (or create new)
-      let dayTimestamp = getDayTimestamp(event.block.timestamp);
-      let dailyStatId = agentId + "_" + dayTimestamp.toString();
-      let dailyStat = dailyStatsCache.has(dailyStatId)
-        ? dailyStatsCache.get(dailyStatId)!
-        : getDailyProfitStatistic(bet.bettor, event.block.timestamp);
-
-      // Deduct loss: spent amount + fees
-      let lossAmount = bet.amount.abs().plus(bet.feeAmount);
-      dailyStat.dailyProfit = dailyStat.dailyProfit.minus(lossAmount);
-
-      // Track which market contributed to this loss
-      addProfitParticipant(dailyStat, fpmm.id);
-
-      dailyStatsCache.set(dailyStatId, dailyStat);
-      bet.countedInProfit = true;
+    if (betModified) {
+      bet.save();
+      agentCache.set(agentId, agent);
     }
-
-    bet.save();
-    agentCache.set(agentId, agent);
-    participantCache.set(participantId, participant);
   }
 
   // BATCH SAVE: Save all cached entities once
   saveMapValues(agentCache);
   saveMapValues(participantCache);
   saveMapValues(dailyStatsCache);
-  global.save();
+
+  if (globalTradedSettledDelta.gt(BigInt.zero()) || globalFeesSettledDelta.gt(BigInt.zero())) {
+    global.totalTradedSettled = global.totalTradedSettled.plus(globalTradedSettledDelta);
+    global.totalFeesSettled = global.totalFeesSettled.plus(globalFeesSettledDelta);
+    global.save();
+  }
 }
 ```
 
@@ -440,8 +483,9 @@ export function handleLogNewAnswer(event: LogNewAnswer): void {
 3. **Early Returns**: Skip irrelevant events immediately
 
 **Accounting Logic:**
-- **Update Totals**: If `countedInTotal == false`, add volume/fees to agent/global totals
+- **Update Settled Totals** (incorrect bets only): If `countedInTotal == false` AND `outcomeIndex != answer`, add volume/fees to `totalTradedSettled` and `totalFeesSettled` for Agent, MarketParticipant, and Global
 - **Realize Losses**: If `countedInProfit == false` AND `outcomeIndex != answer`, deduct `amount + fees` from `dailyProfit` on settlement day
+- **Note**: Correct bets (`outcomeIndex == answer`) are skipped here - their settled totals are updated in `handlePayoutRedemption`
 
 ---
 
@@ -504,9 +548,11 @@ export function handlePayoutRedemption(event: PayoutRedemption): void {
 ```
 
 **Accounting Logic:**
+- **Update Settled Totals** (correct bets): Calculate unsettled amount = `participant.totalTraded - participant.totalTradedSettled`, then add to `totalTradedSettled` and `totalFeesSettled` for Agent, MarketParticipant, and Global
 - **Net Profit** = `payout - (Σ bet.amount + Σ bet.feeAmount)` for uncounted winning bets
 - **Recorded On**: Payout redemption day (not settlement day)
 - **Tracking**: Market added to `profitParticipants` array
+- **Note**: This is where correct bets get their settled totals updated (delayed from settlement until payout)
 
 ---
 
@@ -585,9 +631,10 @@ if (!agent) return;
 Boolean flags prevent re-processing:
 
 ```typescript
-// Prevent double-counting volume
+// Prevent double-counting volume in settled totals
 if (!bet.countedInTotal) {
-  agent.totalTraded = agent.totalTraded.plus(bet.amount);
+  agent.totalTradedSettled = agent.totalTradedSettled.plus(bet.amount);
+  agent.totalFeesSettled = agent.totalFeesSettled.plus(bet.feeAmount);
   bet.countedInTotal = true;
 }
 
@@ -598,7 +645,7 @@ if (!bet.countedInProfit && bet.outcomeIndex != answer) {
 }
 ```
 
-**Impact**: No need to query historical state.
+**Impact**: No need to query historical state. Each bet is processed exactly once for settled totals and exactly once for PnL.
 
 ---
 
@@ -606,12 +653,15 @@ if (!bet.countedInProfit && bet.outcomeIndex != answer) {
 
 ### Volume Attribution
 
-| Phase | DailyProfitStatistic.totalTraded | TraderAgent.totalTraded | Global.totalTraded |
-|-------|----------------------------------|-------------------------|-------------------|
-| **Bet Placed** | ✅ Recorded immediately | ❌ Not yet | ❌ Not yet |
-| **Market Settled** | (no change) | ✅ Added | ✅ Added |
+| Phase | DailyProfitStatistic.totalTraded | TraderAgent.totalTraded | TraderAgent.totalTradedSettled | Global.totalTraded | Global.totalTradedSettled |
+|-------|----------------------------------|-------------------------|-------------------------------|-------------------|---------------------------|
+| **Bet Placed** | ✅ Recorded immediately | ✅ Recorded immediately | ❌ Not yet | ✅ Recorded immediately | ❌ Not yet |
+| **Market Settled (Incorrect)** | (no change) | (no change) | ✅ Added | (no change) | ✅ Added |
+| **Payout (Correct)** | (no change) | (no change) | ✅ Added | (no change) | ✅ Added |
 
-**Critical Rule**: Agent/global `totalTraded` reflects **settled volume only**.
+**Critical Rules**:
+- `totalTraded` / `totalFees`: Track **all bets** immediately when placed
+- `totalTradedSettled` / `totalFeesSettled`: Track **settled markets only**, split by bet outcome timing
 
 ---
 
@@ -648,26 +698,41 @@ if (!bet.countedInProfit && bet.outcomeIndex != answer) {
 
 ### 1. Two-Phase Accounting
 
-**Phase 1 (Trading)**: Record activity, defer totals
+**Phase 1 (Trading)**: Record activity and historical totals immediately
 ```typescript
 // Immediate: Daily activity
 dailyStat.totalTraded += bet.amount;
+dailyStat.totalFees += bet.feeAmount;
 
-// Deferred: Agent/global totals
-bet.countedInTotal = false; // Will be set at settlement
+// Immediate: Historical totals
+agent.totalTraded += bet.amount;
+agent.totalFees += bet.feeAmount;
+global.totalTraded += bet.amount;
+global.totalFees += bet.feeAmount;
+
+// Deferred: Settled totals
+bet.countedInTotal = false; // Will be set at settlement/payout based on outcome
 ```
 
-**Phase 2 (Settlement/Payout)**: Finalize totals and PnL
+**Phase 2 (Settlement/Payout)**: Finalize settled totals and PnL
 ```typescript
-// At settlement: Update totals
-if (!bet.countedInTotal) {
-  agent.totalTraded += bet.amount;
+// At settlement (incorrect bets): Update settled totals
+if (!bet.countedInTotal && bet.outcomeIndex != answer) {
+  agent.totalTradedSettled += bet.amount;
+  agent.totalFeesSettled += bet.feeAmount;
   bet.countedInTotal = true;
 }
 
-// At settlement/payout: Update PnL
+// At payout (correct bets): Update settled totals
+if (!bet.countedInTotal && bet.outcomeIndex == answer) {
+  agent.totalTradedSettled += bet.amount;
+  agent.totalFeesSettled += bet.feeAmount;
+  bet.countedInTotal = true;
+}
+
+// Update PnL
 if (!bet.countedInProfit) {
-  dailyStat.dailyProfit += netProfit;
+  dailyStat.dailyProfit += netProfit;  // Negative for losses, positive for wins
   bet.countedInProfit = true;
 }
 ```
@@ -1403,12 +1468,15 @@ if (!bet.countedInTotal) {
 
 ### Critical Points to Remember
 
-1. **Two-Phase Accounting**: Activity recorded immediately, totals/PnL deferred
-2. **Losses at Settlement**: `dailyProfit` decremented when market resolves
-3. **Wins at Payout**: `dailyProfit` incremented when redemption claimed
-4. **Caching is Essential**: `handleLogNewAnswer` uses `Map` caches for performance
-5. **Flags Prevent Double-Counting**: `countedInTotal` and `countedInProfit`
-6. **Selective Indexing**: Only whitelisted creators and registered agents
+1. **Two-Tier Accounting**: Historical totals (`totalTraded`, `totalFees`) recorded immediately; Settled totals (`totalTradedSettled`, `totalFeesSettled`) deferred based on bet outcome
+2. **Settled Totals Split by Outcome**:
+   - Incorrect bets: Updated at market settlement (`handleLogNewAnswer`)
+   - Correct bets: Updated at payout redemption (`handlePayoutRedemption`)
+3. **Losses at Settlement**: `dailyProfit` decremented when market resolves (incorrect bets)
+4. **Wins at Payout**: `dailyProfit` incremented when redemption claimed (correct bets)
+5. **Caching is Essential**: `handleLogNewAnswer` uses `Map` caches for performance
+6. **Flags Prevent Double-Counting**: `countedInTotal` (settled totals) and `countedInProfit` (PnL)
+7. **Selective Indexing**: Only whitelisted creators and registered agents
 
 ### Common Modification Patterns
 

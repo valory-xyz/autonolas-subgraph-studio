@@ -3,10 +3,15 @@ type TraderAgent @entity (immutable: false) {
   serviceId: BigInt!
   firstParticipation: BigInt
   lastActive: BigInt
-  totalBets: Int!
-  totalTraded: BigInt! # trades amount for settled markets (when we have answer)
+  totalBets: Int! # all bets done regardless of settlement
+  totalTraded: BigInt! # all bets amounts at the time of bet placement
+  totalFees: BigInt! # all bets fees at the time of bet placement
   totalPayout: BigInt! # all bets including for open markets
-  totalFees: BigInt! # fees amount for settled markets (when we have answer)
+  # trades amount and fees for settled markets
+  # for incorrect bets on settlement day
+  # for correct - on payout
+  totalTradedSettled: BigInt!
+  totalFeesSettled: BigInt!
   bets: [Bet!]! @derivedFrom(field: "bettor")
   dailyProfitStatistics: [DailyProfitStatistic!]! @derivedFrom(field: "traderAgent")
   blockNumber: BigInt!
@@ -73,6 +78,8 @@ type MarketParticipant @entity (immutable: false) {
   totalTraded: BigInt!
   totalPayout: BigInt!
   totalFees: BigInt!
+  totalTradedSettled: BigInt!
+  totalFeesSettled: BigInt!
   createdAt: BigInt!
   blockNumber: BigInt!
   blockTimestamp: BigInt!
@@ -85,8 +92,10 @@ type Global @entity (immutable: false) {
   totalActiveTraderAgents: Int!
   totalBets: Int! # all bets including for open markets
   totalPayout: BigInt!
-  totalTraded: BigInt! # trades amount for settled markets (when we have answer)
-  totalFees: BigInt! # fees amount for settled markets (when we have answer)
+  totalTraded: BigInt! # all bets at the time of bet placement
+  totalFees: BigInt! # all bets at the time of bet placement
+  totalTradedSettled: BigInt!
+  totalFeesSettled: BigInt!
 }
 
 type LogSetQuestionFee @entity(immutable: true) {
