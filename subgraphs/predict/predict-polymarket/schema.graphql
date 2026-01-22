@@ -87,7 +87,7 @@ type MarketParticipant @entity (immutable: false) {
   totalTraded: BigInt!
   totalTradedSettled: BigInt!
   totalPayout: BigInt!
-  bets: [String!]!
+  bets: [Bet!]!
   createdAt: BigInt!
   blockNumber: BigInt!
   blockTimestamp: BigInt!

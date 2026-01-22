@@ -14,6 +14,7 @@ A streamlined GraphQL API for tracking Autonolas agent performance on Polymarket
 
 ### TraderAgent
 Represents an Autonolas trading agent.
+* `id`: agent multisig
 * `serviceId`: The agent's service ID from ServiceRegistryL2
 * `firstParticipation`: Timestamp of first activity
 * `lastActive`: Timestamp of last activity
