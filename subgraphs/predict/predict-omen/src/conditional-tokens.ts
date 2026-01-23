@@ -58,25 +58,28 @@ export function handlePayoutRedemption(event: PayoutRedemptionEvent): void {
   // (Total Traded - Already Settled)
   let amountToSettle = participant.totalTraded.minus(participant.totalTradedSettled);
   let feesToSettle = participant.totalFees.minus(participant.totalFeesSettled);
+  const payoutAmount = event.params.payout;
 
   if (amountToSettle.gt(BigInt.zero())) {
     // Update Agent Totals
     agent.totalTradedSettled = agent.totalTradedSettled.plus(amountToSettle);
     agent.totalFeesSettled = agent.totalFeesSettled.plus(feesToSettle);
-    agent.totalPayout = agent.totalPayout.plus(event.params.payout);
 
     // Update Participant Totals
     participant.totalTradedSettled = participant.totalTradedSettled.plus(amountToSettle);
     participant.totalFeesSettled = participant.totalFeesSettled.plus(feesToSettle);
-    participant.totalPayout = participant.totalPayout.plus(event.params.payout);
 
     // Update Global Totals
     global.totalTradedSettled = global.totalTradedSettled.plus(amountToSettle);
     global.totalFeesSettled = global.totalFeesSettled.plus(feesToSettle);
-    global.totalPayout = global.totalPayout.plus(event.params.payout);
   }
 
-  // 3. Update 'countedInProfit' for all bets in this specific market
+  // 3. Update Payout Totals across all entities
+  agent.totalPayout = agent.totalPayout.plus(payoutAmount);
+  participant.totalPayout = participant.totalPayout.plus(payoutAmount);
+  global.totalPayout = global.totalPayout.plus(payoutAmount);
+
+  // 4. Update 'countedInProfit' for all bets in this specific market
   // We use participant.bets to avoid loading the agent's entire history
   let betIds = participant.bets;
   for (let i = 0; i < betIds.length; i++) {
@@ -89,7 +92,7 @@ export function handlePayoutRedemption(event: PayoutRedemptionEvent): void {
     }
   }
 
-  // 4. Update Daily Statistics
+  // 5. Update Daily Statistics
   let dailyStat = getDailyProfitStatistic(redeemer, event.block.timestamp);
   dailyStat.totalPayout = dailyStat.totalPayout.plus(event.params.payout);
   
@@ -99,7 +102,7 @@ export function handlePayoutRedemption(event: PayoutRedemptionEvent): void {
   
   addProfitParticipant(dailyStat, fpmmId);
 
-  // 5. Save cached entities
+  // 6. Save cached entities
   agent.save();
   participant.save();
   global.save();

@@ -3,13 +3,83 @@ import { Global, TraderAgent, MarketParticipant, DailyProfitStatistic } from "..
 import { ONE_DAY } from "./constants";
 
 /**
- * Track payment for market in case of won bet
- **/
-export function updateTraderAgentPayout(address: Address, payout: BigInt): void {
-  let agent = TraderAgent.load(address);
-  if (agent !== null) {
-    agent.totalPayout = agent.totalPayout.plus(payout);
-    agent.save();
+ * Return global entity for updates
+ * Create new if doesn't exist
+ */
+export function getGlobal(): Global {
+  let global = Global.load("");
+  if (global == null) {
+    global = new Global("");
+    global.totalTraderAgents = 0;
+    global.totalActiveTraderAgents = 0;
+    global.totalBets = 0;
+    global.totalTraded = BigInt.zero();
+    global.totalFees = BigInt.zero();
+    global.totalPayout = BigInt.zero();
+    global.totalTradedSettled = BigInt.zero();
+    global.totalFeesSettled = BigInt.zero();
+  }
+  return global as Global;
+}
+
+/**
+ * Helper for saving entities in maps (batch save optimization)
+ */
+export function saveMapValues<T>(map: Map<string, T>): void {
+  let values = map.values();
+  // @ts-ignore - AssemblyScript Map.values() returns array-like structure
+  for (let i = 0; i < values.length; i++) {
+    // @ts-ignore - Graph-cli entities have a .save() method
+    values[i].save();
+  }
+}
+
+/**
+ * Get the timestamp for the start of the day (UTC midnight)
+ */
+export function getDayTimestamp(timestamp: BigInt): BigInt {
+  return timestamp.div(ONE_DAY).times(ONE_DAY);
+}
+
+export function bytesToBigInt(bytes: Bytes): BigInt {
+  let reversed = Bytes.fromUint8Array(bytes.slice().reverse());
+  return BigInt.fromUnsignedBytes(reversed);
+}
+
+/**
+ * Get or create daily profit statistic for an agent on a specific day
+ */
+export function getDailyProfitStatistic(agentAddress: Bytes, timestamp: BigInt): DailyProfitStatistic {
+  let dayTimestamp = getDayTimestamp(timestamp);
+  let id = agentAddress.toHexString() + "_" + dayTimestamp.toString();
+  let statistic = DailyProfitStatistic.load(id);
+
+  if (statistic == null) {
+    statistic = new DailyProfitStatistic(id);
+    statistic.traderAgent = agentAddress;
+    statistic.date = dayTimestamp;
+    statistic.totalBets = 0;
+    statistic.totalTraded = BigInt.zero();
+    statistic.totalFees = BigInt.zero();
+    statistic.totalPayout = BigInt.zero();
+    statistic.dailyProfit = BigInt.zero();
+
+    statistic.profitParticipants = [];
+  }
+  return statistic as DailyProfitStatistic;
+}
+
+/**
+ * add profit participant into profit statistic
+ * should be called when profit changes:
+ * - on market settlement if bets were incorrect
+ * - on payout if bets were correct
+ */
+export function addProfitParticipant(statistic: DailyProfitStatistic, marketId: Bytes): void {
+  let participants = statistic.profitParticipants;
+  if (participants.indexOf(marketId) == -1) {
+    participants.push(marketId);
+    statistic.profitParticipants = participants;
   }
 }
 
@@ -75,104 +145,4 @@ export function processTradeActivity(
   global.save();
   agent.save();
   participant.save();
-}
-
-/**
- * Update market participant payout in case of winning
- **/
-export function updateMarketParticipantPayout(trader: Address, market: Bytes, payout: BigInt): void {
-  let participantId = trader.toHexString() + "_" + market.toHexString();
-  let participant = MarketParticipant.load(participantId);
-  if (participant != null) {
-    participant.totalPayout = participant.totalPayout.plus(payout);
-    participant.save();
-  }
-}
-
-/**
- * Return global entity for updates
- * Create new if doesn't exist
- */
-export function getGlobal(): Global {
-  let global = Global.load("");
-  if (global == null) {
-    global = new Global("");
-    global.totalTraderAgents = 0;
-    global.totalActiveTraderAgents = 0;
-    global.totalBets = 0;
-    global.totalTraded = BigInt.zero();
-    global.totalFees = BigInt.zero();
-    global.totalPayout = BigInt.zero();
-    global.totalTradedSettled = BigInt.zero();
-    global.totalFeesSettled = BigInt.zero();
-  }
-  return global as Global;
-}
-
-/**
- * Update total payout in global entity
- * Should be used only for payouts for our markets
- */
-export function updateGlobalPayout(payout: BigInt): void {
-  let global = getGlobal();
-  global.totalPayout = global.totalPayout.plus(payout);
-  global.save();
-}
-
-/**
- * Get the timestamp for the start of the day (UTC midnight)
- */
-export function getDayTimestamp(timestamp: BigInt): BigInt {
-  return timestamp.div(ONE_DAY).times(ONE_DAY);
-}
-
-export function bytesToBigInt(bytes: Bytes): BigInt {
-  let reversed = Bytes.fromUint8Array(bytes.slice().reverse());
-  return BigInt.fromUnsignedBytes(reversed);
-}
-
-/**
- * Get daily profit entity
- */
-export function getDailyProfitStatistic(agentAddress: Bytes, timestamp: BigInt): DailyProfitStatistic {
-  let dayTimestamp = getDayTimestamp(timestamp);
-  let id = agentAddress.toHexString() + "_" + dayTimestamp.toString();
-  let statistic = DailyProfitStatistic.load(id);
-
-  if (statistic == null) {
-    statistic = new DailyProfitStatistic(id);
-    statistic.traderAgent = agentAddress;
-    statistic.date = dayTimestamp;
-    statistic.totalBets = 0;
-    statistic.totalTraded = BigInt.zero();
-    statistic.totalFees = BigInt.zero();
-    statistic.totalPayout = BigInt.zero();
-    statistic.dailyProfit = BigInt.zero();
-
-    statistic.profitParticipants = [];
-  }
-  return statistic as DailyProfitStatistic;
-}
-
-/**
- * add profit participant into profit statistic
- * should be called when profit changes:
- * - on market settlement if bets were incorrect
- * - on payout if bets were correct
- */
-export function addProfitParticipant(statistic: DailyProfitStatistic, marketId: Bytes): void {
-  let participants = statistic.profitParticipants;
-  if (participants.indexOf(marketId) == -1) {
-    participants.push(marketId);
-    statistic.profitParticipants = participants;
-  }
-}
-
-// Helper for saving entities in sets
-export function saveMapValues<T>(map: Map<string, T>): void {
-  let values = map.values();
-  for (let i = 0; i < values.length; i++) {
-    // @ts-ignore - Graph-cli entities have a .save() method
-    values[i].save();
-  }
 }
