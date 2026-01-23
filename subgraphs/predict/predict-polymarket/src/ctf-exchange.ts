@@ -9,7 +9,7 @@ import {
   TokenRegistry,
   TraderAgent,
 } from "../generated/schema";
-import { getGlobal, updateTraderAgentActivity, updateMarketParticipantActivity } from "./utils";
+import { getDailyProfitStatistic, processTradeActivity } from "./utils";
 
 export function handleTokenRegistered(event: TokenRegisteredEvent): void {
   // Register Outcome 0 (Usually "No")
@@ -60,47 +60,39 @@ export function handleOrderFilled(event: OrderFilledEvent): void {
     return;
   }
 
-  // 4. Create the Bet entity
+  // 4. Update Daily Stats
+  let dailyStat = getDailyProfitStatistic(agent.id, event.block.timestamp);
+  dailyStat.totalBets += 1;
+  dailyStat.totalTraded = dailyStat.totalTraded.plus(usdcAmount);
+  dailyStat.save();
+
+  // 5. Initialize Bet
   let betId = event.transaction.hash.concat(Bytes.fromI32(event.logIndex.toI32()));
   let bet = new Bet(betId);
   bet.bettor = agent.id;
   bet.outcomeIndex = tokenRegistry.outcomeIndex;
-
-  bet.amount = usdcAmount;     // USDC value
-  bet.shares = sharesAmount;   // Token quantity
+  bet.amount = usdcAmount;
+  bet.shares = sharesAmount;
   bet.blockTimestamp = event.block.timestamp;
   bet.transactionHash = event.transaction.hash;
+  bet.dailyStatistic = dailyStat.id;
   bet.countedInTotal = false;
   bet.countedInProfit = false;
 
-  // 5. Link to the Question
   let question = Question.load(tokenRegistry.conditionId);
   if (question !== null) {
     bet.question = question.id;
   }
   bet.save();
 
-  // 6. Update MarketParticipant
-  if (question !== null) {
-    updateMarketParticipantActivity(
-      event.params.taker,
-      tokenRegistry.conditionId,
-      betId.toHexString(),
-      event.block.timestamp,
-      event.block.number,
-      event.transaction.hash
-    );
-  }
-
-  // 7. Update TraderAgent Statistics
-  updateTraderAgentActivity(event.params.taker, event.block.timestamp);
-  agent.totalBets += 1;
-  agent.totalTraded = agent.totalTraded.plus(usdcAmount);
-  agent.save();
-
-  // 8. Update Global Statistics
-  let global = getGlobal();
-  global.totalBets += 1;
-  global.totalTraded = global.totalTraded.plus(usdcAmount);
-  global.save();
+  // 6. Process Agent, Participant, and Global atomically
+  processTradeActivity(
+    agent,
+    tokenRegistry.conditionId,
+    betId,
+    usdcAmount,
+    event.block.timestamp,
+    event.block.number,
+    event.transaction.hash
+  );
 }

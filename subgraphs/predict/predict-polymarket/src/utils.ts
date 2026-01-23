@@ -1,5 +1,6 @@
 import { BigInt, Bytes, Address } from "@graphprotocol/graph-ts";
-import { Global, TraderAgent, MarketParticipant } from "../generated/schema";
+import { Global, TraderAgent, MarketParticipant, DailyProfitStatistic } from "../generated/schema";
+import { ONE_DAY } from "./constants";
 
 /**
  * Return global entity for updates
@@ -20,40 +21,6 @@ export function getGlobal(): Global {
 }
 
 /**
- * Track agent activity (first and latest participation)
- * Updates global active agent count on first participation
- */
-export function updateTraderAgentActivity(
-  address: Bytes,
-  blockTimestamp: BigInt
-): void {
-  let agent = TraderAgent.load(address);
-  if (agent !== null) {
-    // First participation check
-    if (agent.firstParticipation === null) {
-      agent.firstParticipation = blockTimestamp;
-
-      // Increment global active agent counter
-      let global = getGlobal();
-      global.totalActiveTraderAgents += 1;
-      global.save();
-    }
-
-    // Always update last active
-    agent.lastActive = blockTimestamp;
-    agent.save();
-  }
-}
-
-/**
- * Convert bytes to BigInt (needed for UMA answer comparison)
- */
-export function bytesToBigInt(bytes: Bytes): BigInt {
-  let reversed = Bytes.fromUint8Array(bytes.slice().reverse());
-  return BigInt.fromUnsignedBytes(reversed);
-}
-
-/**
  * Helper for saving entities in maps (batch save optimization)
  */
 export function saveMapValues<T>(map: Map<string, T>): void {
@@ -66,68 +33,107 @@ export function saveMapValues<T>(map: Map<string, T>): void {
 }
 
 /**
- * Update agent payout when they redeem winnings
+ * Get the timestamp for the start of the day (UTC midnight)
  */
-export function updateTraderAgentPayout(address: Address, payout: BigInt): void {
-  let agent = TraderAgent.load(address);
-  if (agent !== null) {
-    agent.totalPayout = agent.totalPayout.plus(payout);
-    agent.save();
+export function getDayTimestamp(timestamp: BigInt): BigInt {
+  return timestamp.div(ONE_DAY).times(ONE_DAY);
+}
+
+/**
+ * Get or create daily profit statistic for an agent on a specific day
+ */
+export function getDailyProfitStatistic(
+  agentAddress: Bytes,
+  timestamp: BigInt
+): DailyProfitStatistic {
+  let dayTimestamp = getDayTimestamp(timestamp);
+  let id = agentAddress.toHexString() + "_" + dayTimestamp.toString();
+  let statistic = DailyProfitStatistic.load(id);
+
+  if (statistic == null) {
+    statistic = new DailyProfitStatistic(id);
+    statistic.traderAgent = agentAddress;
+    statistic.date = dayTimestamp;
+    statistic.totalBets = 0;
+    statistic.totalTraded = BigInt.zero();
+    statistic.totalPayout = BigInt.zero();
+    statistic.dailyProfit = BigInt.zero();
+    statistic.profitParticipants = [];
+  }
+  return statistic as DailyProfitStatistic;
+}
+
+/**
+ * add profit participant into profit statistic
+ * should be called when profit changes:
+ * - on market settlement if bets were incorrect
+ * - on payout if bets were correct
+ */
+export function addProfitParticipant(
+  statistic: DailyProfitStatistic,
+  questionId: Bytes
+): void {
+  let participants = statistic.profitParticipants;
+  if (participants.indexOf(questionId) == -1) {
+    participants.push(questionId);
+    statistic.profitParticipants = participants;
   }
 }
 
 /**
- * Update global payout total
+ * Consolidates all activity and volume updates into a single pass.
  */
-export function updateGlobalPayout(payout: BigInt): void {
-  let global = getGlobal();
-  global.totalPayout = global.totalPayout.plus(payout);
-  global.save();
-}
-
-/**
- * Track activity of each participant in a market
- * Called when a bet is placed
- */
-export function updateMarketParticipantActivity(
-  trader: Address,
+export function processTradeActivity(
+  agent: TraderAgent,
   conditionId: Bytes,
-  betId: string,
-  blockTimestamp: BigInt,
+  betId: Bytes,
+  amount: BigInt,
+  timestamp: BigInt,
   blockNumber: BigInt,
   txHash: Bytes
 ): void {
-  let participantId = trader.toHexString() + "_" + conditionId.toHexString();
+  let global = getGlobal();
+
+  // 1. Update Global
+  global.totalBets += 1;
+  global.totalTraded = global.totalTraded.plus(amount);
+
+  // 2. Update TraderAgent
+  if (agent.firstParticipation === null) {
+    agent.firstParticipation = timestamp;
+    global.totalActiveTraderAgents += 1;
+  }
+  agent.totalBets += 1;
+  agent.lastActive = timestamp;
+  agent.totalTraded = agent.totalTraded.plus(amount);
+
+  // 3. Update or Create MarketParticipant
+  let participantId = agent.id.toHexString() + "_" + conditionId.toHexString();
   let participant = MarketParticipant.load(participantId);
+  
   if (participant == null) {
     participant = new MarketParticipant(participantId);
-    participant.traderAgent = trader;
-    participant.question = conditionId;
+    participant.traderAgent = agent.id;
+    participant.question = conditionId; // Polymarket uses 'question' as the field name
     participant.totalBets = 0;
     participant.totalTraded = BigInt.zero();
     participant.totalTradedSettled = BigInt.zero();
     participant.totalPayout = BigInt.zero();
-    participant.createdAt = blockTimestamp;
+    participant.createdAt = timestamp;
     participant.bets = [];
   }
+
   let bets = participant.bets;
   bets.push(betId);
   participant.bets = bets;
   participant.totalBets += 1;
-  participant.blockTimestamp = blockTimestamp;
+  participant.totalTraded = participant.totalTraded.plus(amount);
+  participant.blockTimestamp = timestamp;
   participant.blockNumber = blockNumber;
   participant.transactionHash = txHash;
-  participant.save();
-}
 
-/**
- * Update market participant payout when they win
- */
-export function updateMarketParticipantPayout(trader: Address, conditionId: Bytes, payout: BigInt): void {
-  let participantId = trader.toHexString() + "_" + conditionId.toHexString();
-  let participant = MarketParticipant.load(participantId);
-  if (participant != null) {
-    participant.totalPayout = participant.totalPayout.plus(payout);
-    participant.save();
-  }
+  // 4. Save all
+  global.save();
+  agent.save();
+  participant.save();
 }

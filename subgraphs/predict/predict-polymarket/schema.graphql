@@ -17,7 +17,7 @@ type TraderAgent @entity (immutable: false) {
   totalTradedSettled: BigInt!
   totalPayout: BigInt! # all bets including for open markets
   bets: [Bet!]! @derivedFrom(field: "bettor")
-  # dailyProfitStatistics: [DailyProfitStatistic!]! @derivedFrom(field: "traderAgent")
+  dailyProfitStatistics: [DailyProfitStatistic!]! @derivedFrom(field: "traderAgent")
   blockNumber: BigInt!
   blockTimestamp: BigInt!
   transactionHash: Bytes!
@@ -55,6 +55,7 @@ type Bet @entity (immutable: false) {
   countedInTotal: Boolean!
   countedInProfit: Boolean!
   question: Question
+  dailyStatistic: DailyProfitStatistic
   blockTimestamp: BigInt!
   transactionHash: Bytes!
 }
@@ -102,4 +103,22 @@ type Global @entity (immutable: false) {
   totalPayout: BigInt!
   totalTraded: BigInt!
   totalTradedSettled: BigInt!
+}
+
+type DailyProfitStatistic @entity(immutable: false) {
+  id: ID! # traderAgent_address + "_" + day_timestamp
+  traderAgent: TraderAgent!
+  date: BigInt!
+
+  # Activity placed on this day
+  bets: [Bet!]! @derivedFrom(field: "dailyStatistic")
+  totalBets: Int! # total Bets placed today
+  totalTraded: BigInt! # total traded today, regardless of market settlement
+  totalPayout: BigInt! # Payouts received today
+
+  # Profit realized on this day (from settlements/payouts)
+  dailyProfit: BigInt!
+
+  # Markets affecting profit on this day
+  profitParticipants: [Question!]!
 }

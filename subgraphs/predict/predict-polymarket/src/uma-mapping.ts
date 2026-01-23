@@ -9,10 +9,10 @@ import {
   QuestionResolution,
   TraderAgent,
   MarketParticipant,
-  QuestionResolution
+  DailyProfitStatistic
 } from "../generated/schema"
-import { BigInt } from "@graphprotocol/graph-ts"
-import { getGlobal, saveMapValues } from "./utils"
+import { BigInt, log } from "@graphprotocol/graph-ts"
+import { getGlobal, saveMapValues, getDailyProfitStatistic, addProfitParticipant, getDayTimestamp } from "./utils"
 
 /**
  * Extracts the title from UMA ancillaryData string.
@@ -188,6 +188,7 @@ export function handleQuestionResolved(event: QuestionResolvedEvent): void {
   let global = getGlobal();
   let agentCache = new Map<string, TraderAgent>();
   let participantCache = new Map<string, MarketParticipant>();
+  let dailyStatsCache = new Map<string, DailyProfitStatistic>();
 
   // Load the question to get the bets
   let question = Question.load(bridge.conditionId);
@@ -199,40 +200,58 @@ export function handleQuestionResolved(event: QuestionResolvedEvent): void {
     let agentId = bet.bettor.toHexString();
 
     let agent = agentCache.has(agentId)
-      ? agentCache.get(agentId)
+      ? agentCache.get(agentId)!
       : TraderAgent.load(bet.bettor);
 
     if (agent !== null) {
-      if (!bet.countedInTotal) {
-        agent.totalTradedSettled = agent.totalTradedSettled.plus(bet.amount);
-        global.totalTradedSettled = global.totalTradedSettled.plus(bet.amount);
-        
-        // Update Participant
-        let participantId = agentId + "_" + bridge.conditionId.toHexString();
-        let participant = participantCache.has(participantId) 
-          ? participantCache.get(participantId)
-          : MarketParticipant.load(participantId);
-        
-        if (participant != null) {
-          participant.totalTradedSettled = participant.totalTradedSettled.plus(bet.amount);
-          participantCache.set(participantId, participant);
+      // Only settle losses for markets that have a clear winner (0 or 1).
+      // If winningOutcome is -1 (Invalid), we skip this block and wait for Payout.
+      if (winningOutcome.ge(BigInt.zero()) && !bet.outcomeIndex.equals(winningOutcome)) {
+
+        // Update Settlement Totals (only for losing bets)
+        if (!bet.countedInTotal) {
+          agent.totalTradedSettled = agent.totalTradedSettled.plus(bet.amount);
+          global.totalTradedSettled = global.totalTradedSettled.plus(bet.amount);
+
+          // Update Participant
+          let participantId = agentId + "_" + bridge.conditionId.toHexString();
+          let participant = participantCache.has(participantId)
+            ? participantCache.get(participantId)
+            : MarketParticipant.load(participantId);
+
+          if (participant != null) {
+            participant.totalTradedSettled = participant.totalTradedSettled.plus(bet.amount);
+            participantCache.set(participantId, participant);
+          }
+          bet.countedInTotal = true;
         }
-        bet.countedInTotal = true;
-      }
 
-      // Losing bet logic (Winners handled in Redemption)
-      if (!bet.countedInProfit && !bet.outcomeIndex.equals(winningOutcome)) {
-        bet.countedInProfit = true;
-        // TODO: handle profit and daily statistics update
-      }
+        // Update Profit Statistics
+        if (!bet.countedInProfit) {
+          // Get daily statistic for settlement day
+          let statId = agentId + "_" + getDayTimestamp(event.block.timestamp).toString();
+          let dailyStat = dailyStatsCache.has(statId)
+            ? dailyStatsCache.get(statId)!
+            : getDailyProfitStatistic(bet.bettor, event.block.timestamp);
 
-      agentCache.set(agentId, agent);
-      bet.save();
+          // Record loss
+          dailyStat.dailyProfit = dailyStat.dailyProfit.minus(bet.amount);
+          // Track which market caused the loss
+          addProfitParticipant(dailyStat, bridge.conditionId);
+
+          dailyStatsCache.set(statId, dailyStat);
+          bet.countedInProfit = true;
+        }
+
+        agentCache.set(agentId, agent);
+        bet.save();
+      }
     }
   }
 
   // 4. Finalizing cached data
   saveMapValues(agentCache);
   saveMapValues(participantCache);
+  saveMapValues(dailyStatsCache);
   global.save();
 }
