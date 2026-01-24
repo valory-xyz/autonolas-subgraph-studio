@@ -23,7 +23,20 @@ export function handleBuy(event: FPMMBuyEvent): void {
     dailyStat.totalFees = dailyStat.totalFees.plus(event.params.feeAmount);
     dailyStat.save();
 
-    // 2. Initialize Bet
+    // 2. Process Agent, Participant, and Global
+    // This ensures the participant exists before we save the bet
+    processTradeActivity(
+      traderAgent,
+      event.address,
+      betId,
+      event.params.investmentAmount,
+      event.params.feeAmount,
+      event.block.timestamp,
+      event.block.number,
+      event.transaction.hash
+    );
+
+    // 3. Initialize and save Bet
     let bet = new Bet(betId);
     bet.bettor = event.params.buyer;
     bet.outcomeIndex = event.params.outcomeIndex;
@@ -35,18 +48,6 @@ export function handleBuy(event: FPMMBuyEvent): void {
     bet.countedInTotal = false;
     bet.countedInProfit = false;
     bet.save();
-
-    // 3. Process Agent, Participant, and Global atomically
-    processTradeActivity(
-      traderAgent,
-      event.address,
-      betId,
-      event.params.investmentAmount,
-      event.params.feeAmount,
-      event.block.timestamp,
-      event.block.number,
-      event.transaction.hash
-    );
   }
 }
 
@@ -67,7 +68,20 @@ export function handleSell(event: FPMMSellEvent): void {
     dailyStat.totalFees = dailyStat.totalFees.plus(event.params.feeAmount);
     dailyStat.save();
 
-    // 2. Initialize Bet
+    // 2. Process Agent, Participant, and Global atomically FIRST
+    // This ensures the participant exists before we save the bet
+    processTradeActivity(
+      traderAgent,
+      event.address,
+      betId,
+      negAmount,
+      event.params.feeAmount,
+      event.block.timestamp,
+      event.block.number,
+      event.transaction.hash
+    );
+
+    // 3. Initialize and save Bet AFTER participant is created
     let bet = new Bet(betId);
     bet.bettor = event.params.seller;
     bet.outcomeIndex = event.params.outcomeIndex;
@@ -79,17 +93,5 @@ export function handleSell(event: FPMMSellEvent): void {
     bet.countedInTotal = false;
     bet.countedInProfit = false;
     bet.save();
-
-    // 3. Process Agent, Participant, and Global atomically
-    processTradeActivity(
-      traderAgent,
-      event.address,
-      betId,
-      negAmount,
-      event.params.feeAmount,
-      event.block.timestamp,
-      event.block.number,
-      event.transaction.hash
-    );
   }
 }
