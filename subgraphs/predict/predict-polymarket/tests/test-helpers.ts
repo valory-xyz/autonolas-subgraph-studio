@@ -1,4 +1,5 @@
 import { Address, BigInt, Bytes } from "@graphprotocol/graph-ts";
+import { QuestionIdToConditionId } from "../generated/schema";
 
 /**
  * Common test addresses for consistency across tests
@@ -79,4 +80,14 @@ export function normalizeTimestamp(timestamp: BigInt): BigInt {
 export function createDailyId(agentAddress: Address, timestamp: BigInt): string {
   let normalizedTs = normalizeTimestamp(timestamp);
   return agentAddress.toHexString() + "_" + normalizedTs.toString();
+}
+
+/**
+ * Helper to create a bridge between questionId and conditionId
+ */
+export function createBridge(questionId: Bytes, conditionId: Bytes): void {
+  let bridge = new QuestionIdToConditionId(questionId);
+  bridge.conditionId = conditionId;
+  bridge.transactionHash = TestBytes.DUMMY_HASH;
+  bridge.save();
 }

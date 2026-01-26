@@ -124,22 +124,22 @@ describe("CTFExchange - OrderFilled Handler", () => {
     clearStore();
   });
 
-  test("Should create Bet when taker is a TraderAgent buying tokens", () => {
-    setupTraderAgent(TAKER, BigInt.fromI32(1));
+  test("Should create Bet when maker is a TraderAgent buying tokens", () => {
+    setupTraderAgent(MAKER, BigInt.fromI32(1));
     setupQuestion(CONDITION_ID, Bytes.fromHexString("0x1234567890123456789012345678901234567890123456789012345678901234"));
 
     let tokenEvent = createTokenRegisteredEvent(TOKEN_0, TOKEN_1, CONDITION_ID);
     handleTokenRegistered(tokenEvent);
 
-    // Taker buying: takerAssetId = 0 (USDC), makerAssetId = TOKEN_1 (outcome tokens)
+    // Maker buying: makerAssetId = 0 (USDC), takerAssetId = TOKEN_1 (outcome tokens)
     let orderEvent = createOrderFilledEvent(
       ORDER_HASH,
       MAKER,
       TAKER,
-      TOKEN_1,                          // makerAssetId (tokens)
-      BigInt.zero(),                    // takerAssetId (USDC)
-      BigInt.fromI32(1000000),          // makerAmountFilled (shares)
-      BigInt.fromI32(500000),           // takerAmountFilled (USDC)
+      BigInt.zero(),                    // makerAssetId (USDC)
+      TOKEN_1,                          // takerAssetId (tokens)
+      BigInt.fromI32(500000),           // makerAmountFilled (USDC)
+      BigInt.fromI32(1000000),          // takerAmountFilled (shares)
       BigInt.fromI32(1000)
     );
 
@@ -147,7 +147,7 @@ describe("CTFExchange - OrderFilled Handler", () => {
 
     // Verify bet was created
     let betId = orderEvent.transaction.hash.concat(Bytes.fromI32(orderEvent.logIndex.toI32())).toHexString();
-    assert.fieldEquals("Bet", betId, "bettor", TAKER.toHexString());
+    assert.fieldEquals("Bet", betId, "bettor", MAKER.toHexString());
     assert.fieldEquals("Bet", betId, "outcomeIndex", "1");
     assert.fieldEquals("Bet", betId, "amount", "500000");
     assert.fieldEquals("Bet", betId, "shares", "1000000");
@@ -155,22 +155,22 @@ describe("CTFExchange - OrderFilled Handler", () => {
     assert.fieldEquals("Bet", betId, "countedInProfit", "false");
   });
 
-  test("Should create Bet when taker is a TraderAgent selling tokens", () => {
-    setupTraderAgent(TAKER, BigInt.fromI32(1));
+  test("Should create Bet when maker is a TraderAgent selling tokens", () => {
+    setupTraderAgent(MAKER, BigInt.fromI32(1));
     setupQuestion(CONDITION_ID, Bytes.fromHexString("0x1234567890123456789012345678901234567890123456789012345678901234"));
 
     let tokenEvent = createTokenRegisteredEvent(TOKEN_0, TOKEN_1, CONDITION_ID);
     handleTokenRegistered(tokenEvent);
 
-    // Taker selling: takerAssetId = TOKEN_0 (outcome tokens), makerAssetId = 0 (USDC)
+    // Maker selling: makerAssetId = TOKEN_0 (outcome tokens), takerAssetId = 0 (USDC)
     let orderEvent = createOrderFilledEvent(
       ORDER_HASH,
       MAKER,
       TAKER,
-      BigInt.zero(),                    // makerAssetId (USDC)
-      TOKEN_0,                          // takerAssetId (tokens)
-      BigInt.fromI32(300000),           // makerAmountFilled (USDC)
-      BigInt.fromI32(600000),           // takerAmountFilled (shares)
+      TOKEN_0,                          // makerAssetId (tokens)
+      BigInt.zero(),                    // takerAssetId (USDC)
+      BigInt.fromI32(600000),           // makerAmountFilled (shares)
+      BigInt.fromI32(300000),           // takerAmountFilled (USDC)
       BigInt.fromI32(500)
     );
 
@@ -178,13 +178,13 @@ describe("CTFExchange - OrderFilled Handler", () => {
 
     // Verify bet was created
     let betId = orderEvent.transaction.hash.concat(Bytes.fromI32(orderEvent.logIndex.toI32())).toHexString();
-    assert.fieldEquals("Bet", betId, "bettor", TAKER.toHexString());
+    assert.fieldEquals("Bet", betId, "bettor", MAKER.toHexString());
     assert.fieldEquals("Bet", betId, "outcomeIndex", "0");
     assert.fieldEquals("Bet", betId, "amount", "300000");
     assert.fieldEquals("Bet", betId, "shares", "600000");
   });
 
-  test("Should not create Bet when taker is not a TraderAgent", () => {
+  test("Should not create Bet when maker is not a TraderAgent", () => {
     setupQuestion(CONDITION_ID, Bytes.fromHexString("0x1234567890123456789012345678901234567890123456789012345678901234"));
 
     let tokenEvent = createTokenRegisteredEvent(TOKEN_0, TOKEN_1, CONDITION_ID);
@@ -194,10 +194,10 @@ describe("CTFExchange - OrderFilled Handler", () => {
       ORDER_HASH,
       MAKER,
       TAKER,
-      TOKEN_1,
       BigInt.zero(),
-      BigInt.fromI32(1000000),
+      TOKEN_1,
       BigInt.fromI32(500000),
+      BigInt.fromI32(1000000),
       BigInt.fromI32(1000)
     );
 
@@ -209,7 +209,7 @@ describe("CTFExchange - OrderFilled Handler", () => {
   });
 
   test("Should update TraderAgent statistics", () => {
-    setupTraderAgent(TAKER, BigInt.fromI32(1));
+    setupTraderAgent(MAKER, BigInt.fromI32(1));
     setupQuestion(CONDITION_ID, Bytes.fromHexString("0x1234567890123456789012345678901234567890123456789012345678901234"));
 
     let tokenEvent = createTokenRegisteredEvent(TOKEN_0, TOKEN_1, CONDITION_ID);
@@ -219,21 +219,21 @@ describe("CTFExchange - OrderFilled Handler", () => {
       ORDER_HASH,
       MAKER,
       TAKER,
-      TOKEN_1,
       BigInt.zero(),
-      BigInt.fromI32(1000000),
+      TOKEN_1,
       BigInt.fromI32(500000),
+      BigInt.fromI32(1000000),
       BigInt.fromI32(1000)
     );
 
     handleOrderFilled(orderEvent);
 
-    assert.fieldEquals("TraderAgent", TAKER.toHexString(), "totalBets", "1");
-    assert.fieldEquals("TraderAgent", TAKER.toHexString(), "totalTraded", "500000");
+    assert.fieldEquals("TraderAgent", MAKER.toHexString(), "totalBets", "1");
+    assert.fieldEquals("TraderAgent", MAKER.toHexString(), "totalTraded", "500000");
   });
 
   test("Should update Global statistics", () => {
-    setupTraderAgent(TAKER, BigInt.fromI32(1));
+    setupTraderAgent(MAKER, BigInt.fromI32(1));
     setupQuestion(CONDITION_ID, Bytes.fromHexString("0x1234567890123456789012345678901234567890123456789012345678901234"));
 
     let tokenEvent = createTokenRegisteredEvent(TOKEN_0, TOKEN_1, CONDITION_ID);
@@ -243,10 +243,10 @@ describe("CTFExchange - OrderFilled Handler", () => {
       ORDER_HASH,
       MAKER,
       TAKER,
-      TOKEN_1,
       BigInt.zero(),
-      BigInt.fromI32(1000000),
+      TOKEN_1,
       BigInt.fromI32(500000),
+      BigInt.fromI32(1000000),
       BigInt.fromI32(1000)
     );
 
@@ -257,7 +257,7 @@ describe("CTFExchange - OrderFilled Handler", () => {
   });
 
   test("Should create MarketParticipant on first bet", () => {
-    setupTraderAgent(TAKER, BigInt.fromI32(1));
+    setupTraderAgent(MAKER, BigInt.fromI32(1));
     setupQuestion(CONDITION_ID, Bytes.fromHexString("0x1234567890123456789012345678901234567890123456789012345678901234"));
 
     let tokenEvent = createTokenRegisteredEvent(TOKEN_0, TOKEN_1, CONDITION_ID);
@@ -267,64 +267,64 @@ describe("CTFExchange - OrderFilled Handler", () => {
       ORDER_HASH,
       MAKER,
       TAKER,
-      TOKEN_1,
       BigInt.zero(),
-      BigInt.fromI32(1000000),
+      TOKEN_1,
       BigInt.fromI32(500000),
+      BigInt.fromI32(1000000),
       BigInt.fromI32(1000)
     );
 
     handleOrderFilled(orderEvent);
 
-    let participantId = TAKER.toHexString() + "_" + CONDITION_ID.toHexString();
-    assert.fieldEquals("MarketParticipant", participantId, "traderAgent", TAKER.toHexString());
+    let participantId = MAKER.toHexString() + "_" + CONDITION_ID.toHexString();
+    assert.fieldEquals("MarketParticipant", participantId, "traderAgent", MAKER.toHexString());
     assert.fieldEquals("MarketParticipant", participantId, "question", CONDITION_ID.toHexString());
     assert.fieldEquals("MarketParticipant", participantId, "totalBets", "1");
   });
 
   test("Should handle multiple bets from same agent", () => {
-    setupTraderAgent(TAKER, BigInt.fromI32(1));
+    setupTraderAgent(MAKER, BigInt.fromI32(1));
     setupQuestion(CONDITION_ID, Bytes.fromHexString("0x1234567890123456789012345678901234567890123456789012345678901234"));
 
     let tokenEvent = createTokenRegisteredEvent(TOKEN_0, TOKEN_1, CONDITION_ID);
     handleTokenRegistered(tokenEvent);
 
-    // First bet
+    // First bet - buying
     let orderEvent1 = createOrderFilledEvent(
       ORDER_HASH,
       MAKER,
       TAKER,
-      TOKEN_1,
       BigInt.zero(),
-      BigInt.fromI32(1000000),
+      TOKEN_1,
       BigInt.fromI32(500000),
+      BigInt.fromI32(1000000),
       BigInt.fromI32(1000)
     );
 
-    // Second bet
+    // Second bet - buying
     let orderHash2 = Bytes.fromHexString("0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567891");
     let orderEvent2 = createOrderFilledEvent(
       orderHash2,
       MAKER,
       TAKER,
-      TOKEN_0,
       BigInt.zero(),
-      BigInt.fromI32(2000000),
+      TOKEN_0,
       BigInt.fromI32(800000),
+      BigInt.fromI32(2000000),
       BigInt.fromI32(1500)
     );
 
     handleOrderFilled(orderEvent1);
     handleOrderFilled(orderEvent2);
 
-    assert.fieldEquals("TraderAgent", TAKER.toHexString(), "totalBets", "2");
-    assert.fieldEquals("TraderAgent", TAKER.toHexString(), "totalTraded", "1300000");
+    assert.fieldEquals("TraderAgent", MAKER.toHexString(), "totalBets", "2");
+    assert.fieldEquals("TraderAgent", MAKER.toHexString(), "totalTraded", "1300000");
     assert.fieldEquals("Global", "", "totalBets", "2");
     assert.fieldEquals("Global", "", "totalTraded", "1300000");
   });
 
   test("Should skip bet creation when TokenRegistry is missing", () => {
-    setupTraderAgent(TAKER, BigInt.fromI32(1));
+    setupTraderAgent(MAKER, BigInt.fromI32(1));
     setupQuestion(CONDITION_ID, Bytes.fromHexString("0x1234567890123456789012345678901234567890123456789012345678901234"));
 
     // Don't register tokens - TokenRegistry will be missing
@@ -333,10 +333,10 @@ describe("CTFExchange - OrderFilled Handler", () => {
       ORDER_HASH,
       MAKER,
       TAKER,
-      TOKEN_1,
       BigInt.zero(),
-      BigInt.fromI32(1000000),
+      TOKEN_1,
       BigInt.fromI32(500000),
+      BigInt.fromI32(1000000),
       BigInt.fromI32(1000)
     );
 
@@ -347,6 +347,6 @@ describe("CTFExchange - OrderFilled Handler", () => {
     assert.notInStore("Bet", betId);
 
     // Agent stats should not be updated
-    assert.fieldEquals("TraderAgent", TAKER.toHexString(), "totalBets", "0");
+    assert.fieldEquals("TraderAgent", MAKER.toHexString(), "totalBets", "0");
   });
 });

@@ -4,8 +4,8 @@ import { handleOrderFilled, handleTokenRegistered } from "../src/ctf-exchange";
 import { handleQuestionResolved } from "../src/uma-mapping";
 import { handlePayoutRedemption } from "../src/conditional-tokens";
 import { createOrderFilledEvent, createQuestionResolvedEvent, createPayoutRedemptionEvent, createTokenRegisteredEvent } from "./profit";
-import { TraderAgent, Question, QuestionIdToConditionId, MarketMetadata } from "../generated/schema";
-import { TestAddresses, TestBytes, TestConstants, createAncillaryData, normalizeTimestamp } from "./test-helpers";
+import { TraderAgent, Question, MarketMetadata } from "../generated/schema";
+import { TestAddresses, TestBytes, TestConstants, createAncillaryData, normalizeTimestamp, createBridge } from "./test-helpers";
 
 const AGENT = TestAddresses.TRADER_AGENT_1;
 const CONDITION_LOST = TestBytes.CONDITION_ID_1;
@@ -35,9 +35,7 @@ function setupAgent(): void {
 
 function setupMarket(conditionId: Bytes, questionId: Bytes, token0: BigInt, token1: BigInt): void {
   // 1. Create bridge between questionId and conditionId
-  let bridge = new QuestionIdToConditionId(questionId);
-  bridge.conditionId = conditionId;
-  bridge.save();
+  createBridge(questionId, conditionId);
 
   // 2. Create metadata
   let metadata = new MarketMetadata(questionId);

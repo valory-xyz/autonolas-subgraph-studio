@@ -27,7 +27,7 @@ export function createTokenRegisteredEvent(
 
 /**
  * Creates an OrderFilled event for a trader buying outcome tokens
- * @param taker The trader agent address
+ * @param maker The trader agent address
  * @param usdcAmount The USDC amount spent
  * @param sharesAmount The shares/tokens received
  * @param outcomeTokenId The token ID of the outcome being traded
@@ -35,7 +35,7 @@ export function createTokenRegisteredEvent(
  * @param logIndex Optional log index for unique bet IDs
  */
 export function createOrderFilledEvent(
-  taker: Address,
+  maker: Address,
   usdcAmount: BigInt,
   sharesAmount: BigInt,
   outcomeTokenId: BigInt,
@@ -48,15 +48,15 @@ export function createOrderFilledEvent(
   event.logIndex = BigInt.fromI32(logIndex);
   event.transaction.hash = Bytes.fromHexString("0x1234567890123456789012345678901234567890123456789012345678901234");
 
-  // For buying: taker gives USDC (assetId=0), receives tokens (assetId=outcomeTokenId)
+  // For buying: maker gives USDC (assetId=0), receives tokens (assetId=outcomeTokenId)
   event.parameters = [
     new ethereum.EventParam("orderHash", ethereum.Value.fromFixedBytes(Bytes.fromHexString("0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"))),
-    new ethereum.EventParam("maker", ethereum.Value.fromAddress(Address.fromString("0x9999999999999999999999999999999999999999"))),
-    new ethereum.EventParam("taker", ethereum.Value.fromAddress(taker)),
-    new ethereum.EventParam("makerAssetId", ethereum.Value.fromUnsignedBigInt(outcomeTokenId)),
-    new ethereum.EventParam("takerAssetId", ethereum.Value.fromUnsignedBigInt(BigInt.zero())),
-    new ethereum.EventParam("makerAmountFilled", ethereum.Value.fromUnsignedBigInt(sharesAmount)),
-    new ethereum.EventParam("takerAmountFilled", ethereum.Value.fromUnsignedBigInt(usdcAmount)),
+    new ethereum.EventParam("maker", ethereum.Value.fromAddress(maker)),
+    new ethereum.EventParam("taker", ethereum.Value.fromAddress(Address.fromString("0x9999999999999999999999999999999999999999"))),
+    new ethereum.EventParam("makerAssetId", ethereum.Value.fromUnsignedBigInt(BigInt.zero())),
+    new ethereum.EventParam("takerAssetId", ethereum.Value.fromUnsignedBigInt(outcomeTokenId)),
+    new ethereum.EventParam("makerAmountFilled", ethereum.Value.fromUnsignedBigInt(usdcAmount)),
+    new ethereum.EventParam("takerAmountFilled", ethereum.Value.fromUnsignedBigInt(sharesAmount)),
     new ethereum.EventParam("fee", ethereum.Value.fromUnsignedBigInt(BigInt.zero())),
   ];
 
