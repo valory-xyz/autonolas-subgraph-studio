@@ -9,7 +9,7 @@ import {
   MarketParticipant,
   Bet,
 } from "../generated/schema";
-import { BigInt } from "@graphprotocol/graph-ts";
+import { BigInt, log } from "@graphprotocol/graph-ts";
 import {
   getDailyProfitStatistic,
   addProfitParticipant,
@@ -22,8 +22,22 @@ export function handleConditionPreparation(event: ConditionPreparationEvent): vo
     return;
   }
 
+  let bridge = QuestionIdToConditionId.load(event.params.questionId);
+
+  if (bridge !== null) {
+    log.warning("REPETITIVE_QUESTION_ID detected: {} | Existing ConditionId: {} | New ConditionId: {} | Txn Hash: {}", [
+      event.params.questionId.toHexString(),
+      bridge.conditionId.toHexString(),
+      event.params.conditionId.toHexString(),
+      event.transaction.hash.toHexString(),
+    ]);
+
+    return; 
+  }
+
   let entity = new QuestionIdToConditionId(event.params.questionId);
   entity.conditionId = event.params.conditionId;
+  entity.transactionHash = event.transaction.hash;
   entity.save();
 }
 

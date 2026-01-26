@@ -2,7 +2,8 @@ import { assert, describe, test, clearStore, beforeEach, newMockEvent } from "ma
 import { Address, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts";
 import { extractTitle, extractBinaryOutcomes, handleQuestionInitialized } from "../src/uma-mapping";
 import { QuestionInitialized } from "../generated/OptimisticOracleV3/OptimisticOracleV3";
-import { MarketMetadata, QuestionIdToConditionId } from "../generated/schema";
+import { MarketMetadata } from "../generated/schema";
+import { createBridge } from "./test-helpers";
 
 const QUESTION_ID = Bytes.fromHexString("0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890");
 const CONDITION_ID = Bytes.fromHexString("0x1111111111111111111111111111111111111111111111111111111111111111");
@@ -10,12 +11,6 @@ const TIMESTAMP = BigInt.fromI32(1710000000);
 const REWARD = BigInt.fromI32(1000000);
 const REQUESTER = Address.fromString("0x1234567890123456789012345678901234567890");
 const CURRENCY = Address.fromString("0x2234567890123456789012345678901234567890");
-
-function createBridge(questionId: Bytes, conditionId: Bytes): void {
-  let bridge = new QuestionIdToConditionId(questionId);
-  bridge.conditionId = conditionId;
-  bridge.save();
-}
 
 function createQuestionInitializedEvent(
   questionID: Bytes,

@@ -166,7 +166,8 @@ export function handleQuestionResolved(event: QuestionResolvedEvent): void {
   resolution.settledPrice = event.params.settledPrice;
   resolution.payouts = event.params.payouts;
   resolution.blockNumber = event.block.number;
-  resolution.timestamp = event.block.timestamp;
+  resolution.blockTimestamp = event.block.timestamp;
+  resolution.transactionHash = event.transaction.hash;
 
   // 2. Winner Detection
   let winningOutcome = BigInt.fromI32(-1); // Default for Invalid

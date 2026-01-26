@@ -26,6 +26,7 @@ type TraderAgent @entity (immutable: false) {
 type QuestionIdToConditionId @entity(immutable: true) {
   id: Bytes!
   conditionId: Bytes! # bytes32
+  transactionHash: Bytes!
 }
 
 type Question @entity(immutable: true) {
@@ -66,6 +67,7 @@ type TokenRegistry @entity(immutable: true) {
   tokenId: BigInt!
   conditionId: Bytes!
   outcomeIndex: BigInt! # 0 or 1 for binary markets
+  transactionHash: Bytes!
 }
 
 # Tracks market finalization when UMA resolves the question
@@ -76,7 +78,8 @@ type QuestionResolution @entity (immutable: true) {
   settledPrice: BigInt!
   payouts: [BigInt!]!
   blockNumber: BigInt!
-  timestamp: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
 }
 
 # Tracks per-market statistics for each agent

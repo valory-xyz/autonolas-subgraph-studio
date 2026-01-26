@@ -18,6 +18,7 @@ export function handleTokenRegistered(event: TokenRegisteredEvent): void {
   registry0.tokenId = event.params.token0;
   registry0.conditionId = event.params.conditionId;
   registry0.outcomeIndex = BigInt.fromI32(0);
+  registry0.transactionHash = event.transaction.hash;
   registry0.save();
 
   // Register Outcome 1 (Usually "Yes")
@@ -26,29 +27,30 @@ export function handleTokenRegistered(event: TokenRegisteredEvent): void {
   registry1.tokenId = event.params.token1;
   registry1.conditionId = event.params.conditionId;
   registry1.outcomeIndex = BigInt.fromI32(1);
+  registry1.transactionHash = event.transaction.hash;
   registry1.save();
 }
 
 export function handleOrderFilled(event: OrderFilledEvent): void {
-  // 1. Identify if the taker is one of our TraderAgents
-  let agentId = event.params.taker;
+  // 1. Identify if the maker is one of our TraderAgents
+  let agentId = event.params.maker;
   let agent = TraderAgent.load(agentId);
-  
+
   if (agent === null) return;
 
   // 2. Identify the Trade direction and quantities
-  // takerAssetId == 0 means Taker gave USDC and received Tokens (BUYING)
-  // makerAssetId == 0 means Maker gave USDC and Taker gave Tokens (SELLING)
-  let isBuying = event.params.takerAssetId.isZero();
-  
+  // makerAssetId == 0 means Maker gave USDC and received Tokens (BUYING)
+  // takerAssetId == 0 means Taker gave USDC and Maker gave Tokens (SELLING)
+  let isBuying = event.params.makerAssetId.isZero();
+
   // The amount of USDC (money) involved in the trade
-  let usdcAmount = isBuying ? event.params.takerAmountFilled : event.params.makerAmountFilled;
-  
+  let usdcAmount = isBuying ? event.params.makerAmountFilled : event.params.takerAmountFilled;
+
   // The amount of Shares (tokens) involved in the trade
-  let sharesAmount = isBuying ? event.params.makerAmountFilled : event.params.takerAmountFilled;
-  
+  let sharesAmount = isBuying ? event.params.takerAmountFilled : event.params.makerAmountFilled;
+
   // The token ID of the outcome being traded
-  let outcomeTokenId = isBuying ? event.params.makerAssetId : event.params.takerAssetId;
+  let outcomeTokenId = isBuying ? event.params.takerAssetId : event.params.makerAssetId;
 
   // 3. Lookup the outcome index from our Registry
   let tokenRegistry = TokenRegistry.load(Bytes.fromByteArray(Bytes.fromBigInt(outcomeTokenId)));
