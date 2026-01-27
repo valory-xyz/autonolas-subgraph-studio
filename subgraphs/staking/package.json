@@ -11,13 +11,13 @@
     "deploy-ethereum": "graph deploy --network mainnet --studio olas-ethereum-staking subgraph.mainnet.yaml",
     "deploy-polygon": "graph deploy --network matic --studio olas-polygon-staking subgraph.matic.yaml",
     "deploy-optimism": "graph deploy --network optimism --studio olas-optimism-staking subgraph.optimism.yaml",
-    "test": "graph test"
+    "test": "ln -s subgraph.gnosis.yaml subgraph.yaml && graph test; rm -f subgraph.yaml"
   },
   "dependencies": {
-    "@graphprotocol/graph-cli": "^0.97.0",
-    "@graphprotocol/graph-ts": "^0.38.0"
+    "@graphprotocol/graph-cli": "^0.98.1",
+    "@graphprotocol/graph-ts": "^0.38.2"
   },
   "devDependencies": {
-    "matchstick-as": "0.5.0"
+    "matchstick-as": "^0.6.0"
   }
 }

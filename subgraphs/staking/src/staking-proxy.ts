@@ -299,7 +299,7 @@ export function handleServiceStaked(event: ServiceStakedEvent): void {
   activeTracker.save();
 
   // Create epoch history record
-  getOrCreateServiceRewardsHistory(
+  let history = getOrCreateServiceRewardsHistory(
     event.params.serviceId,
     event.address,
     event.params.epoch,
@@ -307,6 +307,7 @@ export function handleServiceStaked(event: ServiceStakedEvent): void {
     event.block.timestamp,
     event.transaction.hash
   );
+  history.save();
 
   // Update global
   let global = getOrCreateGlobal();
