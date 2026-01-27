@@ -10,6 +10,7 @@ import {
   RewardUpdate,
   CumulativeDailyStakingGlobal,
   Service,
+  ServiceRewardsHistory,
 } from "../generated/schema";
 import { StakingProxy as StakingProxyContract } from "../generated/templates/StakingProxy/StakingProxy";
 
@@ -222,4 +223,39 @@ export function isAllowedImplementation(implementation: Bytes): boolean {
   }
 
   return false;
+}
+
+export function getOrCreateServiceRewardsHistory(
+  serviceId: BigInt,
+  contractAddress: Bytes,
+  epoch: BigInt,
+  blockNumber: BigInt,
+  blockTimestamp: BigInt,
+  transactionHash: Bytes
+): ServiceRewardsHistory {
+  let historyId = serviceId.toString() + "-"
+                  + contractAddress.toHexString() + "-"
+                  + epoch.toString();
+
+  let history = ServiceRewardsHistory.load(historyId);
+  if (history === null) {
+    history = new ServiceRewardsHistory(historyId);
+    history.service = serviceId.toString();
+    history.epoch = epoch;
+    history.contractAddress = contractAddress;
+    history.checkpoint = null;
+    history.rewardAmount = BigInt.fromI32(0);
+    history.checkpointedAt = null;
+    history.blockNumber = blockNumber;
+    history.blockTimestamp = blockTimestamp;
+    history.transactionHash = transactionHash;
+
+    let service = Service.load(serviceId.toString());
+    if (service !== null) {
+      service.totalEpochsParticipated = service.totalEpochsParticipated + 1;
+      service.save();
+    }
+  }
+
+  return history;
 }
