@@ -5,16 +5,16 @@ import {
   clearStore,
   beforeEach,
   afterEach,
-  createMockedFunction,
 } from "matchstick-as/assembly/index"
-import { Address, BigInt, ethereum } from "@graphprotocol/graph-ts"
-import { ActiveServiceEpoch } from "../generated/schema"
+import { Address, BigInt, Bytes } from "@graphprotocol/graph-ts"
+import { ActiveServiceEpoch, StakingContract, ServiceRewardsHistory } from "../generated/schema"
 import {
   handleServiceStaked,
   handleCheckpoint,
   handleServiceUnstaked,
   handleServiceForceUnstaked,
   handleRewardClaimed,
+  handleServicesEvicted,
 } from "../src/staking-proxy"
 import {
   createServiceStakedEvent,
@@ -22,26 +22,32 @@ import {
   createServiceUnstakedEvent,
   createServiceForceUnstakedEvent,
   createRewardClaimedEvent,
+  createServicesEvictedEvent,
 } from "./staking-proxy-utils"
 import { TestAddresses, TestConstants, createHistoryId, createActiveEpochId } from "./test-helpers"
 
-// Helper to mock contract calls for getOlasForStaking
-function mockStakingContractCalls(contractAddress: Address): void {
-  createMockedFunction(
-    contractAddress,
-    "numAgentInstances",
-    "numAgentInstances():(uint256)"
-  )
-    .withArgs([])
-    .returns([ethereum.Value.fromUnsignedBigInt(TestConstants.NUM_AGENT_INSTANCES)])
-
-  createMockedFunction(
-    contractAddress,
-    "minStakingDeposit",
-    "minStakingDeposit():(uint256)"
-  )
-    .withArgs([])
-    .returns([ethereum.Value.fromUnsignedBigInt(TestConstants.MIN_STAKING_DEPOSIT)])
+// Helper to create a StakingContract entity for getOlasForStaking
+function createStakingContractEntity(contractAddress: Address): void {
+  let stakingContract = new StakingContract(contractAddress);
+  stakingContract.sender = Address.zero();
+  stakingContract.instance = contractAddress;
+  stakingContract.implementation = Address.zero();
+  stakingContract.metadataHash = Bytes.empty();
+  stakingContract.maxNumServices = BigInt.fromI32(10);
+  stakingContract.rewardsPerSecond = BigInt.fromI32(100);
+  stakingContract.minStakingDeposit = TestConstants.MIN_STAKING_DEPOSIT;
+  stakingContract.minStakingDuration = BigInt.fromI32(1000);
+  stakingContract.maxNumInactivityPeriods = BigInt.fromI32(5);
+  stakingContract.livenessPeriod = BigInt.fromI32(86400);
+  stakingContract.timeForEmissions = BigInt.fromI32(3600);
+  stakingContract.numAgentInstances = TestConstants.NUM_AGENT_INSTANCES;
+  stakingContract.agentIds = [];
+  stakingContract.threshold = BigInt.fromI32(2);
+  stakingContract.configHash = Bytes.empty();
+  stakingContract.proxyHash = Bytes.empty();
+  stakingContract.serviceRegistry = Address.zero();
+  stakingContract.activityChecker = Address.zero();
+  stakingContract.save();
 }
 
 describe("ServiceRewardsHistory Tests", () => {
@@ -57,7 +63,7 @@ describe("ServiceRewardsHistory Tests", () => {
     let serviceId = TestConstants.SERVICE_ID_1
     let epoch = TestConstants.EPOCH_5
     let contractAddress = TestAddresses.CONTRACT_1
-    mockStakingContractCalls(contractAddress)
+    createStakingContractEntity(contractAddress)
 
     let event = createServiceStakedEvent(serviceId, epoch, contractAddress)
     handleServiceStaked(event)
@@ -85,7 +91,7 @@ describe("ServiceRewardsHistory Tests", () => {
     let serviceId2 = TestConstants.SERVICE_ID_2
     let epoch = TestConstants.EPOCH_5
     let contractAddress = TestAddresses.CONTRACT_1
-    mockStakingContractCalls(contractAddress)
+    createStakingContractEntity(contractAddress)
 
     let event1 = createServiceStakedEvent(serviceId1, epoch, contractAddress)
     let event2 = createServiceStakedEvent(serviceId2, epoch, contractAddress)
@@ -105,7 +111,7 @@ describe("ServiceRewardsHistory Tests", () => {
     let epoch = TestConstants.EPOCH_5
     let contractAddress = TestAddresses.CONTRACT_1
     let reward = TestConstants.REWARD_1000
-    mockStakingContractCalls(contractAddress)
+    createStakingContractEntity(contractAddress)
 
     // First stake the service
     let stakeEvent = createServiceStakedEvent(serviceId, epoch, contractAddress)
@@ -134,7 +140,7 @@ describe("ServiceRewardsHistory Tests", () => {
     let epoch = TestConstants.EPOCH_5
     let contractAddress = TestAddresses.CONTRACT_1
     let reward = TestConstants.REWARD_1000
-    mockStakingContractCalls(contractAddress)
+    createStakingContractEntity(contractAddress)
 
     // Stake both services
     let stakeEvent1 = createServiceStakedEvent(serviceId1, epoch, contractAddress)
@@ -165,7 +171,7 @@ describe("ServiceRewardsHistory Tests", () => {
     let epoch = TestConstants.EPOCH_5
     let reward = TestConstants.REWARD_1000
     let contractAddress = TestAddresses.CONTRACT_1
-    mockStakingContractCalls(contractAddress)
+    createStakingContractEntity(contractAddress)
 
     // First stake the service to create the Service entity
     let stakeEvent = createServiceStakedEvent(serviceId, epoch, contractAddress)
@@ -184,7 +190,7 @@ describe("ServiceRewardsHistory Tests", () => {
     let epoch = TestConstants.EPOCH_5
     let contractAddress = TestAddresses.CONTRACT_1
     let reward = TestConstants.REWARD_1000
-    mockStakingContractCalls(contractAddress)
+    createStakingContractEntity(contractAddress)
 
     // Stake service
     let stakeEvent = createServiceStakedEvent(serviceId, epoch, contractAddress)
@@ -203,12 +209,11 @@ describe("ServiceRewardsHistory Tests", () => {
     // Check latestStakingContract was cleared
     assert.fieldEquals("Service", serviceId.toString(), "latestStakingContract", "null")
 
-    // Check service removed from ActiveServiceEpoch
+    // Check service is NOT removed from ActiveServiceEpoch (to enable continuous tracking)
     let activeKey = createActiveEpochId(contractAddress, epoch)
     let activeServiceEpoch = ActiveServiceEpoch.load(activeKey)
-    if (activeServiceEpoch !== null) {
-      assert.i32Equals(0, activeServiceEpoch.activeServiceIds.length)
-    }
+    assert.assertNotNull(activeServiceEpoch)
+    assert.i32Equals(1, activeServiceEpoch!.activeServiceIds.length)
   })
 
   test("ServiceForceUnstaked updates olasRewardsClaimed and clears latestStakingContract", () => {
@@ -216,7 +221,7 @@ describe("ServiceRewardsHistory Tests", () => {
     let epoch = TestConstants.EPOCH_5
     let contractAddress = TestAddresses.CONTRACT_1
     let reward = TestConstants.REWARD_500
-    mockStakingContractCalls(contractAddress)
+    createStakingContractEntity(contractAddress)
 
     // Stake service
     let stakeEvent = createServiceStakedEvent(serviceId, epoch, contractAddress)
@@ -236,7 +241,7 @@ describe("ServiceRewardsHistory Tests", () => {
   test("totalEpochsParticipated increments correctly", () => {
     let serviceId = TestConstants.SERVICE_ID_1
     let contractAddress = TestAddresses.CONTRACT_1
-    mockStakingContractCalls(contractAddress)
+    createStakingContractEntity(contractAddress)
 
     // Stake in epoch 1
     let stakeEvent1 = createServiceStakedEvent(serviceId, TestConstants.EPOCH_1, contractAddress)
@@ -258,7 +263,7 @@ describe("ServiceRewardsHistory Tests", () => {
     let serviceId = TestConstants.SERVICE_ID_1
     let epoch = TestConstants.EPOCH_5
     let contractAddress = TestAddresses.CONTRACT_1
-    mockStakingContractCalls(contractAddress)
+    createStakingContractEntity(contractAddress)
 
     // Stake service
     let stakeEvent = createServiceStakedEvent(serviceId, epoch, contractAddress)
@@ -285,7 +290,7 @@ describe("ServiceRewardsHistory Tests", () => {
     let serviceId2 = TestConstants.SERVICE_ID_2
     let epoch = TestConstants.EPOCH_5
     let contractAddress = TestAddresses.CONTRACT_1
-    mockStakingContractCalls(contractAddress)
+    createStakingContractEntity(contractAddress)
 
     // Stake both services
     let stakeEvent1 = createServiceStakedEvent(serviceId1, epoch, contractAddress)
@@ -315,8 +320,8 @@ describe("ServiceRewardsHistory Tests", () => {
     let epoch = TestConstants.EPOCH_5
     let contract1 = TestAddresses.CONTRACT_1
     let contract2 = TestAddresses.CONTRACT_2
-    mockStakingContractCalls(contract1)
-    mockStakingContractCalls(contract2)
+    createStakingContractEntity(contract1)
+    createStakingContractEntity(contract2)
 
     // Stake on contract 1
     let stakeEvent1 = createServiceStakedEvent(serviceId, epoch, contract1)
@@ -344,8 +349,8 @@ describe("ServiceRewardsHistory Tests", () => {
     let serviceId = TestConstants.SERVICE_ID_1
     let contract1 = TestAddresses.CONTRACT_1
     let contract2 = TestAddresses.CONTRACT_2
-    mockStakingContractCalls(contract1)
-    mockStakingContractCalls(contract2)
+    createStakingContractEntity(contract1)
+    createStakingContractEntity(contract2)
 
     // === STEP 1: User stakes at epoch 1 ===
     let epoch1 = BigInt.fromI32(1)
@@ -373,62 +378,71 @@ describe("ServiceRewardsHistory Tests", () => {
     assert.fieldEquals("ServiceRewardsHistory", historyId1, "rewardAmount", "0")
     assert.fieldEquals("Service", serviceId.toString(), "olasRewardsEarned", "0")
 
-    // === STEP 3: After 2 days (epoch 3), user is evicted ===
+    // === STEP 3: After 2 days (epoch 2 and 3), user is evicted ===
+    let checkpointEvent2 = createCheckpointEvent(BigInt.fromI32(2), [], [], contract1)
+    handleCheckpoint(checkpointEvent2)
     let epoch3 = BigInt.fromI32(3)
-    let forceUnstakeEvent = createServiceForceUnstakedEvent(serviceId, epoch3, BigInt.fromI32(0), contract1)
-    handleServiceForceUnstaked(forceUnstakeEvent)
+    let evictEvent = createServicesEvictedEvent(epoch3, [serviceId], contract1)
+    handleServicesEvicted(evictEvent)
+    let checkpointEvent3 = createCheckpointEvent(epoch3, [], [], contract1)
+    handleCheckpoint(checkpointEvent3)
 
-    // Verify: latestStakingContract cleared, no rewards claimed
-    assert.fieldEquals("Service", serviceId.toString(), "latestStakingContract", "null")
+
+    // Verify: latestStakingContract NOT cleared (continuous tracking), no rewards claimed
+    assert.fieldEquals("Service", serviceId.toString(), "latestStakingContract", contract1.toHexString())
     assert.fieldEquals("Service", serviceId.toString(), "olasRewardsClaimed", "0")
-    assert.fieldEquals("Service", serviceId.toString(), "totalEpochsParticipated", "1")
+    assert.fieldEquals("Service", serviceId.toString(), "totalEpochsParticipated", "3")
 
-    // === STEP 4: After 2 more days (epoch 5), user restakes ===
+    // === STEP 4: After 2 more days (epoch 4 and 5), user restakes ===
+    let checkpointEvent4 = createCheckpointEvent(BigInt.fromI32(4), [], [], contract1)
+    handleCheckpoint(checkpointEvent4)
     let epoch5 = BigInt.fromI32(5)
+    let unstakeEvent = createServiceUnstakedEvent(serviceId, epoch5, BigInt.fromI32(0), contract1)
+    handleServiceUnstaked(unstakeEvent)
     let stakeEvent2 = createServiceStakedEvent(serviceId, epoch5, contract1)
     handleServiceStaked(stakeEvent2)
 
     // Verify: latestStakingContract set again, totalEpochsParticipated increased
     assert.fieldEquals("Service", serviceId.toString(), "latestStakingContract", contract1.toHexString())
-    assert.fieldEquals("Service", serviceId.toString(), "totalEpochsParticipated", "2")
+    assert.fieldEquals("Service", serviceId.toString(), "totalEpochsParticipated", "5")
     let historyId2 = createHistoryId(serviceId, contract1, epoch5)
     assert.fieldEquals("ServiceRewardsHistory", historyId2, "rewardAmount", "0")
 
     // === STEP 5: Checkpoint at epoch 5 - user earns rewards ===
     let reward1 = TestConstants.REWARD_1000
-    let checkpointEvent2 = createCheckpointEvent(
+    let checkpointEvent5 = createCheckpointEvent(
       epoch5,
       [serviceId],
       [reward1],
       contract1
     )
-    handleCheckpoint(checkpointEvent2)
+    handleCheckpoint(checkpointEvent5)
 
     // Verify: History shows rewards earned
     assert.fieldEquals("ServiceRewardsHistory", historyId2, "rewardAmount", reward1.toString())
     assert.fieldEquals("Service", serviceId.toString(), "olasRewardsEarned", reward1.toString())
+    assert.fieldEquals("Service", serviceId.toString(), "totalEpochsParticipated", "5")
 
-    // === STEP 6: User moves to another contract at epoch 6 ===
-    let epoch6 = BigInt.fromI32(6)
-    let stakeEvent3 = createServiceStakedEvent(serviceId, epoch6, contract2)
+    // === STEP 6: User moves to another contract but there current epoch is 3 ===
+    let stakeEvent3 = createServiceStakedEvent(serviceId, epoch3, contract2)
     handleServiceStaked(stakeEvent3)
 
     // Verify: latestStakingContract updated to new contract, totalEpochsParticipated increased
     assert.fieldEquals("Service", serviceId.toString(), "latestStakingContract", contract2.toHexString())
-    assert.fieldEquals("Service", serviceId.toString(), "totalEpochsParticipated", "3")
-    let historyId3 = createHistoryId(serviceId, contract2, epoch6)
+    assert.fieldEquals("Service", serviceId.toString(), "totalEpochsParticipated", "6")
+    let historyId3 = createHistoryId(serviceId, contract2, epoch3)
     assert.fieldEquals("ServiceRewardsHistory", historyId3, "contractAddress", contract2.toHexString())
     assert.fieldEquals("ServiceRewardsHistory", historyId3, "rewardAmount", "0")
 
     // === STEP 7: Checkpoint at epoch 6 on new contract - user earns more rewards ===
     let reward2 = TestConstants.REWARD_500
-    let checkpointEvent3 = createCheckpointEvent(
-      epoch6,
+    let checkpointEvent6 = createCheckpointEvent(
+      epoch3,
       [serviceId],
       [reward2],
       contract2
     )
-    handleCheckpoint(checkpointEvent3)
+    handleCheckpoint(checkpointEvent6)
 
     // Verify: New history entry shows rewards, total rewards accumulated
     assert.fieldEquals("ServiceRewardsHistory", historyId3, "rewardAmount", reward2.toString())
@@ -436,28 +450,84 @@ describe("ServiceRewardsHistory Tests", () => {
     assert.fieldEquals("Service", serviceId.toString(), "olasRewardsEarned", totalRewards)
 
     // === FINAL VERIFICATION: Check all history entries exist ===
-    // Original stake (no rewards)
+    // History entry 1: Original stake at epoch 1 (no rewards)
     assert.fieldEquals("ServiceRewardsHistory", historyId1, "service", serviceId.toString())
     assert.fieldEquals("ServiceRewardsHistory", historyId1, "epoch", epoch1.toString())
     assert.fieldEquals("ServiceRewardsHistory", historyId1, "contractAddress", contract1.toHexString())
     assert.fieldEquals("ServiceRewardsHistory", historyId1, "rewardAmount", "0")
 
-    // Restake with rewards
+    // History entry 2: Epoch 2 checkpoint (no rewards during eviction period)
+    let historyId2Checkpoint = createHistoryId(serviceId, contract1, BigInt.fromI32(2))
+    assert.fieldEquals("ServiceRewardsHistory", historyId2Checkpoint, "service", serviceId.toString())
+    assert.fieldEquals("ServiceRewardsHistory", historyId2Checkpoint, "epoch", "2")
+    assert.fieldEquals("ServiceRewardsHistory", historyId2Checkpoint, "contractAddress", contract1.toHexString())
+    assert.fieldEquals("ServiceRewardsHistory", historyId2Checkpoint, "rewardAmount", "0")
+
+    // History entry 3: Epoch 3 checkpoint and eviction (no rewards)
+    let historyId3Checkpoint = createHistoryId(serviceId, contract1, epoch3)
+    assert.fieldEquals("ServiceRewardsHistory", historyId3Checkpoint, "service", serviceId.toString())
+    assert.fieldEquals("ServiceRewardsHistory", historyId3Checkpoint, "epoch", epoch3.toString())
+    assert.fieldEquals("ServiceRewardsHistory", historyId3Checkpoint, "contractAddress", contract1.toHexString())
+    assert.fieldEquals("ServiceRewardsHistory", historyId3Checkpoint, "rewardAmount", "0")
+
+    // History entry 4: Epoch 4 checkpoint (no rewards during gap period)
+    let historyId4Checkpoint = createHistoryId(serviceId, contract1, BigInt.fromI32(4))
+    assert.fieldEquals("ServiceRewardsHistory", historyId4Checkpoint, "service", serviceId.toString())
+    assert.fieldEquals("ServiceRewardsHistory", historyId4Checkpoint, "epoch", "4")
+    assert.fieldEquals("ServiceRewardsHistory", historyId4Checkpoint, "contractAddress", contract1.toHexString())
+    assert.fieldEquals("ServiceRewardsHistory", historyId4Checkpoint, "rewardAmount", "0")
+
+    // History entry 5: Restake at epoch 5 with rewards
     assert.fieldEquals("ServiceRewardsHistory", historyId2, "service", serviceId.toString())
     assert.fieldEquals("ServiceRewardsHistory", historyId2, "epoch", epoch5.toString())
     assert.fieldEquals("ServiceRewardsHistory", historyId2, "contractAddress", contract1.toHexString())
     assert.fieldEquals("ServiceRewardsHistory", historyId2, "rewardAmount", reward1.toString())
 
-    // New contract with rewards
+    // History entry 6: New contract with rewards at epoch 3
     assert.fieldEquals("ServiceRewardsHistory", historyId3, "service", serviceId.toString())
-    assert.fieldEquals("ServiceRewardsHistory", historyId3, "epoch", epoch6.toString())
+    assert.fieldEquals("ServiceRewardsHistory", historyId3, "epoch", epoch3.toString())
     assert.fieldEquals("ServiceRewardsHistory", historyId3, "contractAddress", contract2.toHexString())
     assert.fieldEquals("ServiceRewardsHistory", historyId3, "rewardAmount", reward2.toString())
 
     // Final service state
-    assert.fieldEquals("Service", serviceId.toString(), "totalEpochsParticipated", "3")
+    assert.fieldEquals("Service", serviceId.toString(), "totalEpochsParticipated", "6")
     assert.fieldEquals("Service", serviceId.toString(), "latestStakingContract", contract2.toHexString())
     assert.fieldEquals("Service", serviceId.toString(), "olasRewardsEarned", totalRewards)
     assert.fieldEquals("Service", serviceId.toString(), "olasRewardsClaimed", "0")
   })
+
+  // Edge cases
+  test("Checkpoint deduplicates and does not clobber next epoch tracker", () => {
+    let serviceId1 = TestConstants.SERVICE_ID_1 // Staked in current epoch
+    let serviceId2 = TestConstants.SERVICE_ID_2 // Stakes for NEXT epoch early
+    let epoch = TestConstants.EPOCH_5
+    let nextEpoch = epoch.plus(BigInt.fromI32(1))
+    let contractAddress = TestAddresses.CONTRACT_1
+    createStakingContractEntity(contractAddress)
+
+    // 1. Service 1 stakes in Epoch 5
+    let stakeEvent1 = createServiceStakedEvent(serviceId1, epoch, contractAddress)
+    handleServiceStaked(stakeEvent1)
+
+    // 2. Service 2 stakes in Epoch 6 (Race condition: before Epoch 5 checkpoint)
+    let stakeEvent2 = createServiceStakedEvent(serviceId2, nextEpoch, contractAddress)
+    handleServiceStaked(stakeEvent2)
+
+    // 3. Process Checkpoint for Epoch 5
+    let checkpointEvent = createCheckpointEvent(epoch, [serviceId1], [TestConstants.REWARD_1000], contractAddress)
+    handleCheckpoint(checkpointEvent)
+
+    // VERIFY: Epoch 6 tracker should contain BOTH services (Deduplicated merge)
+    let nextKey = createActiveEpochId(contractAddress, nextEpoch)
+    let nextTracker = ActiveServiceEpoch.load(nextKey)
+    assert.assertNotNull(nextTracker)
+    
+    // If logic were broken, serviceId2 would be missing because nextTracker was overwritten
+    let ids = nextTracker!.activeServiceIds
+    assert.i32Equals(2, ids.length)
+    assert.assertTrue(ids.includes(serviceId1))
+    assert.assertTrue(ids.includes(serviceId2))
+  })
+
+  
 })

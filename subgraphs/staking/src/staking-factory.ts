@@ -36,9 +36,7 @@ export function handleInstanceCreated(event: InstanceCreatedEvent): void {
 
   StakingProxy.create(event.params.instance);
 
-  let stakingContract = new StakingContract(
-    event.transaction.hash.concatI32(event.logIndex.toI32())
-  );
+  let stakingContract = new StakingContract(event.params.instance);
 
   stakingContract.sender = event.params.sender;
   stakingContract.instance = event.params.instance;

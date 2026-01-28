@@ -1,4 +1,4 @@
-import { Address, Bytes, BigInt } from "@graphprotocol/graph-ts"
+import { Address, Bytes, BigInt, log } from "@graphprotocol/graph-ts"
 import {
   Checkpoint as CheckpointEvent,
   Deposit as DepositEvent,
@@ -23,7 +23,7 @@ import {
   Withdraw,
   ActiveServiceEpoch
 } from "../generated/schema"
-import { createRewardUpdate, getOrCreateGlobal, getOlasForStaking, upsertCumulativeDailyStakingGlobal, getOrCreateServiceRewardsHistory } from "./utils"
+import { createRewardUpdate, getOrCreateGlobal, getOlasForStaking, upsertCumulativeDailyStakingGlobal, getOrCreateServiceRewardsHistory, processUnstake } from "./utils"
 
 export function handleCheckpoint(event: CheckpointEvent): void {
   let entity = new Checkpoint(
@@ -42,24 +42,68 @@ export function handleCheckpoint(event: CheckpointEvent): void {
 
   let activeKey = event.address.toHexString() + "-" + event.params.epoch.toString();
   let activeTracker = ActiveServiceEpoch.load(activeKey);
+  
+  let rewardedServices = event.params.serviceIds;
+  let rewardedAmounts = event.params.rewards;
   let totalRewards = BigInt.fromI32(0);
 
-  if (activeTracker !== null) {
-    let allActiveServices = activeTracker.activeServiceIds;
-    let rewardedServices = event.params.serviceIds;
-    let rewardedAmounts = event.params.rewards;
+  // Map to track which services we've already processed for rewards
+  let handledServicesMap = new Map<string, boolean>();
+  
+  // 1. Process rewarded services directly from the event
+  for (let i = 0; i < rewardedServices.length; i++) {
+    let serviceId = rewardedServices[i];
+    let serviceIdStr = serviceId.toString();
+    let reward = rewardedAmounts[i];
+    
+    totalRewards = totalRewards.plus(reward);
+    handledServicesMap.set(serviceIdStr, true);
 
-    // 1. Create a Lookup Map for rewarded services
-    let rewardedMap = new Map<string, BigInt>();
-    for (let i = 0; i < rewardedServices.length; i++) {
-      rewardedMap.set(rewardedServices[i].toString(), rewardedAmounts[i]);
+    // Update individual Service cumulative earnings
+    let service = Service.load(serviceIdStr);
+    if (service !== null) {
+      service.olasRewardsEarned = service.olasRewardsEarned.plus(reward);
+      service.save();
     }
 
-    // 2. Process every service that was active this epoch
+    // Create history entry for the service that received rewards
+    let history = getOrCreateServiceRewardsHistory(
+      serviceId,
+      event.address,
+      event.params.epoch,
+      event.block.number,
+      event.block.timestamp,
+      event.transaction.hash
+    );
+    history.rewardAmount = reward;
+    history.checkpoint = entity.id;
+    history.checkpointedAt = event.block.timestamp;
+    history.save();
+  }
+
+  // 2. Process "Active but not rewarded" services (Zero Rewards)
+  // Only runs if we have the tracker for this epoch
+  let allActiveServices: BigInt[] = [];
+  if (activeTracker !== null) {
+    allActiveServices = activeTracker.activeServiceIds;
+
     for (let i = 0; i < allActiveServices.length; i++) {
       let serviceId = allActiveServices[i];
       let serviceIdStr = serviceId.toString();
-      
+
+      // Skip if handled in the rewarded loop above
+      if (handledServicesMap.has(serviceIdStr)) continue;
+
+      // Check if service has migrated to a different contract
+      // If so, stop creating zero-reward entries for this contract
+      let service = Service.load(serviceIdStr);
+      if (service !== null) {
+        if (service.latestStakingContract !== null &&
+            service.latestStakingContract!.toHexString() != event.address.toHexString()) {
+          continue; // Service has migrated to a different contract
+        }
+      }
+
       let history = getOrCreateServiceRewardsHistory(
         serviceId,
         event.address,
@@ -68,36 +112,43 @@ export function handleCheckpoint(event: CheckpointEvent): void {
         event.block.timestamp,
         event.transaction.hash
       );
-
-      // Check if this specific service earned rewards
-      if (rewardedMap.has(serviceIdStr)) {
-        let reward = rewardedMap.get(serviceIdStr);
-        history.rewardAmount = reward;
-        totalRewards = totalRewards.plus(reward);
-
-        // Update the Service entity cumulative earnings
-        let service = Service.load(serviceIdStr);
-        if (service !== null) {
-          service.olasRewardsEarned = service.olasRewardsEarned.plus(reward);
-          service.save();
-        }
-      } else {
-        // Service was active but did NOT meet KPI
-        history.rewardAmount = BigInt.fromI32(0);
-      }
-
+      history.rewardAmount = BigInt.fromI32(0);
       history.checkpoint = entity.id;
       history.checkpointedAt = event.block.timestamp;
       history.save();
     }
 
-    // 3. Carry forward active services to the next epoch tracker
+    // 3. Roll over to next epoch (Merging & Deduplicating to avoid race conditions)
     let nextEpoch = event.params.epoch.plus(BigInt.fromI32(1));
     let nextKey = event.address.toHexString() + "-" + nextEpoch.toString();
-    let nextTracker = new ActiveServiceEpoch(nextKey);
-    nextTracker.contractAddress = event.address;
-    nextTracker.epoch = nextEpoch;
-    nextTracker.activeServiceIds = allActiveServices; 
+    
+    let nextTracker = ActiveServiceEpoch.load(nextKey);
+    if (nextTracker === null) {
+      // Case A: No one has staked for the next epoch yet
+      nextTracker = new ActiveServiceEpoch(nextKey);
+      nextTracker.contractAddress = event.address;
+      nextTracker.epoch = nextEpoch;
+      nextTracker.activeServiceIds = allActiveServices; 
+    } else {
+      // Case B: Some services already staked for next epoch; merge with currently active
+      let existingNextServices = nextTracker.activeServiceIds;
+      let existingServiceIdSet = new Map<string, boolean>();
+
+      for (let i = 0; i < existingNextServices.length; i++) {
+        existingServiceIdSet.set(existingNextServices[i].toString(), true);
+      }
+
+      for (let i = 0; i < allActiveServices.length; i++) {
+        let id = allActiveServices[i];
+        let idStr = id.toString();
+        if (!existingServiceIdSet.has(idStr)) {
+          existingNextServices.push(id);
+          existingServiceIdSet.set(idStr, true);
+        }
+      }
+      nextTracker.activeServiceIds = existingNextServices;
+    }
+    
     nextTracker.blockNumber = event.block.number;
     nextTracker.blockTimestamp = event.block.timestamp;
     nextTracker.save();
@@ -191,37 +242,13 @@ export function handleServiceForceUnstaked(
 
   entity.save()
 
-  const olasForStaking = getOlasForStaking(event.params._event.address)
-  // Update service
-  let service = Service.load(event.params.serviceId.toString());
-  if (service !== null) {
-    service.latestStakingContract = null;
-    service.olasRewardsClaimed = service.olasRewardsClaimed.plus(event.params.reward);
-    service.currentOlasStaked = service.currentOlasStaked.minus(olasForStaking);
-    service.save()
-  }
-
-  // Remove from active services
-  let activeKey = event.address.toHexString() + "-" + event.params.epoch.toString();
-  let activeTracker = ActiveServiceEpoch.load(activeKey);
-  if (activeTracker !== null) {
-    let serviceIds = activeTracker.activeServiceIds;
-    let index = serviceIds.indexOf(event.params.serviceId);
-    if (index !== -1) {
-      let newIds: BigInt[] = [];
-      for (let i = 0; i < serviceIds.length; i++) {
-        if (i !== index) newIds.push(serviceIds[i]);
-      }
-      activeTracker.activeServiceIds = newIds;
-      activeTracker.save();
-    }
-  }
-
-  // Update global
-  let global = getOrCreateGlobal();
-  global.cumulativeOlasUnstaked = global.cumulativeOlasUnstaked.plus(olasForStaking);
-  global.currentOlasStaked = global.currentOlasStaked.minus(olasForStaking);
-  global.save();
+  processUnstake(
+    event,
+    event.params.serviceId,
+    event.params.epoch,
+    event.params.reward,
+    event.address
+  );
 }
 
 export function handleServiceInactivityWarning(
@@ -344,38 +371,13 @@ export function handleServiceUnstaked(event: ServiceUnstakedEvent): void {
     event.params.reward
   );
 
-  const olasForStaking = getOlasForStaking(event.params._event.address)
-
-  // Update service
-  let service = Service.load(event.params.serviceId.toString());
-  if (service !== null) {
-    service.latestStakingContract = null;
-    service.olasRewardsClaimed = service.olasRewardsClaimed.plus(event.params.reward);
-    service.currentOlasStaked = service.currentOlasStaked.minus(olasForStaking);
-    service.save()
-  }
-
-  // Remove from active services
-  let activeKey = event.address.toHexString() + "-" + event.params.epoch.toString();
-  let activeTracker = ActiveServiceEpoch.load(activeKey);
-  if (activeTracker !== null) {
-    let serviceIds = activeTracker.activeServiceIds;
-    let index = serviceIds.indexOf(event.params.serviceId);
-    if (index !== -1) {
-      let newIds: BigInt[] = [];
-      for (let i = 0; i < serviceIds.length; i++) {
-        if (i !== index) newIds.push(serviceIds[i]);
-      }
-      activeTracker.activeServiceIds = newIds;
-      activeTracker.save();
-    }
-  }
-
-  // Update global
-  let global = getOrCreateGlobal();
-  global.cumulativeOlasUnstaked = global.cumulativeOlasUnstaked.plus(olasForStaking);
-  global.currentOlasStaked = global.currentOlasStaked.minus(olasForStaking);
-  global.save();
+  processUnstake(
+    event,
+    event.params.serviceId,
+    event.params.epoch,
+    event.params.reward,
+    event.address
+  );
 }
 
 export function handleServicesEvicted(event: ServicesEvictedEvent): void {
@@ -402,28 +404,6 @@ export function handleServicesEvicted(event: ServicesEvictedEvent): void {
 
   entity.save()
 
-  // --- Logic to stop tracking rewards for evicted services ---
-  let activeKey = event.address.toHexString() + "-" + event.params.epoch.toString();
-  let activeTracker = ActiveServiceEpoch.load(activeKey);
-  
-  if (activeTracker !== null) {
-    let currentActiveIds = activeTracker.activeServiceIds;
-    let evictedIds = event.params.serviceIds;
-    
-    // Create a new array to hold the services that remain active
-    let nextActiveIds: BigInt[] = [];
-    
-    for (let i = 0; i < currentActiveIds.length; i++) {
-      let id = currentActiveIds[i];
-      // Only keep the service if it is NOT in the evicted list
-      if (!evictedIds.includes(id)) {
-        nextActiveIds.push(id);
-      }
-    }
-    
-    activeTracker.activeServiceIds = nextActiveIds;
-    activeTracker.save();
-  }
 }
 
 export function handleWithdraw(event: WithdrawEvent): void {

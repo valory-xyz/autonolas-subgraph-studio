@@ -150,7 +150,7 @@ type Withdraw @entity(immutable: true) {
 }
 
 type StakingContract @entity(immutable: true) {
-  id: Bytes!
+  id: Bytes! # instance address
   sender: Bytes! # address
   instance: Bytes! # address
   implementation: Bytes! # address

@@ -6,6 +6,7 @@ import {
   ServiceUnstaked,
   ServiceForceUnstaked,
   RewardClaimed,
+  ServicesEvicted,
 } from "../generated/templates/StakingProxy/StakingProxy"
 
 export function createServiceStakedEvent(
@@ -170,4 +171,47 @@ export function createRewardClaimedEvent(
   )
 
   return rewardClaimedEvent
+}
+
+export function createServicesEvictedEvent(
+  epoch: BigInt,
+  serviceIds: BigInt[],
+  contractAddress: Address
+): ServicesEvicted {
+  let servicesEvictedEvent = changetype<ServicesEvicted>(newMockEvent())
+
+  servicesEvictedEvent.address = contractAddress
+  servicesEvictedEvent.parameters = new Array()
+
+  // Mock addresses for arrays
+  let mockOwner = Address.fromString("0x0000000000000000000000000000000000000099")
+  let mockMultisig = Address.fromString("0x0000000000000000000000000000000000000098")
+  
+  let owners = new Array<Address>()
+  let multisigs = new Array<Address>()
+  let inactivity = new Array<BigInt>()
+  
+  for (let i = 0; i < serviceIds.length; i++) {
+    owners.push(mockOwner)
+    multisigs.push(mockMultisig)
+    inactivity.push(BigInt.fromI32(1))
+  }
+
+  servicesEvictedEvent.parameters.push(
+    new ethereum.EventParam("epoch", ethereum.Value.fromUnsignedBigInt(epoch))
+  )
+  servicesEvictedEvent.parameters.push(
+    new ethereum.EventParam("serviceIds", ethereum.Value.fromUnsignedBigIntArray(serviceIds))
+  )
+  servicesEvictedEvent.parameters.push(
+    new ethereum.EventParam("owners", ethereum.Value.fromAddressArray(owners))
+  )
+  servicesEvictedEvent.parameters.push(
+    new ethereum.EventParam("multisigs", ethereum.Value.fromAddressArray(multisigs))
+  )
+  servicesEvictedEvent.parameters.push(
+    new ethereum.EventParam("serviceInactivity", ethereum.Value.fromUnsignedBigIntArray(inactivity))
+  )
+
+  return servicesEvictedEvent
 }
