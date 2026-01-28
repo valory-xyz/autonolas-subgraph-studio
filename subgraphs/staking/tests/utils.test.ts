@@ -6,7 +6,6 @@ import {
   beforeEach,
   afterEach,
 } from "matchstick-as/assembly/index"
-import { Address, BigInt, Bytes } from "@graphprotocol/graph-ts"
 import { ServiceRewardsHistory } from "../generated/schema"
 import { getOrCreateServiceRewardsHistory } from "../src/utils"
 import { TestAddresses, TestConstants, TestBytes, createHistoryId } from "./test-helpers"

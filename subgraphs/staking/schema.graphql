@@ -207,7 +207,7 @@ type ServiceRewardsHistory @entity(immutable: false) {
 }
 
 type ActiveServiceEpoch @entity(immutable: false) {
-  id: ID!
+  id: ID! # {contractAddress}-{epoch}
   contractAddress: Bytes!
   epoch: BigInt!
   activeServiceIds: [BigInt!]!

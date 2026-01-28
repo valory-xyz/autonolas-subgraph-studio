@@ -7,8 +7,8 @@ import {
   afterEach,
   createMockedFunction,
 } from "matchstick-as/assembly/index"
-import { Address, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts"
-import { Service, ServiceRewardsHistory, ActiveServiceEpoch } from "../generated/schema"
+import { Address, BigInt, ethereum } from "@graphprotocol/graph-ts"
+import { ActiveServiceEpoch } from "../generated/schema"
 import {
   handleServiceStaked,
   handleCheckpoint,
