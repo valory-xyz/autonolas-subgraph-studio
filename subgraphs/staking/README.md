@@ -73,7 +73,11 @@ Represents a staking proxy instance with full configuration:
 Represents a staked service with performance metrics:
 - **id**: Service identifier
 - **currentOlasStaked**: Currently staked OLAS amount
-- **olasRewardsEarned**: Total rewards earned
+- **olasRewardsEarned**: Total rewards earned (cumulative)
+- **olasRewardsClaimed**: Total rewards claimed (cumulative)
+- **latestStakingContract**: Address of current staking contract (null if unstaked)
+- **totalEpochsParticipated**: Number of epochs the service has participated in
+- **rewardsHistory**: Array of epoch-by-epoch reward records (derived from ServiceRewardsHistory)
 - **blockNumber/blockTimestamp**: Last update details
 
 #### `ServiceStaked`
@@ -95,6 +99,24 @@ Service unstaking events:
 - **reward**: Reward amount received
 - **availableRewards**: Available rewards at time
 - **blockNumber/blockTimestamp**: Event details
+
+#### `ServiceRewardsHistory`
+Epoch-by-epoch reward tracking for each service:
+- **id**: Composite identifier `{serviceId}-{contractAddress}-{epoch}`
+- **service**: Reference to the Service entity
+- **epoch**: The epoch number
+- **contractAddress**: Staking contract address
+- **checkpoint**: Reference to the Checkpoint event (null until checkpoint occurs)
+- **rewardAmount**: Reward earned in this epoch (0 if service didn't meet KPIs)
+- **checkpointedAt**: Timestamp when the checkpoint occurred (null until checkpoint)
+- **blockNumber/blockTimestamp**: When the service staked for this epoch
+- **transactionHash**: Transaction hash
+
+**Key Features**:
+- Created when a service stakes for an epoch
+- Updated with reward amount (or 0) when checkpoint occurs
+- Tracks services that were active but didn't meet KPIs (rewardAmount = 0)
+- Enables historical analysis of service performance across epochs
 
 ### Reward Management Entities
 
@@ -144,6 +166,16 @@ OLAS withdrawal events:
 - **amount**: Withdrawal amount
 - **blockNumber/blockTimestamp**: Event details
 
+#### `ActiveServiceEpoch`
+Tracks which services are actively staked in each epoch per contract:
+- **id**: Composite identifier `{contractAddress}-{epoch}`
+- **contractAddress**: Staking contract address
+- **epoch**: The epoch number
+- **activeServiceIds**: Array of service IDs active in this epoch
+- **blockNumber/blockTimestamp**: Last update details
+
+**Purpose**: Used internally to determine which services should receive reward history entries during checkpoint events, even if they didn't earn rewards.
+
 ### Service Management Entities
 
 #### `ServiceInactivityWarning`
@@ -182,6 +214,23 @@ Aggregate staking statistics:
 - **cumulativeOlasStaked**: Total OLAS ever staked
 - **cumulativeOlasUnstaked**: Total OLAS ever unstaked
 - **currentOlasStaked**: Currently staked OLAS
+- **totalRewards**: Cumulative rewards distributed across all services
+- **lastActiveDayTimestamp**: Most recent day with activity (used for forward-filling daily snapshots)
+- **services**: Array of all Service entities (derived relationship)
+
+#### `CumulativeDailyStakingGlobal`
+Daily snapshots of global staking metrics:
+- **id**: Day timestamp in bytes format
+- **timestamp**: Beginning of the day timestamp
+- **block**: Block number when snapshot was updated
+- **totalRewards**: Cumulative rewards at this day
+- **numServices**: Number of services in the ecosystem
+- **medianCumulativeRewards**: Median of cumulative rewards across all services
+
+**Features**:
+- Forward-fills data from most recent active day for continuity
+- Recalculates median from all services at each checkpoint
+- Provides daily aggregated view of ecosystem health
 
 ## Key Features
 
@@ -193,20 +242,53 @@ Aggregate staking statistics:
 ### Comprehensive Staking Tracking
 - Full service lifecycle from staking to unstaking
 - Reward distribution and claiming events
+- Epoch-by-epoch reward history for each service
+- Tracks both rewarded and non-rewarded participation
 - Inactivity monitoring and enforcement
 - Deposit and withdrawal management
 
 ### Real-time Analytics
-- Global staking statistics
+- Global staking statistics with cumulative metrics
 - Individual service performance metrics
-- Reward distribution tracking
+- Epoch-by-epoch reward history for detailed analysis
+- Daily snapshots with median calculations
+- Reward distribution tracking (both earned and claimed)
 - Activity monitoring and warnings
+- Forward-filled daily metrics for continuous data
 
 ### Service Management
 - Service staking and unstaking events
 - Inactivity warnings and force unstaking
 - Bulk service evictions
 - Reward claiming and distribution
+
+### Enhanced Service Tracking
+
+The subgraph now includes comprehensive service-level analytics:
+
+**ServiceRewardsHistory Entity**
+- Records every epoch a service participates in
+- Tracks reward amounts (including zero rewards when KPIs aren't met)
+- Links to checkpoint events for full context
+- Enables historical performance analysis per service
+
+**Service Entity Enhancements**
+- `olasRewardsClaimed`: Separate tracking of claimed vs earned rewards
+- `latestStakingContract`: Identifies current staking contract (null when unstaked)
+- `totalEpochsParticipated`: Counts total participation across all epochs
+- `rewardsHistory`: Direct access to epoch-by-epoch performance
+
+**Daily Aggregations**
+- `CumulativeDailyStakingGlobal`: Daily snapshots of ecosystem metrics
+- Forward-fills data from last active day for continuous time series
+- Computes median rewards across all services for benchmarking
+- Tracks service count and total rewards over time
+
+**Active Service Tracking**
+- `ActiveServiceEpoch`: Maintains list of active services per epoch
+- Ensures reward history is created even when services don't earn rewards
+- Properly handles service evictions and unstaking events
+- Carries forward active services to next epoch automatically
 
 ## Usage Examples
 
@@ -286,7 +368,69 @@ Aggregate staking statistics:
     id
     currentOlasStaked
     olasRewardsEarned
+    olasRewardsClaimed
+    latestStakingContract
+    totalEpochsParticipated
     blockTimestamp
+  }
+}
+```
+
+### Query Service Rewards History
+```graphql
+{
+  serviceRewardsHistories(
+    where: { service: "123" }
+    orderBy: epoch
+    orderDirection: desc
+    first: 20
+  ) {
+    id
+    epoch
+    contractAddress
+    rewardAmount
+    checkpointedAt
+    checkpoint {
+      id
+      availableRewards
+    }
+  }
+}
+```
+
+### Get Service with Complete History
+```graphql
+{
+  service(id: "123") {
+    id
+    currentOlasStaked
+    olasRewardsEarned
+    olasRewardsClaimed
+    totalEpochsParticipated
+    latestStakingContract
+    rewardsHistory(orderBy: epoch, orderDirection: desc, first: 50) {
+      epoch
+      contractAddress
+      rewardAmount
+      checkpointedAt
+    }
+  }
+}
+```
+
+### Track Daily Staking Metrics
+```graphql
+{
+  cumulativeDailyStakingGlobals(
+    orderBy: timestamp
+    orderDirection: desc
+    first: 30
+  ) {
+    timestamp
+    totalRewards
+    numServices
+    medianCumulativeRewards
+    block
   }
 }
 ```

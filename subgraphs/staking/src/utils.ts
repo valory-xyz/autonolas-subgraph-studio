@@ -10,8 +10,9 @@ import {
   RewardUpdate,
   CumulativeDailyStakingGlobal,
   Service,
+  ServiceRewardsHistory,
+  StakingContract,
 } from "../generated/schema";
-import { StakingProxy as StakingProxyContract } from "../generated/templates/StakingProxy/StakingProxy";
 
 const ONE_DAY = BigInt.fromI32(86400);
 
@@ -33,11 +34,13 @@ export function createRewardUpdate(
 }
 
 export function getOlasForStaking(address: Address): BigInt {
-  const contract = StakingProxyContract.bind(address);
-  const numAgentInstances = contract.numAgentInstances();
-  const minStakingDeposit = contract.minStakingDeposit();
-  const stakeAmount = minStakingDeposit.times(
-    numAgentInstances.plus(BigInt.fromI32(1))
+  const stakingContract = StakingContract.load(address);
+  if (stakingContract === null) {
+    return BigInt.fromI32(0);
+  }
+
+  const stakeAmount = stakingContract.minStakingDeposit.times(
+    stakingContract.numAgentInstances.plus(BigInt.fromI32(1))
   );
 
   return stakeAmount;
@@ -222,4 +225,77 @@ export function isAllowedImplementation(implementation: Bytes): boolean {
   }
 
   return false;
+}
+
+export function getOrCreateServiceRewardsHistory(
+  serviceId: BigInt,
+  contractAddress: Bytes,
+  epoch: BigInt,
+  blockNumber: BigInt,
+  blockTimestamp: BigInt,
+  transactionHash: Bytes
+): ServiceRewardsHistory {
+  let historyId = serviceId.toString() + "-"
+                  + contractAddress.toHexString() + "-"
+                  + epoch.toString();
+
+  let history = ServiceRewardsHistory.load(historyId);
+  if (history === null) {
+    history = new ServiceRewardsHistory(historyId);
+    history.service = serviceId.toString();
+    history.epoch = epoch;
+    history.contractAddress = contractAddress;
+    history.checkpoint = null;
+    history.rewardAmount = BigInt.fromI32(0);
+    history.checkpointedAt = null;
+    history.blockNumber = blockNumber;
+    history.blockTimestamp = blockTimestamp;
+    history.transactionHash = transactionHash;
+
+    let service = Service.load(serviceId.toString());
+    if (service !== null) {
+      service.totalEpochsParticipated = service.totalEpochsParticipated + 1;
+      service.save();
+    }
+  }
+
+  return history;
+}
+
+export function processUnstake(
+  event: ethereum.Event,
+  serviceId: BigInt,
+  epoch: BigInt,
+  reward: BigInt,
+  contractAddress: Address
+): void {
+  const olasForStaking = getOlasForStaking(contractAddress);
+  let serviceIdStr = serviceId.toString();
+
+  // 1. Update service
+  let service = Service.load(serviceIdStr);
+  if (service !== null) {
+    service.latestStakingContract = null;
+    service.olasRewardsClaimed = service.olasRewardsClaimed.plus(reward);
+    service.currentOlasStaked = service.currentOlasStaked.minus(olasForStaking);
+    service.save();
+  }
+
+  // 2. Close the history for this epoch
+  let history = getOrCreateServiceRewardsHistory(
+    serviceId,
+    contractAddress,
+    epoch,
+    event.block.number,
+    event.block.timestamp,
+    event.transaction.hash
+  );
+  history.rewardAmount = reward;
+  history.save();
+
+  // 4. Update Global
+  let global = getOrCreateGlobal();
+  global.cumulativeOlasUnstaked = global.cumulativeOlasUnstaked.plus(olasForStaking);
+  global.currentOlasStaked = global.currentOlasStaked.minus(olasForStaking);
+  global.save();
 }

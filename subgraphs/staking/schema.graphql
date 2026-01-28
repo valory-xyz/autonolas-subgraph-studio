@@ -150,7 +150,7 @@ type Withdraw @entity(immutable: true) {
 }
 
 type StakingContract @entity(immutable: true) {
-  id: Bytes!
+  id: Bytes! # instance address
   sender: Bytes! # address
   instance: Bytes! # address
   implementation: Bytes! # address
@@ -184,9 +184,35 @@ type Service @entity(immutable: false) {
   id: ID!
   currentOlasStaked: BigInt!
   olasRewardsEarned: BigInt!
+  olasRewardsClaimed: BigInt!
   blockNumber: BigInt!
   blockTimestamp: BigInt!
   global: Global!
+  latestStakingContract: Bytes
+  totalEpochsParticipated: Int!
+  rewardsHistory: [ServiceRewardsHistory!]! @derivedFrom(field: "service")
+}
+
+type ServiceRewardsHistory @entity(immutable: false) {
+  id: ID! # {serviceId}-{contractAddress}-{epoch}
+  service: Service!
+  epoch: BigInt!
+  contractAddress: Bytes!
+  checkpoint: Checkpoint
+  rewardAmount: BigInt!
+  checkpointedAt: BigInt
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+type ActiveServiceEpoch @entity(immutable: false) {
+  id: ID! # {contractAddress}-{epoch}
+  contractAddress: Bytes!
+  epoch: BigInt!
+  activeServiceIds: [BigInt!]!
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
 }
 
 type Global @entity(immutable: false) {

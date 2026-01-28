@@ -4,20 +4,20 @@
     "codegen": "graph codegen subgraph.gnosis.yaml",
     "build": "graph build subgraph.gnosis.yaml",
     "generate-manifests": "node ../../scripts/generate-manifests.ts",
-    "deploy-arbitrum": "graph deploy --network arbitrum-one --studio olas-arbitrum-staking subgraph.arbitrum-one.yaml",
-    "deploy-base": "graph deploy --network base --studio olas-base-staking subgraph.base.yaml",
-    "deploy-celo": "graph deploy --network celo --studio olas-celo-staking subgraph.celo.yaml",
-    "deploy-gnosis": "graph deploy --network gnosis --studio olas-gnosis-staking subgraph.gnosis.yaml",
-    "deploy-ethereum": "graph deploy --network mainnet --studio olas-ethereum-staking subgraph.mainnet.yaml",
-    "deploy-polygon": "graph deploy --network matic --studio olas-polygon-staking subgraph.matic.yaml",
-    "deploy-optimism": "graph deploy --network optimism --studio olas-optimism-staking subgraph.optimism.yaml",
-    "test": "graph test"
+    "deploy-arbitrum": "graph deploy --network arbitrum-one olas-arbitrum-staking subgraph.arbitrum-one.yaml",
+    "deploy-base": "graph deploy --network base olas-base-staking subgraph.base.yaml",
+    "deploy-celo": "graph deploy --network celo olas-celo-staking subgraph.celo.yaml",
+    "deploy-gnosis": "graph deploy --network gnosis olas-gnosis-staking subgraph.gnosis.yaml",
+    "deploy-ethereum": "graph deploy --network mainnet olas-ethereum-staking subgraph.mainnet.yaml",
+    "deploy-polygon": "graph deploy --network matic olas-polygon-staking subgraph.matic.yaml",
+    "deploy-optimism": "graph deploy --network optimism olas-optimism-staking subgraph.optimism.yaml",
+    "test": "ln -s subgraph.gnosis.yaml subgraph.yaml && graph test; rm -f subgraph.yaml"
   },
   "dependencies": {
-    "@graphprotocol/graph-cli": "^0.97.0",
-    "@graphprotocol/graph-ts": "^0.38.0"
+    "@graphprotocol/graph-cli": "^0.98.1",
+    "@graphprotocol/graph-ts": "^0.38.2"
   },
   "devDependencies": {
-    "matchstick-as": "0.5.0"
+    "matchstick-as": "^0.6.0"
   }
 }
