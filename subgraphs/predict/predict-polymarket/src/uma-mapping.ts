@@ -11,7 +11,7 @@ import {
   MarketParticipant,
   DailyProfitStatistic
 } from "../generated/schema"
-import { BigInt, log } from "@graphprotocol/graph-ts"
+import { BigInt } from "@graphprotocol/graph-ts"
 import { getGlobal, saveMapValues, getDailyProfitStatistic, addProfitParticipant, getDayTimestamp } from "./utils"
 
 /**

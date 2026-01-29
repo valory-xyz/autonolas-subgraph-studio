@@ -1,4 +1,4 @@
-import { BigInt, Bytes } from "@graphprotocol/graph-ts";
+import { BigInt } from "@graphprotocol/graph-ts";
 import {
   CreateMultisigWithAgents as CreateMultisigWithAgentsEvent,
   RegisterInstance as RegisterInstanceEvent,
@@ -13,7 +13,7 @@ export function handleRegisterInstance(event: RegisterInstanceEvent): void {
   // Allows then to track TraderAgent properly
   if (agentId !== PREDICT_AGENT_ID) return;
 
-  let serviceId = Bytes.fromByteArray(Bytes.fromBigInt(event.params.serviceId));
+  let serviceId = event.params.serviceId.toHexString();
   let traderService = TraderService.load(serviceId);
   if (traderService !== null) return;
 
@@ -25,7 +25,7 @@ export function handleCreateMultisigWithAgents(
   event: CreateMultisigWithAgentsEvent
 ): void {
   // Skip non-trader services
-  let traderService = TraderService.load(Bytes.fromByteArray(Bytes.fromBigInt(event.params.serviceId)))
+  let traderService = TraderService.load(event.params.serviceId.toHexString())
   if (traderService === null) return;
   
   let traderAgent = TraderAgent.load(event.params.multisig);

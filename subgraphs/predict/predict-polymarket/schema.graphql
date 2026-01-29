@@ -1,7 +1,7 @@
 # Entity is only created if trader agent (with id 86) is registered in a service
 # Allows tracking TraderAgent properly
 type TraderService @entity (immutable: true) {
-  id: Bytes! # serviceId
+  id: ID! # serviceId
 }
 
 type TraderAgent @entity (immutable: false) {

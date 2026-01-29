@@ -1,4 +1,4 @@
-import { BigInt, Bytes, Address } from "@graphprotocol/graph-ts";
+import { BigInt, Bytes } from "@graphprotocol/graph-ts";
 import { Global, TraderAgent, MarketParticipant, DailyProfitStatistic } from "../generated/schema";
 import { ONE_DAY } from "./constants";
 
