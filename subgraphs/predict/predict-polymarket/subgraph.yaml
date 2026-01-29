@@ -16,8 +16,9 @@ dataSources:
       apiVersion: 0.0.7
       language: wasm/assemblyscript
       entities:
-        - Service
         - TraderAgent
+        - TraderService
+        - Global
       abis:
         - name: ServiceRegistryL2
           file: ../../../abis/ServiceRegistryL2.json
@@ -39,9 +40,13 @@ dataSources:
       apiVersion: 0.0.7
       language: wasm/assemblyscript
       entities:
-        - Condition
+        - QuestionIdToConditionId
         - Question
-        - PayoutRedemption
+        - TraderAgent
+        - MarketParticipant
+        - Bet
+        - Global
+        - DailyProfitStatistic
       abis:
         - name: ConditionalTokens
           file: ../../../abis/ConditionalTokens.json
@@ -66,7 +71,13 @@ dataSources:
       file: ./src/uma-mapping.ts
       entities:
         - MarketMetadata
+        - Question
+        - QuestionIdToConditionId
         - QuestionResolution
+        - TraderAgent
+        - MarketParticipant
+        - DailyProfitStatistic
+        - Global
       abis:
         - name: OptimisticOracleV3
           file: ../../../abis/OptimisticOracleV3.json
@@ -89,7 +100,12 @@ dataSources:
       file: ./src/ctf-exchange.ts
       entities:
         - Bet
+        - Question
         - TokenRegistry
+        - TraderAgent
+        - Global
+        - MarketParticipant
+        - DailyProfitStatistic
       abis:
         - name: CTFExchange
           file: ../../../abis/CTFExchange.json
@@ -112,7 +128,12 @@ dataSources:
       file: ./src/ctf-exchange.ts
       entities:
         - Bet
+        - Question
         - TokenRegistry
+        - TraderAgent
+        - Global
+        - MarketParticipant
+        - DailyProfitStatistic
       abis:
         - name: CTFExchange
           file: ../../../abis/CTFExchange.json
@@ -121,4 +142,3 @@ dataSources:
           handler: handleOrderFilled
         - event: TokenRegistered(indexed uint256,indexed uint256,indexed bytes32)
           handler: handleTokenRegistered
-

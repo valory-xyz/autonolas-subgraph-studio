@@ -11,15 +11,15 @@ const MULTISIG_2 = Address.fromString("0x223456789012345678901234567890123456789
 const OPERATOR = Address.fromString("0x3234567890123456789012345678901234567890");
 const AGENT_INSTANCE = Address.fromString("0x4234567890123456789012345678901234567890");
 
-function getServiceIdAsBytes(serviceId: BigInt): string {
-  return Bytes.fromByteArray(Bytes.fromBigInt(serviceId)).toHexString();
+function getServiceId(serviceId: BigInt): string {
+  return serviceId.toHexString();
 }
 
 function createRegisterInstanceEvent(
   operator: Address,
   serviceId: BigInt,
   agentInstance: Address,
-  agentId: i32
+  agentId: BigInt
 ): RegisterInstance {
   let event = changetype<RegisterInstance>(newMockEvent());
   event.parameters = new Array();
@@ -27,7 +27,7 @@ function createRegisterInstanceEvent(
   event.parameters.push(new ethereum.EventParam("operator", ethereum.Value.fromAddress(operator)));
   event.parameters.push(new ethereum.EventParam("serviceId", ethereum.Value.fromUnsignedBigInt(serviceId)));
   event.parameters.push(new ethereum.EventParam("agentInstance", ethereum.Value.fromAddress(agentInstance)));
-  event.parameters.push(new ethereum.EventParam("agentId", ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(agentId))));
+  event.parameters.push(new ethereum.EventParam("agentId", ethereum.Value.fromUnsignedBigInt(agentId)));
 
   return event;
 }
@@ -51,47 +51,37 @@ describe("ServiceRegistryL2 - RegisterInstance Handler", () => {
   });
 
   test("Should create TraderService when agent ID matches PREDICT_AGENT_ID", () => {
-    let event = createRegisterInstanceEvent(OPERATOR, SERVICE_ID_1, AGENT_INSTANCE, PREDICT_AGENT_ID);
+    let event = createRegisterInstanceEvent(OPERATOR, SERVICE_ID_1, AGENT_INSTANCE, BigInt.fromI32(PREDICT_AGENT_ID));
 
     handleRegisterInstance(event);
 
-    let serviceId = getServiceIdAsBytes(SERVICE_ID_1);
+    let serviceId = getServiceId(SERVICE_ID_1);
     assert.fieldEquals("TraderService", serviceId, "id", serviceId);
-  });
-
-  test("Should not create TraderService when agent ID does not match PREDICT_AGENT_ID", () => {
-    let wrongAgentId = 99;
-    let event = createRegisterInstanceEvent(OPERATOR, SERVICE_ID_1, AGENT_INSTANCE, wrongAgentId);
-
-    handleRegisterInstance(event);
-
-    let serviceId = getServiceIdAsBytes(SERVICE_ID_1);
-    assert.notInStore("TraderService", serviceId);
   });
 
   test("Should not create duplicate TraderService for same serviceId", () => {
     // Create first instance
-    let event1 = createRegisterInstanceEvent(OPERATOR, SERVICE_ID_1, AGENT_INSTANCE, PREDICT_AGENT_ID);
+    let event1 = createRegisterInstanceEvent(OPERATOR, SERVICE_ID_1, AGENT_INSTANCE, BigInt.fromI32(PREDICT_AGENT_ID));
     handleRegisterInstance(event1);
 
     // Try to create duplicate
-    let event2 = createRegisterInstanceEvent(OPERATOR, SERVICE_ID_1, AGENT_INSTANCE, PREDICT_AGENT_ID);
+    let event2 = createRegisterInstanceEvent(OPERATOR, SERVICE_ID_1, AGENT_INSTANCE, BigInt.fromI32(PREDICT_AGENT_ID));
     handleRegisterInstance(event2);
 
-    let serviceId = getServiceIdAsBytes(SERVICE_ID_1);
+    let serviceId = getServiceId(SERVICE_ID_1);
     assert.fieldEquals("TraderService", serviceId, "id", serviceId);
     // Test passes if no error occurs - duplicate prevention works
   });
 
   test("Should create multiple TraderServices for different serviceIds", () => {
-    let event1 = createRegisterInstanceEvent(OPERATOR, SERVICE_ID_1, AGENT_INSTANCE, PREDICT_AGENT_ID);
-    let event2 = createRegisterInstanceEvent(OPERATOR, SERVICE_ID_2, AGENT_INSTANCE, PREDICT_AGENT_ID);
+    let event1 = createRegisterInstanceEvent(OPERATOR, SERVICE_ID_1, AGENT_INSTANCE, BigInt.fromI32(PREDICT_AGENT_ID));
+    let event2 = createRegisterInstanceEvent(OPERATOR, SERVICE_ID_2, AGENT_INSTANCE, BigInt.fromI32(PREDICT_AGENT_ID));
 
     handleRegisterInstance(event1);
     handleRegisterInstance(event2);
 
-    assert.fieldEquals("TraderService", getServiceIdAsBytes(SERVICE_ID_1), "id", getServiceIdAsBytes(SERVICE_ID_1));
-    assert.fieldEquals("TraderService", getServiceIdAsBytes(SERVICE_ID_2), "id", getServiceIdAsBytes(SERVICE_ID_2));
+    assert.fieldEquals("TraderService", getServiceId(SERVICE_ID_1), "id", getServiceId(SERVICE_ID_1));
+    assert.fieldEquals("TraderService", getServiceId(SERVICE_ID_2), "id", getServiceId(SERVICE_ID_2));
   });
 });
 
@@ -102,7 +92,7 @@ describe("ServiceRegistryL2 - CreateMultisigWithAgents Handler", () => {
 
   test("Should create TraderAgent when TraderService exists", () => {
     // First, register the service
-    let registerEvent = createRegisterInstanceEvent(OPERATOR, SERVICE_ID_1, AGENT_INSTANCE, PREDICT_AGENT_ID);
+    let registerEvent = createRegisterInstanceEvent(OPERATOR, SERVICE_ID_1, AGENT_INSTANCE, BigInt.fromI32(PREDICT_AGENT_ID));
     handleRegisterInstance(registerEvent);
 
     // Then create multisig
@@ -126,7 +116,7 @@ describe("ServiceRegistryL2 - CreateMultisigWithAgents Handler", () => {
   });
 
   test("Should not create duplicate TraderAgent for same multisig", () => {
-    let registerEvent = createRegisterInstanceEvent(OPERATOR, SERVICE_ID_1, AGENT_INSTANCE, PREDICT_AGENT_ID);
+    let registerEvent = createRegisterInstanceEvent(OPERATOR, SERVICE_ID_1, AGENT_INSTANCE, BigInt.fromI32(PREDICT_AGENT_ID));
     handleRegisterInstance(registerEvent);
 
     let multisigEvent1 = createCreateMultisigWithAgentsEvent(SERVICE_ID_1, MULTISIG_1);
@@ -140,7 +130,7 @@ describe("ServiceRegistryL2 - CreateMultisigWithAgents Handler", () => {
   });
 
   test("Should increment totalTraderAgents in Global when TraderAgent is created", () => {
-    let registerEvent = createRegisterInstanceEvent(OPERATOR, SERVICE_ID_1, AGENT_INSTANCE, PREDICT_AGENT_ID);
+    let registerEvent = createRegisterInstanceEvent(OPERATOR, SERVICE_ID_1, AGENT_INSTANCE, BigInt.fromI32(PREDICT_AGENT_ID));
     handleRegisterInstance(registerEvent);
 
     let multisigEvent = createCreateMultisigWithAgentsEvent(SERVICE_ID_1, MULTISIG_1);
@@ -151,8 +141,8 @@ describe("ServiceRegistryL2 - CreateMultisigWithAgents Handler", () => {
 
   test("Should correctly track multiple TraderAgents in Global", () => {
     // Register two services
-    let registerEvent1 = createRegisterInstanceEvent(OPERATOR, SERVICE_ID_1, AGENT_INSTANCE, PREDICT_AGENT_ID);
-    let registerEvent2 = createRegisterInstanceEvent(OPERATOR, SERVICE_ID_2, AGENT_INSTANCE, PREDICT_AGENT_ID);
+    let registerEvent1 = createRegisterInstanceEvent(OPERATOR, SERVICE_ID_1, AGENT_INSTANCE, BigInt.fromI32(PREDICT_AGENT_ID));
+    let registerEvent2 = createRegisterInstanceEvent(OPERATOR, SERVICE_ID_2, AGENT_INSTANCE, BigInt.fromI32(PREDICT_AGENT_ID));
     handleRegisterInstance(registerEvent1);
     handleRegisterInstance(registerEvent2);
 
@@ -166,7 +156,7 @@ describe("ServiceRegistryL2 - CreateMultisigWithAgents Handler", () => {
   });
 
   test("Global should be initialized correctly on first TraderAgent creation", () => {
-    let registerEvent = createRegisterInstanceEvent(OPERATOR, SERVICE_ID_1, AGENT_INSTANCE, PREDICT_AGENT_ID);
+    let registerEvent = createRegisterInstanceEvent(OPERATOR, SERVICE_ID_1, AGENT_INSTANCE, BigInt.fromI32(PREDICT_AGENT_ID));
     handleRegisterInstance(registerEvent);
 
     let multisigEvent = createCreateMultisigWithAgentsEvent(SERVICE_ID_1, MULTISIG_1);
@@ -188,11 +178,11 @@ describe("ServiceRegistryL2 - Integration Tests", () => {
 
   test("Complete flow: Register service -> Create multisig -> Verify entities", () => {
     // Step 1: Register instance with correct agent ID
-    let registerEvent = createRegisterInstanceEvent(OPERATOR, SERVICE_ID_1, AGENT_INSTANCE, PREDICT_AGENT_ID);
+    let registerEvent = createRegisterInstanceEvent(OPERATOR, SERVICE_ID_1, AGENT_INSTANCE, BigInt.fromI32(PREDICT_AGENT_ID));
     handleRegisterInstance(registerEvent);
 
     // Verify TraderService created
-    let serviceId = getServiceIdAsBytes(SERVICE_ID_1);
+    let serviceId = getServiceId(SERVICE_ID_1);
     assert.fieldEquals("TraderService", serviceId, "id", serviceId);
 
     // Step 2: Create multisig
@@ -209,14 +199,14 @@ describe("ServiceRegistryL2 - Integration Tests", () => {
 
   test("Wrong agent ID flow should not create any entities", () => {
     let wrongAgentId = 99;
-    let registerEvent = createRegisterInstanceEvent(OPERATOR, SERVICE_ID_1, AGENT_INSTANCE, wrongAgentId);
+    let registerEvent = createRegisterInstanceEvent(OPERATOR, SERVICE_ID_1, AGENT_INSTANCE, BigInt.fromI32(wrongAgentId));
     handleRegisterInstance(registerEvent);
 
     let multisigEvent = createCreateMultisigWithAgentsEvent(SERVICE_ID_1, MULTISIG_1);
     handleCreateMultisigWithAgents(multisigEvent);
 
     // No TraderService or TraderAgent should exist
-    assert.notInStore("TraderService", getServiceIdAsBytes(SERVICE_ID_1));
+    assert.notInStore("TraderService", getServiceId(SERVICE_ID_1));
     assert.notInStore("TraderAgent", MULTISIG_1.toHexString());
   });
 });
