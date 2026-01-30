@@ -49,7 +49,11 @@ type LPTokenMetrics @entity(immutable: false) {
   # USD valuations
   poolLiquidityUsd: BigDecimal! # total pool value in USD
   protocolOwnedLiquidityUsd: BigDecimal! # treasury's share in USD
-  lastEthPriceUsd: BigDecimal! # ETH price used for calculation
+  # Price semantics vary by DEX type (field name kept for backward compatibility):
+  # - Uniswap V2 chains (Ethereum, Celo): ETH or CELO price from Chainlink oracle
+  # - Balancer V2 chains (Gnosis, Polygon, Arbitrum, Optimism, Base): OLAS spot price from pool
+  # TODO: Rename to 'lastPriceUsd' in next major version for semantic clarity
+  lastEthPriceUsd: BigDecimal!
 
   # Timestamps
   lastUpdated: BigInt!
