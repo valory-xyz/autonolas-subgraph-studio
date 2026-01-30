@@ -5,6 +5,8 @@ type Service @entity(immutable: false) {
   creationTimestamp: BigInt!
   configHash: Bytes
   creator: Creator
+  erc8004AgentId: Int
+  erc8004Multisig: Bytes
 }
 
 type AgentRegistration @entity(immutable: false) {

@@ -3,42 +3,70 @@
     "ServiceRegistry": {
       "address": "0x48b6af7B12C71f09e2fC8aF4855De4Ff54e775cA",
       "startBlock": 15178299
+    },
+    "IdentityRegistryBridger": {
+      "address": "",
+      "startBlock": 0
     }
   },
   "optimism": {
     "ServiceRegistryL2": {
       "address": "0x3d77596beb0f130a4415df3D2D8232B3d3D31e44",
       "startBlock": 116423039
+    },
+    "IdentityRegistryBridger": {
+      "address": "",
+      "startBlock": 0
     }
   },
   "base": {
     "ServiceRegistryL2": {
       "address": "0x3C1fF68f5aa342D296d4DEe4Bb1cACCA912D95fE",
       "startBlock": 10827380
+    },
+    "IdentityRegistryBridger": {
+      "address": "",
+      "startBlock": 0
     }
   },
   "celo": {
     "ServiceRegistryL2": {
       "address": "0xE3607b00E75f6405248323A9417ff6b39B244b50",
       "startBlock": 24205712
+    },
+    "IdentityRegistryBridger": {
+      "address": "",
+      "startBlock": 0
     }
   },
   "gnosis": {
     "ServiceRegistryL2": {
       "address": "0x9338b5153AE39BB89f50468E608eD9d764B755fD",
       "startBlock": 27871084
+    },
+    "IdentityRegistryBridger": {
+      "address": "",
+      "startBlock": 0
     }
   },
   "matic": {
     "ServiceRegistryL2": {
       "address": "0xE3607b00E75f6405248323A9417ff6b39B244b50",
       "startBlock": 41783952
+    },
+    "IdentityRegistryBridger": {
+      "address": "",
+      "startBlock": 0
     }
   },
   "arbitrum-one": {
     "ServiceRegistryL2": {
       "address": "0xE3607b00E75f6405248323A9417ff6b39B244b50",
       "startBlock": 174008819
+    },
+    "IdentityRegistryBridger": {
+      "address": "",
+      "startBlock": 0
     }
   }
 }

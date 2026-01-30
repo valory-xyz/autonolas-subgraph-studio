@@ -36,6 +36,28 @@ dataSources:
         - event: TerminateService(indexed uint256)
           handler: handleTerminateService
       file: ./src/mapping.ts
+  - kind: ethereum/contract
+    name: IdentityRegistryBridger
+    network: {{ network }}
+    source:
+      address: "{{ IdentityRegistryBridger.address }}"
+      abi: IdentityRegistryBridger
+      startBlock: {{ IdentityRegistryBridger.startBlock }}
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.6
+      language: wasm/assemblyscript
+      entities:
+        - Service
+      abis:
+        - name: IdentityRegistryBridger
+          file: ../../abis/IdentityRegistryBridge.json
+      eventHandlers:
+        - event: ServiceAgentLinked(indexed uint256,indexed uint256)
+          handler: handleServiceAgentLinked
+        - event: AgentMultisigUpdated(indexed uint256,indexed uint256,address,indexed address)
+          handler: handleAgentMultisigUpdated
+      file: ./src/mapping.ts
 
 templates:
   - kind: ethereum/contract
