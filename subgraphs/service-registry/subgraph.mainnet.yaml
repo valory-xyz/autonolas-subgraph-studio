@@ -41,11 +41,9 @@ dataSources:
     name: IdentityRegistryBridger
     network: mainnet
     source:
-      # Dummy address, to be updated
-      address: "0x48b6af7B12C71f09e2fC8aF4855De4Ff54e775cA"
+      address: "0x461A76074596F080dfba414532Ab51280611B8e6"
       abi: IdentityRegistryBridger
-      # To use the actual start block
-      startBlock: 15178299
+      startBlock: 24341433
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.6
