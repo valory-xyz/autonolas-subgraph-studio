@@ -37,6 +37,30 @@ dataSources:
         - event: TerminateService(indexed uint256)
           handler: handleTerminateService
       callHandlers: []
+  - kind: ethereum/contract
+    name: IdentityRegistryBridger
+    network: mainnet
+    source:
+      # Dummy address, to be updated
+      address: "0x48b6af7B12C71f09e2fC8aF4855De4Ff54e775cA"
+      abi: IdentityRegistryBridger
+      # To use the actual start block
+      startBlock: 15178299
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.6
+      language: wasm/assemblyscript
+      entities:
+        - Service
+      abis:
+        - name: IdentityRegistryBridger
+          file: ../../abis/IdentityRegistryBridge.json
+      eventHandlers:
+        - event: ServiceAgentLinked(indexed uint256,indexed uint256)
+          handler: handleServiceAgentLinked
+        - event: AgentMultisigUpdated(indexed uint256,indexed uint256,address,indexed address)
+          handler: handleAgentMultisigUpdated
+      file: ./src/mapping-eth.ts
 
 templates:
   - kind: ethereum/contract
