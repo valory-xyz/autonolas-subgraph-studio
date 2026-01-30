@@ -27,3 +27,27 @@ dataSources:
         - event: PoolBalanceChanged(indexed bytes32,indexed address,address[],int256[],uint256[])
           handler: handlePoolBalanceChanged
       file: ./src/mapping.ts
+  - kind: ethereum/contract
+    name: BPTToken
+    network: gnosis
+    source:
+      # BPT address derived from poolId first 20 bytes (from olas.network/olas-token)
+      # poolId: 0x79c872ed3acb3fc5770dd8a0cd9cd5db3b3ac985000200000000000000000067
+      address: "0x79c872ed3acb3fc5770dd8a0cd9cd5db3b3ac985"
+      abi: ERC20
+      startBlock: 28500000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - LPTransfer
+        - TreasuryHoldings
+        - LPTokenMetrics
+      abis:
+        - name: ERC20
+          file: ../../abis/ERC20Detailed.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleLPTransfer
+      file: ./src/mapping.ts

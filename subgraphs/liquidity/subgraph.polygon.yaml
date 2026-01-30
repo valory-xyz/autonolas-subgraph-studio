@@ -27,3 +27,27 @@ dataSources:
         - event: PoolBalanceChanged(indexed bytes32,indexed address,address[],int256[],uint256[])
           handler: handlePoolBalanceChanged
       file: ./src/mapping.ts
+  - kind: ethereum/contract
+    name: BPTToken
+    network: matic
+    source:
+      # BPT address derived from poolId first 20 bytes (from olas.network/olas-token)
+      # poolId: 0x62309056c759c36879cde93693e7903bf415e4bc000200000000000000000d5f
+      address: "0x62309056c759c36879cde93693e7903bf415e4bc"
+      abi: ERC20
+      startBlock: 45000000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - LPTransfer
+        - TreasuryHoldings
+        - LPTokenMetrics
+      abis:
+        - name: ERC20
+          file: ../../abis/ERC20Detailed.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleLPTransfer
+      file: ./src/mapping.ts
