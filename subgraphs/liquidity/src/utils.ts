@@ -17,9 +17,23 @@ export const PRICE_DECIMALS = CHAINLINK_DECIMALS + ETH_DECIMALS; // 26
 export const ZERO_ADDRESS = Address.fromString(
   '0x0000000000000000000000000000000000000000'
 );
-export const TREASURY_ADDRESS = Address.fromString(
-  '0xa0DA53447C0f6C4987964d8463da7e6628B30f82'
-);
+
+// Protocol-Owned Liquidity (POL) addresses per chain
+// Source: Dune queries (https://dune.com/queries/5383248)
+//
+// Chains with on-chain POL holders (trackable by this subgraph):
+// - Ethereum: Treasury contract holds LP tokens
+// - Gnosis: Fee Collector holds BPT tokens on Gnosis
+// - Celo: Protocol holder holds LP tokens on Celo
+//
+// Chains with bridged POL (NOT trackable - POL held on Ethereum mainnet):
+// - Polygon: Bridged LP on ETH 0xf9825A563222f9eFC81e369311DAdb13D68e60a4
+// - Arbitrum: Bridged LP on ETH 0x36B203Cb3086269f005a4b987772452243c0767f
+// - Optimism: Bridged LP on ETH 0x2FD007a534eB7527b535a1DF35aba6bD2a8b660F
+// - Base: Bridged LP on ETH 0x9946d6FD1210D85EC613Ca956F142D911C97a074
+export const POL_ADDRESS_ETHEREUM = '0xa0DA53447C0f6C4987964d8463da7e6628B30f82';
+export const POL_ADDRESS_GNOSIS = '0xce88686553686DA562CE7Cea497CE749DA109f9F';
+export const POL_ADDRESS_CELO = '0x796Dff6D74F3E27060B71255Fe517BFb23C93eed';
 
 export const SECONDS_PER_DAY = BigInt.fromI32(86400);
 export const BASIS_POINTS = BigInt.fromI32(10000); // 100% = 10000 basis points
@@ -40,10 +54,41 @@ export function isZeroAddress(address: Address): boolean {
 }
 
 /**
- * Check if an address is the treasury address
+ * Get the POL (Protocol-Owned Liquidity) address for the current network.
+ * Returns zero address if no POL address is configured for the network.
+ *
+ * Note: Polygon/Arbitrum/Optimism/Base POL is held as bridged LP on Ethereum,
+ * so those L2 subgraphs cannot track POL directly (returns zero address).
+ */
+export function getPolAddress(): Address {
+  const network = dataSource.network();
+  if (network == 'mainnet') {
+    return Address.fromString(POL_ADDRESS_ETHEREUM);
+  }
+  if (network == 'gnosis' || network == 'xdai') {
+    return Address.fromString(POL_ADDRESS_GNOSIS);
+  }
+  if (network == 'celo') {
+    return Address.fromString(POL_ADDRESS_CELO);
+  }
+  // Polygon/Arbitrum/Optimism/Base - POL is bridged to Ethereum, not trackable here
+  return ZERO_ADDRESS;
+}
+
+/**
+ * Check if an address is the POL (Protocol-Owned Liquidity) address.
+ *
+ * - Ethereum: Treasury contract (0xa0DA53447C0f6C4987964d8463da7e6628B30f82)
+ * - Gnosis: Fee Collector (0xce88686553686DA562CE7Cea497CE749DA109f9F)
+ * - Celo: Protocol Holder (0x796Dff6D74F3E27060B71255Fe517BFb23C93eed)
+ * - Polygon/Arbitrum/Optimism/Base: POL bridged to Ethereum (returns false)
  */
 export function isTreasuryAddress(address: Address): boolean {
-  return address.equals(TREASURY_ADDRESS);
+  const polAddress = getPolAddress();
+  if (polAddress.equals(ZERO_ADDRESS)) {
+    return false;
+  }
+  return address.equals(polAddress);
 }
 
 /**
@@ -93,12 +138,14 @@ export function getOrCreateLPTokenMetrics(): LPTokenMetrics {
 }
 
 /**
- * Get or create treasury holdings tracker
+ * Get or create treasury holdings tracker.
+ * Uses the POL address for the current network.
  */
 export function getOrCreateTreasuryHoldings(): TreasuryHoldings {
-  let treasury = TreasuryHoldings.load(TREASURY_ADDRESS);
+  const polAddress = getPolAddress();
+  let treasury = TreasuryHoldings.load(polAddress);
   if (treasury == null) {
-    treasury = new TreasuryHoldings(TREASURY_ADDRESS);
+    treasury = new TreasuryHoldings(polAddress);
     treasury.currentBalance = BigInt.zero();
     treasury.totalAcquired = BigInt.zero();
     treasury.totalSold = BigInt.zero();
