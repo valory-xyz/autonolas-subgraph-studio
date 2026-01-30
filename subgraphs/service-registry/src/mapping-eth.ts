@@ -5,10 +5,7 @@ import {
   RegisterInstance,
   TerminateService,
 } from '../generated/ServiceRegistry/ServiceRegistry';
-import {
-  ServiceAgentLinked,
-  AgentMultisigUpdated,
-} from '../generated/IdentityRegistryBridger/IdentityRegistryBridger';
+import { ServiceAgentLinked } from '../generated/IdentityRegistryBridger/IdentityRegistryBridger';
 import {
   ExecutionSuccess,
   ExecutionFromModuleSuccess,

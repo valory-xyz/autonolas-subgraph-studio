@@ -9,10 +9,7 @@ import {
   ExecutionSuccess,
   ExecutionFromModuleSuccess,
 } from '../generated/templates/GnosisSafe/GnosisSafe';
-import {
-  ServiceAgentLinked,
-  AgentMultisigUpdated,
-} from '../generated/IdentityRegistryBridger/IdentityRegistryBridger';
+import { ServiceAgentLinked } from '../generated/IdentityRegistryBridger/IdentityRegistryBridger';
 import { Multisig, Service } from '../generated/schema';
 import { GnosisSafe as GnosisSafeTemplate } from '../generated/templates';
 import {
