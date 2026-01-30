@@ -235,16 +235,3 @@ export function handleServiceAgentLinked(event: ServiceAgentLinked): void {
     ]);
   }
 }
-
-export function handleAgentMultisigUpdated(event: AgentMultisigUpdated): void {
-  let service = Service.load(event.params.serviceId.toString());
-  if (service != null) {
-    service.erc8004AgentId = event.params.agentId.toI32();
-    service.erc8004Multisig = event.params.newMultisig;
-    service.save();
-  } else {
-    log.warning('Service {} not found for AgentMultisigUpdated event', [
-      event.params.serviceId.toString(),
-    ]);
-  }
-}
