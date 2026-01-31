@@ -32,6 +32,8 @@ type QuestionIdToConditionId @entity(immutable: true) {
 type Question @entity(immutable: true) {
   id: Bytes! # conditionId
   questionId: Bytes! # bytes32
+  isNegRisk: Boolean!
+  marketId: Bytes # The grouping ID for Neg Risk
   metadata: MarketMetadata!
   bets: [Bet!]! @derivedFrom(field: "question")
   resolution: QuestionResolution @derivedFrom(field: "question")
@@ -86,7 +88,7 @@ type QuestionResolution @entity (immutable: true) {
 type MarketParticipant @entity (immutable: false) {
   id: ID! # agentAddress_conditionId
   traderAgent: TraderAgent!
-  question: Question!
+  question: Question
   totalBets: Int!
   totalTraded: BigInt!
   totalTradedSettled: BigInt!

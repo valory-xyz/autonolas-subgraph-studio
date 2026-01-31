@@ -83,9 +83,64 @@ dataSources:
           file: ../../../abis/OptimisticOracleV3.json
       eventHandlers:
         - event: QuestionInitialized(indexed bytes32,indexed uint256,indexed address,bytes,address,uint256,uint256)
-          handler: handleQuestionInitialized
+          handler: handleOOQuestionInitialized
         - event: QuestionResolved(indexed bytes32,indexed int256,uint256[])
-          handler: handleQuestionResolved
+          handler: handleOOQuestionResolved
+  - kind: ethereum/contract
+    name: UmaCtfAdapter
+    network: matic
+    source:
+      address: "0x157Ce2d672854c848c9b79C49a8Cc6cc89176a49"
+      abi: UmaCtfAdapter
+      startBlock: 78425180
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      file: ./src/uma-mapping.ts
+      entities:
+        - MarketMetadata
+        - Question
+        - QuestionIdToConditionId
+        - QuestionResolution
+        - TraderAgent
+        - MarketParticipant
+        - DailyProfitStatistic
+        - Global
+      abis:
+        - name: UmaCtfAdapter
+          file: ../../../abis/UmaCtfAdapter.json
+      eventHandlers:
+        - event: QuestionInitialized(indexed bytes32,indexed uint256,indexed address,bytes,address,uint256,uint256)
+          handler: handleUmaQuestionInitialized
+        - event: QuestionResolved(indexed bytes32,indexed int256,uint256[])
+          handler: handleUmaQuestionResolved
+  - kind: ethereum/contract
+    name: NegRiskAdapter
+    network: matic
+    source:
+      address: "0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296"
+      abi: NegRiskAdapter
+      startBlock: 78425180
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      file: ./src/neg-risk-mapping.ts
+      entities:
+        - Question
+        - MarketMetadata
+        - QuestionResolution
+      abis:
+        - name: NegRiskAdapter
+          file: ../../../abis/NegRiskAdapter.json
+      eventHandlers:
+        - event: QuestionPrepared(indexed bytes32,indexed bytes32,uint256,bytes)
+          handler: handleQuestionPrepared
+        - event: OutcomeReported(indexed bytes32,indexed bytes32,bool)
+          handler: handleOutcomeReported
+        - event: PayoutRedemption(indexed address,indexed bytes32,uint256[],uint256)
+          handler: handleNegRiskPayoutRedemption
   - kind: ethereum/contract
     name: CTFExchange
     network: matic
