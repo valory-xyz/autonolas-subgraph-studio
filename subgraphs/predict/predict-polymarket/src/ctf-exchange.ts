@@ -3,17 +3,21 @@ import {
   OrderFilled as OrderFilledEvent,
   TokenRegistered as TokenRegisteredEvent,
 } from "../generated/CTFExchange/CTFExchange";
-import {
-  Bet,
-  Question,
-  TokenRegistry,
-  TraderAgent,
-} from "../generated/schema";
+import { Bet, Question, TokenRegistry, TraderAgent } from "../generated/schema";
 import { getDailyProfitStatistic, processTradeActivity } from "./utils";
 
 export function handleTokenRegistered(event: TokenRegisteredEvent): void {
   // Register Outcome 0 (Usually "No")
   let token0Id = Bytes.fromByteArray(Bytes.fromBigInt(event.params.token0));
+
+  // Check if we've already registered these tokens
+  // The Polymarket CTFExchange uses a "bidirectional" registry logic
+  // and registers two events with swapped tokenIds. We store only first pair.
+  let existing = TokenRegistry.load(token0Id);
+  if (existing != null) {
+    return;
+  }
+
   let registry0 = new TokenRegistry(token0Id);
   registry0.tokenId = event.params.token0;
   registry0.conditionId = event.params.conditionId;
@@ -44,20 +48,28 @@ export function handleOrderFilled(event: OrderFilledEvent): void {
   let isBuying = event.params.makerAssetId.isZero();
 
   // The amount of USDC (money) involved in the trade
-  let usdcAmount = isBuying ? event.params.makerAmountFilled : event.params.takerAmountFilled;
+  let usdcAmount = isBuying
+    ? event.params.makerAmountFilled
+    : event.params.takerAmountFilled;
 
   // The amount of Shares (tokens) involved in the trade
-  let sharesAmount = isBuying ? event.params.takerAmountFilled : event.params.makerAmountFilled;
+  let sharesAmount = isBuying
+    ? event.params.takerAmountFilled
+    : event.params.makerAmountFilled;
 
   // The token ID of the outcome being traded
-  let outcomeTokenId = isBuying ? event.params.takerAssetId : event.params.makerAssetId;
+  let outcomeTokenId = isBuying
+    ? event.params.takerAssetId
+    : event.params.makerAssetId;
 
   // 3. Lookup the outcome index from our Registry
-  let tokenRegistry = TokenRegistry.load(Bytes.fromByteArray(Bytes.fromBigInt(outcomeTokenId)));
+  let tokenRegistry = TokenRegistry.load(
+    Bytes.fromByteArray(Bytes.fromBigInt(outcomeTokenId)),
+  );
   if (tokenRegistry === null) {
     log.warning("TokenRegistry missing for token {} in tx {}", [
       outcomeTokenId.toString(),
-      event.transaction.hash.toHexString()
+      event.transaction.hash.toHexString(),
     ]);
     return;
   }
@@ -69,7 +81,9 @@ export function handleOrderFilled(event: OrderFilledEvent): void {
   dailyStat.save();
 
   // 5. Initialize Bet
-  let betId = event.transaction.hash.concat(Bytes.fromI32(event.logIndex.toI32()));
+  let betId = event.transaction.hash.concat(
+    Bytes.fromI32(event.logIndex.toI32()),
+  );
   let bet = new Bet(betId);
   bet.bettor = agent.id;
   bet.outcomeIndex = tokenRegistry.outcomeIndex;
@@ -95,6 +109,6 @@ export function handleOrderFilled(event: OrderFilledEvent): void {
     usdcAmount,
     event.block.timestamp,
     event.block.number,
-    event.transaction.hash
+    event.transaction.hash,
   );
 }

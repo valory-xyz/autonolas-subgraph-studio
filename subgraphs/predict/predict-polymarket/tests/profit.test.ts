@@ -1,7 +1,7 @@
 import { assert, describe, test, clearStore, beforeEach } from "matchstick-as/assembly/index";
 import { BigInt, Bytes } from "@graphprotocol/graph-ts";
 import { handleOrderFilled, handleTokenRegistered } from "../src/ctf-exchange";
-import { handleQuestionResolved } from "../src/uma-mapping";
+import { handleOOQuestionResolved } from "../src/uma-mapping";
 import { handlePayoutRedemption } from "../src/conditional-tokens";
 import { createOrderFilledEvent, createQuestionResolvedEvent, createPayoutRedemptionEvent, createTokenRegisteredEvent } from "./profit";
 import { TraderAgent, Question, MarketMetadata } from "../generated/schema";
@@ -48,6 +48,7 @@ function setupMarket(conditionId: Bytes, questionId: Bytes, token0: BigInt, toke
   let question = new Question(conditionId);
   question.questionId = questionId;
   question.metadata = metadata.id;
+  question.isNegRisk = false;
   question.blockNumber = TestConstants.BLOCK_NUMBER_START;
   question.blockTimestamp = START_TS;
   question.transactionHash = TestBytes.DUMMY_HASH;
@@ -100,7 +101,7 @@ describe("Profit Chart Integration", () => {
     let day3TS = START_TS.plus(BigInt.fromI32(DAY * 2));
     let day3TSNormalized = NORMALIZED_TS.plus(BigInt.fromI32(DAY * 2));
     let payouts = [BigInt.fromI32(0), BigInt.fromString("1000000000000000000")]; // Outcome 1 wins
-    handleQuestionResolved(createQuestionResolvedEvent(QUESTION_LOST, payouts, BigInt.fromI32(1), day3TS));
+    handleOOQuestionResolved(createQuestionResolvedEvent(QUESTION_LOST, payouts, BigInt.fromI32(1), day3TS));
 
     let day3Id = AGENT.toHexString() + "_" + day3TSNormalized.toString();
     assert.fieldEquals("DailyProfitStatistic", day3Id, "dailyProfit", "-1000");
@@ -125,7 +126,7 @@ describe("Profit Chart Integration", () => {
     let day3TS = START_TS.plus(BigInt.fromI32(DAY * 2));
     let day3TSNormalized = NORMALIZED_TS.plus(BigInt.fromI32(DAY * 2));
     let payouts = [BigInt.fromString("1000000000000000000"), BigInt.fromI32(0)]; // Outcome 0 wins
-    handleQuestionResolved(createQuestionResolvedEvent(QUESTION_WON, payouts, BigInt.fromI32(0), day3TS));
+    handleOOQuestionResolved(createQuestionResolvedEvent(QUESTION_WON, payouts, BigInt.fromI32(0), day3TS));
 
     let day3Id = AGENT.toHexString() + "_" + day3TSNormalized.toString();
     assert.notInStore("DailyProfitStatistic", day3Id); // no entity in store, because answer was correct
@@ -180,12 +181,12 @@ describe("Profit Chart Integration", () => {
     // Market A resolves to 0.
     // Effect: Bet on Outcome 1 is a LOSS (500). Bet on Outcome 0 is PENDING.
     let payoutsA = [BigInt.fromString("1000000000000000000"), BigInt.fromI32(0)];
-    handleQuestionResolved(createQuestionResolvedEvent(QUESTION_A, payoutsA, BigInt.fromI32(0), day3TS));
+    handleOOQuestionResolved(createQuestionResolvedEvent(QUESTION_A, payoutsA, BigInt.fromI32(0), day3TS));
 
     // Market B resolves to 1.
     // Effect: Bet on Outcome 0 is a LOSS (1000).
     let payoutsB = [BigInt.fromI32(0), BigInt.fromString("1000000000000000000")];
-    handleQuestionResolved(createQuestionResolvedEvent(QUESTION_B, payoutsB, BigInt.fromI32(1), day3TS));
+    handleOOQuestionResolved(createQuestionResolvedEvent(QUESTION_B, payoutsB, BigInt.fromI32(1), day3TS));
 
     // Daily Profit Day 3: -(500 from A) - (1000 from B) = -1500
     assert.fieldEquals("DailyProfitStatistic", day3Id, "dailyProfit", "-1500");
@@ -221,7 +222,7 @@ describe("Profit Chart Integration", () => {
     // Resolve market (this triggers the loop over all 3 bets)
     let day3TS = START_TS.plus(BigInt.fromI32(DAY * 2));
     let payouts = [BigInt.fromI32(0), BigInt.fromString("1000000000000000000")];
-    handleQuestionResolved(createQuestionResolvedEvent(QUESTION_LOST, payouts, BigInt.fromI32(1), day3TS));
+    handleOOQuestionResolved(createQuestionResolvedEvent(QUESTION_LOST, payouts, BigInt.fromI32(1), day3TS));
 
     let day3Id = AGENT.toHexString() + "_" + NORMALIZED_TS.plus(BigInt.fromI32(DAY * 2)).toString();
 
@@ -240,8 +241,8 @@ describe("Profit Chart Integration", () => {
 
     // Both markets resolve to Outcome 1 (both bets on Outcome 0 lose)
     let payouts = [BigInt.fromI32(0), BigInt.fromString("1000000000000000000")];
-    handleQuestionResolved(createQuestionResolvedEvent(QUESTION_WON, payouts, BigInt.fromI32(1), day3TS));
-    handleQuestionResolved(createQuestionResolvedEvent(QUESTION_LOST, payouts, BigInt.fromI32(1), day3TS));
+    handleOOQuestionResolved(createQuestionResolvedEvent(QUESTION_WON, payouts, BigInt.fromI32(1), day3TS));
+    handleOOQuestionResolved(createQuestionResolvedEvent(QUESTION_LOST, payouts, BigInt.fromI32(1), day3TS));
 
     let day3Id = AGENT.toHexString() + "_" + NORMALIZED_TS.plus(BigInt.fromI32(DAY * 2)).toString();
 
@@ -278,7 +279,7 @@ describe("Profit Chart Integration", () => {
     // Day 3: Market resolves with different answer
     let day3TS = START_TS.plus(BigInt.fromI32(DAY * 2));
     let payouts = [BigInt.fromI32(0), BigInt.fromString("1000000000000000000")];
-    handleQuestionResolved(createQuestionResolvedEvent(QUESTION_LOST, payouts, BigInt.fromI32(1), day3TS));
+    handleOOQuestionResolved(createQuestionResolvedEvent(QUESTION_LOST, payouts, BigInt.fromI32(1), day3TS));
 
     // Check TraderAgent: settled totals now updated
     assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalTradedSettled", "1000");
@@ -316,7 +317,7 @@ describe("Profit Chart Integration", () => {
     // Day 3: Market resolves with correct answer
     let day3TS = START_TS.plus(BigInt.fromI32(DAY * 2));
     let payouts = [BigInt.fromString("1000000000000000000"), BigInt.fromI32(0)];
-    handleQuestionResolved(createQuestionResolvedEvent(QUESTION_WON, payouts, BigInt.fromI32(0), day3TS));
+    handleOOQuestionResolved(createQuestionResolvedEvent(QUESTION_WON, payouts, BigInt.fromI32(0), day3TS));
 
     // Check settled totals still zero (waiting for payout)
     assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalTradedSettled", "0");
@@ -354,7 +355,7 @@ describe("Profit Chart Integration", () => {
     // Market resolves to Outcome 0 (first bet wins, second bet loses)
     let day3TS = START_TS.plus(BigInt.fromI32(DAY * 2));
     let payouts = [BigInt.fromString("1000000000000000000"), BigInt.fromI32(0)];
-    handleQuestionResolved(createQuestionResolvedEvent(QUESTION_WON, payouts, BigInt.fromI32(0), day3TS));
+    handleOOQuestionResolved(createQuestionResolvedEvent(QUESTION_WON, payouts, BigInt.fromI32(0), day3TS));
 
     // Check: only losing bet moved to settled (300)
     assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalTradedSettled", "300");
@@ -391,7 +392,7 @@ describe("Profit Chart Integration", () => {
     // Day 3: Market LOST resolves (bet loses)
     let day3TS = START_TS.plus(BigInt.fromI32(DAY * 2));
     let payouts = [BigInt.fromI32(0), BigInt.fromString("1000000000000000000")];
-    handleQuestionResolved(createQuestionResolvedEvent(QUESTION_LOST, payouts, BigInt.fromI32(1), day3TS));
+    handleOOQuestionResolved(createQuestionResolvedEvent(QUESTION_LOST, payouts, BigInt.fromI32(1), day3TS));
 
     // Only MARKET_LOST bet settled
     assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalTradedSettled", "2000");
@@ -399,7 +400,7 @@ describe("Profit Chart Integration", () => {
     // Day 5: Market WON resolves (bet wins)
     let day5TS = START_TS.plus(BigInt.fromI32(DAY * 4));
     let payoutsWin = [BigInt.fromString("1000000000000000000"), BigInt.fromI32(0)];
-    handleQuestionResolved(createQuestionResolvedEvent(QUESTION_WON, payoutsWin, BigInt.fromI32(0), day5TS));
+    handleOOQuestionResolved(createQuestionResolvedEvent(QUESTION_WON, payoutsWin, BigInt.fromI32(0), day5TS));
 
     // Still only MARKET_LOST settled (WON bet waits for payout)
     assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalTradedSettled", "2000");
@@ -449,7 +450,7 @@ describe("Profit Chart Integration", () => {
     // Market resolves (both bets lose)
     let day3TS = START_TS.plus(BigInt.fromI32(DAY * 2));
     let payouts = [BigInt.fromI32(0), BigInt.fromString("1000000000000000000")];
-    handleQuestionResolved(createQuestionResolvedEvent(QUESTION_LOST, payouts, BigInt.fromI32(1), day3TS));
+    handleOOQuestionResolved(createQuestionResolvedEvent(QUESTION_LOST, payouts, BigInt.fromI32(1), day3TS));
 
     // Check Global settled totals aggregate from both agents
     assert.fieldEquals("Global", "", "totalTradedSettled", "1500");
@@ -477,7 +478,7 @@ describe("Profit Chart Integration", () => {
     let day3TSNormalized = NORMALIZED_TS.plus(BigInt.fromI32(DAY * 2));
     let payouts = [BigInt.fromString("500000000000000000"), BigInt.fromString("500000000000000000")]; 
     
-    handleQuestionResolved(createQuestionResolvedEvent(QUESTION_LOST, payouts, BigInt.fromI32(-1), day3TS));
+    handleOOQuestionResolved(createQuestionResolvedEvent(QUESTION_LOST, payouts, BigInt.fromI32(-1), day3TS));
 
     // ASSERTION 1: On Day 3, no profit entity should exist for this agent 
     // because winningIndex was -1 and we skipped settlement logic.
@@ -591,7 +592,7 @@ describe("Profit Chart Integration", () => {
     // === PHASE 2: MARKET A RESOLVES (Outcome 0 wins) ===
     let day3TS = START_TS.plus(BigInt.fromI32(DAY * 2));
     let payoutsA = [BigInt.fromString("1000000000000000000"), BigInt.fromI32(0)];
-    handleQuestionResolved(createQuestionResolvedEvent(QUESTION_A, payoutsA, BigInt.fromI32(0), day3TS));
+    handleOOQuestionResolved(createQuestionResolvedEvent(QUESTION_A, payoutsA, BigInt.fromI32(0), day3TS));
 
     // Agent1's bet on Market A was correct - NOT settled yet (waiting for payout)
     assert.fieldEquals("TraderAgent", AGENT1.toHexString(), "totalTradedSettled", "0");
@@ -610,7 +611,7 @@ describe("Profit Chart Integration", () => {
     // === PHASE 3: MARKET B RESOLVES (Outcome 1 wins) ===
     let day5TS = START_TS.plus(BigInt.fromI32(DAY * 4));
     let payoutsB = [BigInt.fromI32(0), BigInt.fromString("1000000000000000000")];
-    handleQuestionResolved(createQuestionResolvedEvent(QUESTION_B, payoutsB, BigInt.fromI32(1), day5TS));
+    handleOOQuestionResolved(createQuestionResolvedEvent(QUESTION_B, payoutsB, BigInt.fromI32(1), day5TS));
 
     // Agent2's bet on Market B was incorrect - now settled
     assert.fieldEquals("TraderAgent", AGENT2.toHexString(), "totalTradedSettled", "2500"); // 500 + 2000
@@ -644,5 +645,226 @@ describe("Profit Chart Integration", () => {
 
     // Verify Global settled equals Global total (all markets settled)
     assert.fieldEquals("Global", "", "totalTraded", "3500");
+  });
+
+  /**
+   * Test: NegRisk market basic flow
+   * - Day 1: Agent places bet on NegRisk market
+   * - Day 3: Market resolves (agent loses)
+   * - Verify daily profit recorded correctly
+   */
+  test("NegRisk: Basic loss flow records negative profit on resolution", () => {
+    setupMarket(CONDITION_LOST, QUESTION_LOST, TOKEN_0_LOST, TOKEN_1_LOST);
+
+    // Mark the question as NegRisk
+    let question = Question.load(CONDITION_LOST);
+    if (question != null) {
+      question.isNegRisk = true;
+      question.save();
+    }
+
+    // Day 1: Place bet on Outcome 0
+    handleOrderFilled(createOrderFilledEvent(AGENT, BigInt.fromI32(1000), BigInt.fromI32(2000), TOKEN_0_LOST, START_TS));
+
+    // Day 3: Market resolves (Outcome 1 wins)
+    let day3TS = START_TS.plus(BigInt.fromI32(DAY * 2));
+    let day3TSNormalized = NORMALIZED_TS.plus(BigInt.fromI32(DAY * 2));
+    let payouts = [BigInt.fromI32(0), BigInt.fromString("1000000000000000000")];
+    handleOOQuestionResolved(createQuestionResolvedEvent(QUESTION_LOST, payouts, BigInt.fromI32(1), day3TS));
+
+    let day3Id = AGENT.toHexString() + "_" + day3TSNormalized.toString();
+    assert.fieldEquals("DailyProfitStatistic", day3Id, "dailyProfit", "-1000");
+  });
+
+  /**
+   * Test: NegRisk market winning flow
+   * - Day 1: Agent places bet on NegRisk market
+   * - Day 3: Market resolves (agent wins)
+   * - Day 7: Agent redeems payout
+   * - Verify profit recorded on payout day
+   */
+  test("NegRisk: Winning bet records profit on payout redemption", () => {
+    setupMarket(CONDITION_WON, QUESTION_WON, TOKEN_0_WON, TOKEN_1_WON);
+
+    // Mark the question as NegRisk
+    let question = Question.load(CONDITION_WON);
+    if (question != null) {
+      question.isNegRisk = true;
+      question.save();
+    }
+
+    // Day 1: Place bet on Outcome 0
+    handleOrderFilled(createOrderFilledEvent(AGENT, BigInt.fromI32(1000), BigInt.fromI32(2000), TOKEN_0_WON, START_TS));
+
+    // Day 3: Market resolves (Outcome 0 wins)
+    let day3TS = START_TS.plus(BigInt.fromI32(DAY * 2));
+    let payouts = [BigInt.fromString("1000000000000000000"), BigInt.fromI32(0)];
+    handleOOQuestionResolved(createQuestionResolvedEvent(QUESTION_WON, payouts, BigInt.fromI32(0), day3TS));
+
+    // Day 7: Redeem payout
+    let day7TS = START_TS.plus(BigInt.fromI32(DAY * 6));
+    let day7TSNormalized = NORMALIZED_TS.plus(BigInt.fromI32(DAY * 6));
+    handlePayoutRedemption(createPayoutRedemptionEvent(AGENT, BigInt.fromI32(2500), CONDITION_WON, day7TS));
+
+    let day7Id = AGENT.toHexString() + "_" + day7TSNormalized.toString();
+    // Profit = 2500 - 1000 = 1500
+    assert.fieldEquals("DailyProfitStatistic", day7Id, "dailyProfit", "1500");
+  });
+
+  /**
+   * Test: Mixed UMA and NegRisk markets
+   * - Agent bets on both UMA and NegRisk markets
+   * - Markets resolve on same day
+   * - Verify profits aggregate correctly
+   */
+  test("Mixed markets: UMA and NegRisk profits aggregate on same day", () => {
+    let UMA_MARKET = CONDITION_LOST;
+    let NEGRISK_MARKET = CONDITION_WON;
+    let UMA_QUESTION = QUESTION_LOST;
+    let NEGRISK_QUESTION = QUESTION_WON;
+
+    setupMarket(UMA_MARKET, UMA_QUESTION, TOKEN_0_LOST, TOKEN_1_LOST);
+    setupMarket(NEGRISK_MARKET, NEGRISK_QUESTION, TOKEN_0_WON, TOKEN_1_WON);
+
+    // Mark NegRisk market
+    let negRiskQuestion = Question.load(NEGRISK_MARKET);
+    if (negRiskQuestion != null) {
+      negRiskQuestion.isNegRisk = true;
+      negRiskQuestion.save();
+    }
+
+    // Day 1: Place bets
+    handleOrderFilled(createOrderFilledEvent(AGENT, BigInt.fromI32(500), BigInt.fromI32(1000), TOKEN_0_LOST, START_TS, 0)); // UMA bet
+    handleOrderFilled(createOrderFilledEvent(AGENT, BigInt.fromI32(800), BigInt.fromI32(1600), TOKEN_0_WON, START_TS, 1)); // NegRisk bet
+
+    // Day 3: Both markets resolve (both lose)
+    let day3TS = START_TS.plus(BigInt.fromI32(DAY * 2));
+    let day3TSNormalized = NORMALIZED_TS.plus(BigInt.fromI32(DAY * 2));
+    let payouts = [BigInt.fromI32(0), BigInt.fromString("1000000000000000000")];
+
+    handleOOQuestionResolved(createQuestionResolvedEvent(UMA_QUESTION, payouts, BigInt.fromI32(1), day3TS));
+    handleOOQuestionResolved(createQuestionResolvedEvent(NEGRISK_QUESTION, payouts, BigInt.fromI32(1), day3TS));
+
+    let day3Id = AGENT.toHexString() + "_" + day3TSNormalized.toString();
+    // Both bets lost: -500 - 800 = -1300
+    assert.fieldEquals("DailyProfitStatistic", day3Id, "dailyProfit", "-1300");
+  });
+
+  /**
+   * Test: NegRisk market with marketId grouping
+   * - Multiple questions under same marketId
+   * - Agent bets on multiple questions
+   * - Verify individual question tracking
+   */
+  test("NegRisk: Multiple questions with same marketId tracked separately", () => {
+    let MARKET_ID = Bytes.fromHexString("0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
+    let QUESTION_1 = TestBytes.QUESTION_ID_1;
+    let QUESTION_2 = TestBytes.QUESTION_ID_2;
+    let CONDITION_1 = TestBytes.CONDITION_ID_1;
+    let CONDITION_2 = TestBytes.CONDITION_ID_2;
+    let TOKEN_Q1_0 = BigInt.fromI32(300);
+    let TOKEN_Q1_1 = BigInt.fromI32(301);
+    let TOKEN_Q2_0 = BigInt.fromI32(400);
+    let TOKEN_Q2_1 = BigInt.fromI32(401);
+
+    setupMarket(CONDITION_1, QUESTION_1, TOKEN_Q1_0, TOKEN_Q1_1);
+    setupMarket(CONDITION_2, QUESTION_2, TOKEN_Q2_0, TOKEN_Q2_1);
+
+    // Set both as NegRisk with same marketId
+    let question1 = Question.load(CONDITION_1);
+    if (question1 != null) {
+      question1.isNegRisk = true;
+      question1.marketId = MARKET_ID;
+      question1.save();
+    }
+
+    let question2 = Question.load(CONDITION_2);
+    if (question2 != null) {
+      question2.isNegRisk = true;
+      question2.marketId = MARKET_ID;
+      question2.save();
+    }
+
+    // Day 1: Bet on both questions
+    handleOrderFilled(createOrderFilledEvent(AGENT, BigInt.fromI32(600), BigInt.fromI32(1200), TOKEN_Q1_0, START_TS, 0));
+    handleOrderFilled(createOrderFilledEvent(AGENT, BigInt.fromI32(400), BigInt.fromI32(800), TOKEN_Q2_0, START_TS, 1));
+
+    // Day 3: Question 1 loses, Question 2 wins
+    let day3TS = START_TS.plus(BigInt.fromI32(DAY * 2));
+    let day3TSNormalized = NORMALIZED_TS.plus(BigInt.fromI32(DAY * 2));
+
+    let payoutsLose = [BigInt.fromI32(0), BigInt.fromString("1000000000000000000")];
+    let payoutsWin = [BigInt.fromString("1000000000000000000"), BigInt.fromI32(0)];
+
+    handleOOQuestionResolved(createQuestionResolvedEvent(QUESTION_1, payoutsLose, BigInt.fromI32(1), day3TS));
+    handleOOQuestionResolved(createQuestionResolvedEvent(QUESTION_2, payoutsWin, BigInt.fromI32(0), day3TS));
+
+    // Only losing bet recorded on Day 3
+    let day3Id = AGENT.toHexString() + "_" + day3TSNormalized.toString();
+    assert.fieldEquals("DailyProfitStatistic", day3Id, "dailyProfit", "-600");
+
+    // Day 7: Redeem winning bet
+    let day7TS = START_TS.plus(BigInt.fromI32(DAY * 6));
+    let day7TSNormalized = NORMALIZED_TS.plus(BigInt.fromI32(DAY * 6));
+    handlePayoutRedemption(createPayoutRedemptionEvent(AGENT, BigInt.fromI32(900), CONDITION_2, day7TS));
+
+    let day7Id = AGENT.toHexString() + "_" + day7TSNormalized.toString();
+    // Profit from Question 2: 900 - 400 = 500
+    assert.fieldEquals("DailyProfitStatistic", day7Id, "dailyProfit", "500");
+  });
+
+  /**
+   * Test: NegRisk settled totals tracking
+   * - Verify totalTradedSettled updates correctly for NegRisk markets
+   * - Check both losing and winning scenarios
+   */
+  test("NegRisk: Settled totals update correctly on resolution and payout", () => {
+    setupMarket(CONDITION_LOST, QUESTION_LOST, TOKEN_0_LOST, TOKEN_1_LOST);
+    setupMarket(CONDITION_WON, QUESTION_WON, TOKEN_0_WON, TOKEN_1_WON);
+
+    // Mark both as NegRisk
+    let questionLost = Question.load(CONDITION_LOST);
+    if (questionLost != null) {
+      questionLost.isNegRisk = true;
+      questionLost.save();
+    }
+
+    let questionWon = Question.load(CONDITION_WON);
+    if (questionWon != null) {
+      questionWon.isNegRisk = true;
+      questionWon.save();
+    }
+
+    // Day 1: Place bets on both markets
+    handleOrderFilled(createOrderFilledEvent(AGENT, BigInt.fromI32(700), BigInt.fromI32(1400), TOKEN_0_LOST, START_TS, 0));
+    handleOrderFilled(createOrderFilledEvent(AGENT, BigInt.fromI32(900), BigInt.fromI32(1800), TOKEN_0_WON, START_TS, 1));
+
+    // Check initial state
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalTraded", "1600");
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalTradedSettled", "0");
+
+    // Day 3: Losing market resolves
+    let day3TS = START_TS.plus(BigInt.fromI32(DAY * 2));
+    let payoutsLose = [BigInt.fromI32(0), BigInt.fromString("1000000000000000000")];
+    handleOOQuestionResolved(createQuestionResolvedEvent(QUESTION_LOST, payoutsLose, BigInt.fromI32(1), day3TS));
+
+    // Losing bet settled immediately
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalTradedSettled", "700");
+
+    // Day 5: Winning market resolves
+    let day5TS = START_TS.plus(BigInt.fromI32(DAY * 4));
+    let payoutsWin = [BigInt.fromString("1000000000000000000"), BigInt.fromI32(0)];
+    handleOOQuestionResolved(createQuestionResolvedEvent(QUESTION_WON, payoutsWin, BigInt.fromI32(0), day5TS));
+
+    // Still only losing bet settled (winning bet waits for payout)
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalTradedSettled", "700");
+
+    // Day 7: Redeem winning payout
+    let day7TS = START_TS.plus(BigInt.fromI32(DAY * 6));
+    handlePayoutRedemption(createPayoutRedemptionEvent(AGENT, BigInt.fromI32(2000), CONDITION_WON, day7TS));
+
+    // Now all bets settled
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalTradedSettled", "1600");
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalPayout", "2000");
   });
 });

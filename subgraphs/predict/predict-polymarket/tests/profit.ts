@@ -3,6 +3,11 @@ import { Address, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts";
 import { OrderFilled as OrderFilledEvent, TokenRegistered as TokenRegisteredEvent } from "../generated/CTFExchange/CTFExchange";
 import { QuestionResolved as QuestionResolvedEvent } from "../generated/OptimisticOracleV3/OptimisticOracleV3";
 import { PayoutRedemption as PayoutRedemptionEvent } from "../generated/ConditionalTokens/ConditionalTokens";
+import {
+  QuestionPrepared as QuestionPreparedEvent,
+  OutcomeReported as OutcomeReportedEvent,
+  PayoutRedemption as NegRiskPayoutRedemptionEvent
+} from "../generated/NegRiskAdapter/NegRiskAdapter";
 
 /**
  * Creates a TokenRegistered event for registering outcome tokens
@@ -114,6 +119,93 @@ export function createPayoutRedemptionEvent(
     new ethereum.EventParam("parentCollectionId", ethereum.Value.fromFixedBytes(Bytes.fromI32(0))),
     new ethereum.EventParam("conditionId", ethereum.Value.fromFixedBytes(conditionId)),
     new ethereum.EventParam("indexSets", ethereum.Value.fromUnsignedBigIntArray([BigInt.fromI32(1)])),
+    new ethereum.EventParam("payout", ethereum.Value.fromUnsignedBigInt(payout)),
+  ];
+
+  return event;
+}
+
+/**
+ * Creates a QuestionPrepared event for NegRisk markets
+ * @param marketId The market ID (groups multiple questions)
+ * @param questionId The question ID
+ * @param index The question index within the market
+ * @param data The ancillary data containing the question details
+ * @param timestamp The block timestamp
+ */
+export function createQuestionPreparedEvent(
+  marketId: Bytes,
+  questionId: Bytes,
+  index: BigInt,
+  data: Bytes,
+  timestamp: BigInt
+): QuestionPreparedEvent {
+  let event = changetype<QuestionPreparedEvent>(newMockEvent());
+  event.block.timestamp = timestamp;
+  event.block.number = BigInt.fromI32(1000);
+  event.transaction.hash = Bytes.fromHexString("0x1234567890123456789012345678901234567890123456789012345678901234");
+
+  event.parameters = [
+    new ethereum.EventParam("marketId", ethereum.Value.fromFixedBytes(marketId)),
+    new ethereum.EventParam("questionId", ethereum.Value.fromFixedBytes(questionId)),
+    new ethereum.EventParam("index", ethereum.Value.fromUnsignedBigInt(index)),
+    new ethereum.EventParam("data", ethereum.Value.fromBytes(data)),
+  ];
+
+  return event;
+}
+
+/**
+ * Creates an OutcomeReported event for NegRisk market resolution
+ * @param marketId The market ID
+ * @param questionId The question ID being resolved
+ * @param outcome True for YES, False for NO
+ * @param timestamp The block timestamp
+ */
+export function createOutcomeReportedEvent(
+  marketId: Bytes,
+  questionId: Bytes,
+  outcome: boolean,
+  timestamp: BigInt
+): OutcomeReportedEvent {
+  let event = changetype<OutcomeReportedEvent>(newMockEvent());
+  event.block.timestamp = timestamp;
+  event.block.number = BigInt.fromI32(1000);
+  event.transaction.hash = Bytes.fromHexString("0x1234567890123456789012345678901234567890123456789012345678901234");
+
+  event.parameters = [
+    new ethereum.EventParam("marketId", ethereum.Value.fromFixedBytes(marketId)),
+    new ethereum.EventParam("questionId", ethereum.Value.fromFixedBytes(questionId)),
+    new ethereum.EventParam("outcome", ethereum.Value.fromBoolean(outcome)),
+  ];
+
+  return event;
+}
+
+/**
+ * Creates a PayoutRedemption event for NegRisk markets
+ * @param redeemer The agent redeeming the payout
+ * @param conditionId The condition/market ID
+ * @param amounts Array of amounts being redeemed for each outcome
+ * @param payout The total payout amount
+ * @param timestamp The block timestamp
+ */
+export function createNegRiskPayoutRedemptionEvent(
+  redeemer: Address,
+  conditionId: Bytes,
+  amounts: BigInt[],
+  payout: BigInt,
+  timestamp: BigInt
+): NegRiskPayoutRedemptionEvent {
+  let event = changetype<NegRiskPayoutRedemptionEvent>(newMockEvent());
+  event.block.timestamp = timestamp;
+  event.block.number = BigInt.fromI32(1000);
+  event.transaction.hash = Bytes.fromHexString("0x1234567890123456789012345678901234567890123456789012345678901234");
+
+  event.parameters = [
+    new ethereum.EventParam("redeemer", ethereum.Value.fromAddress(redeemer)),
+    new ethereum.EventParam("conditionId", ethereum.Value.fromFixedBytes(conditionId)),
+    new ethereum.EventParam("amounts", ethereum.Value.fromUnsignedBigIntArray(amounts)),
     new ethereum.EventParam("payout", ethereum.Value.fromUnsignedBigInt(payout)),
   ];
 

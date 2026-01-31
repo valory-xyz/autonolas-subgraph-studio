@@ -385,6 +385,7 @@ export function handleConditionPreparation(event: ConditionPreparationEvent): vo
 
   let question = new Question(event.params.questionId)
   question.conditionId = event.params.conditionId;
+  question.isNeqRisk = false;
   question.metadata = null; // Will be populated by UMA event
   question.blockNumber = event.block.number;
   question.blockTimestamp = event.block.timestamp;

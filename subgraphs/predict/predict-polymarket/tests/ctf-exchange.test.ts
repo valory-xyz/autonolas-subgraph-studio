@@ -2,7 +2,7 @@ import { assert, describe, test, clearStore, beforeEach, newMockEvent } from "ma
 import { Address, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts";
 import { handleTokenRegistered, handleOrderFilled } from "../src/ctf-exchange";
 import { TokenRegistered, OrderFilled } from "../generated/CTFExchange/CTFExchange";
-import { TraderAgent, Question, QuestionIdToConditionId, MarketMetadata, TokenRegistry } from "../generated/schema";
+import { TraderAgent, Question, MarketMetadata } from "../generated/schema";
 
 const CONDITION_ID = Bytes.fromHexString("0x1111111111111111111111111111111111111111111111111111111111111111");
 const TOKEN_0 = BigInt.fromI32(100);
@@ -74,6 +74,7 @@ function setupQuestion(conditionId: Bytes, questionId: Bytes): void {
   let question = new Question(conditionId);
   question.questionId = questionId;
   question.metadata = metadata.id;
+  question.isNegRisk = false;
   question.blockNumber = BigInt.fromI32(1);
   question.blockTimestamp = BigInt.fromI32(1);
   question.transactionHash = Bytes.fromHexString("0x1234567890123456789012345678901234567890123456789012345678901234");
