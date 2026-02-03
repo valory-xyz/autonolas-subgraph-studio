@@ -56,3 +56,91 @@ dataSources:
         - event: Sync(uint112,uint112)
           handler: handleSync
       file: ./src/mapping.ts
+
+  # Bridged Polygon BPT (50WMATIC-50OLAS)
+  - kind: ethereum/contract
+    name: PolygonBridgedBPT
+    network: mainnet
+    source:
+      address: "0xf9825A563222f9eFC81e369311DAdb13D68e60a4"
+      abi: ERC20
+      startBlock: 19126712
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - BridgedPOL
+      abis:
+        - name: ERC20
+          file: ../../abis/ERC20Detailed.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleBridgedTransfer
+      file: ./src/mapping.ts
+
+  # Bridged Arbitrum BPT (50WETH-50OLAS)
+  - kind: ethereum/contract
+    name: ArbitrumBridgedBPT
+    network: mainnet
+    source:
+      address: "0x36B203Cb3086269f005a4b987772452243c0767f"
+      abi: ERC20
+      startBlock: 19120635
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - BridgedPOL
+      abis:
+        - name: ERC20
+          file: ../../abis/ERC20Detailed.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleBridgedTransfer
+      file: ./src/mapping.ts
+
+  # Bridged Optimism BPT (50WETH-50OLAS)
+  - kind: ethereum/contract
+    name: OptimismBridgedBPT
+    network: mainnet
+    source:
+      address: "0x2FD007a534eB7527b535a1DF35aba6bD2a8b660F"
+      abi: ERC20
+      startBlock: 19457199
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - BridgedPOL
+      abis:
+        - name: ERC20
+          file: ../../abis/ERC20Detailed.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleBridgedTransfer
+      file: ./src/mapping.ts
+
+  # Bridged Base BPT (50WETH-50OLAS)
+  - kind: ethereum/contract
+    name: BaseBridgedBPT
+    network: mainnet
+    source:
+      address: "0x9946d6FD1210D85EC613Ca956F142D911C97a074"
+      abi: ERC20
+      startBlock: 19532313
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - BridgedPOL
+      abis:
+        - name: ERC20
+          file: ../../abis/ERC20Detailed.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleBridgedTransfer
+      file: ./src/mapping.ts

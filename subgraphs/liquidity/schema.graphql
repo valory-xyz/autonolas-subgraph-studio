@@ -59,3 +59,16 @@ type LPTokenMetrics @entity(immutable: false) {
   lastUpdated: BigInt!
   firstTransferTimestamp: BigInt!
 }
+
+# Bridged LP token holdings from L2 chains
+type BridgedPOL @entity(immutable: false) {
+  id: ID!                           # "polygon" | "arbitrum" | "optimism" | "base"
+  chain: String!                    # Source chain name
+  tokenAddress: Bytes!              # Bridged token contract on Ethereum
+  tokenName: String!                # e.g., "50WMATIC-50OLAS"
+  treasuryBalance: BigInt!          # Current Treasury holdings
+  totalAcquired: BigInt!            # Cumulative acquired
+  totalSold: BigInt!                # Cumulative sold
+  lastUpdated: BigInt!              # Block timestamp
+  transactionCount: Int!            # Number of transfers
+}

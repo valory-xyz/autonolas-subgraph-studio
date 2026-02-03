@@ -2,10 +2,18 @@ import { Transfer } from '../generated/OLASETHLPToken/ERC20';
 import { Sync } from '../generated/OLASETHPair/UniswapV2Pair';
 import { PoolBalanceChanged } from '../generated/BalancerVault/BalancerV2Vault';
 import { BalancerV2Vault } from '../generated/BalancerVault/BalancerV2Vault';
-import { log, Bytes, BigDecimal, dataSource } from '@graphprotocol/graph-ts';
+import { log, Bytes, BigDecimal, dataSource, Address, BigInt } from '@graphprotocol/graph-ts';
 
-import { LPTransfer } from '../generated/schema';
-import { getBalancerVaultAddress, getOlasPoolId } from '../../../shared/constants';
+import { LPTransfer, BridgedPOL } from '../generated/schema';
+import {
+  getBalancerVaultAddress,
+  getOlasPoolId,
+  TREASURY_ADDRESS,
+  BRIDGED_BPT_POLYGON,
+  BRIDGED_BPT_ARBITRUM,
+  BRIDGED_BPT_OPTIMISM,
+  BRIDGED_BPT_BASE,
+} from '../../../shared/constants';
 
 import {
   isZeroAddress,
@@ -20,6 +28,23 @@ import {
   calculateBalancerPoolPrice,
   calculateProtocolOwnedLiquidityUsd,
 } from './utils';
+
+function getChainFromBridgedToken(tokenAddress: Address): string | null {
+  let addr = tokenAddress.toHexString().toLowerCase();
+  if (addr == BRIDGED_BPT_POLYGON.toLowerCase()) return "polygon";
+  if (addr == BRIDGED_BPT_ARBITRUM.toLowerCase()) return "arbitrum";
+  if (addr == BRIDGED_BPT_OPTIMISM.toLowerCase()) return "optimism";
+  if (addr == BRIDGED_BPT_BASE.toLowerCase()) return "base";
+  return null;
+}
+
+function getTokenNameForChain(chain: string): string {
+  if (chain == "polygon") return "50WMATIC-50OLAS";
+  if (chain == "arbitrum") return "50WETH-50OLAS";
+  if (chain == "optimism") return "50WETH-50OLAS";
+  if (chain == "base") return "50OLAS-50USDC";
+  return "Unknown";
+}
 
 /**
  * Handle LP Token Transfer events
@@ -55,6 +80,45 @@ export function handleLPTransfer(event: Transfer): void {
   }
 
   updateGlobalMetricsAfterTransfer(value, isMint, isBurn, timestamp);
+}
+
+/**
+ * Handle bridged BPT token transfers from L2 chains.
+ * Tracks Treasury holdings of bridged LP tokens (Polygon, Arbitrum, Optimism, Base).
+ */
+export function handleBridgedTransfer(event: Transfer): void {
+  let chainOrNull = getChainFromBridgedToken(event.address);
+  if (chainOrNull == null) return;
+  let chain = chainOrNull as string;
+
+  let pol = BridgedPOL.load(chain);
+  if (pol == null) {
+    pol = new BridgedPOL(chain);
+    pol.chain = chain;
+    pol.tokenAddress = event.address;
+    pol.tokenName = getTokenNameForChain(chain);
+    pol.treasuryBalance = BigInt.zero();
+    pol.totalAcquired = BigInt.zero();
+    pol.totalSold = BigInt.zero();
+    pol.transactionCount = 0;
+  }
+
+  let treasury = Address.fromString(TREASURY_ADDRESS);
+
+  if (event.params.to.equals(treasury)) {
+    pol.treasuryBalance = pol.treasuryBalance.plus(event.params.value);
+    pol.totalAcquired = pol.totalAcquired.plus(event.params.value);
+    pol.transactionCount = pol.transactionCount + 1;
+  }
+
+  if (event.params.from.equals(treasury)) {
+    pol.treasuryBalance = pol.treasuryBalance.minus(event.params.value);
+    pol.totalSold = pol.totalSold.plus(event.params.value);
+    pol.transactionCount = pol.transactionCount + 1;
+  }
+
+  pol.lastUpdated = event.block.timestamp;
+  pol.save();
 }
 
 /**
