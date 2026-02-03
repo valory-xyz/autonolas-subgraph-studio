@@ -4,6 +4,28 @@ Multi-chain subgraph tracking OLAS liquidity across Uniswap V2 and Balancer V2 p
 
 ## Architecture
 
+### Multi-Chain POL Tracking Strategy
+
+OLAS Protocol-Owned Liquidity (POL) exists across 7 chains but is tracked centrally on Ethereum:
+
+**The Problem**: L2 chains show zero POL because tokens are bridged to Ethereum for bonding.
+
+**Root Cause**: On L2 chains (Polygon, Arbitrum, Optimism, Base):
+1. Users provide liquidity on L2 (receive BPT tokens)
+2. Users bridge BPT to Ethereum via Wormhole to participate in bonding
+3. Ethereum Treasury receives the bridged BPT
+4. L2 subgraph correctly shows zero POL (tokens left the chain)
+
+**Architectural Decision**: Track all POL on Ethereum mainnet subgraph only.
+- **POL tracking**: Ethereum subgraph (native LP + bridged BPT from all L2s)
+- **Liquidity metrics**: Each L2 subgraph (pool reserves, TVL, total supply)
+
+**Implementation**: Ethereum subgraph listens to Transfer events on 4 bridged token contracts representing L2 BPT tokens on Ethereum mainnet. Treasury address `0xa0DA53447C0f6C4987964d8463da7e6628B30f82` holds all POL.
+
+**Trade-off**: USD valuation of bridged POL deferred due to cross-subgraph complexity (would require querying L2 subgraphs for pool prices).
+
+### Dual DEX Integration
+
 Two DEX integration paths share common treasury tracking but differ in USD calculation:
 
 ### Uniswap V2 Path (Ethereum, Celo)
@@ -24,6 +46,14 @@ Token ordering verified on-chain varies by pool:
 - **Ethereum**: token0=OLAS, token1=WETH → reserve1 = native (ETH)
 - **Celo**: token0=CELO, token1=OLAS → reserve0 = native (CELO)
 - **Balancer**: Dynamic ordering from `getPoolTokens()` RPC call
+
+### Bridged POL Tracking (Ethereum Only)
+
+Separate handler `handleBridgedTransfer()` for L2 BPT tokens bridged to Ethereum:
+- Monitors 4 bridged token contracts (Wormhole-wrapped BPT)
+- Tracks Treasury acquisitions and sales per source chain
+- Stores in `BridgedPOL` entity (one per L2 chain)
+- No USD valuation (would require cross-subgraph queries)
 
 ### Shared Treasury Logic
 
@@ -52,6 +82,7 @@ The subgraph monitors:
 - `LPTokenMetrics`: Global metrics (total supply, treasury percentage, etc.)
 - `DailyMetrics`: Daily snapshots for time-series analysis
 - `ReservesSnapshot`: Historical reserves data
+- `BridgedPOL`: Per-chain Treasury holdings of L2 BPT bridged to Ethereum
 
 ## Deployed Chains
 
@@ -65,6 +96,12 @@ The subgraph monitors:
 - **Arbitrum**: OLAS/USDC BPT `0xf44d059ec5b2c09c68cf35ae3ded6fd81c6a8580`
 - **Optimism**: OLAS/USDC BPT `0xe14ddddb0c810a38f6fa4ed455c59ddda779f6b0`
 - **Base**: OLAS/USDC BPT `0xf4c0d0c533c0286d2dbdc48f015834f6a2dbdc87`
+
+### Bridged BPT Tokens (Ethereum Mainnet Only)
+- **Polygon 50WMATIC-50OLAS**: `0xf9825A563222f9eFC81e369311DAdb13D68e60a4`
+- **Arbitrum 50WETH-50OLAS**: `0x36B203Cb3086269f005a4b987772452243c0767f`
+- **Optimism 50WETH-50OLAS**: `0x2FD007a534eB7527b535a1DF35aba6bD2a8b660F`
+- **Base 50OLAS-50USDC**: `0x9946d6FD1210D85EC613Ca956F142D911C97a074`
 
 ### Shared
 - **Treasury Address**: `0xa0DA53447C0f6C4987964d8463da7e6628B30f82` (all chains)
@@ -104,6 +141,16 @@ Get current metrics:
     treasuryPercentage
     currentReserve0
     currentReserve1
+  }
+  bridgedPOLs {
+    id
+    chain
+    tokenName
+    treasuryBalance
+    totalAcquired
+    totalSold
+    transactionCount
+    lastUpdated
   }
 }
 ```
@@ -241,6 +288,11 @@ Get current USD valuations:
 1. **ERC20 Transfer Events**: Tracks BPT (Balancer Pool Token) minting, burning, and treasury movements
 2. **Balancer V2 PoolBalanceChanged Events**: Emitted by Balancer Vault for all pool balance changes
 3. **Balancer V2 Vault RPC**: `getPoolTokens(poolId)` call to fetch current balances for OLAS spot price
+
+### Bridged BPT Tracking (Ethereum Only)
+1. **ERC20 Transfer Events**: Tracks bridged BPT tokens from L2 chains (Polygon, Arbitrum, Optimism, Base)
+2. **Filters**: Only Treasury inflows/outflows are recorded
+3. **Start Blocks**: Each bridged token contract has a specific start block corresponding to its Wormhole deployment
 
 ## Implementation Notes
 
