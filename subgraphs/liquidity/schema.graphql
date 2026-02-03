@@ -49,9 +49,26 @@ type LPTokenMetrics @entity(immutable: false) {
   # USD valuations
   poolLiquidityUsd: BigDecimal! # total pool value in USD
   protocolOwnedLiquidityUsd: BigDecimal! # treasury's share in USD
-  lastEthPriceUsd: BigDecimal! # ETH price used for calculation
+  # Price semantics vary by DEX type (field name kept for backward compatibility):
+  # - Uniswap V2 chains (Ethereum, Celo): ETH or CELO price from Chainlink oracle
+  # - Balancer V2 chains (Gnosis, Polygon, Arbitrum, Optimism, Base): OLAS spot price from pool
+  # TODO: Rename to 'lastPriceUsd' in next major version for semantic clarity
+  lastEthPriceUsd: BigDecimal!
 
   # Timestamps
   lastUpdated: BigInt!
   firstTransferTimestamp: BigInt!
+}
+
+# Bridged LP token holdings from L2 chains
+type BridgedPOL @entity(immutable: false) {
+  id: ID!                           # "polygon" | "arbitrum" | "optimism" | "base"
+  chain: String!                    # Source chain name
+  tokenAddress: Bytes!              # Bridged token contract on Ethereum
+  tokenName: String!                # e.g., "50WMATIC-50OLAS"
+  treasuryBalance: BigInt!          # Current Treasury holdings
+  totalAcquired: BigInt!            # Cumulative acquired
+  totalSold: BigInt!                # Cumulative sold
+  lastUpdated: BigInt!              # Block timestamp
+  transactionCount: Int!            # Number of transfers
 }

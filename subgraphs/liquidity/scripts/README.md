@@ -2,6 +2,18 @@
 
 Scripts for validating the liquidity subgraph USD calculations against external data sources.
 
+## Supported Chains
+
+| Chain | DEX | Price Source |
+|-------|-----|--------------|
+| Ethereum | Uniswap V2 | Chainlink ETH/USD |
+| Celo | Ubeswap (Uniswap V2 fork) | Chainlink CELO/USD |
+| Gnosis | Balancer V2 | Pool spot price (WXDAI) |
+| Polygon | Balancer V2 | Pool spot price (USDC) |
+| Arbitrum | Balancer V2 | Pool spot price (USDC) |
+| Optimism | Balancer V2 | Pool spot price (USDC) |
+| Base | Balancer V2 | Pool spot price (USDC) |
+
 ## Scripts
 
 ### compare-dune.js
@@ -9,11 +21,15 @@ Scripts for validating the liquidity subgraph USD calculations against external 
 Compares subgraph LP token metrics and USD valuations against Dune Analytics data.
 
 ```bash
-# With Dune API key (real-time data)
-DUNE_API_KEY=xxx node scripts/compare-dune.js
-
-# Without API key (uses cached values)
+# Compare Ethereum (default)
 node scripts/compare-dune.js
+
+# Compare specific chain
+node scripts/compare-dune.js --chain gnosis
+
+# With Dune API key for real-time data
+DUNE_API_KEY=xxx node scripts/compare-dune.js --chain ethereum
+node scripts/compare-dune.js --chain polygon --dune-api-key xxx
 ```
 
 **What it compares:**
@@ -22,7 +38,7 @@ node scripts/compare-dune.js
 - Pool liquidity USD
 - Protocol-owned liquidity USD
 
-**Note:** LP token metrics should match exactly. USD values may differ ~0.2% due to different price sources (Chainlink vs DEX prices).
+**Note:** LP token metrics should match exactly. USD values may differ ~1% due to different price sources.
 
 ### calculate-usd.js
 
@@ -44,24 +60,28 @@ node scripts/calculate-usd.js --olas-price 0.08
 
 ## USD Calculation Methods
 
-The subgraph uses the **ETH-based method**:
+### Uniswap V2 Chains (Ethereum, Celo)
+
+Uses Chainlink price feeds:
 
 ```
-Pool Liquidity USD = 2 × ETH_reserves × ETH_price (Chainlink)
+Pool Liquidity USD = 2 × native_token_reserves × native_token_price (Chainlink)
 ```
 
-This is validated against the **OLAS-based method**:
+### Balancer V2 Chains (Gnosis, Polygon, Arbitrum, Optimism, Base)
+
+Uses pool spot price:
 
 ```
-Pool Liquidity USD = 2 × OLAS_reserves × OLAS_price (CoinGecko)
+OLAS Price = stablecoin_balance / olas_balance
+Pool Liquidity USD = 2 × olas_balance × olas_price
 ```
-
-Both methods should yield similar results for balanced Uniswap V2 AMM pools due to the constant product invariant.
 
 ## Data Sources
 
 | Source | Data |
 |--------|------|
-| Subgraph | LP metrics, ETH reserves, Chainlink ETH/USD price |
-| Dune Query [4963482](https://dune.com/queries/4963482) | LP supply, POL, USD valuations |
+| Subgraph | LP metrics, reserves, price data |
+| Dune Query [4963482](https://dune.com/queries/4963482) | Ethereum LP/POL data |
+| Dune Query [5383248](https://dune.com/queries/5383248) | Multi-chain POL aggregation |
 | CoinGecko | OLAS/USD price |

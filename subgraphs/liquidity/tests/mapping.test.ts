@@ -6,10 +6,11 @@ import {
   beforeEach,
   afterEach,
   createMockedFunction,
+  dataSourceMock,
 } from 'matchstick-as/assembly/index';
 import { Address, BigInt, ethereum } from '@graphprotocol/graph-ts';
 import { handleSync, handleLPTransfer } from '../src/mapping';
-import { LPTokenMetrics, PoolReserves } from '../generated/schema';
+import { LPTokenMetrics, PoolReserves, LPTransfer } from '../generated/schema';
 import {
   createSyncEvent,
   createMintEvent,
@@ -260,5 +261,82 @@ describe('Integration: Transfer + Sync', () => {
 
     // Treasury percentage: 25% = 2500 basis points
     assert.bigIntEquals(metrics!.treasuryPercentage, BigInt.fromI32(2500));
+  });
+});
+
+describe('Balancer BPT Transfer', () => {
+  beforeEach(() => {
+    dataSourceMock.setNetwork('gnosis');
+  });
+
+  afterEach(() => {
+    clearStore();
+    dataSourceMock.resetValues();
+  });
+
+  test('handles BPT mint to treasury correctly', () => {
+    const mintAmount = BigInt.fromI32(5000);
+    const mintEvent = createMintEvent(TREASURY_ADDRESS, mintAmount);
+
+    handleLPTransfer(mintEvent);
+
+    const metrics = LPTokenMetrics.load('');
+    assert.assertNotNull(metrics);
+    assert.bigIntEquals(metrics!.totalSupply, mintAmount);
+    assert.bigIntEquals(metrics!.totalMinted, mintAmount);
+    assert.bigIntEquals(metrics!.treasurySupply, mintAmount);
+  });
+
+  test('handles BPT transfer to treasury correctly', () => {
+    const otherAddress = Address.fromString(
+      '0x1234567890123456789012345678901234567890'
+    );
+
+    // First mint to other address
+    const mintAmount = BigInt.fromI32(10000);
+    const mintEvent = createMintEvent(otherAddress, mintAmount);
+    handleLPTransfer(mintEvent);
+
+    // Then transfer to treasury
+    const transferAmount = BigInt.fromI32(3000);
+    const transferEvent = createTransferEvent(
+      otherAddress,
+      TREASURY_ADDRESS,
+      transferAmount
+    );
+    handleLPTransfer(transferEvent);
+
+    const metrics = LPTokenMetrics.load('');
+    assert.assertNotNull(metrics);
+    assert.bigIntEquals(metrics!.treasurySupply, transferAmount);
+  });
+
+  test('handles zero-amount BPT transfer correctly', () => {
+    const zeroAmount = BigInt.fromI32(0);
+    const transferEvent = createTransferEvent(
+      ZERO_ADDRESS,
+      TREASURY_ADDRESS,
+      zeroAmount
+    );
+
+    handleLPTransfer(transferEvent);
+
+    const metrics = LPTokenMetrics.load('');
+    assert.assertNotNull(metrics);
+    assert.bigIntEquals(metrics!.totalSupply, BigInt.fromI32(0));
+    assert.bigIntEquals(metrics!.treasurySupply, BigInt.fromI32(0));
+  });
+
+  test('BPT transfer event is recorded', () => {
+    const mintAmount = BigInt.fromI32(1000);
+    const mintEvent = createMintEvent(TREASURY_ADDRESS, mintAmount);
+
+    handleLPTransfer(mintEvent);
+
+    const transferId = mintEvent.transaction.hash.concatI32(
+      mintEvent.logIndex.toI32()
+    );
+    const transfer = LPTransfer.load(transferId);
+    assert.assertNotNull(transfer);
   });
 });
