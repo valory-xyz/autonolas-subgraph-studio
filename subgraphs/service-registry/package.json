@@ -3,7 +3,7 @@
   "scripts": {
     "codegen": "graph codegen subgraph.gnosis.yaml",
     "build": "graph build subgraph.gnosis.yaml",
-    "generate-manifests": "node ../../scripts/generate-manifests.ts",
+    "generate-manifests": "node ../../scripts/generate-manifests.js",
     "deploy-arbitrum": "graph deploy --network arbitrum-one --studio olas-arbitrum-registry subgraph.arbitrum-one.yaml",
     "deploy-base": "graph deploy --network base --studio olas-base-registry subgraph.base.yaml",
     "deploy-celo": "graph deploy --network celo --studio olas-celo-registry subgraph.celo.yaml",

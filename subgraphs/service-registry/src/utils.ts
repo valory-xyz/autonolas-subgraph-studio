@@ -14,6 +14,8 @@ import {
   Multisig,
   Service,
   Operator,
+  ERC8004Agent,
+  ERC8004Metadata,
 } from '../generated/schema';
 
 const ONE_DAY = BigInt.fromI32(86400);
@@ -24,7 +26,7 @@ export function getDayTimestamp(event: ethereum.Event): BigInt {
 
 export function getOrCreateService(
   serviceId: BigInt,
-  timestamp: BigInt = BigInt.fromI32(0)
+  timestamp: BigInt = BigInt.fromI32(0),
 ): Service {
   let service = Service.load(serviceId.toString());
   if (service == null) {
@@ -38,7 +40,7 @@ export function getOrCreateService(
 
 export function getOrCreateMultisig(
   multisigAddress: Bytes,
-  event: ethereum.Event
+  event: ethereum.Event,
 ): Multisig {
   let multisig = Multisig.load(multisigAddress);
   if (multisig == null) {
@@ -55,7 +57,7 @@ export function getOrCreateMultisig(
 
 export function getOrCreateDailyServiceActivity(
   serviceId: string,
-  event: ethereum.Event
+  event: ethereum.Event,
 ): DailyServiceActivity {
   const dayTimestamp = getDayTimestamp(event);
   const id = 'day-'
@@ -74,7 +76,7 @@ export function getOrCreateDailyServiceActivity(
 }
 
 export function getOrCreateDailyUniqueAgents(
-  event: ethereum.Event
+  event: ethereum.Event,
 ): DailyUniqueAgents {
   const dayTimestamp = getDayTimestamp(event);
   const id = 'day-'.concat(dayTimestamp.toString());
@@ -90,7 +92,7 @@ export function getOrCreateDailyUniqueAgents(
 
 export function getOrCreateDailyAgentPerformance(
   event: ethereum.Event,
-  agentId: i32
+  agentId: i32,
 ): DailyAgentPerformance {
   const dayTimestamp = getDayTimestamp(event);
   const id = 'day-'
@@ -110,7 +112,7 @@ export function getOrCreateDailyAgentPerformance(
 }
 
 export function getOrCreateDailyActiveMultisigs(
-  event: ethereum.Event
+  event: ethereum.Event,
 ): DailyActiveMultisigs {
   const dayTimestamp = getDayTimestamp(event);
   const dailyId = 'day-' + dayTimestamp.toString();
@@ -177,7 +179,7 @@ export function getOrCreateServiceCreator(address: Bytes): Creator {
 
 export function createDailyUniqueAgent(
   dailyUniqueAgents: DailyUniqueAgents,
-  agent: AgentPerformance
+  agent: AgentPerformance,
 ): void {
   // Links an agent to the daily unique agents list for deduplication
   // Ensures each agent is counted only once per day, regardless of how many transactions they made
@@ -197,7 +199,7 @@ export function createDailyUniqueAgent(
 
 export function createDailyAgentMultisig(
   dailyAgentPerformance: DailyAgentPerformance,
-  multisig: Multisig
+  multisig: Multisig,
 ): void {
   // Tracks which multisigs a specific agent was active in on a given day (agent-centric view)
   // Example: Agent 40 worked with Multisig A and B today, so we create 2 links
@@ -220,7 +222,7 @@ export function createDailyAgentMultisig(
 
 export function createDailyActiveMultisig(
   dailyActiveMultisigs: DailyActiveMultisigs,
-  multisig: Multisig
+  multisig: Multisig,
 ): void {
   // Tracks which multisigs had any activity at all on a given day (system-wide view)
   // Example: Today Multisig A and B were active, regardless of which agents used them
@@ -243,7 +245,7 @@ export function createDailyActiveMultisig(
 export function createOrUpdateAgentRegistration(
   serviceId: i32,
   agentId: i32,
-  timestamp: BigInt
+  timestamp: BigInt,
 ): void {
   const id = serviceId.toString().concat('-').concat(agentId.toString());
   let registration = AgentRegistration.load(id);
@@ -259,7 +261,7 @@ export function createOrUpdateAgentRegistration(
 export function getMostRecentAgentId(
   serviceId: i32,
   agentIds: i32[],
-  deploymentTimestamp: BigInt
+  deploymentTimestamp: BigInt,
 ): i32 {
   // Find the agent that was registered most recently before the multisig deployment
   // This matches the SQL query logic: order by registered_at desc, rn = 1
@@ -289,4 +291,28 @@ export function getMostRecentAgentId(
   }
 
   return mostRecentAgentId;
+}
+
+export function getOrCreateERC8004Agent(agentId: i32): ERC8004Agent {
+  let erc8004Agent = ERC8004Agent.load(agentId.toString());
+  if (erc8004Agent == null) {
+    erc8004Agent = new ERC8004Agent(agentId.toString());
+    erc8004Agent.save();
+  }
+  return erc8004Agent;
+}
+
+export function getOrCreateERC8004Metadata(
+  agentId: i32,
+  key: string,
+): ERC8004Metadata {
+  let id = agentId.toString().concat('-').concat(key);
+  let metadata = ERC8004Metadata.load(id);
+  if (metadata == null) {
+    metadata = new ERC8004Metadata(id);
+    metadata.agent = agentId.toString();
+    metadata.key = key;
+    metadata.save();
+  }
+  return metadata;
 }
