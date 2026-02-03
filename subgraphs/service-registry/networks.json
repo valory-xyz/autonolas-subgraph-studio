@@ -25,8 +25,8 @@
       "startBlock": 10827380
     },
     "IdentityRegistryBridger": {
-      "address": "",
-      "startBlock": 0
+      "address": "0x67722c823010ceb4bed5325fe109196c0f67d053",
+      "startBlock": 41675072
     }
   },
   "celo": {
