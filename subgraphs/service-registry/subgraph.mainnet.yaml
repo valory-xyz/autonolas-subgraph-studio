@@ -56,6 +56,10 @@ dataSources:
       eventHandlers:
         - event: ServiceAgentLinked(indexed uint256,indexed uint256)
           handler: handleServiceAgentLinked
+        - event: AgentWalletSet(indexed uint256,indexed uint256,indexed address)
+          handler: handleAgentWalletSet
+        - event: MetadataSet(indexed uint256,indexed uint256,string,bytes)
+          handler: handleMetadataSet
       file: ./src/mapping-eth.ts
 
 templates:
