@@ -55,8 +55,8 @@
       "startBlock": 41783952
     },
     "IdentityRegistryBridger": {
-      "address": "",
-      "startBlock": 0
+      "address": "0x6F121552765424f0B2331B541C0938480cA314Db",
+      "startBlock": 82500133
     }
   },
   "arbitrum-one": {
