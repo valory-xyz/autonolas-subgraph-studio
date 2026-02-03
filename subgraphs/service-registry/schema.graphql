@@ -12,7 +12,7 @@ type ERC8004Agent @entity(immutable: false) {
   id: ID! # agentId (as string)
   service: Service @derivedFrom(field: "erc8004Agent")
   agentWallet: Bytes
-  metadata: [ERC8004Metadata!]! @derivedFrom(field: "agent")
+  metadata: [ERC8004Metadata!] @derivedFrom(field: "agent")
 }
 
 # Entity to keep track of Agent's ERC8004 metadata
@@ -21,7 +21,7 @@ type ERC8004Metadata @entity(immutable: false) {
   id: ID! # ${agentId}-${metadataKey}
   agent: ERC8004Agent!
   key: String!
-  value: Bytes!
+  value: Bytes
 }
 
 type AgentRegistration @entity(immutable: false) {
