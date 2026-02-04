@@ -32,6 +32,7 @@ export function handleConditionPreparation(
 
   let entity = new QuestionIdToConditionId(event.params.questionId);
   entity.conditionId = event.params.conditionId;
+  entity.oracle = event.params.oracle;
   entity.transactionHash = event.transaction.hash;
   entity.save();
 }

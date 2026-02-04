@@ -88,6 +88,7 @@ export function createDailyId(agentAddress: Address, timestamp: BigInt): string 
 export function createBridge(questionId: Bytes, conditionId: Bytes): void {
   let bridge = new QuestionIdToConditionId(questionId);
   bridge.conditionId = conditionId;
+  bridge.oracle = TestAddresses.ORACLE;
   bridge.transactionHash = TestBytes.DUMMY_HASH;
   bridge.save();
 }

@@ -1,5 +1,14 @@
 import { BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts";
-import { Global, TraderAgent, MarketParticipant, DailyProfitStatistic, Question, Bet, QuestionResolution } from "../generated/schema";
+import {
+  Global,
+  TraderAgent,
+  MarketParticipant,
+  DailyProfitStatistic,
+  Question,
+  Bet,
+  QuestionResolution,
+  MarketParticipated,
+} from "../generated/schema";
 import { ONE_DAY } from "./constants";
 
 /**
@@ -16,6 +25,7 @@ export function getGlobal(): Global {
     global.totalTraded = BigInt.zero();
     global.totalTradedSettled = BigInt.zero();
     global.totalPayout = BigInt.zero();
+    global.totalMarketsParticipated = 0;
   }
   return global as Global;
 }
@@ -110,7 +120,7 @@ export function processTradeActivity(
   // 3. Update or Create MarketParticipant
   let participantId = agent.id.toHexString() + "_" + conditionId.toHexString();
   let participant = MarketParticipant.load(participantId);
-  
+
   if (participant == null) {
     participant = new MarketParticipant(participantId);
     participant.traderAgent = agent.id;
@@ -121,6 +131,15 @@ export function processTradeActivity(
     participant.totalPayout = BigInt.zero();
     participant.createdAt = timestamp;
     participant.bets = [];
+
+    // 3a. Track unique market participation
+    // Check if this is the first time ANY agent participated in this market
+    let marketActivity = MarketParticipated.load(conditionId);
+    if (marketActivity == null) {
+      marketActivity = new MarketParticipated(conditionId);
+      marketActivity.save();
+      global.totalMarketsParticipated += 1;
+    }
   }
 
   let bets = participant.bets;
