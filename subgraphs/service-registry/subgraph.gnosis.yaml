@@ -36,6 +36,30 @@ dataSources:
         - event: TerminateService(indexed uint256)
           handler: handleTerminateService
       file: ./src/mapping.ts
+  - kind: ethereum/contract
+    name: IdentityRegistryBridger
+    network: gnosis
+    source:
+      address: "0x6e8F740F23f07cE129Daa59786926fecA8C2D2F3"
+      abi: IdentityRegistryBridger
+      startBlock: 44506664
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.6
+      language: wasm/assemblyscript
+      entities:
+        - Service
+      abis:
+        - name: IdentityRegistryBridger
+          file: ../../abis/IdentityRegistryBridge.json
+      eventHandlers:
+        - event: ServiceAgentLinked(indexed uint256,indexed uint256)
+          handler: handleServiceAgentLinked
+        - event: AgentWalletSet(indexed uint256,indexed uint256,indexed address)
+          handler: handleAgentWalletSet
+        - event: MetadataSet(indexed uint256,indexed uint256,string,bytes)
+          handler: handleMetadataSet
+      file: ./src/mapping.ts
 
 templates:
   - kind: ethereum/contract
