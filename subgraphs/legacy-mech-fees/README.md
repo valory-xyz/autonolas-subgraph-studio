@@ -43,7 +43,9 @@ All fee amounts in this subgraph are denominated in:
 - **Marketplace Mechs**: Transactions routed through the legacy marketplace
 
 ### Comprehensive Fee Flow Monitoring
-- **Incoming Fees**: Tracked via `Request` events and marketplace calls
+- **Incoming Fees**:
+  - **LM mechs**: Tracked via direct `Request` events on mech contracts
+  - **LMM mechs**: Tracked via `MarketplaceRequest` events from the marketplace contract
 - **Outgoing Fees**: Tracked via `exec` function calls (excluding burns)
 - **Price Updates**: Dynamic pricing changes tracked in real-time
 
