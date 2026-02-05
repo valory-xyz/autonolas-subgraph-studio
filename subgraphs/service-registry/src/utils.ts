@@ -302,6 +302,29 @@ export function getOrCreateERC8004Agent(agentId: i32): ERC8004Agent {
   return erc8004Agent;
 }
 
+/**
+ * Initialize default metadata entries for a newly linked ERC8004 agent.
+ * These values can then be overwritten if the respective MetadataSet event fires.
+ * The function sets:
+ * - ecosystem: 'Olas'
+ * - serviceRegistry: {serviceId}
+ */
+export function initializeERC8004DefaultMetadata(
+  agentId: i32,
+  serviceId: i32,
+): void {
+  let ecosystemMeta = getOrCreateERC8004Metadata(agentId, 'ecosystem');
+  ecosystemMeta.value = Bytes.fromUTF8('Olas');
+  ecosystemMeta.save();
+
+  let serviceRegistryMeta = getOrCreateERC8004Metadata(
+    agentId,
+    'serviceRegistry',
+  );
+  serviceRegistryMeta.value = Bytes.fromUTF8(serviceId.toString());
+  serviceRegistryMeta.save();
+}
+
 export function getOrCreateERC8004Metadata(
   agentId: i32,
   key: string,
