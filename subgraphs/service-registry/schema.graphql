@@ -21,7 +21,7 @@ type ERC8004Metadata @entity(immutable: false) {
   id: ID! # ${agentId}-${metadataKey}
   agent: ERC8004Agent!
   key: String!
-  value: Bytes
+  value: String
 }
 
 type AgentRegistration @entity(immutable: false) {

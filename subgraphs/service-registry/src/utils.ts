@@ -314,14 +314,14 @@ export function initializeERC8004DefaultMetadata(
   serviceId: i32,
 ): void {
   let ecosystemMeta = getOrCreateERC8004Metadata(agentId, 'ecosystem');
-  ecosystemMeta.value = Bytes.fromUTF8('Olas');
+  ecosystemMeta.value = 'Olas';
   ecosystemMeta.save();
 
   let serviceRegistryMeta = getOrCreateERC8004Metadata(
     agentId,
     'serviceRegistry',
   );
-  serviceRegistryMeta.value = Bytes.fromUTF8(serviceId.toString());
+  serviceRegistryMeta.value = serviceId.toString();
   serviceRegistryMeta.save();
 }
 

@@ -249,6 +249,6 @@ export function handleAgentWalletSet(event: AgentWalletSet): void {
 export function handleMetadataSet(event: MetadataSet): void {
   let agentId = event.params.agentId.toI32();
   let metadata = getOrCreateERC8004Metadata(agentId, event.params.metadataKey);
-  metadata.value = event.params.metadataValue;
+  metadata.value = event.params.metadataValue.toString();
   metadata.save();
 }
