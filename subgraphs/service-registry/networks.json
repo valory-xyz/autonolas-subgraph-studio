@@ -65,8 +65,8 @@
       "startBlock": 174008819
     },
     "IdentityRegistryBridger": {
-      "address": "",
-      "startBlock": 0
+      "address": "0x22be6fdcd3e29851b29b512f714c328a00a96b83",
+      "startBlock": 428942714
     }
   }
 }
