@@ -33,9 +33,9 @@ type MechTransaction @entity(immutable: true) {
   timestamp: BigInt!
   blockNumber: BigInt!
   txHash: Bytes!
-  deliveryRate: BigInt
-  balance: BigInt
-  rateDiff: BigInt
+  deliveryRate: BigInt # FEE_IN only: NVM delivery rate at transaction time
+  balance: BigInt # FEE_IN only: NVM balance after credit issuance
+  rateDiff: BigInt # FEE_IN only: Difference from previous delivery rate
 }
 
 type DailyTotals @entity(immutable: false) {
