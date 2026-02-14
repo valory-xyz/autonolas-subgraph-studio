@@ -31,7 +31,7 @@ type TreasuryHoldings @entity(immutable: false) {
 
 # Global LP token metrics
 type LPTokenMetrics @entity(immutable: false) {
-  id: ID! # "global"
+  id: ID! # "" (empty string singleton)
   
   # Supply metrics
   totalSupply: BigInt! # current total LP supply
@@ -45,7 +45,12 @@ type LPTokenMetrics @entity(immutable: false) {
   # Pool metrics
   currentReserve0: BigInt! # current OLAS reserves
   currentReserve1: BigInt! # current ETH reserves
-  
+
+  # USD valuations
+  poolLiquidityUsd: BigDecimal! # total pool value in USD
+  protocolOwnedLiquidityUsd: BigDecimal! # treasury's share in USD
+  lastEthPriceUsd: BigDecimal! # ETH price used for calculation
+
   # Timestamps
   lastUpdated: BigInt!
   firstTransferTimestamp: BigInt!

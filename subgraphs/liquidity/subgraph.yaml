@@ -50,6 +50,8 @@ dataSources:
       abis:
         - name: UniswapV2Pair
           file: ../../abis/UniswapV2Pair.json
+        - name: AggregatorV3Interface
+          file: ../../abis/AggregatorV3Interface.json
       eventHandlers:
         - event: Sync(uint112,uint112)
           handler: handleSync

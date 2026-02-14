@@ -4,13 +4,14 @@ import { Sync } from '../generated/OLASETHPair/UniswapV2Pair';
 import { LPTransfer } from '../generated/schema';
 
 import {
-  getDayTimestamp,
   isZeroAddress,
   isTreasuryAddress,
   getOrCreatePoolReserves,
   updateTreasuryHoldings,
   updateGlobalMetricsAfterTransfer,
   updateGlobalMetricsAfterSync,
+  calculateUsdMetrics,
+  getOrCreateLPTokenMetrics,
 } from './utils';
 
 /**
@@ -54,14 +55,12 @@ export function handleLPTransfer(event: Transfer): void {
  * Tracks pool reserves for OLAS and ETH
  */
 export function handleSync(event: Sync): void {
-  let poolAddress = event.address;
-  let reserve0 = event.params.reserve0; // OLAS reserves
-  let reserve1 = event.params.reserve1; // ETH reserves
-  let timestamp = event.block.timestamp;
-  let dayTimestamp = getDayTimestamp(timestamp);
+  const reserve0 = event.params.reserve0;
+  const reserve1 = event.params.reserve1;
+  const timestamp = event.block.timestamp;
 
   // Update current pool reserves
-  let reserves = getOrCreatePoolReserves(poolAddress);
+  const reserves = getOrCreatePoolReserves(event.address);
   reserves.reserve0 = reserve0;
   reserves.reserve1 = reserve1;
   reserves.lastSyncBlock = event.block.number;
@@ -69,5 +68,19 @@ export function handleSync(event: Sync): void {
   reserves.lastSyncTransaction = event.transaction.hash;
   reserves.save();
 
-  updateGlobalMetricsAfterSync(reserve0, reserve1, timestamp);
+  // Calculate USD metrics
+  const metrics = getOrCreateLPTokenMetrics();
+  const usdMetrics = calculateUsdMetrics(
+    reserve1,
+    event.transaction.hash,
+    metrics.treasurySupply,
+    metrics.totalSupply
+  );
+
+  updateGlobalMetricsAfterSync(
+    reserve0, reserve1, timestamp,
+    usdMetrics.poolLiquidityUsd,
+    usdMetrics.protocolOwnedLiquidityUsd,
+    usdMetrics.lastEthPriceUsd
+  );
 }

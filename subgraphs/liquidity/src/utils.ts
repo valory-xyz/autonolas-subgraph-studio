@@ -1,9 +1,16 @@
-import { BigInt, Address, Bytes } from '@graphprotocol/graph-ts';
+import { BigInt, BigDecimal, Address, Bytes, log } from '@graphprotocol/graph-ts';
 import {
   TreasuryHoldings,
   LPTokenMetrics,
   PoolReserves,
 } from '../generated/schema';
+import { AggregatorV3Interface } from '../generated/OLASETHPair/AggregatorV3Interface';
+
+// Chainlink ETH/USD price feed on mainnet (8 decimals)
+export const CHAINLINK_PRICE_FEED_ADDRESS_MAINNET_ETH_USD = '0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419';
+export const CHAINLINK_DECIMALS = 8;
+export const ETH_DECIMALS = 18;
+export const PRICE_DECIMALS = CHAINLINK_DECIMALS + ETH_DECIMALS; // 26
 
 export const ZERO_ADDRESS = Address.fromString(
   '0x0000000000000000000000000000000000000000'
@@ -14,7 +21,7 @@ export const TREASURY_ADDRESS = Address.fromString(
 
 export const SECONDS_PER_DAY = BigInt.fromI32(86400);
 export const BASIS_POINTS = BigInt.fromI32(10000); // 100% = 10000 basis points
-export const GLOBAL_ID = 'global';
+export const GLOBAL_ID = '';
 
 /**
  * Get day timestamp by truncating to start of day (UTC)
@@ -64,8 +71,21 @@ export function getOrCreateLPTokenMetrics(): LPTokenMetrics {
     metrics.treasuryPercentage = BigInt.zero();
     metrics.currentReserve0 = BigInt.zero();
     metrics.currentReserve1 = BigInt.zero();
+    metrics.poolLiquidityUsd = BigDecimal.zero();
+    metrics.protocolOwnedLiquidityUsd = BigDecimal.zero();
+    metrics.lastEthPriceUsd = BigDecimal.zero();
     metrics.lastUpdated = BigInt.zero();
     metrics.firstTransferTimestamp = BigInt.zero();
+  }
+
+  if (metrics.poolLiquidityUsd === null) {
+    metrics.poolLiquidityUsd = BigDecimal.zero();
+  }
+  if (metrics.protocolOwnedLiquidityUsd === null) {
+    metrics.protocolOwnedLiquidityUsd = BigDecimal.zero();
+  }
+  if (metrics.lastEthPriceUsd === null) {
+    metrics.lastEthPriceUsd = BigDecimal.zero();
   }
   return metrics;
 }
@@ -101,6 +121,102 @@ export function getOrCreatePoolReserves(poolAddress: Address): PoolReserves {
     reserves.lastSyncTransaction = Bytes.empty();
   }
   return reserves;
+}
+
+/**
+ * Fetch ETH/USD price from Chainlink mainnet feed.
+ *
+ * Returns price in 8 decimals (e.g., 180000000000 = $1800.00).
+ * Returns zero on Chainlink call failure (safe default: USD values remain zero).
+ */
+export function getEthPriceUsd(txHash: Bytes): BigInt {
+  const priceFeedAddress = Address.fromString(CHAINLINK_PRICE_FEED_ADDRESS_MAINNET_ETH_USD);
+  const priceFeed = AggregatorV3Interface.bind(priceFeedAddress);
+
+  const result = priceFeed.try_latestRoundData();
+  if (result.reverted) {
+    log.error('Chainlink ETH/USD price fetch failed for tx {}', [txHash.toHexString()]);
+    return BigInt.zero();
+  }
+
+  return result.value.value1;
+}
+
+/**
+ * Calculate total pool liquidity in USD.
+ *
+ * Formula: 2 × reserve1 × ethPrice / 10^26
+ *
+ * Uniswap V2 constant product AMM: both sides have equal USD value at equilibrium.
+ * Total pool value = 2 × one side's USD value.
+ *
+ * Decimal normalization (10^26):
+ *   - Chainlink price has 8 decimals (e.g., 180000000000 = $1800.00)
+ *   - reserve1 is in wei (18 decimals)
+ *   - Divide by 10^(8+18) = 10^26 to get USD dollars
+ */
+export function calculatePoolLiquidityUsd(reserve1: BigInt, ethPrice: BigInt): BigDecimal {
+  if (ethPrice.equals(BigInt.zero())) {
+    return BigDecimal.zero();
+  }
+
+  const two = BigInt.fromI32(2);
+  const numerator = two.times(reserve1).times(ethPrice);
+  const denominator = BigInt.fromI32(10).pow(PRICE_DECIMALS as u8);
+
+  return numerator.toBigDecimal().div(denominator.toBigDecimal());
+}
+
+/**
+ * Calculate protocol-owned liquidity in USD.
+ *
+ * Formula: (treasurySupply / totalSupply) × poolLiquidityUsd
+ *
+ * Returns treasury's proportional share of pool liquidity.
+ * Returns zero when totalSupply is zero (occurs before first mint during pool initialization).
+ */
+export function calculateProtocolOwnedLiquidityUsd(
+  poolLiquidityUsd: BigDecimal,
+  treasurySupply: BigInt,
+  totalSupply: BigInt
+): BigDecimal {
+  if (totalSupply.equals(BigInt.zero())) {
+    return BigDecimal.zero();
+  }
+
+  const treasuryFraction = treasurySupply.toBigDecimal().div(totalSupply.toBigDecimal());
+  return poolLiquidityUsd.times(treasuryFraction);
+}
+
+/**
+ * Calculate all USD metrics for a sync event.
+ *
+ * Fetches ETH price from Chainlink and computes pool liquidity USD,
+ * protocol-owned liquidity USD, and human-readable ETH price.
+ */
+export function calculateUsdMetrics(
+  reserve1: BigInt,
+  txHash: Bytes,
+  treasurySupply: BigInt,
+  totalSupply: BigInt
+): UsdMetrics {
+  const ethPrice = getEthPriceUsd(txHash);
+  const poolLiquidityUsd = calculatePoolLiquidityUsd(reserve1, ethPrice);
+  const protocolOwnedLiquidityUsd = calculateProtocolOwnedLiquidityUsd(
+    poolLiquidityUsd, treasurySupply, totalSupply
+  );
+  const lastEthPriceUsd = ethPrice.toBigDecimal().div(
+    BigInt.fromI32(10).pow(CHAINLINK_DECIMALS as u8).toBigDecimal()
+  );
+
+  return { poolLiquidityUsd, protocolOwnedLiquidityUsd, lastEthPriceUsd };
+}
+
+/** Return type for calculateUsdMetrics */
+export class UsdMetrics {
+  poolLiquidityUsd: BigDecimal;
+  protocolOwnedLiquidityUsd: BigDecimal;
+  lastEthPriceUsd: BigDecimal;
 }
 
 /**
@@ -173,12 +289,18 @@ export function updateGlobalMetricsAfterTransfer(
 export function updateGlobalMetricsAfterSync(
   reserve0: BigInt,
   reserve1: BigInt,
-  timestamp: BigInt
+  timestamp: BigInt,
+  poolLiquidityUsd: BigDecimal,
+  protocolOwnedLiquidityUsd: BigDecimal,
+  lastEthPriceUsd: BigDecimal
 ): void {
   let metrics = getOrCreateLPTokenMetrics();
 
   metrics.currentReserve0 = reserve0;
   metrics.currentReserve1 = reserve1;
+  metrics.poolLiquidityUsd = poolLiquidityUsd;
+  metrics.protocolOwnedLiquidityUsd = protocolOwnedLiquidityUsd;
+  metrics.lastEthPriceUsd = lastEthPriceUsd;
   metrics.lastUpdated = timestamp;
 
   metrics.save();
