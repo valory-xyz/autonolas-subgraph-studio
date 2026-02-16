@@ -35,8 +35,8 @@
       "startBlock": 24205712
     },
     "IdentityRegistryBridger": {
-      "address": "",
-      "startBlock": 0
+      "address": "0x7fc0ddf4DFB61CfA5519db2A5eE7B2Eb02De0140",
+      "startBlock": 59336472
     }
   },
   "gnosis": {
