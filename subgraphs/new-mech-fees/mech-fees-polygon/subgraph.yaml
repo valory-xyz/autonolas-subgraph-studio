@@ -1,0 +1,127 @@
+specVersion: 0.0.5
+schema:
+  file: ../common/schema.graphql
+dataSources:
+  # 1. Native tracker (POL)
+  - kind: ethereum
+    name: BalanceTrackerFixedPriceNative
+    network: matic
+    source:
+      address: "0xc096362fa6f4A4B1a9ea68b1043416f3381ce300"
+      abi: BalanceTrackerFixedPriceNative
+      startBlock: 81028655
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Global
+        - Mech
+        - MechModel
+        - MechTransaction
+        - DailyTotals
+        - MechDaily
+      abis:
+        - name: BalanceTrackerFixedPriceNative
+          file: ../../abis/BalanceTrackerFixedPriceNative.json
+        - name: AggregatorV3Interface
+          file: ../../abis/AggregatorV3Interface.json
+      eventHandlers:
+        - event: MechBalanceAdjusted(indexed address,uint256,uint256,uint256)
+          handler: handleMechBalanceAdjustedForNative
+        - event: Withdraw(indexed address,indexed address,uint256)
+          handler: handleWithdrawForNative
+      file: ../new-native-mech-fees-polygon/src/mapping.ts
+
+  # 2. NVM tracker (credits)
+  - kind: ethereum
+    name: BalanceTrackerNvmSubscriptionTokenUSDC
+    network: matic
+    source:
+      address: "0xd00Cb760Bf30183EAFE67f0E590BEeE190F35Cf3"
+      abi: BalanceTrackerNvmSubscriptionToken
+      startBlock: 81724578
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Global
+        - Mech
+        - MechModel
+        - MechTransaction
+        - DailyTotals
+        - MechDaily
+      abis:
+        - name: BalanceTrackerNvmSubscriptionToken
+          file: ../../abis/BalanceTrackerNvmSubscriptionToken.json
+      eventHandlers:
+        - event: MechBalanceAdjusted(indexed address,uint256,uint256,uint256)
+          handler: handleMechBalanceAdjustedForNvm
+        - event: Withdraw(indexed address,indexed address,uint256)
+          handler: handleWithdrawForNvm
+      file: ../new-nvm-mech-fees-polygon/src/mapping.ts
+
+  # 3. Token OLAS tracker
+  - kind: ethereum
+    name: BalanceTrackerFixedPriceTokenOLAS
+    network: matic
+    source:
+      address: "0x1521918961bDBC9Ed4C67a7103D5999e4130E6CB"
+      abi: BalanceTrackerFixedPriceToken
+      startBlock: 81028765
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Global
+        - Mech
+        - MechModel
+        - MechTransaction
+        - DailyTotals
+        - MechDaily
+      abis:
+        - name: BalanceTrackerFixedPriceToken
+          file: ../../abis/BalanceTrackerFixedPriceToken.json
+        - name: BalancerV2Vault
+          file: ../../abis/BalancerV2Vault.json
+        - name: BalancerV2WeightedPool
+          file: ../../abis/BalancerV2WeightedPool.json
+        - name: AggregatorV3Interface
+          file: ../../abis/AggregatorV3Interface.json
+      eventHandlers:
+        - event: MechBalanceAdjusted(indexed address,uint256,uint256,uint256)
+          handler: handleMechBalanceAdjustedForTokenOlas
+        - event: Withdraw(indexed address,indexed address,uint256)
+          handler: handleWithdrawForTokenOlas
+      file: ../new-token-olas-mech-fees-polygon/src/mapping.ts
+
+  # 4. Token USDC tracker
+  - kind: ethereum
+    name: BalanceTrackerFixedPriceTokenUSDC
+    network: matic
+    source:
+      address: "0x5C50ebc17d002A4484585C8fbf62f51953493c0B"
+      abi: BalanceTrackerFixedPriceToken
+      startBlock: 81888996
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Global
+        - Mech
+        - MechModel
+        - MechTransaction
+        - DailyTotals
+        - MechDaily
+      abis:
+        - name: BalanceTrackerFixedPriceToken
+          file: ../../abis/BalanceTrackerFixedPriceToken.json
+      eventHandlers:
+        - event: MechBalanceAdjusted(indexed address,uint256,uint256,uint256)
+          handler: handleMechBalanceAdjustedForTokenUSDC
+        - event: Withdraw(indexed address,indexed address,uint256)
+          handler: handleWithdrawForTokenUSDC
+      file: ../new-token-usdc-mech-fees-polygon/src/mapping.ts

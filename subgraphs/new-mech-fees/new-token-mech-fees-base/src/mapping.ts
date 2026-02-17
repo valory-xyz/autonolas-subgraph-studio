@@ -1,4 +1,4 @@
-import { Address, BigDecimal, Bytes, log } from "@graphprotocol/graph-ts"
+import { Address, Bytes, log } from "@graphprotocol/graph-ts"
 import {
   MechBalanceAdjusted,
   Withdraw
@@ -27,7 +27,7 @@ const VAULT_ADDRESS = getBalancerVaultAddress();
 const POOL_ADDRESS = getOlasStablePoolAddress();
 const OLAS_ADDRESS = getOlasTokenAddress();
 const STABLE_ADDRESS = getStableTokenAddress();
-const MODEL = "token";
+const MODEL = "token-olas";
 
 function getPoolIdSafe(poolAddress: Address): Bytes {
   const pool = BalancerV2WeightedPool.bind(poolAddress);

@@ -2,9 +2,13 @@ import { BigDecimal, BigInt, ethereum } from "@graphprotocol/graph-ts";
 import { Global, MechTransaction, Mech, MechDaily, DailyTotals, MechModel } from "./generated/schema";
 import {
   TOKEN_RATIO_GNOSIS,
-  TOKEN_DECIMALS_GNOSIS,
+  XDAI_TOKEN_DECIMALS_GNOSIS,
   TOKEN_RATIO_BASE,
-  TOKEN_DECIMALS_BASE,
+  USDC_TOKEN_DECIMALS_BASE,
+  TOKEN_RATIO_POLYGON,
+  USDC_TOKEN_DECIMALS_POLYGON,
+  TOKEN_RATIO_OPTIMISM,
+  USDC_TOKEN_DECIMALS_OPTIMISM,
   CHAINLINK_PRICE_FEED_DECIMALS,
   ETH_DECIMALS,
 } from "./constants";
@@ -154,10 +158,48 @@ export function convertBaseNativeWeiToUsd(
     .div(ethDivisor);
 }
 
+// For Polygon native (POL) fees
+export function convertPolygonNativeWeiToUsd(
+  amountInWei: BigInt,
+  polPrice: BigInt
+): BigDecimal {
+  const priceDivisor = BigInt.fromI32(10)
+    .pow(CHAINLINK_PRICE_FEED_DECIMALS as u8)
+    .toBigDecimal();
+  const polDivisor = BigInt.fromI32(10)
+    .pow(ETH_DECIMALS as u8)
+    .toBigDecimal();
+
+  return amountInWei
+    .toBigDecimal()
+    .times(polPrice.toBigDecimal())
+    .div(priceDivisor)
+    .div(polDivisor);
+}
+
+// For Optimism native (ETH) fees
+export function convertOptimismNativeWeiToUsd(
+  amountInWei: BigInt,
+  ethPrice: BigInt
+): BigDecimal {
+  const priceDivisor = BigInt.fromI32(10)
+    .pow(CHAINLINK_PRICE_FEED_DECIMALS as u8)
+    .toBigDecimal();
+  const ethDivisor = BigInt.fromI32(10)
+    .pow(ETH_DECIMALS as u8)
+    .toBigDecimal();
+
+  return amountInWei
+    .toBigDecimal()
+    .times(ethPrice.toBigDecimal())
+    .div(priceDivisor)
+    .div(ethDivisor);
+}
+
 // For NVM fees on Gnosis
 export function calculateGnosisNvmFeesIn(deliveryRate: BigInt): BigDecimal {
   const tokenDivisor = BigInt.fromI32(10)
-    .pow(TOKEN_DECIMALS_GNOSIS as u8)
+    .pow(XDAI_TOKEN_DECIMALS_GNOSIS as u8)
     .toBigDecimal();
   const ethDivisor = BigInt.fromI32(10).pow(18).toBigDecimal();
 
@@ -171,13 +213,41 @@ export function calculateGnosisNvmFeesIn(deliveryRate: BigInt): BigDecimal {
 // For NVM fees on Base
 export function calculateBaseNvmFeesIn(deliveryRate: BigInt): BigDecimal {
   const tokenDivisor = BigInt.fromI32(10)
-    .pow(TOKEN_DECIMALS_BASE as u8)
+    .pow(USDC_TOKEN_DECIMALS_BASE as u8)
     .toBigDecimal();
   const ethDivisor = BigInt.fromI32(10).pow(18).toBigDecimal();
 
   return deliveryRate
     .toBigDecimal()
     .times(TOKEN_RATIO_BASE)
+    .div(ethDivisor)
+    .div(tokenDivisor);
+}
+
+// For NVM fees on Polygon (same formula as Base)
+export function calculatePolygonNvmFeesIn(deliveryRate: BigInt): BigDecimal {
+  const tokenDivisor = BigInt.fromI32(10)
+    .pow(USDC_TOKEN_DECIMALS_POLYGON as u8)
+    .toBigDecimal();
+  const ethDivisor = BigInt.fromI32(10).pow(18).toBigDecimal();
+
+  return deliveryRate
+    .toBigDecimal()
+    .times(TOKEN_RATIO_POLYGON)
+    .div(ethDivisor)
+    .div(tokenDivisor);
+}
+
+// For NVM fees on Optimism (same formula as Base)
+export function calculateOptimismNvmFeesIn(deliveryRate: BigInt): BigDecimal {
+  const tokenDivisor = BigInt.fromI32(10)
+    .pow(USDC_TOKEN_DECIMALS_OPTIMISM as u8)
+    .toBigDecimal();
+  const ethDivisor = BigInt.fromI32(10).pow(18).toBigDecimal();
+
+  return deliveryRate
+    .toBigDecimal()
+    .times(TOKEN_RATIO_OPTIMISM)
     .div(ethDivisor)
     .div(tokenDivisor);
 }
