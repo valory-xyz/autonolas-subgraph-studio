@@ -1,0 +1,127 @@
+specVersion: 0.0.5
+schema:
+  file: ../common/schema.graphql
+dataSources:
+  # 1. Native tracker (ETH)
+  - kind: ethereum
+    name: BalanceTrackerFixedPriceNative
+    network: optimism
+    source:
+      address: "0x4Cd816ce806FF1003ee459158A093F02AbF042a8"
+      abi: BalanceTrackerFixedPriceNative
+      startBlock: 145788503
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Global
+        - Mech
+        - MechModel
+        - MechTransaction
+        - DailyTotals
+        - MechDaily
+      abis:
+        - name: BalanceTrackerFixedPriceNative
+          file: ../../abis/BalanceTrackerFixedPriceNative.json
+        - name: AggregatorV3Interface
+          file: ../../abis/AggregatorV3Interface.json
+      eventHandlers:
+        - event: MechBalanceAdjusted(indexed address,uint256,uint256,uint256)
+          handler: handleMechBalanceAdjustedForNative
+        - event: Withdraw(indexed address,indexed address,uint256)
+          handler: handleWithdrawForNative
+      file: ../new-native-mech-fees-optimism/src/mapping.ts
+
+  # 2. NVM tracker (credits)
+  - kind: ethereum
+    name: BalanceTrackerNvmSubscriptionTokenUSDC
+    network: optimism
+    source:
+      address: "0x1a0bFCC27051BCcDDc444578f56A4F5920e0E083"
+      abi: BalanceTrackerNvmSubscriptionToken
+      startBlock: 146485258
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Global
+        - Mech
+        - MechModel
+        - MechTransaction
+        - DailyTotals
+        - MechDaily
+      abis:
+        - name: BalanceTrackerNvmSubscriptionToken
+          file: ../../abis/BalanceTrackerNvmSubscriptionToken.json
+      eventHandlers:
+        - event: MechBalanceAdjusted(indexed address,uint256,uint256,uint256)
+          handler: handleMechBalanceAdjustedForNvm
+        - event: Withdraw(indexed address,indexed address,uint256)
+          handler: handleWithdrawForNvm
+      file: ../new-nvm-mech-fees-optimism/src/mapping.ts
+
+  # 3. Token OLAS tracker
+  - kind: ethereum
+    name: BalanceTrackerFixedPriceTokenOLAS
+    network: optimism
+    source:
+      address: "0x70A0D93fb0dB6EAab871AB0A3BE279DcA37a2bcf"
+      abi: BalanceTrackerFixedPriceToken
+      startBlock: 145788564
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Global
+        - Mech
+        - MechModel
+        - MechTransaction
+        - DailyTotals
+        - MechDaily
+      abis:
+        - name: BalanceTrackerFixedPriceToken
+          file: ../../abis/BalanceTrackerFixedPriceToken.json
+        - name: BalancerV2Vault
+          file: ../../abis/BalancerV2Vault.json
+        - name: BalancerV2WeightedPool
+          file: ../../abis/BalancerV2WeightedPool.json
+        - name: AggregatorV3Interface
+          file: ../../abis/AggregatorV3Interface.json
+      eventHandlers:
+        - event: MechBalanceAdjusted(indexed address,uint256,uint256,uint256)
+          handler: handleMechBalanceAdjustedForTokenOlas
+        - event: Withdraw(indexed address,indexed address,uint256)
+          handler: handleWithdrawForTokenOlas
+      file: ../new-token-olas-mech-fees-optimism/src/mapping.ts
+
+  # 4. Token USDC tracker
+  - kind: ethereum
+    name: BalanceTrackerFixedPriceTokenUSDC
+    network: optimism
+    source:
+      address: "0xA123748Ce7609F507060F947b70298D0bde621E6"
+      abi: BalanceTrackerFixedPriceToken
+      startBlock: 145788564
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Global
+        - Mech
+        - MechModel
+        - MechTransaction
+        - DailyTotals
+        - MechDaily
+      abis:
+        - name: BalanceTrackerFixedPriceToken
+          file: ../../abis/BalanceTrackerFixedPriceToken.json
+      eventHandlers:
+        - event: MechBalanceAdjusted(indexed address,uint256,uint256,uint256)
+          handler: handleMechBalanceAdjustedForTokenUSDC
+        - event: Withdraw(indexed address,indexed address,uint256)
+          handler: handleWithdrawForTokenUSDC
+      file: ../new-token-usdc-mech-fees-optimism/src/mapping.ts

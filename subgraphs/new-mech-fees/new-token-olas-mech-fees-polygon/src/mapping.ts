@@ -1,4 +1,4 @@
-import { Address, Bytes, log } from "@graphprotocol/graph-ts"
+import { Address, BigDecimal, BigInt, Bytes, log } from "@graphprotocol/graph-ts"
 import {
   MechBalanceAdjusted,
   Withdraw
@@ -16,48 +16,67 @@ import {
   updateMechDailyIn,
   updateMechDailyOut,
   updateMechModelIn,
-  updateMechModelOut
+  updateMechModelOut,
+  convertPolygonNativeWeiToUsd
 } from "../../common/utils"
 import { calculateOlasInUsd } from "../../common/token-utils"
-import { BalancerV2Vault } from "../../common/generated/BalanceTrackerFixedPriceToken/BalancerV2Vault";
+import { ETH_DECIMALS } from "../../common/constants"
 import { BalancerV2WeightedPool } from "../../common/generated/BalanceTrackerFixedPriceToken/BalancerV2WeightedPool";
-import { getBalancerVaultAddress, getOlasStablePoolAddress, getOlasTokenAddress, getStableTokenAddress, getBurnAddressMechFees } from "../../../../shared/constants";
+import { AggregatorV3Interface } from "../../common/generated/BalanceTrackerFixedPriceToken/AggregatorV3Interface";
+import { getBalancerVaultAddress, getOlasStablePoolAddress, getOlasTokenAddress, getStableTokenAddress, getBurnAddressMechFees, CHAINLINK_PRICE_FEED_ADDRESS_POLYGON_POL_USD } from "../../../../shared/constants";
 
 const BURN_ADDRESS = getBurnAddressMechFees();
 const VAULT_ADDRESS = getBalancerVaultAddress();
 const POOL_ADDRESS = getOlasStablePoolAddress();
 const OLAS_ADDRESS = getOlasTokenAddress();
-const STABLE_ADDRESS = getStableTokenAddress();
+const STABLE_ADDRESS = getStableTokenAddress(); // WMATIC on Polygon
+const PRICE_FEED_ADDRESS = Address.fromString(CHAINLINK_PRICE_FEED_ADDRESS_POLYGON_POL_USD);
 const MODEL = "token-olas";
 
 function getPoolIdSafe(poolAddress: Address): Bytes {
-  // For Balancer V2, the pool ID is typically the pool address + some additional data
-  // We'll try to get it from the pool contract directly instead of through the vault
   const pool = BalancerV2WeightedPool.bind(poolAddress);
   const poolIdResult = pool.try_getPoolId();
-  
+
   if (poolIdResult.reverted) {
     log.warning("Could not get pool ID for pool {}, using placeholder", [poolAddress.toHexString()]);
     return Bytes.fromHexString("0x0000000000000000000000000000000000000000000000000000000000000000");
   }
-  
+
   return poolIdResult.value;
 }
 
-export function handleMechBalanceAdjustedForToken(event: MechBalanceAdjusted): void {
+export function handleMechBalanceAdjustedForTokenOlas(event: MechBalanceAdjusted): void {
   const deliveryRateOlas = event.params.deliveryRate;
   const mechId = event.params.mech.toHex();
 
-  // Get pool ID safely
   const poolId = getPoolIdSafe(POOL_ADDRESS);
-  
-  const deliveryRateUsd = calculateOlasInUsd(
+
+  // Step 1: Calculate OLAS value in WMATIC terms (WMATIC has 18 decimals)
+  const deliveryRateInMatic = calculateOlasInUsd(
     VAULT_ADDRESS,
     poolId,
     OLAS_ADDRESS,
     STABLE_ADDRESS,
     18,
     deliveryRateOlas
+  );
+
+  // Step 2: Get POL/USD price from Chainlink
+  const priceFeed = AggregatorV3Interface.bind(PRICE_FEED_ADDRESS);
+  const latestRoundData = priceFeed.try_latestRoundData();
+
+  if (latestRoundData.reverted) {
+    log.error("Could not get POL price from Chainlink for tx: {}", [event.transaction.hash.toHex()]);
+    return;
+  }
+
+  // Step 3: Convert WMATIC value to USD using Chainlink POL/USD price feed
+  const maticValueInWei = deliveryRateInMatic
+    .times(BigInt.fromI32(10).pow(ETH_DECIMALS as u8).toBigDecimal())
+    .truncate(0).digits;
+  const deliveryRateUsd = convertPolygonNativeWeiToUsd(
+    BigInt.fromString(maticValueInWei.toString()),
+    latestRoundData.value.value1
   );
 
   updateTotalFeesIn(deliveryRateUsd);
@@ -82,7 +101,7 @@ export function handleMechBalanceAdjustedForToken(event: MechBalanceAdjusted): v
   }
 }
 
-export function handleWithdrawForToken(event: Withdraw): void {
+export function handleWithdrawForTokenOlas(event: Withdraw): void {
   const recipientAddress = event.params.account;
   const withdrawalAmountOlas = event.params.amount;
   const mechId = recipientAddress.toHex();
@@ -91,16 +110,34 @@ export function handleWithdrawForToken(event: Withdraw): void {
     return;
   }
 
-  // Get pool ID safely
   const poolId = getPoolIdSafe(POOL_ADDRESS);
 
-  const withdrawalAmountUsd = calculateOlasInUsd(
+  // Step 1: Calculate OLAS value in WMATIC terms (WMATIC has 18 decimals)
+  const withdrawalAmountInMatic = calculateOlasInUsd(
     VAULT_ADDRESS,
     poolId,
     OLAS_ADDRESS,
     STABLE_ADDRESS,
     18,
     withdrawalAmountOlas
+  );
+
+  // Step 2: Get POL/USD price from Chainlink
+  const priceFeed = AggregatorV3Interface.bind(PRICE_FEED_ADDRESS);
+  const latestRoundData = priceFeed.try_latestRoundData();
+
+  if (latestRoundData.reverted) {
+    log.error("Could not get POL price from Chainlink for tx: {}", [event.transaction.hash.toHex()]);
+    return;
+  }
+
+  // Step 3: Convert WMATIC value to USD using Chainlink POL/USD price feed
+  const maticValueInWei = withdrawalAmountInMatic
+    .times(BigInt.fromI32(10).pow(ETH_DECIMALS as u8).toBigDecimal())
+    .truncate(0).digits;
+  const withdrawalAmountUsd = convertPolygonNativeWeiToUsd(
+    BigInt.fromString(maticValueInWei.toString()),
+    latestRoundData.value.value1
   );
 
   updateTotalFeesOut(withdrawalAmountUsd);
@@ -120,4 +157,4 @@ export function handleWithdrawForToken(event: Withdraw): void {
       MODEL
     );
   }
-} 
+}

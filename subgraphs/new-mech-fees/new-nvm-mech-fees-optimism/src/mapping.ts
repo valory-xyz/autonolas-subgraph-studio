@@ -1,20 +1,20 @@
-import { BigInt } from "@graphprotocol/graph-ts";
+import { BigInt } from "@graphprotocol/graph-ts"
 import {
   MechBalanceAdjusted,
   Withdraw
-} from "../../common/generated/BalanceTrackerNvmSubscriptionNative/BalanceTrackerNvmSubscriptionNative"
+} from "../../common/generated/BalanceTrackerNvmSubscriptionToken/BalanceTrackerNvmSubscriptionToken"
 import { Mech } from "../../common/generated/schema"
 import {
-  TOKEN_RATIO_GNOSIS,
-  XDAI_TOKEN_DECIMALS_GNOSIS,
+  TOKEN_RATIO_OPTIMISM,
+  USDC_TOKEN_DECIMALS_OPTIMISM,
   ETH_DECIMALS
 } from "../../common/constants"
 import { getBurnAddressMechFees } from "../../../../shared/constants"
-import { 
-  updateTotalFeesIn, 
-  updateTotalFeesOut, 
-  calculateGnosisNvmFeesIn, 
-  convertGnosisNativeWeiToUsd,
+import {
+  updateTotalFeesIn,
+  updateTotalFeesOut,
+  convertBaseUsdcToUsd,
+  calculateOptimismNvmFeesIn,
   updateMechFeesIn,
   updateMechFeesOut,
   createMechTransactionForAccrued,
@@ -25,7 +25,7 @@ import {
   updateDailyTotalsOut,
   updateMechDailyIn,
   updateMechDailyOut
-} from "../../common/utils"
+} from "../../common/utils";
 
 const BURN_ADDRESS = getBurnAddressMechFees();
 const MODEL = "nvm";
@@ -34,23 +34,24 @@ export function handleMechBalanceAdjustedForNvm(event: MechBalanceAdjusted): voi
   const deliveryRateCredits = event.params.deliveryRate;
   const mechId = event.params.mech.toHex();
 
-  // Convert credits to USD using the existing function
-  const earningsAmountUsd = calculateGnosisNvmFeesIn(deliveryRateCredits);
+  // Convert credits to USD using the Optimism formula
+  const deliveryRateUsd = calculateOptimismNvmFeesIn(deliveryRateCredits);
 
-  updateTotalFeesIn(earningsAmountUsd);
-  // Store credits as raw value (not converted to xDAI wei)
-  updateMechFeesIn(mechId, earningsAmountUsd, deliveryRateCredits.toBigDecimal());
-  updateMechModelIn(mechId, MODEL, earningsAmountUsd, deliveryRateCredits.toBigDecimal());
-  updateDailyTotalsIn(earningsAmountUsd, event.block.timestamp);
-  updateMechDailyIn(mechId, earningsAmountUsd, deliveryRateCredits.toBigDecimal(), event.block.timestamp);
+  // Update global and mech-specific totals
+  updateTotalFeesIn(deliveryRateUsd);
+  // Store credits as raw value (not converted to USDC)
+  updateMechFeesIn(mechId, deliveryRateUsd, deliveryRateCredits.toBigDecimal());
+  updateMechModelIn(mechId, MODEL, deliveryRateUsd, deliveryRateCredits.toBigDecimal());
+  updateDailyTotalsIn(deliveryRateUsd, event.block.timestamp);
+  updateMechDailyIn(mechId, deliveryRateUsd, deliveryRateCredits.toBigDecimal(), event.block.timestamp);
 
-  // Create MechTransaction for the accrued fees
+  // Create the transaction record
   const mech = Mech.load(mechId);
   if (mech != null) {
     createMechTransactionForAccrued(
       mech,
       deliveryRateCredits.toBigDecimal(), // Store credits as raw amount
-      earningsAmountUsd,
+      deliveryRateUsd,
       event,
       event.params.deliveryRate,
       event.params.balance,
@@ -62,27 +63,26 @@ export function handleMechBalanceAdjustedForNvm(event: MechBalanceAdjusted): voi
 
 export function handleWithdrawForNvm(event: Withdraw): void {
   const recipientAddress = event.params.account;
-  const withdrawalAmountWei = event.params.amount;
+  const withdrawalAmountUsdc = event.params.amount;
   const mechId = recipientAddress.toHex();
 
   if (recipientAddress.equals(BURN_ADDRESS)) {
     return;
   }
 
-  const withdrawalAmountUsd = convertGnosisNativeWeiToUsd(withdrawalAmountWei);
+  const withdrawalAmountUsd = convertBaseUsdcToUsd(withdrawalAmountUsdc);
 
-  // Convert xDAI wei back to credits for raw storage
-  // Formula: credits = (xdai_wei * 1e18 * 1e18) / (TOKEN_RATIO_GNOSIS)
+  // Convert USDC back to credits for raw storage
+  // Formula: credits = (usdc_amount × 1e18 × 1e6) ÷ TOKEN_RATIO_OPTIMISM
   const ethDivisor = BigInt.fromI32(10).pow(ETH_DECIMALS as u8).toBigDecimal();
-  const tokenDivisor = BigInt.fromI32(10).pow(XDAI_TOKEN_DECIMALS_GNOSIS as u8).toBigDecimal();
-  
-  const withdrawalCredits = withdrawalAmountWei.toBigDecimal()
+  const tokenDivisor = BigInt.fromI32(10).pow(USDC_TOKEN_DECIMALS_OPTIMISM as u8).toBigDecimal();
+  const withdrawalCredits = withdrawalAmountUsdc.toBigDecimal()
     .times(ethDivisor)
     .times(tokenDivisor)
-    .div(TOKEN_RATIO_GNOSIS);
+    .div(TOKEN_RATIO_OPTIMISM);
 
   updateTotalFeesOut(withdrawalAmountUsd);
-  // Store credits as raw value (converted from xDAI wei)
+  // Store credits as raw value (converted from USDC)
   updateMechFeesOut(mechId, withdrawalAmountUsd, withdrawalCredits);
   updateMechModelOut(mechId, MODEL, withdrawalAmountUsd, withdrawalCredits);
   updateDailyTotalsOut(withdrawalAmountUsd, event.block.timestamp);
@@ -99,4 +99,4 @@ export function handleWithdrawForNvm(event: Withdraw): void {
       MODEL
     );
   }
-} 
+}

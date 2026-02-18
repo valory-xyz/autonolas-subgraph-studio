@@ -1,14 +1,12 @@
-// src/mapping.ts
-
-import { Address, BigDecimal, BigInt, log } from "@graphprotocol/graph-ts"
+import { BigInt } from "@graphprotocol/graph-ts"
 import {
   MechBalanceAdjusted,
   Withdraw
 } from "../../common/generated/BalanceTrackerNvmSubscriptionToken/BalanceTrackerNvmSubscriptionToken"
 import { Mech } from "../../common/generated/schema"
-import { 
+import {
   TOKEN_RATIO_BASE,
-  TOKEN_DECIMALS_BASE,
+  USDC_TOKEN_DECIMALS_BASE,
   ETH_DECIMALS
 } from "../../common/constants"
 import { getBurnAddressMechFees } from "../../../../shared/constants"
@@ -77,7 +75,7 @@ export function handleWithdrawForNvm(event: Withdraw): void {
   // Convert USDC back to credits for raw storage
   // Formula: credits = (usdc_amount × 1e18 × 1e6) ÷ TOKEN_RATIO_BASE
   const ethDivisor = BigInt.fromI32(10).pow(ETH_DECIMALS as u8).toBigDecimal();
-  const tokenDivisor = BigInt.fromI32(10).pow(TOKEN_DECIMALS_BASE as u8).toBigDecimal();
+  const tokenDivisor = BigInt.fromI32(10).pow(USDC_TOKEN_DECIMALS_BASE as u8).toBigDecimal();
   const withdrawalCredits = withdrawalAmountUsdc.toBigDecimal()
     .times(ethDivisor)
     .times(tokenDivisor)
