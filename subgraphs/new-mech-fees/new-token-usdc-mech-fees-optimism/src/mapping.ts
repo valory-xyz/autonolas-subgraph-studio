@@ -2,7 +2,7 @@ import { BigDecimal, log } from "@graphprotocol/graph-ts"
 import {
   MechBalanceAdjusted,
   Withdraw
-} from "../../common/generated/BalanceTrackerFixedPriceToken/BalanceTrackerFixedPriceToken"
+} from "../../common/generated/BalanceTrackerFixedPriceTokenUSDC/BalanceTrackerFixedPriceToken"
 import { Mech } from "../../common/generated/schema"
 import { getBurnAddressMechFees } from "../../../../shared/constants"
 import { convertBaseUsdcToUsd } from "../../common/utils"

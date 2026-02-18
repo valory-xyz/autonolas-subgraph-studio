@@ -23,9 +23,9 @@ dataSources:
         - MechDaily
       abis:
         - name: BalanceTrackerFixedPriceNative
-          file: ../../abis/BalanceTrackerFixedPriceNative.json
+          file: ../../../abis/BalanceTrackerFixedPriceNative.json
         - name: AggregatorV3Interface
-          file: ../../abis/AggregatorV3Interface.json
+          file: ../../../abis/AggregatorV3Interface.json
       eventHandlers:
         - event: MechBalanceAdjusted(indexed address,uint256,uint256,uint256)
           handler: handleMechBalanceAdjustedForNative
@@ -54,7 +54,7 @@ dataSources:
         - MechDaily
       abis:
         - name: BalanceTrackerNvmSubscriptionToken
-          file: ../../abis/BalanceTrackerNvmSubscriptionToken.json
+          file: ../../../abis/BalanceTrackerNvmSubscriptionToken.json
       eventHandlers:
         - event: MechBalanceAdjusted(indexed address,uint256,uint256,uint256)
           handler: handleMechBalanceAdjustedForNvm
@@ -83,13 +83,13 @@ dataSources:
         - MechDaily
       abis:
         - name: BalanceTrackerFixedPriceToken
-          file: ../../abis/BalanceTrackerFixedPriceToken.json
+          file: ../../../abis/BalanceTrackerFixedPriceToken.json
         - name: BalancerV2Vault
-          file: ../../abis/BalancerV2Vault.json
+          file: ../../../abis/BalancerV2Vault.json
         - name: BalancerV2WeightedPool
-          file: ../../abis/BalancerV2WeightedPool.json
+          file: ../../../abis/BalancerV2WeightedPool.json
         - name: AggregatorV3Interface
-          file: ../../abis/AggregatorV3Interface.json
+          file: ../../../abis/AggregatorV3Interface.json
       eventHandlers:
         - event: MechBalanceAdjusted(indexed address,uint256,uint256,uint256)
           handler: handleMechBalanceAdjustedForTokenOlas
@@ -118,7 +118,7 @@ dataSources:
         - MechDaily
       abis:
         - name: BalanceTrackerFixedPriceToken
-          file: ../../abis/BalanceTrackerFixedPriceToken.json
+          file: ../../../abis/BalanceTrackerFixedPriceToken.json
       eventHandlers:
         - event: MechBalanceAdjusted(indexed address,uint256,uint256,uint256)
           handler: handleMechBalanceAdjustedForTokenUSDC

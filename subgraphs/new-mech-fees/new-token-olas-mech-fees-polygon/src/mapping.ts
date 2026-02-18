@@ -2,7 +2,7 @@ import { Address, BigDecimal, BigInt, Bytes, log } from "@graphprotocol/graph-ts
 import {
   MechBalanceAdjusted,
   Withdraw
-} from "../../common/generated/BalanceTrackerFixedPriceToken/BalanceTrackerFixedPriceToken"
+} from "../../common/generated/BalanceTrackerFixedPriceTokenOLAS/BalanceTrackerFixedPriceToken"
 import { Mech } from "../../common/generated/schema"
 import {
   updateTotalFeesIn,
@@ -21,8 +21,8 @@ import {
 } from "../../common/utils"
 import { calculateOlasInUsd } from "../../common/token-utils"
 import { ETH_DECIMALS } from "../../common/constants"
-import { BalancerV2WeightedPool } from "../../common/generated/BalanceTrackerFixedPriceToken/BalancerV2WeightedPool";
-import { AggregatorV3Interface } from "../../common/generated/BalanceTrackerFixedPriceToken/AggregatorV3Interface";
+import { BalancerV2WeightedPool } from "../../common/generated/BalanceTrackerFixedPriceTokenOLAS/BalancerV2WeightedPool";
+import { AggregatorV3Interface } from "../../common/generated/BalanceTrackerFixedPriceTokenOLAS/AggregatorV3Interface";
 import { getBalancerVaultAddress, getOlasStablePoolAddress, getOlasTokenAddress, getStableTokenAddress, getBurnAddressMechFees, CHAINLINK_PRICE_FEED_ADDRESS_POLYGON_POL_USD } from "../../../../shared/constants";
 
 const BURN_ADDRESS = getBurnAddressMechFees();

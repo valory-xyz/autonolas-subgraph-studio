@@ -2,7 +2,7 @@ import { BigInt } from "@graphprotocol/graph-ts"
 import {
   MechBalanceAdjusted,
   Withdraw
-} from "../../common/generated/BalanceTrackerNvmSubscriptionToken/BalanceTrackerNvmSubscriptionToken"
+} from "../../common/generated/BalanceTrackerNvmSubscriptionTokenUSDC/BalanceTrackerNvmSubscriptionToken"
 import { Mech } from "../../common/generated/schema"
 import {
   TOKEN_RATIO_POLYGON,
