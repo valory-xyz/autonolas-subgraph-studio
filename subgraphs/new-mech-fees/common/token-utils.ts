@@ -1,5 +1,5 @@
 import { Address, BigDecimal, BigInt, Bytes, log } from "@graphprotocol/graph-ts";
-import { BalancerV2Vault } from "./generated/BalanceTrackerFixedPriceToken/BalancerV2Vault";
+import { BalancerV2Vault } from "./generated/BalanceTrackerFixedPriceTokenOLAS/BalancerV2Vault";
 
 function getPoolTokenBalances(
   vault: BalancerV2Vault,
