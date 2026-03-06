@@ -3,8 +3,6 @@
 First off, thank you for taking the time to contribute! This document describes how to propose changes, report issues,
 and participate in the development of this repository.
 
-> This guide is intentionally generic and applicable to Solidity projects that use **Foundry** and/or **Hardhat**. Replace placeholders (e.g., emails, URLs) with your project’s actual values as needed.
-
 ---
 
 ## Table of Contents
@@ -21,12 +19,14 @@ and participate in the development of this repository.
   - [Install](#install)
   - [Build](#build)
   - [Test](#test)
-  - [Lint & Static Analysis](#lint--static-analysis)
-- [Solidity Style Guide](#solidity-style-guide)
+- [Subgraph Development Guide](#subgraph-development-guide)
+  - [Multi-Network Patterns](#multi-network-patterns)
+  - [Adding a New Subgraph](#adding-a-new-subgraph)
+  - [Adding a New ABI](#adding-a-new-abi)
 - [Testing Guidelines](#testing-guidelines)
 - [Commit Messages & Branching](#commit-messages--branching)
-- [Versioning & Releases](#versioning--releases)
-- [License & CLA/DCO](#license--cladco)
+- [Deployment](#deployment)
+- [License](#license)
 - [Contact](#contact)
 
 ---
@@ -39,17 +39,28 @@ This project adheres to the [Contributor Covenant](https://www.contributor-coven
 
 ## Repository Structure
 
-Common top-level directories include:
+This is a monorepo of [The Graph](https://thegraph.com/) subgraphs for the Autonolas/Olas ecosystem, hosted on The Graph Studio and Alchemy. Each subgraph indexes on-chain events from Olas smart contracts across multiple EVM networks.
 
-- `contracts/` — Solidity source code.
-- `test/` — Tests (JS/TS for Hardhat, `.t.sol` for Foundry, integration tests).
-- `docs/` — Project related documentation and smart contract addresses.
-- `scripts/` — Deployment and maintenance scripts (bash, TS/JS, etc.).
-- `lib/` — External libraries (submodules or packages).
-- `audits/` — Security reviews and reports (if any).
-- `README.md` — Project overview and build instructions.
+```
+abis/                    # Shared ABI files referenced by all subgraphs
+scripts/
+  deploy-studio.js       # Interactive deployment script
+  generate-manifests.js  # Generates network manifests from templates
+shared/
+  constants.ts           # Shared constants across subgraphs
+subgraphs/
+  babydegen/             # Baby Degen (Optimism)
+  governance/            # Governance
+  legacy-mech-fees/      # Legacy mech fee tracking
+  liquidity/             # Liquidity tracking
+  new-mech-fees/         # Mech fee tracking (Gnosis, Base, Polygon, Optimism)
+  predict/               # Prediction market tracking
+  service-registry/      # Service registry (multi-network, template pattern)
+  staking/               # Staking contracts (multi-network, template pattern)
+  tokenomics/            # Tokenomics (multi-network, shared code pattern)
+```
 
-> The exact structure may differ; consult `README.md` for authoritative information.
+Unlike the self-hosted `autonolas-subgraph` repo, this repo uses a **root-level `package.json`** with all codegen/build scripts.
 
 ---
 
@@ -59,44 +70,39 @@ Common top-level directories include:
 
 1. **Search existing issues** to avoid duplicates.
 2. **Open a new issue** with a clear title and description.
-3. Include steps to reproduce, expected vs actual behavior, logs, and environment details (OS, Node.js, Foundry, Solidity versions).
+3. Include the affected subgraph, network, and any relevant entity IDs or transaction hashes.
 
 ### Suggesting Enhancements
 
 - Explain the motivation and expected impact.
-- Provide a minimal example or pseudo-code.
-- Consider compatibility and security implications.
+- Specify which subgraph(s) and network(s) are affected.
+- Consider compatibility with existing indexed data and entity schemas.
 
 ### Security & Responsible Disclosure
 
 **Do not** open public GitHub issues for security vulnerabilities. Instead:
 
 - Email **security@valory.xyz** with a detailed report.
-- Include steps to reproduce, the affected components, and potential impact.
-- If you propose a fix, include a patch or PR against a private fork when appropriate.
+- Include the affected subgraph, potential impact, and steps to reproduce.
 
-We aim to acknowledge receipt within 72 hours. Disclosure timelines will be coordinated with you.
-
-> Optional: link to a bug bounty policy if available.
+We aim to acknowledge receipt within 72 hours.
 
 ### Pull Requests
 
 1. Fork the repo and create your branch from `main`.
-2. If you’ve added code that should be tested, add tests.
-3. Ensure tests pass locally and CI is green.
-4. Add/adjust documentation (README, NatSpec) as needed.
-5. Use [Conventional Commits](https://www.conventionalcommits.org/) (see below).
-6. Open a PR with a clear description of the change and reasoning.
+2. If you've added or changed handler logic, add tests.
+3. Ensure the subgraph builds for all affected networks and tests pass.
+4. Open a PR with a clear description of the change and reasoning.
 
 **PR Checklist:**
 
-- [ ] Self-reviewed, no debug prints or dead code.
-- [ ] Tests: unit + fuzz/invariant where applicable.
-- [ ] Gas impact considered; include `forge snapshot` diff if relevant.
-- [ ] No storage layout breaking changes unless explicitly intended (document in PR).
-- [ ] Public/External functions have NatSpec `@notice`/`@dev` and events where appropriate.
-- [ ] No unguarded external calls; CEI (Checks-Effects-Interactions) respected.
-- [ ] Access control and upgradability changes documented.
+- [ ] Self-reviewed, no debug logs or dead code.
+- [ ] Build passes for all affected network manifests.
+- [ ] `yarn test` passes (if Matchstick tests exist for the subgraph).
+- [ ] Schema changes are backward-compatible or migration is documented.
+- [ ] New ABIs added to root `abis/` directory and referenced in manifests.
+- [ ] Deployment script (`scripts/deploy-studio.js`) updated if adding new subgraphs or networks.
+- [ ] Root `package.json` updated with codegen/build scripts for new subgraphs or networks.
 
 ---
 
@@ -104,142 +110,157 @@ We aim to acknowledge receipt within 72 hours. Disclosure timelines will be coor
 
 ### Prerequisites
 
-- **Node.js** >= 18 and **npm** or **yarn**
-- **Foundry** (`forge`, `cast`): https://getfoundry.sh
-- **Hardhat** (optional): installed via `npm`/`yarn`
-- **Solidity** compiler handled via Foundry/Hardhat toolchains
+- **Node.js** >= 18
+- **Yarn** (v1)
+- **Graph CLI**: `yarn global add @graphprotocol/graph-cli` (or installed via root dependencies)
 
 ### Install
 
 ```bash
-# clone
-git clone https://github.com/<org>/<repo>.git
-cd <repo>
+git clone https://github.com/valory-xyz/autonolas-subgraph-studio.git
+cd autonolas-subgraph-studio
 
-# install JS deps (if applicable)
+# Install dependencies (from repo root)
 yarn install
-# or
-npm install
 ```
 
 ### Build
 
-```bash
-# Foundry
-forge build
+All codegen and build commands are run from the **repo root** via `package.json` scripts:
 
-# Hardhat
-yarn hardhat compile
-# or
-npx hardhat compile
+```bash
+# Codegen (generates TypeScript types from schema and ABIs)
+yarn codegen-tokenomics-l2
+yarn codegen-new-mech-fees-gnosis
+
+# Build (runs codegen then compiles to WASM)
+yarn build-tokenomics:ethereum
+yarn build-new-mech-fees:gnosis
+yarn build-babydegen-optimism
+```
+
+For subgraphs using the **template pattern** (staking, service-registry), generate manifests first:
+
+```bash
+node scripts/generate-manifests.js
 ```
 
 ### Test
 
 ```bash
-# Foundry (unit & fuzz)
-forge test -vvv
+# Run all tests
+yarn test
 
-# With gas snapshots
-forge snapshot
-
-# Hardhat (JS/TS)
-yarn hardhat test
-# or
-npx hardhat test
-```
-
-> Tip: Set `FOUNDRY_PROFILE=ci` or similar profiles in `foundry.toml` to standardize CI runs.
-
-### Lint & Static Analysis
-
-Recommended (enable what your project uses):
-
-- **solhint** / **solium** for Solidity style/linting
-- **prettier-plugin-solidity** for formatting
-- **eslint**/**prettier** for JS/TS
-- **slither** for static analysis (https://github.com/crytic/slither)
-- **forge fmt** for formatting (Foundry)
-
-Example:
-
-```bash
-# Lint solidity (if solhint configured)
-npx solhint 'contracts/**/*.sol'
-
-# Format solidity with prettier
-npx prettier --write 'contracts/**/*.sol'
-
-# Run slither (requires python env)
-slither .
+# Run tests for a specific subgraph
+graph test subgraphs/staking/tests/staking.test.ts
 ```
 
 ---
 
-## Solidity Style Guide
+## Subgraph Development Guide
 
-- **SPDX** identifier at the top of each contract.
-- **Pragmas** pinned or range-constrained consistently (e.g., `^0.8.24`).
-- **NatSpec** for all public/external functions and events (`@notice`, `@dev`, `@param`, `@return`).
-- **Custom errors** instead of string `revert` for gas and clarity.
-- **Events**: emit on state changes that matter for off-chain monitoring; avoid “dangling” events (declared but never emitted).
-- **Access control**: clear roles (`owner`, `guardian`, etc.), minimize privileges, prefer `onlyRole` pattern or equivalent.
-- **CEI pattern** (Checks-Effects-Interactions) to reduce reentrancy risk.
-- **Upgradeability**: if using proxies, document storage layout and upgrade steps; avoid storage collisions.
-- **Math**: use safe libraries (e.g., OpenZeppelin/Solmate) and avoid silent overflows; consider `unchecked` only when safe and documented.
-- **Interfaces**: prefer minimal interfaces for external calls.
-- **Naming**: follow established conventions (`CamelCase` contracts, `mixedCase` functions/vars, `ALL_CAPS` constants).
+### Multi-Network Patterns
+
+This repo uses two patterns for multi-network subgraphs:
+
+#### 1. Template Pattern (preferred for new subgraphs)
+
+Used by: `staking`, `service-registry`
+
+- `subgraph.template.yaml` serves as the base manifest template.
+- `networks.json` contains per-network contract addresses and start blocks.
+- `scripts/generate-manifests.js` generates `subgraph.<network>.yaml` files from the template.
+
+```
+subgraphs/staking/
+  subgraph.template.yaml    # Base template
+  networks.json             # Network-specific addresses/blocks
+  subgraph.gnosis.yaml      # Generated manifest
+  subgraph.base.yaml        # Generated manifest
+  src/                      # Shared handlers
+  schema.graphql            # Shared schema
+```
+
+#### 2. Shared Code Pattern
+
+Used by: `tokenomics`
+
+- A `common/` directory holds shared schema, mappers, and utilities.
+- Each network has its own subdirectory with a network-specific manifest.
+
+```
+subgraphs/tokenomics/
+  common/                        # Shared schema, mappers, generated types
+  tokenomics-eth/subgraph.yaml   # Ethereum L1 manifest
+  tokenomics-base/subgraph.base.yaml
+  tokenomics-gnosis/subgraph.gnosis.yaml
+```
+
+### Adding a New Subgraph
+
+1. Create a directory under `subgraphs/` (e.g., `subgraphs/my-subgraph/`).
+2. Choose a multi-network pattern (template or shared code) if targeting multiple networks.
+3. Add your `schema.graphql`, manifest(s), and handler source files.
+4. Place ABI files in the root `abis/` directory.
+5. Add `codegen-*` and `build-*` scripts to the root `package.json`.
+6. Register the subgraph in `scripts/deploy-studio.js` for interactive deployment.
+7. Add a `README.md` inside your subgraph directory.
+
+### Adding a New ABI
+
+1. Place the ABI JSON file in the root `abis/` directory.
+2. Reference it in your subgraph manifest's `abis` section using a relative path (e.g., `../../../abis/MyContract.json`).
+3. Run the codegen script for your subgraph to generate TypeScript types.
 
 ---
 
 ## Testing Guidelines
 
-- **Unit tests** for each contract; cover happy/sad paths.
-- **Fuzz tests** (`forge`) to explore edge cases automatically.
-- **Property-based / invariant tests** for protocol-level invariants.
-- **Integration tests** for cross-contract and cross-chain flows if applicable.
-- **Gas**: watch regressions using `forge snapshot` deltas.
-- **Coverage**: target high logical coverage; justify gaps (e.g., defensive code).
+Tests use the [Matchstick](https://thegraph.com/docs/en/developing/unit-testing-framework/) framework (AssemblyScript-based).
 
-Suggested structure:
-
-```
-test/
-  Unit/
-    ContractA.t.sol
-  Integration/
-    LiquidStaking.js
-  Invariants/
-    Invariant_Pps.t.sol
-```
+- Place test files in your subgraph's `tests/` directory with `.test.ts` extension.
+- Use `clearStore()` in `afterEach` to reset entity state between tests.
+- Use `dataSourceMock.setNetwork()` to set the network context.
+- Use `createMockedFunction()` to mock on-chain contract calls.
+- Assert entity state with `assert.fieldEquals()` and `assert.entityCount()`.
 
 ---
 
 ## Commit Messages & Branching
 
 - Use **Conventional Commits**:
-  - `feat: ...`, `fix: ...`, `docs: ...`, `refactor: ...`, `test: ...`, `chore: ...`, `perf: ...`
+  - `feat: ...`, `fix: ...`, `docs: ...`, `refactor: ...`, `test: ...`, `chore: ...`
 - Branch names:
   - `feat/<short-topic>`, `fix/<short-topic>`, `docs/<short-topic>`
 - Reference issues/PRs in the body (e.g., `Closes #123`).
 
-> Optionally enforce **DCO** (`Signed-off-by`) or a **CLA** as part of CI.
+---
+
+## Deployment
+
+Subgraphs are deployed to **The Graph Studio** or **Alchemy** using the interactive deployment script:
+
+```bash
+# Authenticate with The Graph Studio
+graph auth --studio [DEPLOY_KEY]
+
+# Interactive deployment
+yarn deploy-studio
+```
+
+The script will prompt you to select a subgraph, network, and version, then build and deploy.
+
+Manual deployment steps:
+
+1. Run the codegen script for your subgraph.
+2. Run the build script for the target network.
+3. Deploy: `graph deploy --studio <subgraph-name>`
 
 ---
 
-## Versioning & Releases
+## License
 
-- Use **SemVer** where applicable.
-- Tag releases (e.g., `v1.2.3`).
-- For upgradeable deployments, include a migration plan and storage layout diff in release notes.
-- Provide addresses/chain IDs and verification links when deployments are in scope.
-
----
-
-## License & CLA/DCO
-
-- This project is licensed under **MIT** (or your chosen license). See `LICENSE`.
-- If required, contributors must sign a **CLA** or use **DCO** sign-offs. Document the process in this section or link to your CLA portal.
+This project is licensed under the **Apache License 2.0**. See `LICENSE`.
 
 ---
 
@@ -248,4 +269,4 @@ test/
 - General questions: **info@valory.xyz**
 - Security: **security@valory.xyz**
 
-Thank you for contributing! 🚀
+Thank you for contributing!
