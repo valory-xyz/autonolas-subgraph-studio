@@ -26,13 +26,19 @@ subgraphs/predict/predict-polymarket/
 │   ├── conditional-tokens.ts        # Condition preparation and payout handling
 │   ├── ctf-exchange.ts              # Order tracking from CTF Exchange (agents as makers)
 │   ├── uma-mapping.ts               # Market metadata extraction from UMA events
+│   ├── neg-risk-mapping.ts          # NegRisk market handling
 │   ├── constants.ts                 # Constants
-│   └── utils.ts                     # Utility functions
+│   └── utils.ts                     # Utility functions (settlement, payout, trade activity)
 ├── tests/                           # Test files
 │   ├── ctf-exchange.test.ts         # CTF Exchange handler tests
 │   ├── profit.test.ts               # Profit calculation integration tests
+│   ├── profit.ts                    # Test event creators
 │   ├── test-helpers.ts              # Shared test utilities
 │   └── ...
+├── scripts/                         # Validation scripts
+│   ├── validate-global.js           # Global vs TraderAgent consistency
+│   ├── validate-agent.js            # Single agent deep validation
+│   └── README.md                    # Script documentation
 └── generated/                       # Auto-generated bindings
 ```
 
@@ -47,9 +53,16 @@ subgraphs/predict/predict-polymarket/
 1.  **Selective Tracking**:
     * **Agents**: Only tracks services with agent ID 86 registered through the `ServiceRegistryL2` contract on Polygon.
     * **Markets**: Binary markets (2 outcomes) tracked via UMA OptimisticOracleV3 and ConditionalTokens.
-2.  **Financial Metrics**:
+2.  **Two-Tier Accounting**:
     * `totalTraded` tracks all bets regardless of settlement status (updated immediately when bets are placed)
-    * `totalTradedSettled` tracks settled markets only (updated at settlement for incorrect bets, at payout for correct bets)
+    * `totalTradedSettled` tracks settled markets only (updated at resolution for ALL bets — both winning and losing)
+3.  **Settlement-Day Profit Attribution**: ALL profit/loss is calculated at resolution time when `QuestionResolved` fires. Uses outcome share balances to compute `expectedPayout` for each participant:
+    * **Valid answer (0 or 1)**: Winning shares worth 1:1 in USDC collateral. `expectedPayout = outcomeShares for winning outcome`.
+    * **Invalid answer (-1)**: Each share worth 1/2 collateral. `expectedPayout = max(0, shares0)/2 + max(0, shares1)/2`.
+    * **Profit**: `expectedPayout - totalTraded` (attributed to the resolution day).
+4.  **Payout Tracking**: `handlePayoutRedemption` only tracks actual USDC claimed (`totalPayout`) and creates immutable `PayoutRedemption` entries for debugging. No profit calculation occurs at payout time.
+5.  **Sell Bet Convention**: Sell bets use **negative** amounts and shares (matching omen convention). `isBuy` field distinguishes direction.
+6.  **No Re-Answer Logic**: Unlike omen, Polymarket resolutions are final — no answer change handling needed.
 
 ---
 
@@ -72,7 +85,7 @@ type TraderService @entity(immutable: true) {
 ---
 
 #### TraderAgent
-Represents an Autonolas trading agent with basic tracking information.
+Represents an Autonolas trading agent with cumulative performance metrics.
 
 **Key Fields:**
 ```graphql
@@ -87,8 +100,9 @@ type TraderAgent @entity {
 
   # Financial metrics
   totalTraded: BigInt!          # All bets volume (updated immediately when bets are placed)
-  totalTradedSettled: BigInt!   # Volume for settled markets only (updated at settlement/payout)
-  totalPayout: BigInt!          # Total payouts from redemptions
+  totalTradedSettled: BigInt!   # Volume for settled markets only (updated at resolution for ALL bets)
+  totalPayout: BigInt!          # Actual USDC claimed via PayoutRedemption
+  totalExpectedPayout: BigInt!  # Sum of expectedPayouts from settled markets
 
   # Block metadata
   blockNumber: BigInt!
@@ -97,7 +111,7 @@ type TraderAgent @entity {
 }
 ```
 
-**Important**: `totalTraded` represents all bets volume (updated immediately when bets are placed), while `totalTradedSettled` represents volume for settled markets only (updated at settlement or payout).
+**Important**: `totalTraded` represents all bets volume (updated immediately), `totalTradedSettled` is updated at resolution for ALL bets (winning and losing). `totalExpectedPayout` tracks what agents are entitled to from settled markets. Compare with `totalPayout` to measure claim rate.
 
 ---
 
@@ -125,8 +139,11 @@ Represents a market with metadata and links to its condition.
 type Question @entity(immutable: true) {
   id: Bytes!                    # conditionId (NOT questionId)
   questionId: Bytes!            # bytes32
+  isNegRisk: Boolean!           # Whether this is a NegRisk market
+  marketId: Bytes               # Grouping ID for NegRisk markets
   metadata: MarketMetadata!     # Market details
   bets: [Bet!]!                 # Derived from Bet.question
+  participants: [MarketParticipant!]! # Derived from MarketParticipant.question
   resolution: QuestionResolution # Derived from QuestionResolution.question
   blockNumber: BigInt!
   blockTimestamp: BigInt!
@@ -134,7 +151,7 @@ type Question @entity(immutable: true) {
 }
 ```
 
-**Pattern**: Created during QuestionInitialized with the conditionId as the primary ID, linked to metadata.
+**Pattern**: Created during QuestionInitialized with the conditionId as the primary ID, linked to metadata. `participants` derived field used at resolution to iterate all agents in this market.
 
 ---
 
@@ -164,8 +181,9 @@ type Bet @entity(immutable: false) {
   id: Bytes!                    # transaction hash + log index
   bettor: TraderAgent!
   outcomeIndex: BigInt!         # 0 or 1 for binary markets
-  amount: BigInt!               # USDC spent
-  shares: BigInt!               # Outcome tokens received
+  amount: BigInt!               # USDC spent (positive for buy, negative for sell)
+  shares: BigInt!               # Outcome tokens (positive for buy, negative for sell)
+  isBuy: Boolean!               # true for buys, false for sells
   countedInTotal: Boolean!      # Volume added to settled totals
   countedInProfit: Boolean!     # PnL impact processed
   question: Question            # Market this bet is for
@@ -175,7 +193,7 @@ type Bet @entity(immutable: false) {
 }
 ```
 
-**Pattern**: Created during OrderFilled when an agent (as maker) trades outcome tokens.
+**Pattern**: Created during OrderFilled when an agent (as maker) trades outcome tokens. Sell bets have negative `amount` and `shares`.
 
 ---
 
@@ -215,8 +233,12 @@ type MarketParticipant @entity(immutable: false) {
   question: Question!
   totalBets: Int!
   totalTraded: BigInt!          # All volume in this market
-  totalTradedSettled: BigInt!   # Settled volume only
+  totalTradedSettled: BigInt!   # Settled volume only (updated at resolution)
   totalPayout: BigInt!          # Payouts from this market
+  outcomeShares0: BigInt!       # Net shares of outcome 0 (buys add, sells subtract)
+  outcomeShares1: BigInt!       # Net shares of outcome 1
+  expectedPayout: BigInt!       # Calculated at resolution from shares + winning outcome
+  settled: Boolean!             # Idempotency flag, set true at resolution
   bets: [Bet!]!
   createdAt: BigInt!
   blockNumber: BigInt!
@@ -225,7 +247,7 @@ type MarketParticipant @entity(immutable: false) {
 }
 ```
 
-**Pattern**: Created on first bet in a market, updated as agent continues trading.
+**Pattern**: Created on first bet in a market. Tracks outcome share positions. `expectedPayout` and `settled` are set at resolution time.
 
 ---
 
@@ -290,12 +312,35 @@ type Global @entity {
 
   # Financial metrics
   totalTraded: BigInt!          # All bets volume (updated immediately)
-  totalTradedSettled: BigInt!   # Volume for settled markets only
+  totalTradedSettled: BigInt!   # Volume for settled markets only (updated at resolution)
   totalPayout: BigInt!          # All payouts
+  totalExpectedPayout: BigInt!  # Sum of expectedPayouts from settled markets
+  totalMarketsParticipated: Int! # Unique markets where any agent participated
 }
 ```
 
-**Important**: Like TraderAgent, `totalTraded` represents all bets volume while `totalTradedSettled` only counts settled markets.
+**Important**: `totalTradedSettled` is updated at resolution for ALL bets (winning and losing). `totalExpectedPayout` tracks the theoretical total agents are entitled to.
+
+---
+
+#### PayoutRedemption
+Immutable log entity for every payout redemption event (debugging/auditing).
+
+**Key Fields:**
+```graphql
+type PayoutRedemption @entity(immutable: true) {
+  id: Bytes!                    # txHash + logIndex
+  redeemer: TraderAgent!
+  conditionId: Bytes!
+  question: Question
+  payoutAmount: BigInt!
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+```
+
+**Pattern**: Created during PayoutRedemption events. Provides an audit trail for all payouts.
 
 ---
 
@@ -471,9 +516,14 @@ export function handleOrderFilled(event: OrderFilledEvent): void {
   if (agent === null) return;
 
   // 2. Determine trade direction and amounts
+  // Sells use NEGATIVE amounts (omen convention)
   let isBuying = event.params.makerAssetId.isZero();
-  let usdcAmount = isBuying ? event.params.makerAmountFilled : event.params.takerAmountFilled;
-  let sharesAmount = isBuying ? event.params.takerAmountFilled : event.params.makerAmountFilled;
+  let usdcAmount = isBuying
+    ? event.params.makerAmountFilled
+    : BigInt.zero().minus(event.params.takerAmountFilled);  // negative for sells
+  let sharesAmount = isBuying
+    ? event.params.takerAmountFilled
+    : BigInt.zero().minus(event.params.makerAmountFilled);  // negative for sells
   let outcomeTokenId = isBuying ? event.params.takerAssetId : event.params.makerAssetId;
 
   // 3. Lookup outcome index from TokenRegistry
@@ -543,53 +593,23 @@ export function handleQuestionResolved(event: QuestionResolvedEvent): void {
   resolution.winningIndex = winningOutcome;
   resolution.save();
 
-  // 3. Process losing bets (using caching for performance)
-  let agentCache = new Map<string, TraderAgent>();
-  let participantCache = new Map<string, MarketParticipant>();
-  let dailyStatsCache = new Map<string, DailyProfitStatistic>();
-
-  let question = Question.load(bridge.conditionId);
-  let bets = question.bets.load();
-
-  for (let i = 0; i < bets.length; i++) {
-    let bet = bets[i];
-
-    // Only settle losses for incorrect bets
-    if (winningOutcome.ge(BigInt.zero()) && !bet.outcomeIndex.equals(winningOutcome)) {
-      // Update settled totals
-      if (!bet.countedInTotal) {
-        agent.totalTradedSettled = agent.totalTradedSettled.plus(bet.amount);
-        participant.totalTradedSettled = participant.totalTradedSettled.plus(bet.amount);
-        global.totalTradedSettled = global.totalTradedSettled.plus(bet.amount);
-        bet.countedInTotal = true;
-      }
-
-      // Realize loss
-      if (!bet.countedInProfit) {
-        dailyStat.dailyProfit = dailyStat.dailyProfit.minus(bet.amount);
-        addProfitParticipant(dailyStat, bridge.conditionId);
-        bet.countedInProfit = true;
-      }
-
-      bet.save();
-    }
-  }
-
-  // 4. Save cached entities
-  saveMapValues(agentCache);
-  saveMapValues(participantCache);
-  saveMapValues(dailyStatsCache);
-  global.save();
+  // 3. Process ALL participants (using caching for performance)
+  processMarketResolution(bridge.conditionId, winningOutcome, settledPrice, payouts, event);
 }
 ```
 
-**Pattern**: Processes market resolution by:
-- Creating QuestionResolution entity with winning outcome
-- Updating `totalTradedSettled` for **incorrect bets only**
-- Realizing losses on the settlement day
-- Using Map caches for performance when processing many bets
+**`processMarketResolution`** (in utils.ts) iterates all participants in the market:
+- Skips already settled participants (idempotency via `settled` flag)
+- **Calculates expectedPayout** from outcome share balances:
+  - Outcome 0 wins: `expectedPayout = max(0, outcomeShares0)`
+  - Outcome 1 wins: `expectedPayout = max(0, outcomeShares1)`
+  - Invalid (-1): `expectedPayout = max(0, shares0)/2 + max(0, shares1)/2`
+- **Profit**: `expectedPayout - (totalTraded - totalTradedSettled)` — attributed to resolution day
+- Sets `participant.settled = true`, `totalTradedSettled = totalTraded`
+- Uses Map caches for TraderAgent and DailyProfitStatistic, delta accumulation for Global
+- Marks all bets as `countedInProfit = true`, `countedInTotal = true`
 
-**Note**: Correct bets are NOT processed here - their settled totals and profits are handled during payout redemption.
+**Key difference from omen**: No re-answer logic needed since Polymarket resolutions are final.
 
 ---
 
@@ -599,54 +619,13 @@ export function handleQuestionResolved(event: QuestionResolvedEvent): void {
 
 **Handler**: `handlePayoutRedemption`
 
-```typescript
-export function handlePayoutRedemption(event: PayoutRedemptionEvent): void {
-  const redeemer = event.params.redeemer;
-  const conditionId = event.params.conditionId;
+Delegates to `processRedemption()` in utils.ts:
+- Validates agent, question, and participant exist
+- Creates immutable `PayoutRedemption` entity (audit trail)
+- Updates payout totals only: `agent.totalPayout`, `participant.totalPayout`, `global.totalPayout`
+- Updates daily stat: `dailyStat.totalPayout` (no `dailyProfit` change — profit was already calculated at resolution)
 
-  // 1. Validation: Only process if it's one of our agents
-  let agent = TraderAgent.load(redeemer);
-  if (agent == null) return;
-
-  // 2. Identify the amount that needs to be moved to 'Settled'
-  let amountToSettle = participant.totalTraded.minus(participant.totalTradedSettled);
-  const payoutAmount = event.params.payout;
-
-  // 3. Update settled totals for correct bets
-  if (amountToSettle.gt(BigInt.zero())) {
-    agent.totalTradedSettled = agent.totalTradedSettled.plus(amountToSettle);
-    participant.totalTradedSettled = participant.totalTradedSettled.plus(amountToSettle);
-    global.totalTradedSettled = global.totalTradedSettled.plus(amountToSettle);
-  }
-
-  // 4. Update payout totals
-  agent.totalPayout = agent.totalPayout.plus(payoutAmount);
-  participant.totalPayout = participant.totalPayout.plus(payoutAmount);
-  global.totalPayout = global.totalPayout.plus(payoutAmount);
-
-  // 5. Mark bets as counted
-  for (let i = 0; i < betIds.length; i++) {
-    let bet = Bet.load(betIds[i]);
-    if (bet !== null && !bet.countedInProfit) {
-      bet.countedInProfit = true;
-      bet.countedInTotal = true;
-      bet.save();
-    }
-  }
-
-  // 6. Update daily profit (Profit = Payout - Costs)
-  dailyStat.dailyProfit = dailyStat.dailyProfit.plus(payoutAmount.minus(amountToSettle));
-  addProfitParticipant(dailyStat, conditionId);
-
-  // Save all entities
-  agent.save();
-  participant.save();
-  global.save();
-  dailyStat.save();
-}
-```
-
-**Status**: Fully implemented. Tracks agent payouts and updates settled totals for winning bets.
+**Key point**: No profit calculation at payout time. All profit/loss is attributed at resolution.
 
 ---
 
@@ -810,10 +789,12 @@ This subgraph includes comprehensive tracking for Autonolas agents on Polymarket
 - ✅ **Daily Statistics**: Day-to-day performance metrics
 
 ### Profitability & Settlement
-- ✅ **Two-Phase Settlement**: Incorrect bets on resolution, correct bets on payout
-- ✅ **Profit/Loss Calculation**: Net P&L with daily attribution
-- ✅ **Payout Tracking**: Complete redemption handler
-- ✅ **Settled vs Unsettled**: Distinguishes active and finalized bets
+- ✅ **Resolution-Time Settlement**: ALL profit/loss calculated at resolution for both winning and losing bets
+- ✅ **Expected Payout**: Calculated from outcome share balances at resolution
+- ✅ **Payout Tracking**: Immutable `PayoutRedemption` entity for audit trail (no profit at payout time)
+- ✅ **Settled vs Unsettled**: `participant.settled` flag prevents double-processing
+- ✅ **Invalid Market Handling**: Share-based expectedPayout calculation at resolution
+- ✅ **Sell Bet Support**: Negative amounts/shares convention for sells
 
 ### Performance Optimizations
 - ✅ **Caching Strategy**: Map-based entity caching during settlement
@@ -828,9 +809,12 @@ This Polymarket subgraph differs from the Omen implementation:
 
 1. **Agent Filtering**: Only tracks services with agent ID 86 using TraderService helper entity
 2. **Network**: Polygon instead of Gnosis Chain
-3. **Platform**: Polymarket (UMA + ConditionalTokens) instead of Omen
+3. **Platform**: Polymarket (UMA + ConditionalTokens) instead of Omen (Reality.eth + ConditionalTokens)
 4. **Market Metadata**: Extracts market info from UMA OptimisticOracleV3 ancillary data
-5. **Financial Metrics**: Distinguishes between immediate tracking (`totalTraded` for all bets) and settlement-based tracking (`totalTradedSettled` for settled markets only)
+5. **No Re-Answer Logic**: Polymarket resolutions are final — no answer change handling (omen has ~415/15,000 markets with re-answers)
+6. **No Fee Tracking**: Polymarket doesn't have per-trade fees like omen (no `totalFees`/`totalFeesSettled` fields)
+7. **USDC Denomination**: 6-decimal USDC instead of 18-decimal xDAI
+8. **Shared Settlement Architecture**: Same resolution-time profit pattern as omen — ALL profit/loss at settlement using outcome share balances
 
 ---
 
@@ -865,27 +849,18 @@ graph deploy --studio autonolas-predict-polymarket
 
 ---
 
-## Utility Functions Reference
+## Utility Functions Reference (src/utils.ts)
 
-### Entity Management
-
-```typescript
-// Get or create singleton global statistics
-export function getGlobal(): Global {
-  let global = Global.load("");
-  if (!global) {
-    global = new Global("");
-    global.totalTraderAgents = 0;
-    global.totalActiveTraderAgents = 0;
-    global.totalBets = 0;
-    global.totalTraded = BigInt.fromI32(0);
-    global.totalTradedSettled = BigInt.fromI32(0);
-    global.totalPayout = BigInt.fromI32(0);
-    global.save();
-  }
-  return global;
-}
-```
+| Function | Purpose |
+|----------|---------|
+| `getGlobal()` | Returns singleton Global entity (creates if null, including `totalExpectedPayout`) |
+| `saveMapValues<T>(map)` | Batch-saves all entities in a Map cache |
+| `getDayTimestamp(timestamp)` | Normalizes to UTC midnight: `timestamp / 86400 * 86400` |
+| `getDailyProfitStatistic(agent, timestamp)` | Get-or-create daily stat for agent on specific day |
+| `addProfitParticipant(stat, questionId)` | Adds market to `profitParticipants` (deduplicated) |
+| `processTradeActivity(agent, conditionId, betId, amount, timestamp, blockNumber, txHash, outcomeIndex, sharesAmount)` | Consolidated trade update: Global, TraderAgent, MarketParticipant. Tracks outcomeShares0/1. |
+| `processMarketResolution(conditionId, winningOutcome, settledPrice, payouts, event)` | Settlement: iterates participants, calculates expectedPayout, profit, updates settled totals. Uses Map caches. |
+| `processRedemption(redeemer, conditionId, payoutAmount, timestamp, blockNumber, txHash, logIndex)` | Payout tracking only: creates PayoutRedemption, updates totalPayout. No profit. |
 
 ---
 
@@ -917,17 +892,20 @@ export function getGlobal(): Global {
 1. **Agent ID 86 Only**: Two-step filtering via TraderService + TraderAgent entities
 2. **Binary Markets Only**: Only tracks markets with 2 outcomes via ConditionalTokens
 3. **Agents as Makers**: Our agents are MAKERS (not takers) in CTF Exchange - identify via `event.params.maker`
-4. **Immediate vs Settled Tracking**:
+4. **Two-Tier Accounting**:
    - `totalTraded` = all bets volume (updated immediately when bets are placed)
-   - `totalTradedSettled` = settled markets only (updated at settlement for incorrect, at payout for correct)
-5. **Two-Phase Settlement**:
-   - Incorrect bets: settled on resolution day via `handleQuestionResolved`
-   - Correct bets: settled on payout day via `handlePayoutRedemption`
-6. **Question Entity ID**: Uses `conditionId` as primary key (NOT questionId)
-7. **Global Singleton ID**: Uses empty string "" (NOT "1")
-8. **UMA Metadata Parsing**: Market titles/outcomes extracted from OptimisticOracleV3 ancillary data
-9. **Polygon Network**: Deployed on Polygon, different from Omen (Gnosis Chain)
-10. **Performance Caching**: Uses Map-based caching in `handleQuestionResolved` for bulk bet processing
+   - `totalTradedSettled` = settled markets only (updated at resolution for ALL bets — both winning and losing)
+5. **Settlement-Day Profit Attribution**: ALL profit/loss calculated at resolution time using outcome share balances. No profit at payout time.
+   - `expectedPayout = outcomeShares for winning outcome` (or shares0/2 + shares1/2 for invalid)
+   - `profit = expectedPayout - totalTraded`
+6. **Payout Tracking is Separate**: `processRedemption` only updates `totalPayout` and creates immutable `PayoutRedemption` entries. No `dailyProfit` change.
+7. **Sell Convention**: Sells use negative amounts and shares. `isBuy` field distinguishes direction.
+8. **Participant-Level Settlement**: Iteration via `question.participants.load()` at resolution, not bets.
+9. **Idempotency**: `participant.settled` flag prevents double-processing. No re-answer logic needed (Polymarket resolutions are final).
+10. **Question Entity ID**: Uses `conditionId` as primary key (NOT questionId)
+11. **Global Singleton ID**: Uses empty string "" (NOT "1")
+12. **Performance Caching**: Uses Map-based caching for TraderAgent and DailyProfitStatistic, delta accumulation for Global
+13. **`totalExpectedPayout` vs `totalPayout`**: Compare these on TraderAgent/Global to measure claim rate
 
 ### Common Modification Patterns
 

@@ -11,7 +11,8 @@ export function createBuyEvent(
   outcomeIndex: BigInt,
   fpmm: Address,
   timestamp: BigInt,
-  logIndex: i32 = 0
+  logIndex: i32 = 0,
+  outcomeTokensBought: BigInt = BigInt.fromI32(0)
 ): FPMMBuyEvent {
   let event = changetype<FPMMBuyEvent>(newMockEvent());
   event.address = fpmm;
@@ -23,6 +24,7 @@ export function createBuyEvent(
     new ethereum.EventParam("investmentAmount", ethereum.Value.fromUnsignedBigInt(investment)),
     new ethereum.EventParam("feeAmount", ethereum.Value.fromUnsignedBigInt(fee)),
     new ethereum.EventParam("outcomeIndex", ethereum.Value.fromUnsignedBigInt(outcomeIndex)),
+    new ethereum.EventParam("outcomeTokensBought", ethereum.Value.fromUnsignedBigInt(outcomeTokensBought)),
   ];
 
   return event;

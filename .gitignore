@@ -11,3 +11,7 @@ generated-l2/
 
 .bin/
 .latest.json
+
+.yarn
+
+.DS_Store

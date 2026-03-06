@@ -47,15 +47,16 @@ export function handleOrderFilled(event: OrderFilledEvent): void {
   // takerAssetId == 0 means Taker gave USDC and Maker gave Tokens (SELLING)
   let isBuying = event.params.makerAssetId.isZero();
 
-  // The amount of USDC (money) involved in the trade
+  // For sells, amounts are NEGATIVE (omen convention):
+  // - Negative amount = USDC received back
+  // - Negative shares = tokens given away
   let usdcAmount = isBuying
     ? event.params.makerAmountFilled
-    : event.params.takerAmountFilled;
+    : BigInt.zero().minus(event.params.takerAmountFilled);
 
-  // The amount of Shares (tokens) involved in the trade
   let sharesAmount = isBuying
     ? event.params.takerAmountFilled
-    : event.params.makerAmountFilled;
+    : BigInt.zero().minus(event.params.makerAmountFilled);
 
   // The token ID of the outcome being traded
   let outcomeTokenId = isBuying
@@ -89,6 +90,7 @@ export function handleOrderFilled(event: OrderFilledEvent): void {
   bet.outcomeIndex = tokenRegistry.outcomeIndex;
   bet.amount = usdcAmount;
   bet.shares = sharesAmount;
+  bet.isBuy = isBuying;
   bet.blockTimestamp = event.block.timestamp;
   bet.transactionHash = event.transaction.hash;
   bet.dailyStatistic = dailyStat.id;
@@ -110,5 +112,7 @@ export function handleOrderFilled(event: OrderFilledEvent): void {
     event.block.timestamp,
     event.block.number,
     event.transaction.hash,
+    tokenRegistry.outcomeIndex,
+    sharesAmount,
   );
 }

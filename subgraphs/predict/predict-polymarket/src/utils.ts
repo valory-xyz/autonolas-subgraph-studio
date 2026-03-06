@@ -8,6 +8,7 @@ import {
   Bet,
   QuestionResolution,
   MarketParticipated,
+  PayoutRedemption,
 } from "../generated/schema";
 import { ONE_DAY } from "./constants";
 
@@ -25,6 +26,7 @@ export function getGlobal(): Global {
     global.totalTraded = BigInt.zero();
     global.totalTradedSettled = BigInt.zero();
     global.totalPayout = BigInt.zero();
+    global.totalExpectedPayout = BigInt.zero();
     global.totalMarketsParticipated = 0;
   }
   return global as Global;
@@ -74,10 +76,7 @@ export function getDailyProfitStatistic(
 }
 
 /**
- * add profit participant into profit statistic
- * should be called when profit changes:
- * - on market settlement if bets were incorrect
- * - on payout if bets were correct
+ * Add profit participant into profit statistic (deduplicated)
  */
 export function addProfitParticipant(
   statistic: DailyProfitStatistic,
@@ -92,6 +91,7 @@ export function addProfitParticipant(
 
 /**
  * Consolidates all activity and volume updates into a single pass.
+ * Tracks outcome share positions on MarketParticipant.
  */
 export function processTradeActivity(
   agent: TraderAgent,
@@ -100,7 +100,9 @@ export function processTradeActivity(
   amount: BigInt,
   timestamp: BigInt,
   blockNumber: BigInt,
-  txHash: Bytes
+  txHash: Bytes,
+  outcomeIndex: BigInt,
+  sharesAmount: BigInt,
 ): void {
   let global = getGlobal();
 
@@ -124,16 +126,19 @@ export function processTradeActivity(
   if (participant == null) {
     participant = new MarketParticipant(participantId);
     participant.traderAgent = agent.id;
-    participant.question = conditionId; // Polymarket uses 'question' as the field name
+    participant.question = conditionId;
     participant.totalBets = 0;
     participant.totalTraded = BigInt.zero();
     participant.totalTradedSettled = BigInt.zero();
     participant.totalPayout = BigInt.zero();
+    participant.outcomeShares0 = BigInt.zero();
+    participant.outcomeShares1 = BigInt.zero();
+    participant.expectedPayout = BigInt.zero();
+    participant.settled = false;
     participant.createdAt = timestamp;
     participant.bets = [];
 
     // 3a. Track unique market participation
-    // Check if this is the first time ANY agent participated in this market
     let marketActivity = MarketParticipated.load(conditionId);
     if (marketActivity == null) {
       marketActivity = new MarketParticipated(conditionId);
@@ -147,6 +152,14 @@ export function processTradeActivity(
   participant.bets = bets;
   participant.totalBets += 1;
   participant.totalTraded = participant.totalTraded.plus(amount);
+
+  // Track outcome share positions (buys add, sells subtract via negative sharesAmount)
+  if (outcomeIndex.equals(BigInt.zero())) {
+    participant.outcomeShares0 = participant.outcomeShares0.plus(sharesAmount);
+  } else {
+    participant.outcomeShares1 = participant.outcomeShares1.plus(sharesAmount);
+  }
+
   participant.blockTimestamp = timestamp;
   participant.blockNumber = blockNumber;
   participant.transactionHash = txHash;
@@ -158,8 +171,8 @@ export function processTradeActivity(
 }
 
 /**
- * Handles market resolution
- * Updates totalSettleds for loosing bets
+ * Handles market resolution — calculates expectedPayout and profit for ALL participants.
+ * All profit/loss is attributed to the resolution day.
  */
 export function processMarketResolution(
   conditionId: Bytes,
@@ -179,71 +192,123 @@ export function processMarketResolution(
   resolution.transactionHash = event.transaction.hash;
   resolution.save();
 
-  // 2. Process Totals using Caching
-  let global = getGlobal();
-  let agentCache = new Map<string, TraderAgent>();
-  let participantCache = new Map<string, MarketParticipant>();
-  let dailyStatsCache = new Map<string, DailyProfitStatistic>();
-
+  // 2. Load question and its participants
   let question = Question.load(conditionId);
   if (question == null) return;
 
-  let bets = question.bets.load();
-  for (let i = 0; i < bets.length; i++) {
-    let bet = bets[i];
-    let agentId = bet.bettor.toHexString();
+  let participants = question.participants.load();
+  if (participants.length == 0) return;
 
-    let agent = agentCache.has(agentId) ? agentCache.get(agentId)! : TraderAgent.load(bet.bettor);
+  // 3. Initialize caches and delta accumulators
+  let global = getGlobal();
+  let agentCache = new Map<string, TraderAgent>();
+  let dailyStatsCache = new Map<string, DailyProfitStatistic>();
+
+  let globalTradedSettledDelta = BigInt.zero();
+  let globalExpectedPayoutDelta = BigInt.zero();
+
+  let isAnswer0 = winningOutcome.equals(BigInt.zero());
+  let isAnswer1 = winningOutcome.equals(BigInt.fromI32(1));
+  let TWO = BigInt.fromI32(2);
+
+  // 4. Iterate ALL participants
+  for (let i = 0; i < participants.length; i++) {
+    let participant = participants[i];
+
+    // Skip already settled (idempotency)
+    if (participant.settled) continue;
+
+    let agentId = participant.traderAgent.toHexString();
+    let agent = agentCache.has(agentId)
+      ? agentCache.get(agentId)!
+      : TraderAgent.load(participant.traderAgent);
     if (agent === null) continue;
 
-    // Settle losses: Only if there is a clear winner (0 or 1) and this bet was on a different index
-    if (winningOutcome.ge(BigInt.zero()) && !bet.outcomeIndex.equals(winningOutcome)) {
-      
-      // Update Settlement Totals
-      if (!bet.countedInTotal) {
-        agent.totalTradedSettled = agent.totalTradedSettled.plus(bet.amount);
-        global.totalTradedSettled = global.totalTradedSettled.plus(bet.amount);
+    // 4a. Calculate expectedPayout from outcome share balances
+    let expectedPayout = BigInt.zero();
+    if (isAnswer0) {
+      let balance = participant.outcomeShares0;
+      expectedPayout = balance.gt(BigInt.zero()) ? balance : BigInt.zero();
+    } else if (isAnswer1) {
+      let balance = participant.outcomeShares1;
+      expectedPayout = balance.gt(BigInt.zero()) ? balance : BigInt.zero();
+    } else {
+      // Invalid answer — each share worth 1/2 collateral
+      let b0 = participant.outcomeShares0;
+      let b1 = participant.outcomeShares1;
+      let payout0 = b0.gt(BigInt.zero()) ? b0.div(TWO) : BigInt.zero();
+      let payout1 = b1.gt(BigInt.zero()) ? b1.div(TWO) : BigInt.zero();
+      expectedPayout = payout0.plus(payout1);
+    }
 
-        let participantId = agentId + "_" + conditionId.toHexString();
-        let participant = participantCache.has(participantId) ? participantCache.get(participantId)! : MarketParticipant.load(participantId);
-        if (participant != null) {
-          participant.totalTradedSettled = participant.totalTradedSettled.plus(bet.amount);
-          participantCache.set(participantId, participant);
-        }
-        bet.countedInTotal = true;
-      }
+    // 4b. Calculate settlement amounts and profit
+    let amountToSettle = participant.totalTraded.minus(participant.totalTradedSettled);
+    let profit = expectedPayout.minus(amountToSettle);
 
-      // Update Daily Statistics (Record the Loss)
-      if (!bet.countedInProfit) {
-        let statId = agentId + "_" + getDayTimestamp(event.block.timestamp).toString();
-        let dailyStat = dailyStatsCache.has(statId) ? dailyStatsCache.get(statId)! : getDailyProfitStatistic(bet.bettor, event.block.timestamp);
+    // 4c. Update participant
+    participant.expectedPayout = expectedPayout;
+    participant.totalTradedSettled = participant.totalTraded;
+    participant.settled = true;
+    participant.save();
 
-        dailyStat.dailyProfit = dailyStat.dailyProfit.minus(bet.amount);
-        addProfitParticipant(dailyStat, conditionId);
-        dailyStatsCache.set(statId, dailyStat);
+    // 4d. Update agent (via cache)
+    agent.totalTradedSettled = agent.totalTradedSettled.plus(amountToSettle);
+    agent.totalExpectedPayout = agent.totalExpectedPayout.plus(expectedPayout);
+    agentCache.set(agentId, agent);
+
+    // 4e. Update daily stat (via cache)
+    let statId = agentId + "_" + getDayTimestamp(event.block.timestamp).toString();
+    let dailyStat = dailyStatsCache.has(statId)
+      ? dailyStatsCache.get(statId)!
+      : getDailyProfitStatistic(participant.traderAgent, event.block.timestamp);
+
+    dailyStat.dailyProfit = dailyStat.dailyProfit.plus(profit);
+    addProfitParticipant(dailyStat, conditionId);
+    dailyStatsCache.set(statId, dailyStat);
+
+    // 4f. Accumulate global deltas
+    globalTradedSettledDelta = globalTradedSettledDelta.plus(amountToSettle);
+    globalExpectedPayoutDelta = globalExpectedPayoutDelta.plus(expectedPayout);
+
+    // 4g. Mark individual bets as counted
+    let betIds = participant.bets;
+    for (let j = 0; j < betIds.length; j++) {
+      let bet = Bet.load(betIds[j]);
+      if (bet !== null && !bet.countedInProfit) {
         bet.countedInProfit = true;
+        bet.countedInTotal = true;
+        bet.save();
       }
-
-      agentCache.set(agentId, agent);
-      bet.save();
     }
   }
 
+  // 5. Batch save cached entities
   saveMapValues(agentCache);
-  saveMapValues(participantCache);
   saveMapValues(dailyStatsCache);
+
+  // 6. Apply global deltas
+  if (!globalTradedSettledDelta.equals(BigInt.zero())) {
+    global.totalTradedSettled = global.totalTradedSettled.plus(globalTradedSettledDelta);
+  }
+  if (!globalExpectedPayoutDelta.equals(BigInt.zero())) {
+    global.totalExpectedPayout = global.totalExpectedPayout.plus(globalExpectedPayoutDelta);
+  }
   global.save();
 }
 
 /**
- * Handles payout redemption when an agent claims winnings
- * Updates totalSettleds and payout for winning bets
+ * Handles payout redemption — only tracks actual payouts claimed.
+ * No profit calculation (that's done at resolution time).
+ * Creates immutable PayoutRedemption entity for debugging.
  */
 export function processRedemption(
   redeemer: Bytes,
   conditionId: Bytes,
   payoutAmount: BigInt,
   timestamp: BigInt,
+  blockNumber: BigInt,
+  txHash: Bytes,
+  logIndex: i32,
 ): void {
   // 1. Validation: Only process if it's one of our agents
   let agent = TraderAgent.load(redeemer);
@@ -259,38 +324,27 @@ export function processRedemption(
 
   let global = getGlobal();
 
-  // 3. Identify the amount that needs to be moved to 'Settled'
-  let amountToSettle = participant.totalTraded.minus(participant.totalTradedSettled);
+  // 3. Create immutable PayoutRedemption entity
+  let logEntity = new PayoutRedemption(txHash.concat(Bytes.fromI32(logIndex)));
+  logEntity.redeemer = redeemer;
+  logEntity.conditionId = conditionId;
+  logEntity.question = conditionId;
+  logEntity.payoutAmount = payoutAmount;
+  logEntity.blockNumber = blockNumber;
+  logEntity.blockTimestamp = timestamp;
+  logEntity.transactionHash = txHash;
+  logEntity.save();
 
-  if (amountToSettle.gt(BigInt.zero())) {
-    agent.totalTradedSettled = agent.totalTradedSettled.plus(amountToSettle);
-    participant.totalTradedSettled = participant.totalTradedSettled.plus(amountToSettle);
-    global.totalTradedSettled = global.totalTradedSettled.plus(amountToSettle);
-  }
-
-  // 4. Update Payout Totals
+  // 4. Update Payout Totals (NO profit calculation)
   agent.totalPayout = agent.totalPayout.plus(payoutAmount);
   participant.totalPayout = participant.totalPayout.plus(payoutAmount);
   global.totalPayout = global.totalPayout.plus(payoutAmount);
 
-  // 5. Update Bets
-  let betIds = participant.bets;
-  for (let i = 0; i < betIds.length; i++) {
-    let bet = Bet.load(betIds[i]);
-    if (bet !== null && !bet.countedInProfit) {
-      bet.countedInProfit = true;
-      bet.countedInTotal = true; 
-      bet.save();
-    }
-  }
-
-  // 6. Update Daily Statistics
+  // 5. Update Daily Statistics (only payout, NO dailyProfit change)
   let dailyStat = getDailyProfitStatistic(redeemer, timestamp);
   dailyStat.totalPayout = dailyStat.totalPayout.plus(payoutAmount);
-  dailyStat.dailyProfit = dailyStat.dailyProfit.plus(payoutAmount.minus(amountToSettle));
-  addProfitParticipant(dailyStat, conditionId);
 
-  // 7. Save
+  // 6. Save
   agent.save();
   participant.save();
   global.save();

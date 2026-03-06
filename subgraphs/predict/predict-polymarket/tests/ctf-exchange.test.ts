@@ -58,6 +58,7 @@ function setupTraderAgent(address: Address, serviceId: BigInt): void {
   agent.totalTraded = BigInt.zero();
   agent.totalTradedSettled = BigInt.zero();
   agent.totalPayout = BigInt.zero();
+  agent.totalExpectedPayout = BigInt.zero();
   agent.blockNumber = BigInt.fromI32(1);
   agent.blockTimestamp = BigInt.fromI32(1);
   agent.transactionHash = Bytes.fromHexString("0x1234567890123456789012345678901234567890123456789012345678901234");
@@ -181,8 +182,9 @@ describe("CTFExchange - OrderFilled Handler", () => {
     let betId = orderEvent.transaction.hash.concat(Bytes.fromI32(orderEvent.logIndex.toI32())).toHexString();
     assert.fieldEquals("Bet", betId, "bettor", MAKER.toHexString());
     assert.fieldEquals("Bet", betId, "outcomeIndex", "0");
-    assert.fieldEquals("Bet", betId, "amount", "300000");
-    assert.fieldEquals("Bet", betId, "shares", "600000");
+    assert.fieldEquals("Bet", betId, "amount", "-300000");
+    assert.fieldEquals("Bet", betId, "shares", "-600000");
+    assert.fieldEquals("Bet", betId, "isBuy", "false");
   });
 
   test("Should not create Bet when maker is not a TraderAgent", () => {

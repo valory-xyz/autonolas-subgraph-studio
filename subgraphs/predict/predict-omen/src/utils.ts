@@ -18,6 +18,7 @@ export function getGlobal(): Global {
     global.totalPayout = BigInt.zero();
     global.totalTradedSettled = BigInt.zero();
     global.totalFeesSettled = BigInt.zero();
+    global.totalExpectedPayout = BigInt.zero();
   }
   return global as Global;
 }
@@ -83,6 +84,15 @@ export function addProfitParticipant(statistic: DailyProfitStatistic, marketId: 
   }
 }
 
+export function removeProfitParticipant(statistic: DailyProfitStatistic, marketId: Bytes): void {
+  let participants = statistic.profitParticipants;
+  let index = participants.indexOf(marketId);
+  if (index !== -1) {
+    participants.splice(index, 1);
+    statistic.profitParticipants = participants;
+  }
+}
+
 /**
  * Consolidates all activity and volume updates into a single pass.
  */
@@ -94,7 +104,9 @@ export function processTradeActivity(
   fees: BigInt,
   timestamp: BigInt,
   blockNumber: BigInt,
-  txHash: Bytes
+  txHash: Bytes,
+  outcomeIndex: BigInt,
+  outcomeTokenAmount: BigInt
 ): void {
   let global = getGlobal();
 
@@ -127,6 +139,10 @@ export function processTradeActivity(
     participant.totalFees = BigInt.zero();
     participant.totalTradedSettled = BigInt.zero();
     participant.totalFeesSettled = BigInt.zero();
+    participant.outcomeTokenBalance0 = BigInt.zero();
+    participant.outcomeTokenBalance1 = BigInt.zero();
+    participant.expectedPayout = BigInt.zero();
+    participant.settled = false;
     participant.createdAt = timestamp;
     participant.bets = [];
   }
@@ -137,6 +153,11 @@ export function processTradeActivity(
   participant.totalBets += 1;
   participant.totalTraded = participant.totalTraded.plus(amount);
   participant.totalFees = participant.totalFees.plus(fees);
+  if (outcomeIndex.equals(BigInt.zero())) {
+    participant.outcomeTokenBalance0 = participant.outcomeTokenBalance0.plus(outcomeTokenAmount);
+  } else {
+    participant.outcomeTokenBalance1 = participant.outcomeTokenBalance1.plus(outcomeTokenAmount);
+  }
   participant.blockTimestamp = timestamp;
   participant.blockNumber = blockNumber;
   participant.transactionHash = txHash;
