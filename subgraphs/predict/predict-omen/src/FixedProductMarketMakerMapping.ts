@@ -33,7 +33,9 @@ export function handleBuy(event: FPMMBuyEvent): void {
       event.params.feeAmount,
       event.block.timestamp,
       event.block.number,
-      event.transaction.hash
+      event.transaction.hash,
+      event.params.outcomeIndex,
+      event.params.outcomeTokensBought
     );
 
     // 3. Initialize and save Bet
@@ -42,7 +44,10 @@ export function handleBuy(event: FPMMBuyEvent): void {
     bet.outcomeIndex = event.params.outcomeIndex;
     bet.amount = event.params.investmentAmount;
     bet.feeAmount = event.params.feeAmount;
+    bet.outcomeTokenAmount = event.params.outcomeTokensBought;
     bet.timestamp = event.block.timestamp;
+    bet.blockTimestamp = event.block.timestamp;
+    bet.transactionHash = event.transaction.hash;
     bet.fixedProductMarketMaker = event.address;
     bet.dailyStatistic = dailyStat.id;
     bet.countedInTotal = false;
@@ -70,6 +75,7 @@ export function handleSell(event: FPMMSellEvent): void {
 
     // 2. Process Agent, Participant, and Global atomically FIRST
     // This ensures the participant exists before we save the bet
+    let negTokenAmount = BigInt.zero().minus(event.params.outcomeTokensSold);
     processTradeActivity(
       traderAgent,
       event.address,
@@ -78,7 +84,9 @@ export function handleSell(event: FPMMSellEvent): void {
       event.params.feeAmount,
       event.block.timestamp,
       event.block.number,
-      event.transaction.hash
+      event.transaction.hash,
+      event.params.outcomeIndex,
+      negTokenAmount
     );
 
     // 3. Initialize and save Bet AFTER participant is created
@@ -87,7 +95,10 @@ export function handleSell(event: FPMMSellEvent): void {
     bet.outcomeIndex = event.params.outcomeIndex;
     bet.amount = negAmount;
     bet.feeAmount = event.params.feeAmount;
+    bet.outcomeTokenAmount = negTokenAmount;
     bet.timestamp = event.block.timestamp;
+    bet.blockTimestamp = event.block.timestamp;
+    bet.transactionHash = event.transaction.hash;
     bet.fixedProductMarketMaker = event.address;
     bet.dailyStatistic = dailyStat.id;
     bet.countedInTotal = false;

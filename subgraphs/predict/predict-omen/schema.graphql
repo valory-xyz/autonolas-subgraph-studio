@@ -6,10 +6,9 @@ type TraderAgent @entity (immutable: false) {
   totalBets: Int! # all bets done regardless of settlement
   totalTraded: BigInt! # all bets amounts at the time of bet placement
   totalFees: BigInt! # all bets fees at the time of bet placement
-  totalPayout: BigInt! # all bets including for open markets
-  # trades amount and fees for settled markets
-  # for incorrect bets on settlement day
-  # for correct - on payout
+  totalPayout: BigInt! # actual claimed payouts via PayoutRedemption
+  totalExpectedPayout: BigInt! # calculated expected payouts at settlement from outcome tokens
+  # trades amount and fees for settled markets (all settled at handleLogNewAnswer)
   totalTradedSettled: BigInt!
   totalFeesSettled: BigInt!
   bets: [Bet!]! @derivedFrom(field: "bettor")
@@ -25,11 +24,14 @@ type Bet @entity (immutable: false) {
   outcomeIndex: BigInt!
   amount: BigInt!
   feeAmount: BigInt!
+  outcomeTokenAmount: BigInt! # outcomeTokensBought (positive) or -outcomeTokensSold (negative)
   countedInProfit: Boolean!
   countedInTotal: Boolean
   fixedProductMarketMaker: FixedProductMarketMakerCreation
   dailyStatistic: DailyProfitStatistic
-  timestamp: BigInt!
+  timestamp: BigInt! @deprecated(reason: "Use blockTimestamp instead")
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
 }
 
 type CreatorAgent @entity (immutable: false) {
@@ -80,6 +82,10 @@ type MarketParticipant @entity (immutable: false) {
   totalFees: BigInt!
   totalTradedSettled: BigInt!
   totalFeesSettled: BigInt!
+  outcomeTokenBalance0: BigInt! # net token position for outcome 0
+  outcomeTokenBalance1: BigInt! # net token position for outcome 1
+  expectedPayout: BigInt! # calculated at settlement from token balance
+  settled: Boolean! # idempotency flag - prevents re-processing on re-answer
   createdAt: BigInt!
   blockNumber: BigInt!
   blockTimestamp: BigInt!
@@ -96,6 +102,18 @@ type Global @entity (immutable: false) {
   totalFees: BigInt! # all bets at the time of bet placement
   totalTradedSettled: BigInt!
   totalFeesSettled: BigInt!
+  totalExpectedPayout: BigInt! # calculated expected payouts at settlement
+}
+
+type PayoutRedemption @entity(immutable: true) {
+  id: Bytes! # txHash.concatI32(logIndex)
+  redeemer: Bytes!
+  conditionId: Bytes!
+  payoutAmount: BigInt!
+  fixedProductMarketMaker: Bytes
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
 }
 
 type LogSetQuestionFee @entity(immutable: true) {
@@ -161,8 +179,6 @@ type DailyProfitStatistic @entity(immutable: false) {
   # Profit
   dailyProfit: BigInt!
   
-  # Markets participated in profit calculation today
-  # in case of Loss - markets on the day of settlement
-  # in case of Win - markets on the day of payout (can be next day after settlement)
+  # Markets participated in profit calculation today (all on settlement day)
   profitParticipants: [FixedProductMarketMakerCreation!]!
 }

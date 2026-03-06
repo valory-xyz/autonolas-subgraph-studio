@@ -11,11 +11,10 @@ type TraderAgent @entity (immutable: false) {
   lastActive: BigInt
   totalBets: Int! # all bets done regardless of settlement
   totalTraded: BigInt!
-  # trades amount for settled markets
-  # for incorrect bets on settlement day
-  # for correct - on payout)
+  # trades amount for settled markets (updated at resolution for ALL bets)
   totalTradedSettled: BigInt!
-  totalPayout: BigInt! # all bets including for open markets
+  totalPayout: BigInt! # actual xUSDC claimed via PayoutRedemption
+  totalExpectedPayout: BigInt! # sum of expectedPayouts from settled markets
   bets: [Bet!]! @derivedFrom(field: "bettor")
   dailyProfitStatistics: [DailyProfitStatistic!]! @derivedFrom(field: "traderAgent")
   blockNumber: BigInt!
@@ -37,6 +36,7 @@ type Question @entity(immutable: true) {
   marketId: Bytes # The grouping ID for Neg Risk
   metadata: MarketMetadata!
   bets: [Bet!]! @derivedFrom(field: "question")
+  participants: [MarketParticipant!]! @derivedFrom(field: "question")
   resolution: QuestionResolution @derivedFrom(field: "question")
   blockNumber: BigInt!
   blockTimestamp: BigInt!
@@ -54,8 +54,9 @@ type Bet @entity (immutable: false) {
   id: Bytes!
   bettor: TraderAgent!
   outcomeIndex: BigInt!
-  amount: BigInt!   # USDC spent (e.g., 1.00)
-  shares: BigInt!   # Tokens received (e.g., 2.17)
+  amount: BigInt!   # USDC spent (positive for buy, negative for sell)
+  shares: BigInt!   # Tokens received (positive for buy, negative for sell)
+  isBuy: Boolean!   # true for buys, false for sells
   countedInTotal: Boolean!
   countedInProfit: Boolean!
   question: Question
@@ -94,6 +95,10 @@ type MarketParticipant @entity (immutable: false) {
   totalTraded: BigInt!
   totalTradedSettled: BigInt!
   totalPayout: BigInt!
+  outcomeShares0: BigInt! # Net shares of outcome 0 (buys add, sells subtract)
+  outcomeShares1: BigInt! # Net shares of outcome 1
+  expectedPayout: BigInt! # Calculated at resolution from shares + winning outcome
+  settled: Boolean! # Idempotency flag, set true at resolution
   bets: [Bet!]!
   createdAt: BigInt!
   blockNumber: BigInt!
@@ -109,7 +114,20 @@ type Global @entity (immutable: false) {
   totalPayout: BigInt!
   totalTraded: BigInt!
   totalTradedSettled: BigInt!
+  totalExpectedPayout: BigInt! # sum of expectedPayouts from settled markets
   totalMarketsParticipated: Int! # count of unique markets where any agent participated
+}
+
+# Immutable log entity for every PayoutRedemption event (debugging/auditing)
+type PayoutRedemption @entity(immutable: true) {
+  id: Bytes! # txHash + logIndex
+  redeemer: TraderAgent!
+  conditionId: Bytes!
+  question: Question
+  payoutAmount: BigInt!
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
 }
 
 type DailyProfitStatistic @entity(immutable: false) {
