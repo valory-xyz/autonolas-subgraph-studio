@@ -36,6 +36,7 @@ export function handleCreateMultisigWithAgents(
     traderAgent.totalPayout = BigInt.zero();
     traderAgent.totalTraded = BigInt.zero();
     traderAgent.totalTradedSettled = BigInt.zero();
+    traderAgent.totalExpectedPayout = BigInt.zero();
 
     traderAgent.blockNumber = event.block.number;
     traderAgent.blockTimestamp = event.block.timestamp;

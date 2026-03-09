@@ -69,6 +69,44 @@ export function createOrderFilledEvent(
 }
 
 /**
+ * Creates an OrderFilled event for a trader selling outcome tokens
+ * @param maker The trader agent address
+ * @param usdcReceived The USDC amount received (positive value, will be negated in handler)
+ * @param sharesGiven The shares/tokens given away (positive value, will be negated in handler)
+ * @param outcomeTokenId The token ID of the outcome being sold
+ * @param timestamp The block timestamp
+ * @param logIndex Optional log index for unique bet IDs
+ */
+export function createSellOrderFilledEvent(
+  maker: Address,
+  usdcReceived: BigInt,
+  sharesGiven: BigInt,
+  outcomeTokenId: BigInt,
+  timestamp: BigInt,
+  logIndex: i32 = 0
+): OrderFilledEvent {
+  let event = changetype<OrderFilledEvent>(newMockEvent());
+  event.block.timestamp = timestamp;
+  event.block.number = BigInt.fromI32(1000);
+  event.logIndex = BigInt.fromI32(logIndex);
+  event.transaction.hash = Bytes.fromHexString("0x1234567890123456789012345678901234567890123456789012345678901234");
+
+  // For selling: maker gives tokens (assetId=outcomeTokenId), taker gives USDC (takerAssetId=0)
+  event.parameters = [
+    new ethereum.EventParam("orderHash", ethereum.Value.fromFixedBytes(Bytes.fromHexString("0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"))),
+    new ethereum.EventParam("maker", ethereum.Value.fromAddress(maker)),
+    new ethereum.EventParam("taker", ethereum.Value.fromAddress(Address.fromString("0x9999999999999999999999999999999999999999"))),
+    new ethereum.EventParam("makerAssetId", ethereum.Value.fromUnsignedBigInt(outcomeTokenId)),
+    new ethereum.EventParam("takerAssetId", ethereum.Value.fromUnsignedBigInt(BigInt.zero())),
+    new ethereum.EventParam("makerAmountFilled", ethereum.Value.fromUnsignedBigInt(sharesGiven)),
+    new ethereum.EventParam("takerAmountFilled", ethereum.Value.fromUnsignedBigInt(usdcReceived)),
+    new ethereum.EventParam("fee", ethereum.Value.fromUnsignedBigInt(BigInt.zero())),
+  ];
+
+  return event;
+}
+
+/**
  * Creates a QuestionResolved event from UMA oracle
  * @param questionId The question ID being resolved
  * @param payouts Array of payout values for each outcome

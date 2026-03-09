@@ -245,9 +245,9 @@ Multi-source pricing with Chainlink integration and DEX fallbacks for comprehens
 - Dependencies: `yarn install`
 
 ### Building and Deploying
-1. Generate types: `yarn codegen-babydegen-optimism`
-2. Build the subgraph: `yarn build-babydegen-optimism`
-3. Deploy: `graph deploy --studio [SUBGRAPH_NAME]`
+1. Install dependencies: `yarn install`
+2. Generate types: `yarn codegen`
+3. Build the subgraph: `yarn build`
 
 ### Local Development
 - The subgraph uses AssemblyScript for mapping logic

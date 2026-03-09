@@ -1,68 +1,67 @@
-# CLAUDE.md
+# Autonolas Subgraph Studio
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Monorepo of [The Graph](https://thegraph.com/) subgraphs for the Autonolas/Olas ecosystem. Hosted on The Graph Studio.
 
-## Project Overview
+## Repository Structure
 
-Monorepo of [The Graph](https://thegraph.com/) subgraphs for the Autonolas/Olas ecosystem. Indexes on-chain events from Olas smart contracts across multiple EVM networks (Ethereum, Arbitrum, Base, Celo, Gnosis, Optimism, Polygon). Deployed to The Graph Studio and Alchemy.
-
-## Common Commands
-
-All commands run from the **repo root**.
-
-```bash
-yarn install                          # Install dependencies
-yarn codegen-<subgraph>               # Generate TypeScript types from schema/ABIs
-yarn build-<subgraph>:<network>       # Codegen + compile to WASM
-yarn test                             # Run all Matchstick tests
-graph test subgraphs/<name>/tests/<file>.test.ts  # Run specific test
-yarn deploy-studio                    # Interactive deployment CLI
-node scripts/generate-manifests.js    # Generate manifests from templates (staking, service-registry)
+```
+abis/                          # Shared ABI files (referenced by all subgraphs)
+scripts/
+  generate-manifests.js        # Generates network manifests from templates
+shared/
+  constants.ts                 # Shared constants across subgraphs
+subgraphs/
+  babydegen/                   # Baby Degen agent portfolio tracking (Optimism)
+  governance/                  # Governance tracking
+  legacy-mech-fees/            # Legacy mech fee indexing
+  liquidity/                   # Liquidity tracking
+  new-mech-fees/               # Multi-network mech fees (Gnosis, Base, Polygon, Optimism)
+  predict/                     # Prediction markets (Omen on Gnosis, Polymarket)
+  service-registry/            # Service registry (7 networks, template pattern)
+  staking/                     # Staking contracts (7 networks, template pattern)
+  tokenomics-eth/              # Tokenomics L1 (Ethereum mainnet, standalone)
+  tokenomics-l2/               # Tokenomics L2 (6 networks, template pattern)
 ```
 
-Build script naming: `build-tokenomics:ethereum`, `build-new-mech-fees:gnosis`, `build-babydegen-optimism`. Check `package.json` for the full list.
+## Tech Stack
 
-For template-pattern subgraphs (staking, service-registry), run `generate-manifests.js` before building.
+- **Language**: AssemblyScript (compiled to WASM by Graph CLI)
+- **Framework**: The Graph (graph-cli ^0.97.0, graph-ts ^0.38.0)
+- **Testing**: Matchstick (matchstick-as 0.5.0)
+- **Deployment**: CI/CD → The Graph Studio / Alchemy
 
-## Architecture
+## Multi-Network Patterns
 
-### Multi-Network Patterns
+1. **Template Pattern** (staking, service-registry, tokenomics-l2): `subgraph.template.yaml` + `networks.json` + `generate-manifests.js`
+2. **Per-Network Manifests** (new-mech-fees): shared `src/` with `subgraph.<network>.yaml` per network
+3. **Single Network** (babydegen, governance, liquidity, legacy-mech-fees, tokenomics-eth): standalone `subgraph.yaml`
 
-**Template Pattern** (preferred for new subgraphs): `subgraph.template.yaml` + `networks.json` → generated `subgraph.<network>.yaml` via `scripts/generate-manifests.js`. Used by: `staking`, `service-registry`.
+## Development Workflow
 
-**Shared Code Pattern**: `common/` directory with shared schema, mappers, and utilities; each network gets its own subdirectory with a network-specific manifest. Used by: `tokenomics`, `new-mech-fees`.
+Each subgraph is self-contained with its own `package.json`. Navigate to the subgraph directory and run commands locally:
 
-### Key Directories
-
-- `abis/` — Shared ABI JSON files referenced by all subgraphs (use relative paths like `../../../abis/Contract.json`)
-- `subgraphs/` — Individual subgraph projects
-- `scripts/` — `deploy-studio.js` (interactive deploy), `generate-manifests.js` (template→manifest)
-- `shared/constants.ts` — Constants shared across subgraphs
-
-### Tokenomics Special Case
-
-Tokenomics has separate L1 (Ethereum) and L2 codegen. The L1 build requires running both L2 and L1 codegen, then copying the `generated/` directory:
 ```bash
-yarn codegen-tokenomics-l2 && yarn codegen-tokenomics-l1 && cp -r generated subgraphs/tokenomics/tokenomics-eth/ && graph build ...
+cd subgraphs/<subgraph-name>           # Navigate to the subgraph directory
+yarn install                           # Install dependencies
+yarn codegen                           # Generate TS types from schema + ABIs
+yarn build                             # Build subgraph (compiles to WASM)
+yarn test                              # Run Matchstick tests
 ```
 
-### Mapping Pattern
-
-Handlers import from generated contract ABIs and schema types, using `graph-ts` utilities (Address, BigInt, Bytes). Standard pattern: `handleEventName(event: EventType): void`.
-
-## Adding a New Subgraph
-
-1. Create directory under `subgraphs/`
-2. Choose multi-network pattern (template or shared code)
-3. Add schema, manifest(s), and handler source files
-4. Place ABIs in root `abis/` directory
-5. Add `codegen-*` and `build-*` scripts to root `package.json`
-6. Register in `scripts/deploy-studio.js` for interactive deployment
+Deployment is handled via CI/CD — no manual deployment scripts.
 
 ## Conventions
 
-- **Commit messages**: Conventional Commits (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`)
-- **Branch names**: `feat/<topic>`, `fix/<topic>`, `docs/<topic>`
-- **Testing**: Matchstick framework, tests in `subgraphs/<name>/tests/`, use `clearStore()` in `afterEach`
-- **Dependencies**: `@graphprotocol/graph-cli` ^0.97.0, `@graphprotocol/graph-ts` ^0.38.0, `matchstick-as` 0.5.0
-- **Node.js** >= 18, **Yarn** v1
+- Entity IDs: typically address-based (e.g., safe address, `<address>-<tokenId>`, `<address>-<dayTimestamp>`)
+- All financial fields use `BigInt` (no BigDecimal)
+- UTC midnight timestamps for daily entities: `timestamp / 86400 * 86400`
+- Shared ABIs live in root `abis/` directory
+- Each subgraph has its own `schema.graphql`, `subgraph.yaml`, `src/`, and optional `tests/`
+
+## CLAUDE.md Maintenance
+
+Each subgraph should have its own `CLAUDE.md` with subgraph-specific context (entities, handlers, business logic, contracts). When making feature changes to a subgraph:
+
+1. **Update the subgraph's CLAUDE.md** to reflect new/changed entities, handlers, contracts, or business rules
+2. If adding a new subgraph, create a CLAUDE.md for it following the pattern in existing subgraphs (see `subgraphs/predict/predict-omen/CLAUDE.md` or `subgraphs/babydegen/babydegen-optimism/CLAUDE.md` for examples)
+3. Keep CLAUDE.md concise but comprehensive — it serves as the primary AI context for future development

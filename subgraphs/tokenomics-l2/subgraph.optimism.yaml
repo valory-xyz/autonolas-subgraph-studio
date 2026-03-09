@@ -1,0 +1,26 @@
+specVersion: 0.0.5
+schema:
+  file: ./schema.graphql
+dataSources:
+  - kind: ethereum
+    name: OLAS
+    network: optimism
+    source:
+      address: "0xFC2E6e6BCbd49ccf3A5f029c79984372DcBFE527"
+      abi: OLAS
+      startBlock: 116217922
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Token
+        - TokenHolder
+        - Transfer
+      abis:
+        - name: OLAS
+          file: ../../abis/OLAS.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleTransfer
+      file: ./src/olas-l2.ts

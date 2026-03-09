@@ -1,0 +1,22 @@
+{
+  "name": "olas-new-mech-fees",
+  "scripts": {
+    "codegen": "graph codegen subgraph.polygon.yaml",
+    "build": "graph build subgraph.polygon.yaml",
+    "build:gnosis": "graph build subgraph.gnosis.yaml",
+    "build:base": "graph build subgraph.base.yaml",
+    "build:polygon": "graph build subgraph.polygon.yaml",
+    "build:optimism": "graph build subgraph.optimism.yaml",
+    "build:ethereum": "graph build subgraph.ethereum.yaml",
+    "build:arbitrum-one": "graph build subgraph.arbitrum-one.yaml",
+    "build:celo": "graph build subgraph.celo.yaml",
+    "test": "graph test"
+  },
+  "dependencies": {
+    "@graphprotocol/graph-cli": "^0.97.0",
+    "@graphprotocol/graph-ts": "^0.38.0"
+  },
+  "devDependencies": {
+    "matchstick-as": "0.5.0"
+  }
+}

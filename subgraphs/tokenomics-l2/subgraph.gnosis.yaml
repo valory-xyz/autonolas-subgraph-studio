@@ -1,0 +1,26 @@
+specVersion: 0.0.5
+schema:
+  file: ./schema.graphql
+dataSources:
+  - kind: ethereum
+    name: OLAS
+    network: gnosis
+    source:
+      address: "0xcE11e14225575945b8E6Dc0D4F2dD4C570f79d9f"
+      abi: OLAS
+      startBlock: 30254468
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Token
+        - TokenHolder
+        - Transfer
+      abis:
+        - name: OLAS
+          file: ../../abis/OLAS.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleTransfer
+      file: ./src/olas-l2.ts

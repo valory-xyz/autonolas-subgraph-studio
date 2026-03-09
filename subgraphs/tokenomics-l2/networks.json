@@ -1,0 +1,38 @@
+{
+  "base": {
+    "OLAS": {
+      "address": "0x54330d28ca3357F294334BDC454a032e7f353416",
+      "startBlock": 10622421
+    }
+  },
+  "arbitrum-one": {
+    "OLAS": {
+      "address": "0x064F8B858C2A603e1b106a2039f5446D32dc81c1",
+      "startBlock": 173139043
+    }
+  },
+  "gnosis": {
+    "OLAS": {
+      "address": "0xcE11e14225575945b8E6Dc0D4F2dD4C570f79d9f",
+      "startBlock": 30254468
+    }
+  },
+  "optimism": {
+    "OLAS": {
+      "address": "0xFC2E6e6BCbd49ccf3A5f029c79984372DcBFE527",
+      "startBlock": 116217922
+    }
+  },
+  "matic": {
+    "OLAS": {
+      "address": "0xFEF5d947472e72Efbb2E388c730B7428406F2F95",
+      "startBlock": 49574787
+    }
+  },
+  "celo": {
+    "OLAS": {
+      "address": "0xaCFfAe8e57Ec6E394Eb1b41939A8CF7892DbDc51",
+      "startBlock": 24781592
+    }
+  }
+}

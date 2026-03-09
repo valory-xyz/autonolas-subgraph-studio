@@ -79,5 +79,8 @@ export function handleNegRiskPayoutRedemption(
     event.params.conditionId,
     event.params.payout,
     event.block.timestamp,
+    event.block.number,
+    event.transaction.hash,
+    event.logIndex.toI32(),
   );
 }

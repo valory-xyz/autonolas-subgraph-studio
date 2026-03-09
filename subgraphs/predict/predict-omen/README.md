@@ -2,76 +2,19 @@
 
 A streamlined GraphQL API for tracking prediction markets and Autonolas agent performance on Gnosis Chain.
 
-## Core Business Rules
+> **Technical reference**: See [CLAUDE.md](claude.md) for full business rules, schema reference, handler details, accounting formulas, and AI context.
 
-1.  **Selective Tracking**:
-    * **Agents**: Only tracks agents registered through the `ServiceRegistryL2` contract.
-    * **Markets**: Only indexes binary markets created by whitelisted creator agents.
-2.  **Market Lifecycle**: Markets are typically open for **4 days**. Payouts generally occur **24+ hours** after closing.
-3.  **Accounting & Statistics**:
-    * **Historical vs Settled Totals**:
-        * `totalTraded` and `totalFees` track **all bets** regardless of settlement status (updated immediately when bets are placed)
-        * `totalTradedSettled` and `totalFeesSettled` track **settled markets only** (updated based on settlement timing)
-    * **Settlement Timing for Settled Totals**:
-        * **Incorrect bets**: Updated on **market settlement day** (when `LogNewAnswer` is recorded)
-        * **Correct bets**: Updated on **payout redemption day** (when agent claims winnings)
-    * **Profit Attribution**:
-        * **Losses** are recorded on the **market settlement day** (for all incorrect bets)
-        * **Wins** are recorded on the **payout redemption day**
-4.  **No Arbitration / Single Answer**: We assume a simplified oracle flow with **no arbitration**. The subgraph expects `LogNewAnswer` to occur only once per question. Events like `LogAnswerReveal` or `LogNotifyOfArbitrationRequest` are not expected, and tracked only for debugging.
-5.  **Invalid Markets**: If a market is closed with an "Invalid" answer from the oracle, it is treated as a settlement. Because the invalid answer will not match the agents' `outcomeIndex`, spends (amount + fees) are automatically deducted as losses on the market settlement day.
-6.  **Profit Participants & Fee Analysis**: The `DailyProfitStatistic` entity maintains a list of `profitParticipants` (market IDs). This allows for granular downstream analysis, such as calculating **Mech fees** separately by correlating these market IDs with their titles or external metadata.
+## Quick Overview
 
----
-
-## Primary Entities
-
-### TraderAgent
-Represents an Autonolas trading agent. It tracks cumulative performance metrics.
-* `totalTraded` / `totalFees`: All bets volume and fees (updated immediately when bets are placed)
-* `totalTradedSettled` / `totalFeesSettled`: Volume/Fees for **settled** markets only (updated at settlement or payout)
-* `totalPayout`: All xDAI reclaimed by the agent via redemptions
-
-### Bet
-An individual trade (Buy or Sell).
-* `amount`: Positive for buys, negative for sells
-* `countedInTotal`: Flag ensuring volume is added to settled totals only once (at settlement for incorrect bets, at payout for correct bets)
-* `countedInProfit`: Flag ensuring PnL impact is processed only once (either at settlement or payout)
-
-### DailyProfitStatistic
-Tracks day-to-day performance for an agent.
-* **Activity**: `totalTraded` reflects volume **placed** on that specific day.
-* **PnL**: `dailyProfit` is adjusted on the day of settlement (losses) or payout (wins).
-* **Profit Participants**: List of market IDs that contributed to the PnL on this specific date.
-
----
-
-## Technical Data Flow
-
-The subgraph uses two primary handlers to manage the transition from "Active Bet" to "Realized PnL":
-
-### 1. Market Closing (`handleLogNewAnswer`)
-Triggered when the Oracle provides the final answer.
-* **Update Settled Totals** (for incorrect bets only): For each **incorrect** bet (where `outcomeIndex != answer`), if `countedInTotal` is false, it increments `totalTradedSettled` and `totalFeesSettled` for the Agent, MarketParticipant, and Global entities.
-* **Realize Losses**: For every **incorrect** bet, the cost (`amount + fee`) is subtracted from the agent's `dailyProfit` for the **settlement date**.
-* **Tracking**: The market ID is added to the day's `profitParticipants` to mark that a loss was realized for this market.
-* **Note**: Correct bets are **not** processed here - their settled totals are updated during payout redemption.
-
-
-
-### 2. Payout Redemption (`handlePayoutRedemption`)
-Triggered when an agent claims winnings.
-* **Update Settled Totals** (for correct bets): The amount and fees from winning bets that haven't been counted yet (unsettled amount = `totalTraded - totalTradedSettled` for this market participant) are added to `totalTradedSettled` and `totalFeesSettled` for Agent, MarketParticipant, and Global entities.
-* **Net Profit Calculation**: The subgraph identifies the costs (`amount + fee`) of the winning bets that haven't been "counted in profit" yet.
-* **Update PnL**: `Profit = Payout - TotalCosts`. This net value is added to the agent's `dailyProfit` on the **redemption date**.
-* **Tracking**: The market ID is added to the day's `profitParticipants` to mark that a win was realized for this market.
-
----
+- Tracks agents registered via `ServiceRegistryL2` and binary markets from whitelisted creators
+- **Two-tier accounting**: `totalTraded`/`totalFees` recorded immediately; `totalTradedSettled`/`totalFeesSettled` at settlement
+- **Settlement-day profit**: All PnL calculated at `LogNewAnswer` using outcome token balances
+- **Re-answer handling**: Oracle answers can change within 24h — old profit is reversed, new profit applied using full market cost
+- **Payout tracking**: `handlePayoutRedemption` only updates `totalPayout`, no profit recalculation
 
 ## Common Queries
 
 ### Agent PnL & Involved Markets
-Track an agent's financial performance and see which markets were settled or paid out on a given day.
 ```graphql
 {
   dailyProfitStatistics(where: { traderAgent: "0x..." }, orderBy: date) {
@@ -79,7 +22,7 @@ Track an agent's financial performance and see which markets were settled or pai
     dailyProfit
     profitParticipants {
       id
-      question # Used to correlate and calculate Mech fees
+      question
     }
   }
 }
@@ -91,10 +34,10 @@ Track an agent's financial performance and see which markets were settled or pai
   globals {
     totalActiveTraderAgents
     totalBets
-    totalTraded           # All bets volume
-    totalTradedSettled    # Settled markets volume only
-    totalFees             # All bets fees
-    totalFeesSettled      # Settled markets fees only
+    totalTraded
+    totalTradedSettled
+    totalFees
+    totalFeesSettled
     totalPayout
   }
 }
@@ -102,17 +45,19 @@ Track an agent's financial performance and see which markets were settled or pai
 
 ## Development
 
-### Performance Optimizations
-The subgraph implements high-performance patterns to handle large volumes of trading data:
-* **Caching Strategy**: The `handleLogNewAnswer` handler uses internal `Map` caches to store `TraderAgent`, `MarketParticipant`, and `DailyProfitStatistic` entities during execution. This ensures each entity is loaded from the database once and saved once, regardless of the number of bets being processed.
-* **Batch Saves**: Using the `saveMapValues()` utility, the subgraph performs bulk updates at the end of execution to minimize I/O overhead.
-* **Selective Indexing**: To keep the database lean, the subgraph returns early if a market creator is not on the whitelist or if an agent is not registered via `ServiceRegistryL2`.
+```bash
+yarn install    # Install dependencies
+yarn codegen    # Generate TypeScript from schema + ABIs
+yarn build      # Compile to WebAssembly
+yarn test       # Run unit tests (19 tests)
+```
 
 ### Project Structure
-* `src/service-registry-l-2.ts`: Handles agent registration and multisig creation.
-* `src/conditional-tokens.ts`: Manages condition preparation and payout redemption logic.
-* `src/realitio.ts`: Processes oracle answers, updates market status, and triggers settlement accounting.
-* `src/FixedProductMarketMakerMapping.ts`: Records real-time buy/sell activity and updates daily volume stats.
+* `src/service-registry-l-2.ts` — Agent registration and multisig creation
+* `src/conditional-tokens.ts` — Condition preparation and payout redemption
+* `src/realitio.ts` — Oracle answers, settlement, and re-answer handling
+* `src/FixedProductMarketMakerMapping.ts` — Buy/sell activity and daily volume stats
+* `src/utils.ts` — Helpers (processTradeActivity, caching, profit participant management)
 
 ### Setup & Deployment
-** Check in the [root README](/README.md).**
+**Check the [root README](/README.md).**

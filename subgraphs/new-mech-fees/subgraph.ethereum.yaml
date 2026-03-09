@@ -1,0 +1,96 @@
+specVersion: 0.0.5
+schema:
+  file: ./schema.graphql
+dataSources:
+  # 1. Native tracker (ETH)
+  - kind: ethereum
+    name: BalanceTrackerFixedPriceNative
+    network: mainnet
+    source:
+      address: "0x528befb0F8c6a988C9F42345DA6d053d66b3B9B6"
+      abi: BalanceTrackerFixedPriceNative
+      startBlock: 24427448
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Global
+        - Mech
+        - MechModel
+        - MechTransaction
+        - DailyTotals
+        - MechDaily
+      abis:
+        - name: BalanceTrackerFixedPriceNative
+          file: ../../abis/BalanceTrackerFixedPriceNative.json
+        - name: AggregatorV3Interface
+          file: ../../abis/AggregatorV3Interface.json
+      eventHandlers:
+        - event: MechBalanceAdjusted(indexed address,uint256,uint256,uint256)
+          handler: handleMechBalanceAdjustedForNative
+        - event: Withdraw(indexed address,indexed address,uint256)
+          handler: handleWithdrawForNative
+      file: ./src/native-mapping.ts
+
+  # 2. Token OLAS tracker (Uniswap V2 pricing)
+  - kind: ethereum
+    name: BalanceTrackerFixedPriceTokenOLAS
+    network: mainnet
+    source:
+      address: "0x02b576cc1bB21A84Dd8b59013777C150ea64c482"
+      abi: BalanceTrackerFixedPriceToken
+      startBlock: 24427461
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Global
+        - Mech
+        - MechModel
+        - MechTransaction
+        - DailyTotals
+        - MechDaily
+      abis:
+        - name: BalanceTrackerFixedPriceToken
+          file: ../../abis/BalanceTrackerFixedPriceToken.json
+        - name: IUniswapV2Pair
+          file: ../../abis/IUniswapV2Pair.json
+        - name: AggregatorV3Interface
+          file: ../../abis/AggregatorV3Interface.json
+      eventHandlers:
+        - event: MechBalanceAdjusted(indexed address,uint256,uint256,uint256)
+          handler: handleMechBalanceAdjustedForTokenOlas
+        - event: Withdraw(indexed address,indexed address,uint256)
+          handler: handleWithdrawForTokenOlas
+      file: ./src/token-olas-ethereum-mapping.ts
+
+  # 3. Token USDC tracker
+  - kind: ethereum
+    name: BalanceTrackerFixedPriceTokenUSDC
+    network: mainnet
+    source:
+      address: "0x897aee2e6F3d37740D334C55Caea2e0caC82aa14"
+      abi: BalanceTrackerFixedPriceToken
+      startBlock: 24427470
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Global
+        - Mech
+        - MechModel
+        - MechTransaction
+        - DailyTotals
+        - MechDaily
+      abis:
+        - name: BalanceTrackerFixedPriceToken
+          file: ../../abis/BalanceTrackerFixedPriceToken.json
+      eventHandlers:
+        - event: MechBalanceAdjusted(indexed address,uint256,uint256,uint256)
+          handler: handleMechBalanceAdjustedForTokenUSDC
+        - event: Withdraw(indexed address,indexed address,uint256)
+          handler: handleWithdrawForTokenUSDC
+      file: ./src/token-usdc-mapping.ts
