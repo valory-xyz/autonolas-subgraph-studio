@@ -11,6 +11,7 @@ import {
   USDC_TOKEN_DECIMALS_OPTIMISM,
   CHAINLINK_PRICE_FEED_DECIMALS,
   ETH_DECIMALS,
+  CELO_DECIMALS,
 } from "./constants";
 import { USDC_DECIMALS } from "../../../shared/constants";
 
@@ -194,6 +195,63 @@ export function convertOptimismNativeWeiToUsd(
     .times(ethPrice.toBigDecimal())
     .div(priceDivisor)
     .div(ethDivisor);
+}
+
+// For native fees on Ethereum (ETH with Chainlink)
+export function convertEthereumNativeWeiToUsd(
+  amountInWei: BigInt,
+  ethPrice: BigInt
+): BigDecimal {
+  const priceDivisor = BigInt.fromI32(10)
+    .pow(CHAINLINK_PRICE_FEED_DECIMALS as u8)
+    .toBigDecimal();
+  const ethDivisor = BigInt.fromI32(10)
+    .pow(ETH_DECIMALS as u8)
+    .toBigDecimal();
+
+  return amountInWei
+    .toBigDecimal()
+    .times(ethPrice.toBigDecimal())
+    .div(priceDivisor)
+    .div(ethDivisor);
+}
+
+// For native fees on Arbitrum (ETH with Chainlink)
+export function convertArbitrumNativeWeiToUsd(
+  amountInWei: BigInt,
+  ethPrice: BigInt
+): BigDecimal {
+  const priceDivisor = BigInt.fromI32(10)
+    .pow(CHAINLINK_PRICE_FEED_DECIMALS as u8)
+    .toBigDecimal();
+  const ethDivisor = BigInt.fromI32(10)
+    .pow(ETH_DECIMALS as u8)
+    .toBigDecimal();
+
+  return amountInWei
+    .toBigDecimal()
+    .times(ethPrice.toBigDecimal())
+    .div(priceDivisor)
+    .div(ethDivisor);
+}
+
+// For native fees on Celo (CELO with Chainlink)
+export function convertCeloNativeWeiToUsd(
+  amountInWei: BigInt,
+  celoPrice: BigInt
+): BigDecimal {
+  const priceDivisor = BigInt.fromI32(10)
+    .pow(CHAINLINK_PRICE_FEED_DECIMALS as u8)
+    .toBigDecimal();
+  const celoDivisor = BigInt.fromI32(10)
+    .pow(CELO_DECIMALS as u8)
+    .toBigDecimal();
+
+  return amountInWei
+    .toBigDecimal()
+    .times(celoPrice.toBigDecimal())
+    .div(priceDivisor)
+    .div(celoDivisor);
 }
 
 // For NVM fees on Gnosis

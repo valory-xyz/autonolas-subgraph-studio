@@ -19,4 +19,5 @@ export const USDC_TOKEN_DECIMALS_OPTIMISM = 6;
 
 export const CHAINLINK_PRICE_FEED_DECIMALS = 8;
 export const ETH_DECIMALS = 18;
-export const POL_DECIMALS = 18; 
+export const POL_DECIMALS = 18;
+export const CELO_DECIMALS = 18;

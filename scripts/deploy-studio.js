@@ -116,6 +116,31 @@ const networkTypes = {
         path: 'subgraphs/new-mech-fees/mech-fees-base/subgraph.yaml',
         description: 'Consolidated Base',
         buildCommand: 'yarn build-new-mech-fees:base'
+      },
+      'polygon': {
+        path: 'subgraphs/new-mech-fees/mech-fees-polygon/subgraph.yaml',
+        description: 'Consolidated Polygon',
+        buildCommand: 'yarn build-new-mech-fees:polygon'
+      },
+      'optimism': {
+        path: 'subgraphs/new-mech-fees/mech-fees-optimism/subgraph.yaml',
+        description: 'Consolidated Optimism',
+        buildCommand: 'yarn build-new-mech-fees:optimism'
+      },
+      'ethereum': {
+        path: 'subgraphs/new-mech-fees/mech-fees-ethereum/subgraph.yaml',
+        description: 'Ethereum Mainnet',
+        buildCommand: 'yarn build-new-mech-fees:ethereum'
+      },
+      'arbitrum': {
+        path: 'subgraphs/new-mech-fees/mech-fees-arbitrum/subgraph.yaml',
+        description: 'Arbitrum One',
+        buildCommand: 'yarn build-new-mech-fees:arbitrum'
+      },
+      'celo': {
+        path: 'subgraphs/new-mech-fees/mech-fees-celo/subgraph.yaml',
+        description: 'Celo Network',
+        buildCommand: 'yarn build-new-mech-fees:celo'
       }
     }
   },

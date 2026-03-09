@@ -5,16 +5,23 @@ export const BURN_ADDRESS_MECH_FEES_GNOSIS = "0x153196110040a0c729227c603db3a6c6
 export const BURN_ADDRESS_MECH_FEES_BASE = "0x3FD8C757dE190bcc82cF69Df3Cd9Ab15bCec1426";
 export const BURN_ADDRESS_MECH_FEES_POLYGON = "0x88943F63E29cd436B62cFfE332aD54De92AdCE98";
 export const BURN_ADDRESS_MECH_FEES_OPTIMISM = "0x4891f5894634DcD6d11644fe8E56756EF2681582";
+export const BURN_ADDRESS_MECH_FEES_ETHEREUM = "0xfAd04813BffD759a308A2BEaAcEf587720ba743F";
+export const BURN_ADDRESS_MECH_FEES_ARBITRUM = "0xd2ff4Cf0927c3cFbF3BB27391044dBaf6f4ca7b9";
+export const BURN_ADDRESS_MECH_FEES_CELO = "0x11949cBC85d8793B360029E26b18ae759708e28b";
 
 export const BALANCER_VAULT_ADDRESS_GNOSIS = "0xBA12222222228d8Ba445958a75a0704d566BF2C8";
 export const BALANCER_VAULT_ADDRESS_BASE = "0xBA12222222228d8Ba445958a75a0704d566BF2C8";
 export const BALANCER_VAULT_ADDRESS_POLYGON = "0xBA12222222228d8Ba445958a75a0704d566BF2C8";
 export const BALANCER_VAULT_ADDRESS_OPTIMISM = "0xBA12222222228d8Ba445958a75a0704d566BF2C8";
+export const BALANCER_VAULT_ADDRESS_ARBITRUM = "0xBA12222222228d8Ba445958a75a0704d566BF2C8";
 
 export const OLAS_ADDRESS_GNOSIS = "0xcE11e14225575945b8E6Dc0D4F2dD4C570f79d9f";
 export const OLAS_ADDRESS_BASE = "0x54330d28ca3357F294334BDC454a032e7f353416";
 export const OLAS_ADDRESS_POLYGON = "0xFEF5d947472e72Efbb2E388c730B7428406F2F95";
 export const OLAS_ADDRESS_OPTIMISM = "0xFC2E6e6BCbd49ccf3A5f029c79984372DcBFE527";
+export const OLAS_ADDRESS_ETHEREUM = "0x0001A500A6B18995B03f44bb040A5fFc28E45CB0";
+export const OLAS_ADDRESS_ARBITRUM = "0x064f8b858c2a603e1b106a2039f5446d32dc81c1";
+export const OLAS_ADDRESS_CELO = "0xD80533CA29fF6F033a0b55732Ed792af9Fbb381E";
 
 export const WXDAI_ADDRESS_GNOSIS = "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d";
 export const USDC_ADDRESS_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
@@ -23,15 +30,22 @@ export const USDC_ADDRESS_OPTIMISM = "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85
 
 export const WMATIC_ADDRESS_POLYGON = "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270";
 export const WETH_ADDRESS_OPTIMISM = "0x4200000000000000000000000000000000000006";
+export const WETH_ADDRESS_ETHEREUM = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
+export const WETH_ADDRESS_ARBITRUM = "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1";
 
 export const OLAS_WXDAI_POOL_ADDRESS_GNOSIS = "0x79C872Ed3Acb3fc5770dd8a0cD9Cd5dB3B3Ac985";
 export const OLAS_USDC_POOL_ADDRESS_BASE = "0x5332584890D6E415a6dc910254d6430b8aaB7E69";
 export const OLAS_WMATIC_POOL_ADDRESS_POLYGON = "0x62309056c759c36879Cde93693E7903bF415E4Bc";
 export const OLAS_WETH_POOL_ADDRESS_OPTIMISM = "0x5BB3E58887264B667f915130fD04bbB56116C278";
+export const OLAS_WETH_POOL_ADDRESS_ARBITRUM = "0xAF8912a3C4f55a8584B67DF30ee0dDf0e60e01f8";
+export const OLAS_WETH_UNISWAP_V2_PAIR_ETHEREUM = "0x09D1d767eDF8Fa23A64C51fa559E0688E526812F";
 
 export const CHAINLINK_PRICE_FEED_ADDRESS_BASE_ETH_USD = "0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70";
 export const CHAINLINK_PRICE_FEED_ADDRESS_POLYGON_POL_USD = "0xAB594600376Ec9fD91F8e885dADF0CE036862dE0";
 export const CHAINLINK_PRICE_FEED_ADDRESS_OPTIMISM_ETH_USD = "0x13e3Ee699D1909E989722E753853AE30b17e08c5";
+export const CHAINLINK_PRICE_FEED_ADDRESS_ETHEREUM_ETH_USD = "0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419";
+export const CHAINLINK_PRICE_FEED_ADDRESS_ARBITRUM_ETH_USD = "0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612";
+export const CHAINLINK_PRICE_FEED_ADDRESS_CELO_CELO_USD = "0x0568fD19986748cEfF3301e55c0eb1E729E0Ab7e";
 
 // Cross-subgraph constants
 export const USDC_DECIMALS = 6;
@@ -43,6 +57,9 @@ export function getBurnAddressMechFees(): Address {
   if (n == "base") return Address.fromString(BURN_ADDRESS_MECH_FEES_BASE);
   if (n == "matic" || n == "polygon") return Address.fromString(BURN_ADDRESS_MECH_FEES_POLYGON);
   if (n == "optimism") return Address.fromString(BURN_ADDRESS_MECH_FEES_OPTIMISM);
+  if (n == "mainnet") return Address.fromString(BURN_ADDRESS_MECH_FEES_ETHEREUM);
+  if (n == "arbitrum-one") return Address.fromString(BURN_ADDRESS_MECH_FEES_ARBITRUM);
+  if (n == "celo") return Address.fromString(BURN_ADDRESS_MECH_FEES_CELO);
   log.critical("Unsupported network in getBurnAddressMechFees: {}", [n]);
   return Address.zero();
 }
@@ -53,6 +70,7 @@ export function getBalancerVaultAddress(): Address {
   if (n == "base") return Address.fromString(BALANCER_VAULT_ADDRESS_BASE);
   if (n == "matic" || n == "polygon") return Address.fromString(BALANCER_VAULT_ADDRESS_POLYGON);
   if (n == "optimism") return Address.fromString(BALANCER_VAULT_ADDRESS_OPTIMISM);
+  if (n == "arbitrum-one") return Address.fromString(BALANCER_VAULT_ADDRESS_ARBITRUM);
   log.critical("Unsupported network in getBalancerVaultAddress: {}", [n]);
   return Address.zero();
 }
@@ -63,6 +81,9 @@ export function getOlasTokenAddress(): Address {
   if (n == "base") return Address.fromString(OLAS_ADDRESS_BASE);
   if (n == "matic" || n == "polygon") return Address.fromString(OLAS_ADDRESS_POLYGON);
   if (n == "optimism") return Address.fromString(OLAS_ADDRESS_OPTIMISM);
+  if (n == "mainnet") return Address.fromString(OLAS_ADDRESS_ETHEREUM);
+  if (n == "arbitrum-one") return Address.fromString(OLAS_ADDRESS_ARBITRUM);
+  if (n == "celo") return Address.fromString(OLAS_ADDRESS_CELO);
   log.critical("Unsupported network in getOlasTokenAddress: {}", [n]);
   return Address.zero();
 }
@@ -73,6 +94,7 @@ export function getOlasStablePoolAddress(): Address {
   if (n == "base") return Address.fromString(OLAS_USDC_POOL_ADDRESS_BASE);
   if (n == "matic" || n == "polygon") return Address.fromString(OLAS_WMATIC_POOL_ADDRESS_POLYGON);
   if (n == "optimism") return Address.fromString(OLAS_WETH_POOL_ADDRESS_OPTIMISM);
+  if (n == "arbitrum-one") return Address.fromString(OLAS_WETH_POOL_ADDRESS_ARBITRUM);
   log.critical("Unsupported network in getOlasStablePoolAddress: {}", [n]);
   return Address.zero();
 }
@@ -83,6 +105,7 @@ export function getStableTokenAddress(): Address {
   if (n == "base") return Address.fromString(USDC_ADDRESS_BASE);
   if (n == "matic" || n == "polygon") return Address.fromString(WMATIC_ADDRESS_POLYGON);
   if (n == "optimism") return Address.fromString(WETH_ADDRESS_OPTIMISM);
+  if (n == "arbitrum-one") return Address.fromString(WETH_ADDRESS_ARBITRUM);
   log.critical("Unsupported network in getStableTokenAddress: {}", [n]);
   return Address.zero();
-} 
+}
