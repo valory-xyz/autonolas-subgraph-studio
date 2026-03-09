@@ -1,0 +1,305 @@
+specVersion: 1.0.0
+indexerHints:
+  prune: auto
+schema:
+  file: ./schema.graphql
+dataSources:
+  - kind: ethereum
+    name: DepositoryV1
+    network: mainnet
+    source:
+      address: "0x52a043bcebdb2f939baef2e8b6f01652290eab3f"
+      abi: DepositoryV1
+      startBlock: 16699263
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - BondCalculatorUpdated
+        - CloseProduct
+        - CreateBond
+        - CreateProduct
+        - OwnerUpdated
+        - RedeemBond
+        - TokenomicsUpdated
+        - TreasuryUpdated
+      abis:
+        - name: DepositoryV1
+          file: ../../abis/DepositoryV1.json
+      eventHandlers:
+        - event: BondCalculatorUpdated(indexed address)
+          handler: handleBondCalculatorUpdated
+        - event: CloseProduct(indexed address,indexed uint256)
+          handler: handleCloseProduct
+        - event: CreateBond(indexed address,indexed uint256,indexed
+            address,uint256,uint256,uint256,uint256)
+          handler: handleCreateBond
+        - event: CreateProduct(indexed address,indexed uint256,uint256,uint256,uint256)
+          handler: handleCreateProduct
+        - event: OwnerUpdated(indexed address)
+          handler: handleOwnerUpdated
+        - event: RedeemBond(indexed uint256,indexed address,uint256)
+          handler: handleRedeemBond
+        - event: TokenomicsUpdated(indexed address)
+          handler: handleTokenomicsUpdated
+        - event: TreasuryUpdated(indexed address)
+          handler: handleTreasuryUpdated
+      file: ./src/depository.ts
+  - kind: ethereum
+    name: DepositoryV2
+    network: mainnet
+    source:
+      address: "0xfF8697d8d2998d6AA2e09B405795C6F4BEeB0C81"
+      abi: DepositoryV2
+      startBlock: 17777168
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - BondCalculatorUpdated
+        - CloseProduct
+        - CreateBond
+        - CreateProduct
+        - OwnerUpdated
+        - RedeemBond
+        - TokenomicsUpdated
+        - TreasuryUpdated
+      abis:
+        - name: DepositoryV2
+          file: ../../abis/DepositoryV2.json
+      eventHandlers:
+        - event: BondCalculatorUpdated(indexed address)
+          handler: handleBondCalculatorUpdated
+        - event: CloseProduct(indexed address,indexed uint256,uint256)
+          handler: handleCloseProductV2
+        - event: CreateBond(indexed address,indexed uint256,indexed
+            address,uint256,uint256,uint256,uint256)
+          handler: handleCreateBondV2
+        - event: CreateProduct(indexed address,indexed uint256,uint256,uint256,uint256)
+          handler: handleCreateProductV2
+        - event: OwnerUpdated(indexed address)
+          handler: handleOwnerUpdated
+        - event: RedeemBond(indexed uint256,indexed address,uint256)
+          handler: handleRedeemBond
+        - event: TokenomicsUpdated(indexed address)
+          handler: handleTokenomicsUpdated
+        - event: TreasuryUpdated(indexed address)
+          handler: handleTreasuryUpdated
+      file: ./src/depository.ts
+  - kind: ethereum
+    name: Tokenomics
+    network: mainnet
+    source:
+      address: "0xc096362fa6f4A4B1a9ea68b1043416f3381ce300"
+      abi: Tokenomics
+      startBlock: 16699195
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - AgentRegistryUpdated
+        - ComponentRegistryUpdated
+        - DepositoryUpdated
+        - DispenserUpdated
+        - DonatorBlacklistUpdated
+        - EffectiveBondUpdated
+        - EpochLengthUpdated
+        - EpochSettled
+        - IDFUpdated
+        - IncentiveFractionsUpdateRequested
+        - IncentiveFractionsUpdated
+        - TokenomicsOwnerUpdated
+        - ServiceRegistryUpdated
+        - StakingParamsUpdateRequested
+        - StakingParamsUpdated
+        - StakingRefunded
+        - TokenomicsImplementationUpdated
+        - TokenomicsParametersUpdateRequested
+        - TokenomicsParametersUpdated
+        - TokenomicsTreasuryUpdated
+      abis:
+        - name: Tokenomics
+          file: ../../abis/Tokenomics.json
+      eventHandlers:
+        - event: AgentRegistryUpdated(indexed address)
+          handler: handleAgentRegistryUpdated
+        - event: ComponentRegistryUpdated(indexed address)
+          handler: handleComponentRegistryUpdated
+        - event: DepositoryUpdated(indexed address)
+          handler: handleDepositoryUpdated
+        - event: DispenserUpdated(indexed address)
+          handler: handleDispenserUpdated
+        - event: DonatorBlacklistUpdated(indexed address)
+          handler: handleDonatorBlacklistUpdated
+        - event: EffectiveBondUpdated(indexed uint256,uint256)
+          handler: handleEffectiveBondUpdatedV2
+        - event: EffectiveBondUpdated(uint256)
+          handler: handleEffectiveBondUpdated
+        - event: EpochLengthUpdated(uint256)
+          handler: handleEpochLengthUpdated
+        - event: EpochSettled(indexed uint256,uint256,uint256,uint256,uint256,uint256,uint256)
+          handler: handleEpochSettledV2
+        - event: EpochSettled(indexed uint256,uint256,uint256,uint256)
+          handler: handleEpochSettled
+        - event: IDFUpdated(uint256)
+          handler: handleIDFUpdated
+        - event: IncentiveFractionsUpdateRequested(indexed
+            uint256,uint256,uint256,uint256,uint256,uint256,uint256)
+          handler: handleIncentiveFractionsUpdateRequested
+        - event: IncentiveFractionsUpdated(indexed uint256)
+          handler: handleIncentiveFractionsUpdated
+        - event: OwnerUpdated(indexed address)
+          handler: handleOwnerUpdated
+        - event: ServiceRegistryUpdated(indexed address)
+          handler: handleServiceRegistryUpdated
+        - event: StakingParamsUpdateRequested(indexed uint256,uint256,uint256)
+          handler: handleStakingParamsUpdateRequested
+        - event: StakingParamsUpdated(indexed uint256)
+          handler: handleStakingParamsUpdated
+        - event: StakingRefunded(indexed uint256,uint256)
+          handler: handleStakingRefunded
+        - event: TokenomicsImplementationUpdated(indexed address)
+          handler: handleTokenomicsImplementationUpdated
+        - event: TokenomicsParametersUpdateRequested(indexed
+            uint256,uint256,uint256,uint256,uint256,uint256)
+          handler: handleTokenomicsParametersUpdateRequested
+        - event: TokenomicsParametersUpdated(indexed uint256)
+          handler: handleTokenomicsParametersUpdated
+        - event: TreasuryUpdated(indexed address)
+          handler: handleTreasuryUpdated
+      file: ./src/tokenomics.ts
+  - kind: ethereum
+    name: DispenserV1
+    network: mainnet
+    source:
+      address: "0xeED0000fE94d7cfeF4Dc0CA86a223f0F603A61B8"
+      abi: DispenserV1
+      startBlock: 16699279
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - IncentivesClaimed
+        - DispenserOwnerUpdated
+        - DispenserTokenomicsUpdated
+        - DispenserTreasuryUpdated
+      abis:
+        - name: DispenserV1
+          file: ../../abis/DispenserV1.json
+      eventHandlers:
+        - event: IncentivesClaimed(indexed address,uint256,uint256)
+          handler: handleIncentivesClaimed
+        - event: OwnerUpdated(indexed address)
+          handler: handleOwnerUpdated
+        - event: TokenomicsUpdated(indexed address)
+          handler: handleTokenomicsUpdated
+        - event: TreasuryUpdated(indexed address)
+          handler: handleTreasuryUpdated
+      file: ./src/dispenser.ts
+  - kind: ethereum
+    name: DispenserV2
+    network: mainnet
+    source:
+      address: "0x5650300fCBab43A0D7D02F8Cb5d0f039402593f0"
+      abi: DispenserV2
+      startBlock: 20340783
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - AddNomineeHash
+        - DispenserV2IncentivesClaimed
+        - DispenserV2OwnerUpdated
+        - PauseDispenser
+        - RemoveNomineeHash
+        - Retained
+        - SetDepositProcessorChainIds
+        - StakingIncentivesBatchClaimed
+        - StakingIncentivesClaimed
+        - DispenserV2StakingParamsUpdated
+        - DispenserV2TokenomicsUpdated
+        - DispenserV2TreasuryUpdated
+        - VoteWeightingUpdated
+        - WithheldAmountSynced
+      abis:
+        - name: DispenserV2
+          file: ../../abis/DispenserV2.json
+      eventHandlers:
+        - event: AddNomineeHash(indexed bytes32)
+          handler: handleAddNomineeHash
+        - event: IncentivesClaimed(indexed address,uint256,uint256,uint256[],uint256[])
+          handler: handleIncentivesClaimedV2
+        - event: OwnerUpdated(indexed address)
+          handler: handleOwnerUpdated
+        - event: PauseDispenser(uint8)
+          handler: handlePauseDispenser
+        - event: RemoveNomineeHash(indexed bytes32)
+          handler: handleRemoveNomineeHash
+        - event: Retained(indexed address,uint256)
+          handler: handleRetained
+        - event: SetDepositProcessorChainIds(address[],uint256[])
+          handler: handleSetDepositProcessorChainIds
+        - event: StakingIncentivesBatchClaimed(indexed
+            address,uint256[],bytes32[][],uint256[][],uint256,uint256,uint256)
+          handler: handleStakingIncentivesBatchClaimed
+        - event: StakingIncentivesClaimed(indexed address,uint256,bytes32,uint256,uint256,uint256)
+          handler: handleStakingIncentivesClaimed
+        - event: StakingParamsUpdated(uint256,uint256)
+          handler: handleStakingParamsUpdated
+        - event: TokenomicsUpdated(indexed address)
+          handler: handleTokenomicsUpdated
+        - event: TreasuryUpdated(indexed address)
+          handler: handleTreasuryUpdated
+        - event: VoteWeightingUpdated(indexed address)
+          handler: handleVoteWeightingUpdated
+        - event: WithheldAmountSynced(uint256,uint256,uint256,indexed bytes32)
+          handler: handleWithheldAmountSynced
+      file: ./src/dispenser.ts
+  - kind: ethereum/contract
+    name: OLAS
+    network: mainnet
+    source:
+      address: "0x0001a500a6b18995b03f44bb040a5ffc28e45cb0"
+      abi: OLAS
+      startBlock: 15050732
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - BondClaim
+        - Epoch
+      abis:
+        - name: OLAS
+          file: ../../abis/OLAS.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleTransfer
+      file: ./src/olas.ts
+  - kind: ethereum/contract
+    name: veOLAS
+    network: mainnet
+    source:
+      address: "0x7e01A500805f8A52Fad229b3015AD130A332B7b3"
+      abi: veOLAS
+      startBlock: 15050278
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - VeolasDepositor
+      abis:
+        - name: veOLAS
+          file: ../../abis/veOLAS.json
+      eventHandlers:
+        - event: Deposit(indexed address,uint256,uint256,uint8,uint256)
+          handler: handleDeposit
+        - event: Withdraw(indexed address,uint256,uint256)
+          handler: handleWithdraw
+      file: ./src/veolas.ts
