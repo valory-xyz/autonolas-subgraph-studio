@@ -1,0 +1,21 @@
+type Token @entity(immutable: false) {
+  id: Bytes!
+  balance: BigInt!
+  holderCount: Int!
+}
+
+type TokenHolder @entity(immutable: false) {
+  id: Bytes!
+  token: Bytes!
+  balance: BigInt!
+}
+
+type Transfer @entity(immutable: true) {
+  id: Bytes!
+  from: Bytes!
+  to: Bytes!
+  value: BigInt!
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}

@@ -1,0 +1,95 @@
+specVersion: 0.0.5
+schema:
+  file: ./schema.graphql
+dataSources:
+  - kind: ethereum
+    name: BalanceTrackerFixedPriceNative
+    network: base
+    source:
+      address: "0xB3921F8D8215603f0Bd521341Ac45eA8f2d274c1"
+      abi: BalanceTrackerFixedPriceNative
+      startBlock: 26642932
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Mech
+        - Global
+        - MechTransaction
+        - DailyTotals
+        - MechDaily
+        - MechModel
+      abis:
+        - name: BalanceTrackerFixedPriceNative
+          file: ../../abis/BalanceTrackerFixedPriceNative.json
+        - name: AggregatorV3Interface
+          file: ../../abis/AggregatorV3Interface.json
+      eventHandlers:
+        - event: MechBalanceAdjusted(indexed address,uint256,uint256,uint256)
+          handler: handleMechBalanceAdjustedForNative
+        - event: Withdraw(indexed address,indexed address,uint256)
+          handler: handleWithdrawForNative
+      file: ./src/native-mapping.ts
+
+  - kind: ethereum
+    name: BalanceTrackerNvmSubscription
+    network: base
+    source:
+      address: "0xaafbeef195bdab1bb6f3dc9ceba875cd72499230"
+      abi: BalanceTrackerNvmSubscription
+      startBlock: 27585236
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Mech
+        - Global
+        - MechTransaction
+        - DailyTotals
+        - MechDaily
+        - MechModel
+      abis:
+        - name: BalanceTrackerNvmSubscription
+          file: ../../abis/BalanceTrackerNvmSubscriptionToken.json
+      eventHandlers:
+        - event: MechBalanceAdjusted(indexed address,uint256,uint256,uint256)
+          handler: handleMechBalanceAdjustedForNvm
+        - event: Withdraw(indexed address,indexed address,uint256)
+          handler: handleWithdrawForNvm
+      file: ./src/nvm-mapping.ts
+
+  - kind: ethereum
+    name: BalanceTrackerFixedPriceTokenOLAS
+    network: base
+    source:
+      address: "0x43fB32f25dce34EB76c78C7A42C8F40F84BCD237"
+      abi: BalanceTrackerFixedPriceToken
+      startBlock: 26643048
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Mech
+        - Global
+        - MechTransaction
+        - DailyTotals
+        - MechDaily
+        - MechModel
+      abis:
+        - name: BalanceTrackerFixedPriceToken
+          file: ../../abis/BalanceTrackerFixedPriceToken.json
+        - name: BalancerV2Vault
+          file: ../../abis/BalancerV2Vault.json
+        - name: BalancerV2WeightedPool
+          file: ../../abis/BalancerV2WeightedPool.json
+        - name: AggregatorV3Interface
+          file: ../../abis/AggregatorV3Interface.json
+      eventHandlers:
+        - event: MechBalanceAdjusted(indexed address,uint256,uint256,uint256)
+          handler: handleMechBalanceAdjustedForTokenOlas
+        - event: Withdraw(indexed address,indexed address,uint256)
+          handler: handleWithdrawForTokenOlas
+      file: ./src/token-olas-mapping.ts
