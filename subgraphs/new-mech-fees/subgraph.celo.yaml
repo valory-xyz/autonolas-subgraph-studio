@@ -9,7 +9,7 @@ dataSources:
     source:
       address: "0x93111f6C267068A5d7356114D61d0f09bFD53a54"
       abi: BalanceTrackerFixedPriceNative
-      startBlock: 58841401
+      startBlock: 61239248
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -40,7 +40,7 @@ dataSources:
     source:
       address: "0x3912381bAa2935a0fc03c173Df366A459DAc1F43"
       abi: BalanceTrackerFixedPriceToken
-      startBlock: 58841482
+      startBlock: 61239248
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -75,7 +75,7 @@ dataSources:
     source:
       address: "0xA749f605D93B3efcc207C54270d83C6E8fa70fF8"
       abi: BalanceTrackerFixedPriceToken
-      startBlock: 58841543
+      startBlock: 61239248
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
