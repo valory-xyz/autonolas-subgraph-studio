@@ -7,6 +7,9 @@
     "build:base": "graph build subgraph.base.yaml",
     "build:polygon": "graph build subgraph.polygon.yaml",
     "build:optimism": "graph build subgraph.optimism.yaml",
+    "build:ethereum": "graph build subgraph.ethereum.yaml",
+    "build:arbitrum-one": "graph build subgraph.arbitrum-one.yaml",
+    "build:celo": "graph build subgraph.celo.yaml",
     "test": "graph test"
   },
   "dependencies": {

@@ -9,7 +9,10 @@ import {
   getBurnAddressMechFees,
   CHAINLINK_PRICE_FEED_ADDRESS_BASE_ETH_USD,
   CHAINLINK_PRICE_FEED_ADDRESS_POLYGON_POL_USD,
-  CHAINLINK_PRICE_FEED_ADDRESS_OPTIMISM_ETH_USD
+  CHAINLINK_PRICE_FEED_ADDRESS_OPTIMISM_ETH_USD,
+  CHAINLINK_PRICE_FEED_ADDRESS_ETHEREUM_ETH_USD,
+  CHAINLINK_PRICE_FEED_ADDRESS_ARBITRUM_ETH_USD,
+  CHAINLINK_PRICE_FEED_ADDRESS_CELO_CELO_USD
 } from "../../../shared/constants"
 import {
   updateTotalFeesIn,
@@ -33,9 +36,12 @@ const MODEL = "native";
 
 function getChainlinkPriceFeedAddress(): Address {
   const n = dataSource.network();
+  if (n == "mainnet") return Address.fromString(CHAINLINK_PRICE_FEED_ADDRESS_ETHEREUM_ETH_USD);
   if (n == "base") return Address.fromString(CHAINLINK_PRICE_FEED_ADDRESS_BASE_ETH_USD);
   if (n == "matic") return Address.fromString(CHAINLINK_PRICE_FEED_ADDRESS_POLYGON_POL_USD);
   if (n == "optimism") return Address.fromString(CHAINLINK_PRICE_FEED_ADDRESS_OPTIMISM_ETH_USD);
+  if (n == "arbitrum-one") return Address.fromString(CHAINLINK_PRICE_FEED_ADDRESS_ARBITRUM_ETH_USD);
+  if (n == "celo") return Address.fromString(CHAINLINK_PRICE_FEED_ADDRESS_CELO_CELO_USD);
   return Address.zero();
 }
 

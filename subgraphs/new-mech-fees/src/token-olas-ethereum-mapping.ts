@@ -1,4 +1,4 @@
-import { Address, BigDecimal, BigInt, Bytes, dataSource, log } from "@graphprotocol/graph-ts"
+import { Address, BigDecimal, BigInt, log } from "@graphprotocol/graph-ts"
 import {
   MechBalanceAdjusted,
   Withdraw
@@ -19,97 +19,79 @@ import {
   updateMechModelOut,
   convertNativeWeiToUsd
 } from "./utils"
-import { calculateOlasInUsd } from "./token-utils"
-import { ETH_DECIMALS } from "./constants"
-import { BalancerV2WeightedPool } from "../generated/BalanceTrackerFixedPriceTokenOLAS/BalancerV2WeightedPool"
+import { IUniswapV2Pair } from "../generated/BalanceTrackerFixedPriceTokenOLAS/IUniswapV2Pair"
 import { AggregatorV3Interface } from "../generated/BalanceTrackerFixedPriceTokenOLAS/AggregatorV3Interface"
 import {
-  getBalancerVaultAddress,
-  getOlasStablePoolAddress,
-  getOlasTokenAddress,
-  getStableTokenAddress,
   getBurnAddressMechFees,
-  CHAINLINK_PRICE_FEED_ADDRESS_POLYGON_POL_USD,
-  CHAINLINK_PRICE_FEED_ADDRESS_OPTIMISM_ETH_USD,
-  CHAINLINK_PRICE_FEED_ADDRESS_ARBITRUM_ETH_USD
+  OLAS_WETH_UNISWAP_V2_PAIR_ETHEREUM,
+  OLAS_ADDRESS_ETHEREUM,
+  CHAINLINK_PRICE_FEED_ADDRESS_ETHEREUM_ETH_USD
 } from "../../../shared/constants"
 
 const BURN_ADDRESS = getBurnAddressMechFees();
-const VAULT_ADDRESS = getBalancerVaultAddress();
-const POOL_ADDRESS = getOlasStablePoolAddress();
-const OLAS_ADDRESS = getOlasTokenAddress();
-const STABLE_ADDRESS = getStableTokenAddress();
+const PAIR_ADDRESS = Address.fromString(OLAS_WETH_UNISWAP_V2_PAIR_ETHEREUM);
+const OLAS_ADDRESS = Address.fromString(OLAS_ADDRESS_ETHEREUM);
+const PRICE_FEED_ADDRESS = Address.fromString(CHAINLINK_PRICE_FEED_ADDRESS_ETHEREUM_ETH_USD);
 const MODEL = "token-olas";
 
-function getPoolIdSafe(poolAddress: Address): Bytes {
-  const pool = BalancerV2WeightedPool.bind(poolAddress);
-  const poolIdResult = pool.try_getPoolId();
+function calculateOlasInWeth(olasAmount: BigInt): BigDecimal {
+  const pair = IUniswapV2Pair.bind(PAIR_ADDRESS);
 
-  if (poolIdResult.reverted) {
-    log.warning("Could not get pool ID for pool {}, using placeholder", [poolAddress.toHexString()]);
-    return Bytes.fromHexString("0x0000000000000000000000000000000000000000000000000000000000000000");
+  const reservesResult = pair.try_getReserves();
+  if (reservesResult.reverted) {
+    log.warning("Could not get reserves from Uniswap V2 pair", []);
+    return BigDecimal.fromString("0");
   }
 
-  return poolIdResult.value;
-}
+  const token0Result = pair.try_token0();
+  if (token0Result.reverted) {
+    log.warning("Could not get token0 from Uniswap V2 pair", []);
+    return BigDecimal.fromString("0");
+  }
 
-function getStablecoinDecimals(): i32 {
-  const n = dataSource.network();
-  if (n == "base") return 6;
-  return 18; // Gnosis (WXDAI), Polygon (WMATIC), Optimism (WETH), Arbitrum (WETH)
-}
+  const reserve0 = reservesResult.value.value0;
+  const reserve1 = reservesResult.value.value1;
+  const token0 = token0Result.value;
 
-function needsChainlinkConversion(): boolean {
-  const n = dataSource.network();
-  return n == "matic" || n == "optimism" || n == "arbitrum-one";
-}
+  let olasReserve: BigInt;
+  let wethReserve: BigInt;
 
-function getChainlinkPriceFeedAddress(): Address {
-  const n = dataSource.network();
-  if (n == "matic") return Address.fromString(CHAINLINK_PRICE_FEED_ADDRESS_POLYGON_POL_USD);
-  if (n == "optimism") return Address.fromString(CHAINLINK_PRICE_FEED_ADDRESS_OPTIMISM_ETH_USD);
-  if (n == "arbitrum-one") return Address.fromString(CHAINLINK_PRICE_FEED_ADDRESS_ARBITRUM_ETH_USD);
-  return Address.zero();
+  if (token0.equals(OLAS_ADDRESS)) {
+    olasReserve = reserve0;
+    wethReserve = reserve1;
+  } else {
+    olasReserve = reserve1;
+    wethReserve = reserve0;
+  }
+
+  if (olasReserve.isZero() || wethReserve.isZero()) {
+    log.warning("Invalid reserves in Uniswap V2 pair", []);
+    return BigDecimal.fromString("0");
+  }
+
+  // Both OLAS and WETH have 18 decimals, so they cancel out
+  const olasDecimal = olasAmount.toBigDecimal();
+  const pricePerOlas = wethReserve.toBigDecimal().div(olasReserve.toBigDecimal());
+  return olasDecimal.times(pricePerOlas);
 }
 
 function calculateOlasToUsd(olasAmount: BigInt): BigDecimal {
-  const n = dataSource.network();
+  // Step 1: Calculate OLAS value in WETH terms (raw, both 18 decimals)
+  const amountInWeth = calculateOlasInWeth(olasAmount);
 
-  // No OLAS pricing pool available on Celo yet - USD will be 0
-  if (n == "celo") {
-    return BigDecimal.fromString("0");
-  }
-
-  const poolId = getPoolIdSafe(POOL_ADDRESS);
-  const stablecoinDecimals = getStablecoinDecimals();
-
-  const poolValue = calculateOlasInUsd(
-    VAULT_ADDRESS,
-    poolId,
-    OLAS_ADDRESS,
-    STABLE_ADDRESS,
-    stablecoinDecimals,
-    olasAmount
-  );
-
-  if (!needsChainlinkConversion()) {
-    return poolValue;
-  }
-
-  // For Polygon/Optimism: pool gives intermediate native token value, convert via Chainlink
-  const priceFeed = AggregatorV3Interface.bind(getChainlinkPriceFeedAddress());
+  // Step 2: Get ETH/USD price from Chainlink
+  const priceFeed = AggregatorV3Interface.bind(PRICE_FEED_ADDRESS);
   const latestRoundData = priceFeed.try_latestRoundData();
 
   if (latestRoundData.reverted) {
-    log.error("Could not get native token price from Chainlink", []);
+    log.error("Could not get ETH price from Chainlink", []);
     return BigDecimal.fromString("0");
   }
 
-  const nativeValueInWei = poolValue
-    .times(BigInt.fromI32(10).pow(ETH_DECIMALS as u8).toBigDecimal())
-    .truncate(0).digits;
+  // Step 3: Convert WETH value to USD
+  const wethValueInWei = amountInWeth.truncate(0).digits;
   return convertNativeWeiToUsd(
-    BigInt.fromString(nativeValueInWei.toString()),
+    BigInt.fromString(wethValueInWei.toString()),
     latestRoundData.value.value1
   );
 }
