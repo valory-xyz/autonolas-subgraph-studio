@@ -17,7 +17,6 @@ type PoolReserves @entity(immutable: false) {
   lastSyncTransaction: Bytes!
 }
 
-
 # Treasury LP token holdings tracker
 type TreasuryHoldings @entity(immutable: false) {
   id: Bytes! # treasury address
@@ -32,21 +31,47 @@ type TreasuryHoldings @entity(immutable: false) {
 # Global LP token metrics
 type LPTokenMetrics @entity(immutable: false) {
   id: ID! # "global"
-  
+
   # Supply metrics
   totalSupply: BigInt! # current total LP supply
   totalMinted: BigInt! # cumulative minted
   totalBurned: BigInt! # cumulative burned
-  
+
   # Treasury metrics
   treasurySupply: BigInt! # LP tokens held by treasury
   treasuryPercentage: BigInt! # treasury % of total (in basis points, 10000 = 100%)
-  
+
   # Pool metrics
   currentReserve0: BigInt! # current OLAS reserves
   currentReserve1: BigInt! # current ETH reserves
-  
+
+  # USD valuation (from Chainlink ETH/USD oracle)
+  ethUsdPrice: BigInt! # latest ETH/USD price (8 decimals, e.g. 200000000000 = $2000)
+  poolLiquidityUsd: BigInt! # total pool value in USD (8 decimals): 2 * ETH_reserves * ETH_price / 1e18
+  protocolOwnedLiquidityUsd: BigInt! # treasury's share in USD (8 decimals): poolLiquidityUsd * treasuryPercentage / 10000
+
   # Timestamps
   lastUpdated: BigInt!
   firstTransferTimestamp: BigInt!
+}
+
+# Chainlink ETH/USD price tracker
+type PriceData @entity(immutable: false) {
+  id: ID! # "eth-usd"
+  price: BigInt! # ETH/USD price (8 decimals from Chainlink)
+  lastUpdatedBlock: BigInt!
+  lastUpdatedTimestamp: BigInt!
+}
+
+# Bridged LP token holdings in Treasury on Ethereum mainnet
+# Each entity tracks Treasury's balance of one bridged LP token
+type BridgedPOLHolding @entity(immutable: false) {
+  id: Bytes! # bridged LP token address on Ethereum
+  originChain: String! # source chain name (gnosis, polygon, solana, etc.)
+  pair: String! # trading pair (OLAS-WXDAI, OLAS-WMATIC, etc.)
+  currentBalance: BigInt! # Treasury's current balance of this bridged LP token
+  totalAcquired: BigInt! # cumulative tokens received by Treasury
+  totalSold: BigInt! # cumulative tokens sent from Treasury
+  lastTransactionTimestamp: BigInt!
+  transactionCount: Int!
 }

@@ -3,7 +3,13 @@ import {
   TreasuryHoldings,
   LPTokenMetrics,
   PoolReserves,
+  PriceData,
+  BridgedPOLHolding,
 } from '../generated/schema';
+
+// ──────────────────────────────────────────────────────────────
+// Core addresses
+// ──────────────────────────────────────────────────────────────
 
 export const ZERO_ADDRESS = Address.fromString(
   '0x0000000000000000000000000000000000000000'
@@ -12,34 +18,68 @@ export const TREASURY_ADDRESS = Address.fromString(
   '0xa0DA53447C0f6C4987964d8463da7e6628B30f82'
 );
 
+// Chainlink ETH/USD price feed proxy on Ethereum mainnet
+export const CHAINLINK_ETH_USD = Address.fromString(
+  '0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419'
+);
+
+// ──────────────────────────────────────────────────────────────
+// Bridged LP token addresses on Ethereum mainnet
+// Source: https://github.com/valory-xyz/autonolas-tokenomics/blob/main/docs/lp_token_bridging.md
+// ──────────────────────────────────────────────────────────────
+
+export const BRIDGED_LP_GNOSIS = Address.fromString(
+  '0x27df632fd0dcf191C418c803801D521cd579F18e'
+);
+export const BRIDGED_LP_POLYGON = Address.fromString(
+  '0xf9825A563222f9eFC81e369311DAdb13D68e60a4'
+);
+export const BRIDGED_LP_SOLANA = Address.fromString(
+  '0x3685B8cC36B8df09ED9E81C1690100306bF23E04'
+);
+export const BRIDGED_LP_ARBITRUM = Address.fromString(
+  '0x36B203Cb3086269f005a4b987772452243c0767f'
+);
+export const BRIDGED_LP_OPTIMISM = Address.fromString(
+  '0x2FD007a534eB7527b535a1DF35aba6bD2a8b660F'
+);
+export const BRIDGED_LP_BASE = Address.fromString(
+  '0x9946d6FD1210D85EC613Ca956F142D911C97a074'
+);
+export const BRIDGED_LP_CELO = Address.fromString(
+  '0xC085F31E4ca659fF8A17042dDB26f1dcA2fBdAB4'
+);
+
+// ──────────────────────────────────────────────────────────────
+// Numeric constants
+// ──────────────────────────────────────────────────────────────
+
 export const SECONDS_PER_DAY = BigInt.fromI32(86400);
 export const BASIS_POINTS = BigInt.fromI32(10000); // 100% = 10000 basis points
+export const WEI = BigInt.fromString('1000000000000000000'); // 1e18
 export const GLOBAL_ID = 'global';
+export const PRICE_ID = 'eth-usd';
 
-/**
- * Get day timestamp by truncating to start of day (UTC)
- */
+// ──────────────────────────────────────────────────────────────
+// Address checks
+// ──────────────────────────────────────────────────────────────
+
 export function getDayTimestamp(timestamp: BigInt): BigInt {
   return timestamp.div(SECONDS_PER_DAY).times(SECONDS_PER_DAY);
 }
 
-/**
- * Check if an address is the zero address
- */
 export function isZeroAddress(address: Address): boolean {
   return address.equals(ZERO_ADDRESS);
 }
 
-/**
- * Check if an address is the treasury address
- */
 export function isTreasuryAddress(address: Address): boolean {
   return address.equals(TREASURY_ADDRESS);
 }
 
-/**
- * Calculate percentage in basis points (10000 = 100%)
- */
+// ──────────────────────────────────────────────────────────────
+// Math helpers
+// ──────────────────────────────────────────────────────────────
+
 export function calculatePercentageBasisPoints(
   numerator: BigInt,
   denominator: BigInt
@@ -50,9 +90,37 @@ export function calculatePercentageBasisPoints(
   return numerator.times(BASIS_POINTS).div(denominator);
 }
 
-/**
- * Get or create global LP token metrics
- */
+// ──────────────────────────────────────────────────────────────
+// Bridged LP metadata
+// ──────────────────────────────────────────────────────────────
+
+// Returns [originChain, pair] for a bridged LP token address
+export function getBridgedLPOriginChain(address: Address): string {
+  if (address.equals(BRIDGED_LP_GNOSIS)) return 'gnosis';
+  if (address.equals(BRIDGED_LP_POLYGON)) return 'polygon';
+  if (address.equals(BRIDGED_LP_SOLANA)) return 'solana';
+  if (address.equals(BRIDGED_LP_ARBITRUM)) return 'arbitrum';
+  if (address.equals(BRIDGED_LP_OPTIMISM)) return 'optimism';
+  if (address.equals(BRIDGED_LP_BASE)) return 'base';
+  if (address.equals(BRIDGED_LP_CELO)) return 'celo';
+  return 'unknown';
+}
+
+export function getBridgedLPPair(address: Address): string {
+  if (address.equals(BRIDGED_LP_GNOSIS)) return 'OLAS-WXDAI';
+  if (address.equals(BRIDGED_LP_POLYGON)) return 'OLAS-WMATIC';
+  if (address.equals(BRIDGED_LP_SOLANA)) return 'WSOL-OLAS';
+  if (address.equals(BRIDGED_LP_ARBITRUM)) return 'OLAS-WETH';
+  if (address.equals(BRIDGED_LP_OPTIMISM)) return 'WETH-OLAS';
+  if (address.equals(BRIDGED_LP_BASE)) return 'OLAS-USDC';
+  if (address.equals(BRIDGED_LP_CELO)) return 'CELO-OLAS';
+  return 'unknown';
+}
+
+// ──────────────────────────────────────────────────────────────
+// Entity get-or-create functions
+// ──────────────────────────────────────────────────────────────
+
 export function getOrCreateLPTokenMetrics(): LPTokenMetrics {
   let metrics = LPTokenMetrics.load(GLOBAL_ID);
   if (metrics == null) {
@@ -64,15 +132,15 @@ export function getOrCreateLPTokenMetrics(): LPTokenMetrics {
     metrics.treasuryPercentage = BigInt.zero();
     metrics.currentReserve0 = BigInt.zero();
     metrics.currentReserve1 = BigInt.zero();
+    metrics.ethUsdPrice = BigInt.zero();
+    metrics.poolLiquidityUsd = BigInt.zero();
+    metrics.protocolOwnedLiquidityUsd = BigInt.zero();
     metrics.lastUpdated = BigInt.zero();
     metrics.firstTransferTimestamp = BigInt.zero();
   }
   return metrics;
 }
 
-/**
- * Get or create treasury holdings tracker
- */
 export function getOrCreateTreasuryHoldings(): TreasuryHoldings {
   let treasury = TreasuryHoldings.load(TREASURY_ADDRESS);
   if (treasury == null) {
@@ -87,9 +155,6 @@ export function getOrCreateTreasuryHoldings(): TreasuryHoldings {
   return treasury;
 }
 
-/**
- * Get or create pool reserves
- */
 export function getOrCreatePoolReserves(poolAddress: Address): PoolReserves {
   let reserves = PoolReserves.load(poolAddress);
   if (reserves == null) {
@@ -103,9 +168,50 @@ export function getOrCreatePoolReserves(poolAddress: Address): PoolReserves {
   return reserves;
 }
 
+export function getOrCreateBridgedPOLHolding(
+  tokenAddress: Address
+): BridgedPOLHolding {
+  let holding = BridgedPOLHolding.load(tokenAddress);
+  if (holding == null) {
+    holding = new BridgedPOLHolding(tokenAddress);
+    holding.originChain = getBridgedLPOriginChain(tokenAddress);
+    holding.pair = getBridgedLPPair(tokenAddress);
+    holding.currentBalance = BigInt.zero();
+    holding.totalAcquired = BigInt.zero();
+    holding.totalSold = BigInt.zero();
+    holding.lastTransactionTimestamp = BigInt.zero();
+    holding.transactionCount = 0;
+  }
+  return holding;
+}
+
+// ──────────────────────────────────────────────────────────────
+// USD valuation
+// ──────────────────────────────────────────────────────────────
+
 /**
- * Update treasury holdings based on transfer
+ * Recalculate USD valuations on LPTokenMetrics using current reserves and ETH/USD price.
+ * poolLiquidityUsd (8 decimals) = 2 * reserve1_ETH_wei * ethUsdPrice_8dec / 1e18
+ * protocolOwnedLiquidityUsd = poolLiquidityUsd * treasuryPercentage / 10000
  */
+export function recalculateUsd(metrics: LPTokenMetrics): void {
+  let priceData = PriceData.load(PRICE_ID);
+  if (priceData != null && priceData.price.gt(BigInt.zero())) {
+    metrics.ethUsdPrice = priceData.price;
+    metrics.poolLiquidityUsd = BigInt.fromI32(2)
+      .times(metrics.currentReserve1)
+      .times(priceData.price)
+      .div(WEI);
+    metrics.protocolOwnedLiquidityUsd = metrics.poolLiquidityUsd
+      .times(metrics.treasuryPercentage)
+      .div(BASIS_POINTS);
+  }
+}
+
+// ──────────────────────────────────────────────────────────────
+// Update functions
+// ──────────────────────────────────────────────────────────────
+
 export function updateTreasuryHoldings(
   amount: BigInt,
   isIncoming: boolean,
@@ -130,9 +236,6 @@ export function updateTreasuryHoldings(
   treasury.save();
 }
 
-/**
- * Update global metrics after LP transfer
- */
 export function updateGlobalMetricsAfterTransfer(
   amount: BigInt,
   isMint: boolean,
@@ -159,6 +262,9 @@ export function updateGlobalMetricsAfterTransfer(
     metrics.totalSupply
   );
 
+  // Recalculate USD with updated treasury percentage
+  recalculateUsd(metrics);
+
   if (metrics.firstTransferTimestamp.equals(BigInt.zero())) {
     metrics.firstTransferTimestamp = timestamp;
   }
@@ -167,9 +273,6 @@ export function updateGlobalMetricsAfterTransfer(
   metrics.save();
 }
 
-/**
- * Update global metrics after reserves sync
- */
 export function updateGlobalMetricsAfterSync(
   reserve0: BigInt,
   reserve1: BigInt,
@@ -179,6 +282,10 @@ export function updateGlobalMetricsAfterSync(
 
   metrics.currentReserve0 = reserve0;
   metrics.currentReserve1 = reserve1;
+
+  // Recalculate USD with updated reserves
+  recalculateUsd(metrics);
+
   metrics.lastUpdated = timestamp;
 
   metrics.save();

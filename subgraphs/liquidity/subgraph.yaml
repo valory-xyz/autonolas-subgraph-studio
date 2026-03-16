@@ -4,7 +4,11 @@ indexerHints:
 schema:
   file: ./schema.graphql
 dataSources:
-  # OLAS-ETH LP Token (ERC20 Transfer events)
+  # ──────────────────────────────────────────────────────────────
+  # Native OLAS-ETH Uniswap V2 pool on Ethereum mainnet
+  # ──────────────────────────────────────────────────────────────
+
+  # LP token Transfer events (mint, burn, treasury movements)
   - kind: ethereum/contract
     name: OLASETHLPToken
     network: mainnet
@@ -18,10 +22,8 @@ dataSources:
       language: wasm/assemblyscript
       entities:
         - LPTransfer
-        - DailyLPSupplyChange
         - TreasuryHoldings
         - LPTokenMetrics
-        - DailyMetrics
       abis:
         - name: ERC20
           file: ../../abis/ERC20Detailed.json
@@ -29,13 +31,13 @@ dataSources:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleLPTransfer
       file: ./src/mapping.ts
-  
-  # OLAS-ETH Uniswap V2 Pair (Sync events for reserves)
+
+  # Uniswap V2 Pair Sync events (reserve updates + Chainlink price call)
   - kind: ethereum/contract
     name: OLASETHPair
     network: mainnet
     source:
-      address: "0x09D1d767eDF8Fa23A64C51fa559E0688E526812F"  # OLAS/ETH LP token address (same as above)
+      address: "0x09D1d767eDF8Fa23A64C51fa559E0688E526812F"
       abi: UniswapV2Pair
       startBlock: 17679229
     mapping:
@@ -44,13 +46,175 @@ dataSources:
       language: wasm/assemblyscript
       entities:
         - PoolReserves
-        - ReservesSnapshot
         - LPTokenMetrics
-        - DailyMetrics
+        - PriceData
       abis:
         - name: UniswapV2Pair
           file: ../../abis/UniswapV2Pair.json
+        - name: AggregatorV3Interface
+          file: ../../abis/AggregatorV3Interface.json
       eventHandlers:
         - event: Sync(uint112,uint112)
           handler: handleSync
+      file: ./src/mapping.ts
+
+  # ──────────────────────────────────────────────────────────────
+  # Bridged LP tokens held by Treasury on Ethereum mainnet
+  # These are ERC-20 tokens representing LP positions from L2/Solana
+  # pools, bridged to L1 via OmniBridge or Wormhole Portal.
+  # Source: https://github.com/valory-xyz/autonolas-tokenomics/blob/main/docs/lp_token_bridging.md
+  # ──────────────────────────────────────────────────────────────
+
+  # Gnosis: OLAS-WXDAI (Balancer V2) via OmniBridge
+  - kind: ethereum/contract
+    name: BridgedLP_Gnosis
+    network: mainnet
+    source:
+      address: "0x27df632fd0dcf191C418c803801D521cd579F18e"
+      abi: ERC20
+      startBlock: 17679229
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - BridgedPOLHolding
+      abis:
+        - name: ERC20
+          file: ../../abis/ERC20Detailed.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleBridgedLPTransfer
+      file: ./src/mapping.ts
+
+  # Polygon: OLAS-WMATIC (Balancer V2) via Wormhole Portal
+  - kind: ethereum/contract
+    name: BridgedLP_Polygon
+    network: mainnet
+    source:
+      address: "0xf9825A563222f9eFC81e369311DAdb13D68e60a4"
+      abi: ERC20
+      startBlock: 17679229
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - BridgedPOLHolding
+      abis:
+        - name: ERC20
+          file: ../../abis/ERC20Detailed.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleBridgedLPTransfer
+      file: ./src/mapping.ts
+
+  # Solana: WSOL-OLAS (Orca) via Wormhole Portal
+  - kind: ethereum/contract
+    name: BridgedLP_Solana
+    network: mainnet
+    source:
+      address: "0x3685B8cC36B8df09ED9E81C1690100306bF23E04"
+      abi: ERC20
+      startBlock: 17679229
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - BridgedPOLHolding
+      abis:
+        - name: ERC20
+          file: ../../abis/ERC20Detailed.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleBridgedLPTransfer
+      file: ./src/mapping.ts
+
+  # Arbitrum: OLAS-WETH (Balancer V2) via Wormhole Portal
+  - kind: ethereum/contract
+    name: BridgedLP_Arbitrum
+    network: mainnet
+    source:
+      address: "0x36B203Cb3086269f005a4b987772452243c0767f"
+      abi: ERC20
+      startBlock: 17679229
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - BridgedPOLHolding
+      abis:
+        - name: ERC20
+          file: ../../abis/ERC20Detailed.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleBridgedLPTransfer
+      file: ./src/mapping.ts
+
+  # Optimism: WETH-OLAS (Balancer V2) via Wormhole Portal
+  - kind: ethereum/contract
+    name: BridgedLP_Optimism
+    network: mainnet
+    source:
+      address: "0x2FD007a534eB7527b535a1DF35aba6bD2a8b660F"
+      abi: ERC20
+      startBlock: 17679229
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - BridgedPOLHolding
+      abis:
+        - name: ERC20
+          file: ../../abis/ERC20Detailed.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleBridgedLPTransfer
+      file: ./src/mapping.ts
+
+  # Base: OLAS-USDC (Balancer V2) via Wormhole Portal
+  - kind: ethereum/contract
+    name: BridgedLP_Base
+    network: mainnet
+    source:
+      address: "0x9946d6FD1210D85EC613Ca956F142D911C97a074"
+      abi: ERC20
+      startBlock: 17679229
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - BridgedPOLHolding
+      abis:
+        - name: ERC20
+          file: ../../abis/ERC20Detailed.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleBridgedLPTransfer
+      file: ./src/mapping.ts
+
+  # Celo: CELO-OLAS (Balancer V2) via Wormhole Portal
+  - kind: ethereum/contract
+    name: BridgedLP_Celo
+    network: mainnet
+    source:
+      address: "0xC085F31E4ca659fF8A17042dDB26f1dcA2fBdAB4"
+      abi: ERC20
+      startBlock: 17679229
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - BridgedPOLHolding
+      abis:
+        - name: ERC20
+          file: ../../abis/ERC20Detailed.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleBridgedLPTransfer
       file: ./src/mapping.ts

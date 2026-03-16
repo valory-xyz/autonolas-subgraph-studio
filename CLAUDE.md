@@ -14,7 +14,8 @@ subgraphs/
   babydegen/                   # Baby Degen agent portfolio tracking (Optimism)
   governance/                  # Governance tracking
   legacy-mech-fees/            # Legacy mech fee indexing
-  liquidity/                   # Liquidity tracking
+  liquidity/                   # Protocol Owned Liquidity — Ethereum mainnet (OLAS-ETH + bridged L2 LP tokens)
+  liquidity-l2/                # Protocol Owned Liquidity — L2 Balancer pools (6 networks, template pattern)
   new-mech-fees/               # Multi-network mech fees (Gnosis, Base, Polygon, Optimism)
   predict/                     # Prediction markets (Omen on Gnosis, Polymarket)
   service-registry/            # Service registry (7 networks, template pattern)
@@ -32,7 +33,7 @@ subgraphs/
 
 ## Multi-Network Patterns
 
-1. **Template Pattern** (staking, service-registry, tokenomics-l2): `subgraph.template.yaml` + `networks.json` + `generate-manifests.js`
+1. **Template Pattern** (staking, service-registry, tokenomics-l2, liquidity-l2): `subgraph.template.yaml` + `networks.json` + `generate-manifests.js`
 2. **Per-Network Manifests** (new-mech-fees): shared `src/` with `subgraph.<network>.yaml` per network
 3. **Single Network** (babydegen, governance, liquidity, legacy-mech-fees, tokenomics-eth): standalone `subgraph.yaml`
 

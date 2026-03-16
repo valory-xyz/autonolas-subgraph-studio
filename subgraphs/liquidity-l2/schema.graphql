@@ -1,0 +1,29 @@
+# Balancer V2 pool metrics for OLAS liquidity on L2 chains.
+# Each network has one tracked pool. Reserves are fetched via
+# vault.getPoolTokens() contract call on each BPT Transfer.
+
+type PoolMetrics @entity(immutable: false) {
+  id: Bytes! # pool (BPT) contract address
+  poolId: Bytes! # Balancer V2 pool ID (bytes32)
+  token0: Bytes! # first token address
+  token1: Bytes! # second token address
+  reserve0: BigInt! # first token balance in pool (wei)
+  reserve1: BigInt! # second token balance in pool (wei)
+  totalSupply: BigInt! # BPT total supply (minted - burned)
+  totalMinted: BigInt! # cumulative BPT minted
+  totalBurned: BigInt! # cumulative BPT burned
+  lastUpdatedBlock: BigInt!
+  lastUpdatedTimestamp: BigInt!
+  lastUpdatedTransaction: Bytes!
+}
+
+# Individual BPT transfer event
+type BPTTransfer @entity(immutable: true) {
+  id: Bytes! # transaction hash + log index
+  from: Bytes! # address
+  to: Bytes! # address
+  value: BigInt! # BPT transferred (wei)
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}

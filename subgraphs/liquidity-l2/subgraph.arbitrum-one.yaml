@@ -1,0 +1,32 @@
+specVersion: 1.0.0
+indexerHints:
+  prune: auto
+schema:
+  file: ./schema.graphql
+dataSources:
+  # Balancer V2 Weighted Pool (BPT token)
+  # Tracks BPT supply via Transfer events and fetches pool reserves
+  # from the Balancer Vault via getPoolTokens() contract call.
+  - kind: ethereum/contract
+    name: BalancerPool
+    network: arbitrum-one
+    source:
+      address: "0xAF8912a3C4f55a8584B67DF30ee0dDf0e60e01f8"
+      abi: BalancerV2WeightedPool
+      startBlock: 173139043
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - PoolMetrics
+        - BPTTransfer
+      abis:
+        - name: BalancerV2WeightedPool
+          file: ../../abis/BalancerV2WeightedPool.json
+        - name: BalancerV2Vault
+          file: ../../abis/BalancerV2Vault.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleBPTTransfer
+      file: ./src/mapping.ts
