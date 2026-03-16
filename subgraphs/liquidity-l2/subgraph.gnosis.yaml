@@ -13,7 +13,7 @@ dataSources:
     source:
       address: "0x79C872Ed3Acb3fc5770dd8a0cD9Cd5dB3B3Ac985"
       abi: BalancerV2WeightedPool
-      startBlock: 30254468
+      startBlock: 30396445
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7

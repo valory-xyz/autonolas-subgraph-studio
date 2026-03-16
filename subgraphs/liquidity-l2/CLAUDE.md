@@ -30,12 +30,12 @@ All pools are Balancer V2 Weighted Pools (50/50). The Balancer V2 Vault is at `0
 
 | Network | Pool (BPT) Address | Pair | Start Block |
 |---------|-------------------|------|-------------|
-| Gnosis | `0x79C872Ed3Acb3fc5770dd8a0cD9Cd5dB3B3Ac985` | OLAS-WXDAI | 30,254,468 |
-| Polygon (matic) | `0x62309056c759c36879Cde93693E7903bF415E4Bc` | OLAS-WMATIC | 49,574,787 |
-| Arbitrum One | `0xAF8912a3C4f55a8584B67DF30ee0dDf0e60e01f8` | OLAS-WETH | 173,139,043 |
-| Optimism | `0x5bb3e58887264b667f915130fd04bbb56116c278` | WETH-OLAS | 116,217,922 |
-| Base | `0x5332584890d6e415a6dc910254d6430b8aab7e69` | OLAS-USDC | 10,622,421 |
-| Celo | `0x2976Fa805141b467BCBc6334a69AffF4D914d96A` | CELO-OLAS | 24,781,592 |
+| Gnosis | `0x79C872Ed3Acb3fc5770dd8a0cD9Cd5dB3B3Ac985` | OLAS-WXDAI | 30,396,445 |
+| Polygon (matic) | `0x62309056c759c36879Cde93693E7903bF415E4Bc` | OLAS-WMATIC | 51,626,717 |
+| Arbitrum One | `0xAF8912a3C4f55a8584B67DF30ee0dDf0e60e01f8` | OLAS-WETH | 175,754,394 |
+| Optimism | `0x5bb3e58887264b667f915130fd04bbb56116c278` | WETH-OLAS | 117,547,761 |
+| Base | `0x5332584890d6e415a6dc910254d6430b8aab7e69` | OLAS-USDC | 12,416,046 |
+| Celo | `0x2976Fa805141b467BCBc6334a69AffF4D914d96A` | CELO-OLAS | 27,100,181 |
 
 ---
 
@@ -191,4 +191,4 @@ ln -sf subgraph.gnosis.yaml subgraph.yaml && yarn test; rm -f subgraph.yaml
 - No treasury tracking — bridged LP token balances are tracked on Ethereum mainnet (see `subgraphs/liquidity/`)
 - Reserves update only on BPT mint/burn (join/exit), not on swaps
 - Solana (Orca pool) is NOT covered — The Graph cannot index Solana
-- Start blocks use OLAS token deployment blocks as lower bound; may be refined to actual pool creation blocks
+- Start blocks are set to the actual pool contract creation blocks on each chain
