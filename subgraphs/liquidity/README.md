@@ -138,6 +138,56 @@ Each L2 subgraph computes:
 | Chainlink | ETH/USD and other asset prices (on-chain) | Per-chain oracle contracts |
 | Tokenomics docs | Contract addresses, LP bridging, configuration | [GitHub](https://github.com/valory-xyz/autonolas-tokenomics/blob/main/docs) |
 
+## Validating Subgraph Against Dune
+
+To ensure the subgraph produces correct data, its output should be compared against the existing Dune queries that power [olas.network/bond](https://olas.network/bond).
+
+### What to Compare
+
+**Ethereum mainnet subgraph vs Dune query [4963482](https://dune.com/queries/4963482):**
+
+| Subgraph Field | Dune Equivalent | Entity / Query |
+|---|---|---|
+| Treasury OLAS-ETH LP balance | LP balance held by Treasury | `treasuryHoldings.currentBalance` |
+| OLAS reserves (reserve0) | Pool OLAS reserves | `lpTokenMetrics.currentReserve0` |
+| ETH reserves (reserve1) | Pool ETH reserves | `lpTokenMetrics.currentReserve1` |
+| Treasury % of LP supply | Treasury share | `lpTokenMetrics.treasuryPercentage` (basis points) |
+| Pool liquidity USD | Pool TVL | `lpTokenMetrics.poolLiquidityUsd` (8 decimals) |
+| Protocol owned liquidity USD | POL USD | `lpTokenMetrics.protocolOwnedLiquidityUsd` (8 decimals) |
+| Bridged LP balances (per chain) | Bridged LP held by Treasury | `bridgedPOLHoldings` (7 entities) |
+
+**Ethereum mainnet subgraph total POL vs Dune query [5383248](https://dune.com/queries/5383248/8807520):**
+
+Total POL USD = `protocolOwnedLiquidityUsd` (native OLAS-ETH) + sum of bridged LP valuations (requires L2 subgraph reserves for each chain).
+
+**L2 subgraphs vs Dune query [4963482](https://dune.com/queries/4963482):**
+
+| Subgraph Field | Dune Equivalent | Entity / Query |
+|---|---|---|
+| Pool reserves (reserve0, reserve1) | L2 pool token balances | `poolMetrics.reserve0`, `poolMetrics.reserve1` |
+| BPT total supply | L2 BPT supply | `poolMetrics.totalSupply` |
+
+### Comparison Approach
+
+1. **Query subgraph** GraphQL endpoints for current state of all entities listed above
+2. **Fetch Dune results** via the [Dune API](https://docs.dune.com/api-reference/executions/endpoint/get-query-result) (requires `DUNE_API_KEY`) or export CSV from the Dune UI
+3. **Normalize units**: subgraph uses raw wei (18 decimals) and 8-decimal USD; Dune typically uses human-readable numbers
+4. **Compare with tolerance**: small discrepancies (< 1%) are expected due to block timing differences between the subgraph indexing head and Dune's snapshot block
+5. **Report**: PASS/FAIL per metric with actual vs expected values and % deviation
+
+### Expected Discrepancy Sources
+
+- **Block timing**: Dune snapshots at a specific block; the subgraph may be a few blocks ahead or behind
+- **Price staleness**: Subgraph fetches Chainlink price on each Sync event; Dune may use a different price source or timestamp
+- **Rounding**: BigInt division truncates in the subgraph; Dune may use floating-point math
+- **Solana**: The Orca pool (`CeZ77ti3nPAmcgRkBkUC1JcoAhR8jRti2DHaCcuyUnzR`) is not indexed by the subgraph — this LP token's value will be missing from the subgraph total but present in Dune
+
+### Automation (Future)
+
+- Build a `scripts/compare-dune.js` script that automates the above steps
+- Run in CI after each subgraph deployment to catch regressions
+- Alert if any metric diverges beyond the tolerance threshold
+
 ## Development
 
 ```bash
@@ -152,15 +202,20 @@ yarn build      # Compile to WebAssembly
 
 ### Common Queries
 
-#### Current Metrics
+**Note**: The Graph auto-generates query field names from entity names. The correct field names are `lptokenMetrics` (not `lpTokenMetrics`), `bridgedPOLHoldings`, etc. See the examples below.
+
+#### Current Metrics (with USD valuation)
 ```graphql
 {
-  lpTokenMetrics(id: "global") {
+  lptokenMetrics(id: "global") {
     totalSupply
     treasurySupply
     treasuryPercentage
     currentReserve0
     currentReserve1
+    ethUsdPrice
+    poolLiquidityUsd
+    protocolOwnedLiquidityUsd
   }
 }
 ```
@@ -176,3 +231,47 @@ yarn build      # Compile to WebAssembly
   }
 }
 ```
+
+#### Bridged LP Token Balances
+```graphql
+{
+  bridgedPOLHoldings(first: 10) {
+    id
+    originChain
+    pair
+    currentBalance
+    totalAcquired
+    totalSold
+    transactionCount
+  }
+}
+```
+
+#### L2 Pool Metrics (liquidity-l2 subgraph)
+```graphql
+{
+  poolMetrics_collection(first: 1) {
+    id
+    poolId
+    token0
+    token1
+    reserve0
+    reserve1
+    totalSupply
+  }
+}
+```
+
+### Verified Results (2026-03-16)
+
+3 subgraphs deployed to The Graph Studio and fully synced with zero indexing errors:
+
+| Subgraph | Block | Key Finding |
+|---|---|---|
+| Ethereum mainnet | 24,673,269 | Treasury owns 99.96% of OLAS-ETH LP ($1.77M POL), all 7 bridged LP tokens tracked |
+| Gnosis L2 | 45,186,397 | Pool TVL ~$334K, 99.88% of BPT bridged to L1 Treasury |
+| Polygon L2 | 84,291,408 | 99.86% of BPT bridged to L1 Treasury |
+
+Cross-chain consistency confirmed: bridged LP balances on Ethereum closely match BPT supply on L2 (gap ~0.1% = LP not yet bridged). Treasury has never sold any LP tokens (totalSold = 0 everywhere).
+
+See [CLAUDE.md — Verification Results](CLAUDE.md#verification-results-2026-03-16) for full data tables.

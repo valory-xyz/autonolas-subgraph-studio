@@ -226,6 +226,163 @@ yarn test    # Runs all 14 Matchstick tests
 
 ---
 
+## Deployment to The Graph Studio
+
+### Prerequisites
+
+- A wallet (MetaMask or similar) to sign in at [thegraph.com/studio](https://thegraph.com/studio)
+- Studio accounts are free for development/testing
+
+### Step 1: Create Subgraphs in Studio UI
+
+Create **8 subgraphs** in the Studio dashboard (one per deployment):
+
+| Subgraph Name | Network | Source |
+|---|---|---|
+| `olas-liquidity-eth` | Ethereum mainnet | `subgraphs/liquidity/subgraph.yaml` |
+| `olas-liquidity-gnosis` | Gnosis | `subgraphs/liquidity-l2/subgraph.gnosis.yaml` |
+| `olas-liquidity-matic` | Polygon | `subgraphs/liquidity-l2/subgraph.matic.yaml` |
+| `olas-liquidity-arbitrum` | Arbitrum One | `subgraphs/liquidity-l2/subgraph.arbitrum-one.yaml` |
+| `olas-liquidity-optimism` | Optimism | `subgraphs/liquidity-l2/subgraph.optimism.yaml` |
+| `olas-liquidity-base` | Base | `subgraphs/liquidity-l2/subgraph.base.yaml` |
+| `olas-liquidity-celo` | Celo | `subgraphs/liquidity-l2/subgraph.celo.yaml` |
+
+Each one provides a **deploy key** and a **slug**.
+
+### Step 2: Authenticate
+
+```bash
+graph auth <your-deploy-key>
+```
+
+### Step 3: Deploy
+
+**Ethereum mainnet:**
+```bash
+cd subgraphs/liquidity
+yarn codegen && yarn build
+graph deploy olas-liquidity-eth subgraph.yaml
+```
+
+**L2 chains (repeat for each network):**
+```bash
+cd subgraphs/liquidity-l2
+yarn codegen
+graph deploy olas-liquidity-gnosis subgraph.gnosis.yaml
+graph deploy olas-liquidity-matic subgraph.matic.yaml
+graph deploy olas-liquidity-arbitrum subgraph.arbitrum-one.yaml
+graph deploy olas-liquidity-optimism subgraph.optimism.yaml
+graph deploy olas-liquidity-base subgraph.base.yaml
+graph deploy olas-liquidity-celo subgraph.celo.yaml
+```
+
+### Step 4: Wait for Indexing
+
+- Studio dashboard shows sync progress (% indexed)
+- Ethereum mainnet takes longest (indexing from block 17,679,229 with 9 data sources)
+- L2 chains are faster (single data source each, fewer blocks)
+- **Do not publish** until validated against Dune — publishing puts the subgraph on the decentralized network and costs GRT
+
+### Step 5: Test Queries
+
+Once synced, use the Studio GraphQL playground to verify data. See [Common Queries in README.md](README.md#common-queries) for example queries.
+
+### Step 6: Compare Against Dune
+
+Once all 8 subgraphs are synced, compare output against Dune to validate correctness. See [Validating Subgraph Against Dune in README.md](README.md#validating-subgraph-against-dune) for the full comparison approach.
+
+### Studio Endpoints (Development)
+
+| Subgraph | Studio Query URL |
+|---|--|
+| Ethereum mainnet | `https://api.studio.thegraph.com/query/81139/olas-liquidity-eth/v0.0.1` |
+| Gnosis | `https://api.studio.thegraph.com/query/81139/olas-liquidity-gnosis/v0.0.1` |
+| Polygon | `https://api.studio.thegraph.com/query/81139/olas-liquidity-matic/v0.0.1` |
+| Arbitrum | TBD |
+| Optimism | TBD |
+| Base | TBD |
+| Celo | TBD |
+
+---
+
+## Verification Results (2026-03-16)
+
+All 3 deployed subgraphs synced fully, zero indexing errors. Full comparison against Dune pending.
+
+### Ethereum Mainnet (block 24,673,269)
+
+| Metric | Value |
+|---|---|
+| LP total supply | 63,683.02 |
+| Treasury LP balance | 63,657.40 (never sold, totalSold = 0) |
+| Treasury share | 99.96% (9995 basis points) |
+| Treasury transactions | 246 |
+| OLAS reserves | 18,797,030.98 |
+| ETH reserves | 378.90 |
+| ETH/USD (Chainlink) | $2,331.29 |
+| Pool liquidity USD | $1,766,653.28 |
+| Protocol owned liquidity USD | $1,765,769.96 |
+
+**Bridged LP tokens in Treasury** (all totalSold = 0):
+
+| Chain | Pair | Balance (BPT) | Transactions |
+|---|---|---|---|
+| Gnosis | OLAS-WXDAI | 1,634,374.52 | 44 |
+| Polygon | OLAS-WMATIC | 976,904.80 | 46 |
+| Solana | WSOL-OLAS | 2,163,960,829,576 (raw, non-18-dec) | 26 |
+| Arbitrum | OLAS-WETH | 8,639.77 | 28 |
+| Optimism | WETH-OLAS | 5,548.32 | 20 |
+| Base | OLAS-USDC | 514,612.63 | 31 |
+| Celo | CELO-OLAS | 210,254.80 | 28 |
+
+### Gnosis L2 (block 45,186,397)
+
+| Metric | Value |
+|---|---|
+| Pool | OLAS-WXDAI (Balancer V2) |
+| Token0 (OLAS) reserves | 4,439,684.02 |
+| Token1 (WXDAI) reserves | 167,211.12 |
+| BPT total supply | 1,636,382.85 |
+| Pool TVL (approx) | $334,422 (2 x WXDAI) |
+
+### Polygon L2 (block 84,291,408)
+
+| Metric | Value |
+|---|---|
+| Pool | OLAS-WMATIC (Balancer V2) |
+| Token0 (WMATIC) reserves | 311,124.86 |
+| Token1 (OLAS) reserves | 822,942.71 |
+| BPT total supply | 978,297.77 |
+
+### Cross-Chain Consistency Checks
+
+| Check | Result |
+|---|---|
+| Gnosis bridged LP on L1 vs BPT supply | 1,634,374.52 / 1,636,382.85 = 99.88% bridged |
+| Polygon bridged LP on L1 vs BPT supply | 976,904.80 / 978,297.77 = 99.86% bridged |
+| All bridged tokens totalSold | 0 across all 7 chains (Treasury never sold) |
+| Indexing errors | None on any chain |
+
+The small gap between bridged LP on L1 and BPT supply (~0.1-0.2%) represents LP tokens not yet bridged to Ethereum mainnet.
+
+### GraphQL Field Names
+
+The Graph auto-generates query field names that differ from entity names. Correct queries:
+
+| Entity | Singular Query | Collection Query |
+|---|---|---|
+| LPTokenMetrics | `lptokenMetrics(id: "global")` | `lptokenMetrics_collection` |
+| TreasuryHoldings | `treasuryHoldings(id: "0xa0da...")` | `treasuryHoldings_collection` |
+| BridgedPOLHolding | `bridgedPOLHolding(id: "0x27df632fd0dcf191c418c803801d521cd579f18e")` | `bridgedPOLHoldings` |
+| PriceData | `priceData(id: "eth-usd")` | `priceDatas` |
+| PoolReserves | `poolReserves(id: "0x09d1d767edf8fa23a64c51fa559e0688e526812f")` | `poolReserves_collection` |
+
+### Validating Against Dune
+
+Subgraph output should be compared against Dune queries [4963482](https://dune.com/queries/4963482) and [5383248](https://dune.com/queries/5383248/8807520) to ensure correctness. Key comparison points: treasury LP balance, pool reserves, USD valuations, bridged LP balances. Expect < 1% discrepancy from block timing and price source differences. Solana LP will be missing from subgraph totals (not indexable by The Graph). See [README.md — Validating Subgraph Against Dune](README.md#validating-subgraph-against-dune) for full details.
+
+---
+
 ## Implementation Notes
 
 - All token amounts are in wei (18 decimals)

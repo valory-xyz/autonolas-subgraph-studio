@@ -184,6 +184,58 @@ ln -sf subgraph.gnosis.yaml subgraph.yaml && yarn test; rm -f subgraph.yaml
 
 ---
 
+## Verification Results (2026-03-16)
+
+Deployed to The Graph Studio (development mode). Gnosis and Polygon fully synced, zero indexing errors.
+
+### Gnosis (block 45,186,397)
+
+| Metric | Value |
+|---|---|
+| Pool address | `0x79C872Ed3Acb3fc5770dd8a0cD9Cd5dB3B3Ac985` |
+| Pool ID | `0x79c872ed3acb3fc5770dd8a0cd9cd5db3b3ac985000200000000000000000067` |
+| Token0 | `0xcE11e14225575945b8E6Dc0D4F2dD4C570f79d9f` (OLAS) |
+| Token1 | `0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d` (WXDAI) |
+| OLAS reserves | 4,439,684.02 |
+| WXDAI reserves | 167,211.12 |
+| BPT total supply | 1,636,382.85 |
+| BPT total minted | 1,822,751.64 |
+| BPT total burned | 186,368.79 |
+| Pool TVL (approx) | $334,422 (2 x WXDAI) |
+
+Cross-check: Ethereum mainnet subgraph shows 1,634,374.52 bridged Gnosis BPT in Treasury = 99.88% of supply.
+
+### Polygon (block 84,291,408)
+
+| Metric | Value |
+|---|---|
+| Pool address | `0x62309056c759c36879Cde93693E7903bF415E4Bc` |
+| Pool ID | `0x62309056c759c36879cde93693e7903bf415e4bc000200000000000000000d5f` |
+| Token0 | `0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270` (WMATIC) |
+| Token1 | `0xFEF5d947472e72Efbb2E388c730B7428406F2F95` (OLAS) |
+| WMATIC reserves | 311,124.86 |
+| OLAS reserves | 822,942.71 |
+| BPT total supply | 978,297.77 |
+| BPT total minted | 1,058,007.73 |
+| BPT total burned | 79,709.96 |
+
+Cross-check: Ethereum mainnet subgraph shows 976,904.80 bridged Polygon BPT in Treasury = 99.86% of supply.
+
+### GraphQL Field Names
+
+The Graph auto-generates query field names. Correct queries for this subgraph:
+
+| Entity | Singular Query | Collection Query |
+|---|---|---|
+| PoolMetrics | `poolMetrics(id: "0x79c872ed3acb3fc5770dd8a0cd9cd5db3b3ac985")` | `poolMetrics_collection` |
+| BPTTransfer | N/A (query by filters instead) | `bpttransfers` |
+
+### Remaining Deployments
+
+Arbitrum, Optimism, Base, and Celo are not deployed yet (Studio account limit). Same code, just needs `graph deploy` with the corresponding manifest.
+
+---
+
 ## Implementation Notes
 
 - All token amounts are in wei (18 decimals, except USDC on Base which is 6 decimals)
