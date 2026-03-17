@@ -184,43 +184,6 @@ ln -sf subgraph.gnosis.yaml subgraph.yaml && yarn test; rm -f subgraph.yaml
 
 ---
 
-## Verification Results (2026-03-17, v0.0.2)
-
-Deployed to The Graph Studio (development mode). Gnosis and Polygon fully synced, zero indexing errors. Reserves only fetched on mint/burn (v0.0.2 optimization).
-
-### Gnosis (block 45,195,995)
-
-| Metric | Value |
-|---|---|
-| Pool address | `0x79C872Ed3Acb3fc5770dd8a0cD9Cd5dB3B3Ac985` |
-| Pool ID | `0x79c872ed3acb3fc5770dd8a0cd9cd5db3b3ac985000200000000000000000067` |
-| Token0 | `0xcE11e14225575945b8E6Dc0D4F2dD4C570f79d9f` (OLAS) |
-| Token1 | `0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d` (WXDAI) |
-| OLAS reserves | 3,875,175.27 |
-| WXDAI reserves | 191,804.93 |
-| BPT total supply | 1,636,413.92 |
-| BPT total minted | 1,823,726.17 |
-| BPT total burned | 187,312.25 |
-| Pool TVL (approx) | $383,610 (2 x WXDAI) |
-
-Cross-check: Ethereum mainnet subgraph shows 1,634,374.52 bridged Gnosis BPT in Treasury = 99.88% of supply.
-
-### Polygon (block 84,315,911)
-
-| Metric | Value |
-|---|---|
-| Pool address | `0x62309056c759c36879Cde93693E7903bF415E4Bc` |
-| Pool ID | `0x62309056c759c36879cde93693e7903bf415e4bc000200000000000000000d5f` |
-| Token0 | `0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270` (WMATIC) |
-| Token1 | `0xFEF5d947472e72Efbb2E388c730B7428406F2F95` (OLAS) |
-| WMATIC reserves | 311,124.86 |
-| OLAS reserves | 822,942.71 |
-| BPT total supply | 978,297.77 |
-| BPT total minted | 1,058,007.73 |
-| BPT total burned | 79,709.96 |
-
-Cross-check: Ethereum mainnet subgraph shows 976,904.80 bridged Polygon BPT in Treasury = 99.86% of supply.
-
 ### GraphQL Field Names
 
 The Graph auto-generates query field names. Correct queries for this subgraph:
@@ -230,17 +193,49 @@ The Graph auto-generates query field names. Correct queries for this subgraph:
 | PoolMetrics | `poolMetrics(id: "0x79c872ed3acb3fc5770dd8a0cd9cd5db3b3ac985")` | `poolMetrics_collection` |
 | BPTTransfer | N/A (query by filters instead) | `bpttransfers` |
 
-### Remaining Deployments
-
-Arbitrum, Optimism, Base, and Celo are not deployed yet (Studio account limit). Same code, just needs `graph deploy` with the corresponding manifest.
-
 ---
 
-## Implementation Notes
+## Core Business Rules
 
-- All token amounts are in wei (18 decimals, except USDC on Base which is 6 decimals)
-- No USD valuation in this subgraph — computed off-chain by aggregation layer
-- No treasury tracking — bridged LP token balances are tracked on Ethereum mainnet (see `subgraphs/liquidity/`)
-- Reserves update only on BPT mint/burn (join/exit), not on swaps
-- Solana (Orca pool) is NOT covered — The Graph cannot index Solana
-- Start blocks are set to the actual pool contract creation blocks on each chain
+### What This Subgraph Tracks
+
+This subgraph indexes the **L2 side** of Olas Protocol Owned Liquidity. For each L2 chain, there is a Balancer V2 Weighted Pool (50/50) containing OLAS paired with a native/stable token. The subgraph tracks:
+
+- **BPT (Balancer Pool Token) supply**: Total minted minus burned. This represents the total number of LP shares in existence for each pool.
+- **Pool reserves**: The actual token balances held by the Balancer Vault for each pool. Fetched via `vault.getPoolTokens(poolId)` contract call.
+
+The **Treasury does not hold LP tokens on L2 directly** — LP tokens are bridged to Ethereum mainnet where the Treasury accumulates them. Treasury balance tracking happens in the Ethereum mainnet subgraph (`subgraphs/liquidity/`). This subgraph provides the denominator: knowing the total BPT supply and pool reserves on L2, combined with the Treasury's bridged LP balance on L1, gives the Treasury's proportional share of the L2 pool's value.
+
+### How POL Valuation Works Across Chains
+
+1. **L2 subgraph** provides: pool reserves (token0, token1 balances) and BPT total supply
+2. **Ethereum subgraph** provides: Treasury's bridged LP balance for each chain
+3. **Off-chain aggregation** computes: `Treasury_POL_USD = (bridged_LP_balance / BPT_total_supply) * pool_TVL_USD`
+
+For example, if Gnosis pool has 191K WXDAI + 3.8M OLAS, TVL ~ $384K, and Treasury holds 99.88% of BPT supply via bridged tokens on L1, then Treasury's Gnosis POL ~ $383K.
+
+### Key Accounting Rules
+
+1. **Reserves Only on Mint/Burn**: Contract calls to `vault.getPoolTokens()` are only made when BPT is minted or burned (pool join/exit). Regular user-to-user BPT transfers do not trigger reserve fetches because they don't change pool reserves. This significantly reduces indexing overhead.
+
+2. **Mint/Burn Detection**: Transfers from the zero address are mints (liquidity added); transfers to the zero address are burns (liquidity removed).
+
+3. **Underflow Protection**: Burns clamp `totalSupply` to zero if the burn amount exceeds the tracked supply. This guards against data inconsistency from partial-history indexing.
+
+4. **Balancer V2 Architecture**: The pools are Weighted Pools but the reserves are held by the central **Vault** contract (`0xBA12222222228d8Ba445958a75a0704d566BF2C8`, same address on all EVM chains). Each pool has a unique `poolId` (bytes32) that the Vault uses to identify it. The first 20 bytes of the poolId equal the pool contract address.
+
+5. **No USD Valuation On-Chain**: This subgraph does not compute USD values. Different chains have different paired tokens (WXDAI, WMATIC, WETH, USDC, CELO) requiring different price feeds. USD conversion is deferred to the off-chain aggregation layer.
+
+6. **No Treasury Tracking**: The subgraph does not track who holds BPT tokens (no equivalent of `TreasuryHoldings`). It only tracks aggregate supply and pool reserves.
+
+### Unit Conventions
+
+- All token amounts are in wei (18 decimals), except USDC on Base which is 6 decimals
+- No USD values in this subgraph
+- Token order (token0/token1) is determined by Balancer, not configurable — check the `token0`/`token1` addresses in `PoolMetrics` to know which is which
+
+### Scope Limitations
+
+- **Solana** (Orca pool `CeZ77ti3nPAmcgRkBkUC1JcoAhR8jRti2DHaCcuyUnzR`) is NOT covered — The Graph cannot index Solana
+- **Swap-induced reserve changes** are not tracked — only join/exit events update reserves. For balanced 50/50 pools, total value is approximately stable across swaps
+- Start blocks are set to actual pool contract creation blocks on each chain

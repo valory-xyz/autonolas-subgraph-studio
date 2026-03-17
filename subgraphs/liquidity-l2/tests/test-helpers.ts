@@ -41,7 +41,8 @@ export namespace TestValues {
   export const BLOCK = BigInt.fromI32(30000000);
 }
 
-// Pool ID for the Gnosis OLAS-WXDAI pool (first 20 bytes = pool address)
+// Synthetic pool ID for testing (first 20 bytes = pool address, rest is test data).
+// The real Gnosis pool ID is 0x79c872ed3acb3fc5770dd8a0cd9cd5db3b3ac985000200000000000000000067
 export const POOL_ID = Bytes.fromHexString(
   '0x79c872ed3acb3fc5770dd8a0cd9cd5db3b3ac98500020000000000000000001a'
 );

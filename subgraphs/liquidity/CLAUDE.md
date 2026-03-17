@@ -234,159 +234,6 @@ yarn test    # Runs all 14 Matchstick tests
 
 ---
 
-## Deployment to The Graph Studio
-
-### Prerequisites
-
-- A wallet (MetaMask or similar) to sign in at [thegraph.com/studio](https://thegraph.com/studio)
-- Studio accounts are free for development/testing
-
-### Step 1: Create Subgraphs in Studio UI
-
-Create **8 subgraphs** in the Studio dashboard (one per deployment):
-
-| Subgraph Name | Network | Source |
-|---|---|---|
-| `olas-liquidity-eth` | Ethereum mainnet | `subgraphs/liquidity/subgraph.yaml` |
-| `olas-liquidity-gnosis` | Gnosis | `subgraphs/liquidity-l2/subgraph.gnosis.yaml` |
-| `olas-liquidity-matic` | Polygon | `subgraphs/liquidity-l2/subgraph.matic.yaml` |
-| `olas-liquidity-arbitrum` | Arbitrum One | `subgraphs/liquidity-l2/subgraph.arbitrum-one.yaml` |
-| `olas-liquidity-optimism` | Optimism | `subgraphs/liquidity-l2/subgraph.optimism.yaml` |
-| `olas-liquidity-base` | Base | `subgraphs/liquidity-l2/subgraph.base.yaml` |
-| `olas-liquidity-celo` | Celo | `subgraphs/liquidity-l2/subgraph.celo.yaml` |
-
-Each one provides a **deploy key** and a **slug**.
-
-### Step 2: Authenticate
-
-```bash
-graph auth <your-deploy-key>
-```
-
-### Step 3: Deploy
-
-**Ethereum mainnet:**
-```bash
-cd subgraphs/liquidity
-yarn codegen && yarn build
-graph deploy olas-liquidity-eth subgraph.yaml
-```
-
-**L2 chains (repeat for each network):**
-```bash
-cd subgraphs/liquidity-l2
-yarn codegen
-graph deploy olas-liquidity-gnosis subgraph.gnosis.yaml
-graph deploy olas-liquidity-matic subgraph.matic.yaml
-graph deploy olas-liquidity-arbitrum subgraph.arbitrum-one.yaml
-graph deploy olas-liquidity-optimism subgraph.optimism.yaml
-graph deploy olas-liquidity-base subgraph.base.yaml
-graph deploy olas-liquidity-celo subgraph.celo.yaml
-```
-
-### Step 4: Wait for Indexing
-
-- Studio dashboard shows sync progress (% indexed)
-- Ethereum mainnet takes longest (indexing from block 17,679,229 with 9 data sources)
-- L2 chains are faster (single data source each, fewer blocks)
-- **Do not publish** until validated against Dune — publishing puts the subgraph on the decentralized network and costs GRT
-
-### Step 5: Test Queries
-
-Once synced, use the Studio GraphQL playground to verify data. See [Common Queries in README.md](README.md#common-queries) for example queries.
-
-### Step 6: Compare Against Dune
-
-Once all 8 subgraphs are synced, compare output against Dune to validate correctness. See [Validating Subgraph Against Dune in README.md](README.md#validating-subgraph-against-dune) for the full comparison approach.
-
-### Studio Endpoints (Development)
-
-| Subgraph | Studio Query URL                                                           |
-|---|----------------------------------------------------------------------------|
-| Ethereum mainnet | `https://api.studio.thegraph.com/query/81139/olas-liquidity-eth/v0.0.2`    |
-| Gnosis | `https://api.studio.thegraph.com/query/81139/olas-liquidity-gnosis/v0.0.2` |
-| Polygon | `https://api.studio.thegraph.com/query/81139/olas-liquidity-matic/v0.0.2`  |
-| Arbitrum | TBD                                                                        |
-| Optimism | TBD                                                                        |
-| Base | TBD                                                                        |
-| Celo | TBD                                                                        |
-
----
-
-## Verification Results (2026-03-17, v0.0.2)
-
-All 3 deployed subgraphs synced fully, zero indexing errors. Full comparison against Dune pending.
-
-### Ethereum Mainnet (block 24,677,330)
-
-| Metric | Value |
-|---|---|
-| LP total supply | 63,683.02 |
-| Treasury LP balance | 63,657.40 (never sold, totalSold = 0) |
-| Treasury share | 99.95% (9995 basis points) |
-| Treasury transactions | 246 |
-| OLAS reserves | 18,125,954.04 |
-| ETH reserves | 393.04 |
-| ETH/USD (Chainlink) | $2,325.78 |
-| Pool liquidity USD | $1,828,255.78 |
-| Protocol owned liquidity USD | $1,827,341.65 |
-| Price staleness caching | Active — price fetched at block 24,677,164 (166 blocks behind head) |
-
-**Bridged LP tokens in Treasury** (all totalSold = 0):
-
-| Chain | Pair | Balance (BPT) | Transactions |
-|---|---|---|---|
-| Gnosis | OLAS-WXDAI | 1,634,374.52 | 44 |
-| Polygon | OLAS-WMATIC | 976,904.80 | 46 |
-| Solana | WSOL-OLAS | 2,163,960,829,576 (raw, non-18-dec) | 26 |
-| Arbitrum | OLAS-WETH | 8,639.77 | 28 |
-| Optimism | WETH-OLAS | 5,548.32 | 20 |
-| Base | OLAS-USDC | 514,612.63 | 31 |
-| Celo | CELO-OLAS | 210,254.80 | 28 |
-
-### Gnosis L2 (block 45,195,995)
-
-| Metric | Value |
-|---|---|
-| Pool | OLAS-WXDAI (Balancer V2) |
-| Token0 (OLAS) reserves | 3,875,175.27 |
-| Token1 (WXDAI) reserves | 191,804.93 |
-| BPT total supply | 1,636,413.92 |
-| BPT total minted | 1,823,726.17 |
-| BPT total burned | 187,312.25 |
-| Pool TVL (approx) | $383,610 (2 x WXDAI) |
-| Treasury POL (approx) | $383,132 |
-
-### Polygon L2 (block 84,315,911)
-
-| Metric | Value |
-|---|---|
-| Pool | OLAS-WMATIC (Balancer V2) |
-| Token0 (WMATIC) reserves | 311,124.86 |
-| Token1 (OLAS) reserves | 822,942.71 |
-| BPT total supply | 978,297.77 |
-| BPT total minted | 1,058,007.73 |
-| BPT total burned | 79,709.96 |
-
-### Cross-Chain Consistency Checks
-
-| Check | Result |
-|---|---|
-| Gnosis bridged LP on L1 vs BPT supply | 1,634,374.52 / 1,636,413.92 = 99.88% bridged |
-| Polygon bridged LP on L1 vs BPT supply | 976,904.80 / 978,297.77 = 99.86% bridged |
-| All bridged tokens totalSold | 0 across all 7 chains (Treasury never sold) |
-| Indexing errors | None on any chain |
-
-The small gap between bridged LP on L1 and BPT supply (~0.1-0.2%) represents LP tokens not yet bridged to Ethereum mainnet.
-
-### v0.0.2 Optimizations Verified
-
-| Optimization | Evidence |
-|---|---|
-| Chainlink price staleness caching (1h) | Price at block 24,677,164, head at 24,677,330 — 166 block delta confirms caching works |
-| Per-token bridged LP startBlocks | Correct data with fewer empty blocks scanned |
-| L2 reserves only on mint/burn | Reserves still accurate, contract calls reduced |
-
 ### GraphQL Field Names
 
 The Graph auto-generates query field names that differ from entity names. Correct queries:
@@ -405,13 +252,38 @@ Subgraph output should be compared against Dune queries [4963482](https://dune.c
 
 ---
 
-## Implementation Notes
+## Core Business Rules
+
+### What is Protocol Owned Liquidity (POL)?
+
+The Olas protocol acquires LP tokens permanently through its **bonding mechanism**. Participants (bonders) deposit LP tokens into the Depository contract in exchange for discounted OLAS tokens with a vesting period. The Depository forwards LP tokens to the Treasury, which holds them indefinitely as protocol-owned liquidity. This gives the protocol permanent, deep liquidity in its trading pools without relying on external liquidity providers.
+
+### How This Subgraph Tracks POL
+
+1. **Native OLAS-ETH Pool (Uniswap V2 on Ethereum)**: The primary source of POL. The subgraph tracks the pool's LP token supply (mint/burn), the Treasury's LP balance, and pool reserves (OLAS + ETH). The Treasury currently owns ~99.95% of all LP tokens and has never sold any (`totalSold = 0`).
+
+2. **Bridged LP Tokens from L2 Chains**: The protocol also owns LP positions in Balancer V2 pools on 6 L2 chains plus an Orca pool on Solana. These LP tokens are bridged to Ethereum mainnet (via OmniBridge or Wormhole Portal) where the Treasury holds them. This subgraph tracks the Treasury's balance of each bridged LP token by watching ERC-20 Transfer events on the 7 bridged token contracts.
+
+3. **USD Valuation**: Pool liquidity in USD is computed as `2 * ETH_reserves * ETH/USD_price` (since in a balanced Uniswap V2 pool, each side is worth half the total). The ETH/USD price comes from the Chainlink oracle at `0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419` via `latestRoundData()` contract calls. Protocol-owned liquidity USD is the Treasury's proportional share.
+
+### Key Accounting Rules
+
+1. **Treasury-Only Tracking for Bridged Tokens**: The `handleBridgedLPTransfer` handler only processes transfers where the Treasury (`0xa0DA53447C0f6C4987964d8463da7e6628B30f82`) is sender or receiver. All other transfers are ignored — the subgraph does not track individual user balances for bridged LP tokens.
+
+2. **Mint/Burn Detection**: Transfers from the zero address are mints (new LP created); transfers to the zero address are burns (LP redeemed). These update `totalSupply`, `totalMinted`, and `totalBurned`.
+
+3. **Treasury Percentage in Basis Points**: `treasuryPercentage = treasurySupply * 10000 / totalSupply`. Value of 9995 means 99.95%.
+
+4. **Chainlink Price Caching**: The ETH/USD price is only fetched when the cached value is older than 1 hour (`PRICE_STALENESS_THRESHOLD = 3600 seconds`). This reduces contract call overhead during indexing. Zero or negative oracle answers are discarded.
+
+5. **Underflow Protection**: Outgoing bridged LP transfers clamp `currentBalance` to zero if the transfer amount exceeds the tracked balance. This guards against data inconsistency from partial-history indexing (e.g., if `startBlock` is set after the Treasury already received tokens).
+
+6. **No Daily Aggregation**: The subgraph only tracks current state (latest balances, reserves, prices). There are no daily snapshot or time-series entities — historical data can be reconstructed from immutable `LPTransfer` entities or by querying at specific blocks.
+
+### Unit Conventions
 
 - All token amounts are in wei (18 decimals)
-- Treasury percentage is stored in basis points (10000 = 100%)
-- USD values are in 8 decimals (matching Chainlink precision)
+- Treasury percentage is in basis points (10000 = 100%)
+- USD values are in 8 decimals (matching Chainlink precision, e.g., `200000000000` = $2,000.00)
 - Reserves: `reserve0` = OLAS, `reserve1` = ETH
-- Both native pool data sources point to the same contract (`0x09D1d767eDF8Fa23A64C51fa559E0688E526812F`)
-- Bridged LP tokens use a single handler (`handleBridgedLPTransfer`) dispatched by `event.address`
-- No daily aggregation entities — only current-state tracking
-- Single network (Ethereum mainnet), no template pattern needed
+- Solana's bridged LP token uses non-18-decimal raw values (Orca LP tokens have different precision)

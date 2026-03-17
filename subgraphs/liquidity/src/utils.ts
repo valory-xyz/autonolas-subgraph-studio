@@ -93,7 +93,7 @@ export function calculatePercentageBasisPoints(
 // Bridged LP metadata
 // ──────────────────────────────────────────────────────────────
 
-// Returns [originChain, pair] for a bridged LP token address
+// Returns the origin chain name for a bridged LP token address
 export function getBridgedLPOriginChain(address: Address): string {
   if (address.equals(BRIDGED_LP_GNOSIS)) return 'gnosis';
   if (address.equals(BRIDGED_LP_POLYGON)) return 'polygon';

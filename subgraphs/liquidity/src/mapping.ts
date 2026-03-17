@@ -2,9 +2,8 @@ import { Transfer } from '../generated/OLASETHLPToken/ERC20';
 import { Sync } from '../generated/OLASETHPair/UniswapV2Pair';
 import { AggregatorV3Interface } from '../generated/OLASETHPair/AggregatorV3Interface';
 
-import { LPTransfer, PriceData } from '../generated/schema';
-
 import { BigInt } from '@graphprotocol/graph-ts';
+import { LPTransfer, PriceData } from '../generated/schema';
 
 import {
   isZeroAddress,
@@ -55,7 +54,8 @@ export function handleLPTransfer(event: Transfer): void {
 
 /**
  * Handle Uniswap V2 Sync events.
- * Updates pool reserves and fetches latest ETH/USD price from Chainlink.
+ * Updates pool reserves and fetches latest ETH/USD price from Chainlink
+ * (only when cached price is stale, i.e. older than PRICE_STALENESS_THRESHOLD).
  */
 export function handleSync(event: Sync): void {
   let poolAddress = event.address;
@@ -83,11 +83,14 @@ export function handleSync(event: Sync): void {
     let result = chainlink.try_latestRoundData();
     if (!result.reverted) {
       let ethPrice = result.value.getAnswer();
-      let priceData = existingPrice != null ? existingPrice : new PriceData(PRICE_ID);
-      priceData.price = ethPrice;
-      priceData.lastUpdatedBlock = event.block.number;
-      priceData.lastUpdatedTimestamp = timestamp;
-      priceData.save();
+      // Only persist valid positive prices; skip zero/negative oracle answers
+      if (ethPrice.gt(BigInt.zero())) {
+        let priceData = existingPrice != null ? existingPrice : new PriceData(PRICE_ID);
+        priceData.price = ethPrice;
+        priceData.lastUpdatedBlock = event.block.number;
+        priceData.lastUpdatedTimestamp = timestamp;
+        priceData.save();
+      }
     }
   }
 
@@ -115,7 +118,12 @@ export function handleBridgedLPTransfer(event: Transfer): void {
     holding.save();
   } else if (isTreasuryAddress(from)) {
     let holding = getOrCreateBridgedPOLHolding(event.address);
-    holding.currentBalance = holding.currentBalance.minus(value);
+    // Clamp to zero to guard against underflow from partial-history indexing
+    if (value.gt(holding.currentBalance)) {
+      holding.currentBalance = holding.currentBalance.minus(holding.currentBalance);
+    } else {
+      holding.currentBalance = holding.currentBalance.minus(value);
+    }
     holding.totalSold = holding.totalSold.plus(value);
     holding.lastTransactionTimestamp = timestamp;
     holding.transactionCount = holding.transactionCount + 1;

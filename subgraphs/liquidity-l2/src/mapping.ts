@@ -44,7 +44,12 @@ export function handleBPTTransfer(event: Transfer): void {
     metrics.totalSupply = metrics.totalSupply.plus(value);
     metrics.totalMinted = metrics.totalMinted.plus(value);
   } else if (isBurn) {
-    metrics.totalSupply = metrics.totalSupply.minus(value);
+    // Clamp to zero to guard against underflow from partial-history indexing
+    if (value.gt(metrics.totalSupply)) {
+      metrics.totalSupply = metrics.totalSupply.minus(metrics.totalSupply);
+    } else {
+      metrics.totalSupply = metrics.totalSupply.minus(value);
+    }
     metrics.totalBurned = metrics.totalBurned.plus(value);
   }
 
