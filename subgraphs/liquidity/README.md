@@ -44,15 +44,15 @@ These are ERC-20 tokens on Ethereum that represent LP positions from L2/Solana p
 
 Source: [lp_token_bridging.md](https://github.com/valory-xyz/autonolas-tokenomics/blob/main/docs/lp_token_bridging.md)
 
-| Origin Chain | Pair | DEX | Native LP Address | Bridged L1 Address (Ethereum) | Bridge |
-|---|---|---|---|---|---|
-| Gnosis | OLAS-WXDAI | Balancer V2 | `0x79C872Ed3Acb3fc5770dd8a0cD9Cd5dB3B3Ac985` | `0x27df632fd0dcf191C418c803801D521cd579F18e` | OmniBridge |
-| Polygon | OLAS-WMATIC | Balancer V2 | `0x62309056c759c36879Cde93693E7903bF415E4Bc` | `0xf9825A563222f9eFC81e369311DAdb13D68e60a4` | Wormhole Portal |
-| Solana | WSOL-OLAS | Orca | `CeZ77ti3nPAmcgRkBkUC1JcoAhR8jRti2DHaCcuyUnzR` | `0x3685B8cC36B8df09ED9E81C1690100306bF23E04` | Wormhole Portal |
-| Arbitrum | OLAS-WETH | Balancer V2 | `0xAF8912a3C4f55a8584B67DF30ee0dDf0e60e01f8` | `0x36B203Cb3086269f005a4b987772452243c0767f` | Wormhole Portal |
-| Optimism | WETH-OLAS | Balancer V2 | `0x5bb3e58887264b667f915130fd04bbb56116c278` | `0x2FD007a534eB7527b535a1DF35aba6bD2a8b660F` | Wormhole Portal |
-| Base | OLAS-USDC | Balancer V2 | `0x5332584890d6e415a6dc910254d6430b8aab7e69` | `0x9946d6FD1210D85EC613Ca956F142D911C97a074` | Wormhole Portal |
-| Celo | CELO-OLAS | Balancer V2 | `0x2976Fa805141b467BCBc6334a69AffF4D914d96A` | `0xC085F31E4ca659fF8A17042dDB26f1dcA2fBdAB4` | Wormhole Portal |
+| Origin Chain | Pair | DEX | Native LP Address | Bridged L1 Address (Ethereum) | Bridge | L1 Start Block |
+|---|---|---|---|---|---|---|
+| Gnosis | OLAS-WXDAI | Balancer V2 | `0x79C872Ed3Acb3fc5770dd8a0cD9Cd5dB3B3Ac985` | `0x27df632fd0dcf191C418c803801D521cd579F18e` | OmniBridge | 18,324,324 |
+| Polygon | OLAS-WMATIC | Balancer V2 | `0x62309056c759c36879Cde93693E7903bF415E4Bc` | `0xf9825A563222f9eFC81e369311DAdb13D68e60a4` | Wormhole Portal | 19,126,747 |
+| Solana | WSOL-OLAS | Orca | `CeZ77ti3nPAmcgRkBkUC1JcoAhR8jRti2DHaCcuyUnzR` | `0x3685B8cC36B8df09ED9E81C1690100306bF23E04` | Wormhole Portal | 19,641,245 |
+| Arbitrum | OLAS-WETH | Balancer V2 | `0xAF8912a3C4f55a8584B67DF30ee0dDf0e60e01f8` | `0x36B203Cb3086269f005a4b987772452243c0767f` | Wormhole Portal | 19,120,775 |
+| Optimism | WETH-OLAS | Balancer V2 | `0x5bb3e58887264b667f915130fd04bbb56116c278` | `0x2FD007a534eB7527b535a1DF35aba6bD2a8b660F` | Wormhole Portal | 19,457,188 |
+| Base | OLAS-USDC | Balancer V2 | `0x5332584890d6e415a6dc910254d6430b8aab7e69` | `0x9946d6FD1210D85EC613Ca956F142D911C97a074` | Wormhole Portal | 19,532,493 |
+| Celo | CELO-OLAS | Balancer V2 | `0x2976Fa805141b467BCBc6334a69AffF4D914d96A` | `0xC085F31E4ca659fF8A17042dDB26f1dcA2fBdAB4` | Wormhole Portal | 20,488,304 |
 
 ### 3. Related Tokenomics Contracts
 
@@ -262,16 +262,16 @@ yarn build      # Compile to WebAssembly
 }
 ```
 
-### Verified Results (2026-03-16)
+### Verified Results (2026-03-17, v0.0.2)
 
 3 subgraphs deployed to The Graph Studio and fully synced with zero indexing errors:
 
 | Subgraph | Block | Key Finding |
 |---|---|---|
-| Ethereum mainnet | 24,673,269 | Treasury owns 99.96% of OLAS-ETH LP ($1.77M POL), all 7 bridged LP tokens tracked |
-| Gnosis L2 | 45,186,397 | Pool TVL ~$334K, 99.88% of BPT bridged to L1 Treasury |
-| Polygon L2 | 84,291,408 | 99.86% of BPT bridged to L1 Treasury |
+| Ethereum mainnet | 24,677,330 | Treasury owns 99.95% of OLAS-ETH LP ($1.83M POL), all 7 bridged LP tokens tracked, Chainlink price caching active |
+| Gnosis L2 | 45,195,995 | Pool TVL ~$384K, 99.88% of BPT bridged to L1 Treasury |
+| Polygon L2 | 84,315,911 | 99.86% of BPT bridged to L1 Treasury |
 
 Cross-chain consistency confirmed: bridged LP balances on Ethereum closely match BPT supply on L2 (gap ~0.1% = LP not yet bridged). Treasury has never sold any LP tokens (totalSold = 0 everywhere).
 
-See [CLAUDE.md — Verification Results](CLAUDE.md#verification-results-2026-03-16) for full data tables.
+See [CLAUDE.md — Verification Results](CLAUDE.md#verification-results-2026-03-17-v002) for full data tables.

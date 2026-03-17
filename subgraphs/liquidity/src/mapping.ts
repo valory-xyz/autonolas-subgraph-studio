@@ -4,6 +4,8 @@ import { AggregatorV3Interface } from '../generated/OLASETHPair/AggregatorV3Inte
 
 import { LPTransfer, PriceData } from '../generated/schema';
 
+import { BigInt } from '@graphprotocol/graph-ts';
+
 import {
   isZeroAddress,
   isTreasuryAddress,
@@ -14,6 +16,7 @@ import {
   updateGlobalMetricsAfterSync,
   CHAINLINK_ETH_USD,
   PRICE_ID,
+  PRICE_STALENESS_THRESHOLD,
 } from './utils';
 
 /**
@@ -69,16 +72,23 @@ export function handleSync(event: Sync): void {
   reserves.lastSyncTransaction = event.transaction.hash;
   reserves.save();
 
-  // Fetch latest ETH/USD price from Chainlink
-  let chainlink = AggregatorV3Interface.bind(CHAINLINK_ETH_USD);
-  let result = chainlink.try_latestRoundData();
-  if (!result.reverted) {
-    let ethPrice = result.value.getAnswer();
-    let priceData = new PriceData(PRICE_ID);
-    priceData.price = ethPrice;
-    priceData.lastUpdatedBlock = event.block.number;
-    priceData.lastUpdatedTimestamp = timestamp;
-    priceData.save();
+  // Fetch ETH/USD price from Chainlink only if cached price is stale (> 1 hour old)
+  let existingPrice = PriceData.load(PRICE_ID);
+  let shouldRefresh =
+    existingPrice == null ||
+    timestamp.minus(existingPrice.lastUpdatedTimestamp).gt(PRICE_STALENESS_THRESHOLD);
+
+  if (shouldRefresh) {
+    let chainlink = AggregatorV3Interface.bind(CHAINLINK_ETH_USD);
+    let result = chainlink.try_latestRoundData();
+    if (!result.reverted) {
+      let ethPrice = result.value.getAnswer();
+      let priceData = existingPrice != null ? existingPrice : new PriceData(PRICE_ID);
+      priceData.price = ethPrice;
+      priceData.lastUpdatedBlock = event.block.number;
+      priceData.lastUpdatedTimestamp = timestamp;
+      priceData.save();
+    }
   }
 
   // Update global metrics (includes USD recalculation)

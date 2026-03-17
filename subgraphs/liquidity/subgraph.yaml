@@ -72,7 +72,7 @@ dataSources:
     source:
       address: "0x27df632fd0dcf191C418c803801D521cd579F18e"
       abi: ERC20
-      startBlock: 17679229
+      startBlock: 18324324
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -94,7 +94,7 @@ dataSources:
     source:
       address: "0xf9825A563222f9eFC81e369311DAdb13D68e60a4"
       abi: ERC20
-      startBlock: 17679229
+      startBlock: 19126747
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -116,7 +116,7 @@ dataSources:
     source:
       address: "0x3685B8cC36B8df09ED9E81C1690100306bF23E04"
       abi: ERC20
-      startBlock: 17679229
+      startBlock: 19641245
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -138,7 +138,7 @@ dataSources:
     source:
       address: "0x36B203Cb3086269f005a4b987772452243c0767f"
       abi: ERC20
-      startBlock: 17679229
+      startBlock: 19120775
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -160,7 +160,7 @@ dataSources:
     source:
       address: "0x2FD007a534eB7527b535a1DF35aba6bD2a8b660F"
       abi: ERC20
-      startBlock: 17679229
+      startBlock: 19457188
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -182,7 +182,7 @@ dataSources:
     source:
       address: "0x9946d6FD1210D85EC613Ca956F142D911C97a074"
       abi: ERC20
-      startBlock: 17679229
+      startBlock: 19532493
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -204,7 +204,7 @@ dataSources:
     source:
       address: "0xC085F31E4ca659fF8A17042dDB26f1dcA2fBdAB4"
       abi: ERC20
-      startBlock: 17679229
+      startBlock: 20488304
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7

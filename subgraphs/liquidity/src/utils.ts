@@ -54,19 +54,18 @@ export const BRIDGED_LP_CELO = Address.fromString(
 // Numeric constants
 // ──────────────────────────────────────────────────────────────
 
-export const SECONDS_PER_DAY = BigInt.fromI32(86400);
 export const BASIS_POINTS = BigInt.fromI32(10000); // 100% = 10000 basis points
 export const WEI = BigInt.fromString('1000000000000000000'); // 1e18
 export const GLOBAL_ID = 'global';
 export const PRICE_ID = 'eth-usd';
 
+// Chainlink price refresh interval: only call latestRoundData()
+// if the stored price is older than this many seconds
+export const PRICE_STALENESS_THRESHOLD = BigInt.fromI32(3600); // 1 hour
+
 // ──────────────────────────────────────────────────────────────
 // Address checks
 // ──────────────────────────────────────────────────────────────
-
-export function getDayTimestamp(timestamp: BigInt): BigInt {
-  return timestamp.div(SECONDS_PER_DAY).times(SECONDS_PER_DAY);
-}
 
 export function isZeroAddress(address: Address): boolean {
   return address.equals(ZERO_ADDRESS);

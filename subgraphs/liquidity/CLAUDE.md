@@ -36,7 +36,17 @@ subgraphs/liquidity/
 | BridgedLP_Base | Base OLAS-USDC | `0x9946d6FD1210D85EC613Ca956F142D911C97a074` | ERC20 | `Transfer` | `handleBridgedLPTransfer` |
 | BridgedLP_Celo | Celo CELO-OLAS | `0xC085F31E4ca659fF8A17042dDB26f1dcA2fBdAB4` | ERC20 | `Transfer` | `handleBridgedLPTransfer` |
 
-All start from block 17,679,229.
+Native pool (OLASETHLPToken, OLASETHPair) starts from block 17,679,229. Each bridged LP token starts from its first Transfer block on Ethereum mainnet:
+
+| Bridged LP | Start Block |
+|---|---|
+| BridgedLP_Gnosis (`0x27df632fd0dcf191C418c803801D521cd579F18e`) | 18,324,324 |
+| BridgedLP_Polygon (`0xf9825A563222f9eFC81e369311DAdb13D68e60a4`) | 19,126,747 |
+| BridgedLP_Solana (`0x3685B8cC36B8df09ED9E81C1690100306bF23E04`) | 19,641,245 |
+| BridgedLP_Arbitrum (`0x36B203Cb3086269f005a4b987772452243c0767f`) | 19,120,775 |
+| BridgedLP_Optimism (`0x2FD007a534eB7527b535a1DF35aba6bD2a8b660F`) | 19,457,188 |
+| BridgedLP_Base (`0x9946d6FD1210D85EC613Ca956F142D911C97a074`) | 19,532,493 |
+| BridgedLP_Celo (`0xC085F31E4ca659fF8A17042dDB26f1dcA2fBdAB4`) | 20,488,304 |
 
 ### Key Addresses
 
@@ -144,8 +154,7 @@ Treasury's balance of one bridged LP token from an L2/Solana chain.
 **File**: `src/mapping.ts` | **Event**: `Sync(uint112, uint112)`
 
 - Updates `PoolReserves` entity with current `reserve0` (OLAS) and `reserve1` (ETH)
-- **Chainlink price fetch**: Calls `AggregatorV3Interface.bind(CHAINLINK_ETH_USD).try_latestRoundData()` to get ETH/USD price
-- Updates `PriceData` entity with fresh price
+- **Chainlink price fetch (cached)**: Only calls `latestRoundData()` if the stored price is older than 1 hour (`PRICE_STALENESS_THRESHOLD = 3600 seconds`). Reuses cached `PriceData` otherwise to reduce contract call overhead during indexing.
 - Recalculates `poolLiquidityUsd` and `protocolOwnedLiquidityUsd`
 
 ### 3. handleBridgedLPTransfer
@@ -164,7 +173,6 @@ All in `src/utils.ts`:
 
 | Function | Purpose |
 |----------|---------|
-| `getDayTimestamp(timestamp)` | Truncates to UTC midnight: `timestamp / 86400 * 86400` |
 | `isZeroAddress(address)` | Check for zero address (mint/burn detection) |
 | `isTreasuryAddress(address)` | Check for treasury address |
 | `calculatePercentageBasisPoints(num, denom)` | Returns `num * 10000 / denom`, zero-safe |
@@ -186,7 +194,7 @@ poolLiquidityUsd (8 dec) = 2 * reserve1_ETH (18 dec) * ethUsdPrice (8 dec) / 1e1
 protocolOwnedLiquidityUsd = poolLiquidityUsd * treasuryPercentage / 10000
 ```
 
-Chainlink ETH/USD is fetched via `latestRoundData()` contract call on each Sync event (not event-based, since the Chainlink proxy at `0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419` does not re-emit `AnswerUpdated` events from its underlying aggregator).
+Chainlink ETH/USD is fetched via `latestRoundData()` contract call (not event-based, since the Chainlink proxy at `0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419` does not re-emit `AnswerUpdated` events from its underlying aggregator). The price is cached and only refreshed when stale (>1 hour old) to minimize contract call overhead during indexing.
 
 ---
 
@@ -293,35 +301,36 @@ Once all 8 subgraphs are synced, compare output against Dune to validate correct
 
 ### Studio Endpoints (Development)
 
-| Subgraph | Studio Query URL |
-|---|--|
-| Ethereum mainnet | `https://api.studio.thegraph.com/query/81139/olas-liquidity-eth/v0.0.1` |
-| Gnosis | `https://api.studio.thegraph.com/query/81139/olas-liquidity-gnosis/v0.0.1` |
-| Polygon | `https://api.studio.thegraph.com/query/81139/olas-liquidity-matic/v0.0.1` |
-| Arbitrum | TBD |
-| Optimism | TBD |
-| Base | TBD |
-| Celo | TBD |
+| Subgraph | Studio Query URL                                                           |
+|---|----------------------------------------------------------------------------|
+| Ethereum mainnet | `https://api.studio.thegraph.com/query/81139/olas-liquidity-eth/v0.0.2`    |
+| Gnosis | `https://api.studio.thegraph.com/query/81139/olas-liquidity-gnosis/v0.0.2` |
+| Polygon | `https://api.studio.thegraph.com/query/81139/olas-liquidity-matic/v0.0.2`  |
+| Arbitrum | TBD                                                                        |
+| Optimism | TBD                                                                        |
+| Base | TBD                                                                        |
+| Celo | TBD                                                                        |
 
 ---
 
-## Verification Results (2026-03-16)
+## Verification Results (2026-03-17, v0.0.2)
 
 All 3 deployed subgraphs synced fully, zero indexing errors. Full comparison against Dune pending.
 
-### Ethereum Mainnet (block 24,673,269)
+### Ethereum Mainnet (block 24,677,330)
 
 | Metric | Value |
 |---|---|
 | LP total supply | 63,683.02 |
 | Treasury LP balance | 63,657.40 (never sold, totalSold = 0) |
-| Treasury share | 99.96% (9995 basis points) |
+| Treasury share | 99.95% (9995 basis points) |
 | Treasury transactions | 246 |
-| OLAS reserves | 18,797,030.98 |
-| ETH reserves | 378.90 |
-| ETH/USD (Chainlink) | $2,331.29 |
-| Pool liquidity USD | $1,766,653.28 |
-| Protocol owned liquidity USD | $1,765,769.96 |
+| OLAS reserves | 18,125,954.04 |
+| ETH reserves | 393.04 |
+| ETH/USD (Chainlink) | $2,325.78 |
+| Pool liquidity USD | $1,828,255.78 |
+| Protocol owned liquidity USD | $1,827,341.65 |
+| Price staleness caching | Active — price fetched at block 24,677,164 (166 blocks behind head) |
 
 **Bridged LP tokens in Treasury** (all totalSold = 0):
 
@@ -335,17 +344,20 @@ All 3 deployed subgraphs synced fully, zero indexing errors. Full comparison aga
 | Base | OLAS-USDC | 514,612.63 | 31 |
 | Celo | CELO-OLAS | 210,254.80 | 28 |
 
-### Gnosis L2 (block 45,186,397)
+### Gnosis L2 (block 45,195,995)
 
 | Metric | Value |
 |---|---|
 | Pool | OLAS-WXDAI (Balancer V2) |
-| Token0 (OLAS) reserves | 4,439,684.02 |
-| Token1 (WXDAI) reserves | 167,211.12 |
-| BPT total supply | 1,636,382.85 |
-| Pool TVL (approx) | $334,422 (2 x WXDAI) |
+| Token0 (OLAS) reserves | 3,875,175.27 |
+| Token1 (WXDAI) reserves | 191,804.93 |
+| BPT total supply | 1,636,413.92 |
+| BPT total minted | 1,823,726.17 |
+| BPT total burned | 187,312.25 |
+| Pool TVL (approx) | $383,610 (2 x WXDAI) |
+| Treasury POL (approx) | $383,132 |
 
-### Polygon L2 (block 84,291,408)
+### Polygon L2 (block 84,315,911)
 
 | Metric | Value |
 |---|---|
@@ -353,17 +365,27 @@ All 3 deployed subgraphs synced fully, zero indexing errors. Full comparison aga
 | Token0 (WMATIC) reserves | 311,124.86 |
 | Token1 (OLAS) reserves | 822,942.71 |
 | BPT total supply | 978,297.77 |
+| BPT total minted | 1,058,007.73 |
+| BPT total burned | 79,709.96 |
 
 ### Cross-Chain Consistency Checks
 
 | Check | Result |
 |---|---|
-| Gnosis bridged LP on L1 vs BPT supply | 1,634,374.52 / 1,636,382.85 = 99.88% bridged |
+| Gnosis bridged LP on L1 vs BPT supply | 1,634,374.52 / 1,636,413.92 = 99.88% bridged |
 | Polygon bridged LP on L1 vs BPT supply | 976,904.80 / 978,297.77 = 99.86% bridged |
 | All bridged tokens totalSold | 0 across all 7 chains (Treasury never sold) |
 | Indexing errors | None on any chain |
 
 The small gap between bridged LP on L1 and BPT supply (~0.1-0.2%) represents LP tokens not yet bridged to Ethereum mainnet.
+
+### v0.0.2 Optimizations Verified
+
+| Optimization | Evidence |
+|---|---|
+| Chainlink price staleness caching (1h) | Price at block 24,677,164, head at 24,677,330 — 166 block delta confirms caching works |
+| Per-token bridged LP startBlocks | Correct data with fewer empty blocks scanned |
+| L2 reserves only on mint/burn | Reserves still accurate, contract calls reduced |
 
 ### GraphQL Field Names
 
@@ -372,7 +394,7 @@ The Graph auto-generates query field names that differ from entity names. Correc
 | Entity | Singular Query | Collection Query |
 |---|---|---|
 | LPTokenMetrics | `lptokenMetrics(id: "global")` | `lptokenMetrics_collection` |
-| TreasuryHoldings | `treasuryHoldings(id: "0xa0da...")` | `treasuryHoldings_collection` |
+| TreasuryHoldings | `treasuryHoldings(id: "0xa0da53447c0f6c4987964d8463da7e6628b30f82")` | `treasuryHoldings_collection` |
 | BridgedPOLHolding | `bridgedPOLHolding(id: "0x27df632fd0dcf191c418c803801d521cd579f18e")` | `bridgedPOLHoldings` |
 | PriceData | `priceData(id: "eth-usd")` | `priceDatas` |
 | PoolReserves | `poolReserves(id: "0x09d1d767edf8fa23a64c51fa559e0688e526812f")` | `poolReserves_collection` |

@@ -83,15 +83,15 @@ On each BPT Transfer:
 1. Creates immutable `BPTTransfer` entity
 2. **Mint detection**: `from == 0x0` → increments `totalSupply` and `totalMinted`
 3. **Burn detection**: `to == 0x0` → decrements `totalSupply`, increments `totalBurned`
-4. **Reserve fetch**: Calls `pool.getPoolId()` then `vault.getPoolTokens(poolId)` to get absolute token balances
+4. **Reserve fetch (mint/burn only)**: On mint or burn, calls `pool.getPoolId()` then `vault.getPoolTokens(poolId)` to get absolute token balances. Regular user→user transfers skip contract calls since reserves don't change.
 5. Updates `PoolMetrics` with fresh reserves, token addresses, and supply
 
-### Why Transfer Events + Contract Calls (not Vault events)
+### Design Decisions
 
-- Indexing the Vault's `PoolBalanceChanged` would process ALL Balancer pools on the chain — very expensive
-- BPT Transfer events are scoped to our specific pool contract
-- `vault.getPoolTokens()` returns absolute reserves (not deltas), so we don't need to accumulate
-- Reserves only update on join/exit (not swaps), but total pool value is approximately stable across swaps for balanced pools
+- **Contract calls only on mint/burn**: Regular transfers don't change pool reserves, so calling `getPoolTokens()` on every transfer would waste indexing resources. Reserves are only fetched when liquidity actually changes (join/exit).
+- **Why Transfer events + contract calls (not Vault events)**: Indexing the Vault's `PoolBalanceChanged` would process ALL Balancer pools on the chain — very expensive. BPT Transfer events are scoped to our specific pool contract.
+- **Absolute reserves via `getPoolTokens()`**: Returns current balances (not deltas), so we don't need to accumulate from genesis.
+- **Reserves only update on join/exit (not swaps)**: Total pool value is approximately stable across swaps for balanced pools, so this is acceptable for POL valuation.
 
 ---
 
@@ -184,11 +184,11 @@ ln -sf subgraph.gnosis.yaml subgraph.yaml && yarn test; rm -f subgraph.yaml
 
 ---
 
-## Verification Results (2026-03-16)
+## Verification Results (2026-03-17, v0.0.2)
 
-Deployed to The Graph Studio (development mode). Gnosis and Polygon fully synced, zero indexing errors.
+Deployed to The Graph Studio (development mode). Gnosis and Polygon fully synced, zero indexing errors. Reserves only fetched on mint/burn (v0.0.2 optimization).
 
-### Gnosis (block 45,186,397)
+### Gnosis (block 45,195,995)
 
 | Metric | Value |
 |---|---|
@@ -196,16 +196,16 @@ Deployed to The Graph Studio (development mode). Gnosis and Polygon fully synced
 | Pool ID | `0x79c872ed3acb3fc5770dd8a0cd9cd5db3b3ac985000200000000000000000067` |
 | Token0 | `0xcE11e14225575945b8E6Dc0D4F2dD4C570f79d9f` (OLAS) |
 | Token1 | `0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d` (WXDAI) |
-| OLAS reserves | 4,439,684.02 |
-| WXDAI reserves | 167,211.12 |
-| BPT total supply | 1,636,382.85 |
-| BPT total minted | 1,822,751.64 |
-| BPT total burned | 186,368.79 |
-| Pool TVL (approx) | $334,422 (2 x WXDAI) |
+| OLAS reserves | 3,875,175.27 |
+| WXDAI reserves | 191,804.93 |
+| BPT total supply | 1,636,413.92 |
+| BPT total minted | 1,823,726.17 |
+| BPT total burned | 187,312.25 |
+| Pool TVL (approx) | $383,610 (2 x WXDAI) |
 
 Cross-check: Ethereum mainnet subgraph shows 1,634,374.52 bridged Gnosis BPT in Treasury = 99.88% of supply.
 
-### Polygon (block 84,291,408)
+### Polygon (block 84,315,911)
 
 | Metric | Value |
 |---|---|
