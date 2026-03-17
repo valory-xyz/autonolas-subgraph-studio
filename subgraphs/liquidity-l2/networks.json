@@ -1,0 +1,38 @@
+{
+  "gnosis": {
+    "BalancerPool": {
+      "address": "0x79C872Ed3Acb3fc5770dd8a0cD9Cd5dB3B3Ac985",
+      "startBlock": 30396445
+    }
+  },
+  "matic": {
+    "BalancerPool": {
+      "address": "0x62309056c759c36879Cde93693E7903bF415E4Bc",
+      "startBlock": 51626717
+    }
+  },
+  "arbitrum-one": {
+    "BalancerPool": {
+      "address": "0xAF8912a3C4f55a8584B67DF30ee0dDf0e60e01f8",
+      "startBlock": 175754394
+    }
+  },
+  "optimism": {
+    "BalancerPool": {
+      "address": "0x5bb3e58887264b667f915130fd04bbb56116c278",
+      "startBlock": 117547761
+    }
+  },
+  "base": {
+    "BalancerPool": {
+      "address": "0x5332584890d6e415a6dc910254d6430b8aab7e69",
+      "startBlock": 12416046
+    }
+  },
+  "celo": {
+    "BalancerPool": {
+      "address": "0x2976Fa805141b467BCBc6334a69AffF4D914d96A",
+      "startBlock": 27100181
+    }
+  }
+}

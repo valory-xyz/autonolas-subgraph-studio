@@ -15,7 +15,7 @@ This repository is a monorepo that houses multiple subgraph projects. The goal i
 
 -   `abis/`: A central directory for all contract ABI JSON files. ABIs stored here are shared and can be referenced by any subgraph.
 -   `scripts/`: Contains utility scripts such as `generate-manifests.js` for generating network-specific manifests from templates.
--   `subgraphs/`: The main directory containing all the individual subgraph projects. Each subdirectory represents a different subgraph category (e.g., `tokenomics-eth`, `tokenomics-l2`, `service-registry`, `staking`).
+-   `subgraphs/`: The main directory containing all the individual subgraph projects. Each subdirectory represents a different subgraph category (e.g., `tokenomics-eth`, `tokenomics-l2`, `service-registry`, `staking`, `liquidity`, `liquidity-l2`).
 
 ### Multi-Network Subgraph Patterns
 
