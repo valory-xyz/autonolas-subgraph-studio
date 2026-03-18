@@ -26,6 +26,8 @@ dataSources:
           file: ../../abis/BalancerV2WeightedPool.json
         - name: BalancerV2Vault
           file: ../../abis/BalancerV2Vault.json
+        - name: UniswapV2Pair
+          file: ../../abis/UniswapV2Pair.json
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleBPTTransfer

@@ -4,15 +4,14 @@ indexerHints:
 schema:
   file: ./schema.graphql
 dataSources:
-  # Balancer V2 Weighted Pool (BPT token)
-  # Tracks BPT supply via Transfer events and fetches pool reserves
-  # from the Balancer Vault via getPoolTokens() contract call.
+  # Celo CELO-OLAS pool is an Ubeswap (UniswapV2) pair, NOT a Balancer V2 pool.
+  # Reserves come from Sync events. Supply tracked via Transfer events.
   - kind: ethereum/contract
     name: BalancerPool
     network: celo
     source:
       address: "0x2976Fa805141b467BCBc6334a69AffF4D914d96A"
-      abi: BalancerV2WeightedPool
+      abi: UniswapV2Pair
       startBlock: 27100181
     mapping:
       kind: ethereum/events
@@ -26,7 +25,11 @@ dataSources:
           file: ../../abis/BalancerV2WeightedPool.json
         - name: BalancerV2Vault
           file: ../../abis/BalancerV2Vault.json
+        - name: UniswapV2Pair
+          file: ../../abis/UniswapV2Pair.json
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleBPTTransfer
+        - event: Sync(uint112,uint112)
+          handler: handleUniswapSync
       file: ./src/mapping.ts

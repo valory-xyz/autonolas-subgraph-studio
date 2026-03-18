@@ -14,7 +14,9 @@ import {
   updateGlobalMetricsAfterTransfer,
   updateGlobalMetricsAfterSync,
   CHAINLINK_ETH_USD,
-  PRICE_ID,
+  CHAINLINK_MATIC_USD,
+  ETH_PRICE_ID,
+  MATIC_PRICE_ID,
   PRICE_STALENESS_THRESHOLD,
 } from './utils';
 
@@ -72,21 +74,42 @@ export function handleSync(event: Sync): void {
   reserves.lastSyncTransaction = event.transaction.hash;
   reserves.save();
 
-  // Fetch ETH/USD price from Chainlink only if cached price is stale (> 1 hour old)
-  let existingPrice = PriceData.load(PRICE_ID);
-  let shouldRefresh =
-    existingPrice == null ||
-    timestamp.minus(existingPrice.lastUpdatedTimestamp).gt(PRICE_STALENESS_THRESHOLD);
+  // Fetch Chainlink prices only if cached values are stale (> 1 hour old)
+  // ETH/USD
+  let existingEthPrice = PriceData.load(ETH_PRICE_ID);
+  let shouldRefreshEth =
+    existingEthPrice == null ||
+    timestamp.minus(existingEthPrice.lastUpdatedTimestamp).gt(PRICE_STALENESS_THRESHOLD);
 
-  if (shouldRefresh) {
+  if (shouldRefreshEth) {
     let chainlink = AggregatorV3Interface.bind(CHAINLINK_ETH_USD);
     let result = chainlink.try_latestRoundData();
     if (!result.reverted) {
       let ethPrice = result.value.getAnswer();
-      // Only persist valid positive prices; skip zero/negative oracle answers
       if (ethPrice.gt(BigInt.zero())) {
-        let priceData = existingPrice != null ? existingPrice : new PriceData(PRICE_ID);
+        let priceData = existingEthPrice != null ? existingEthPrice : new PriceData(ETH_PRICE_ID);
         priceData.price = ethPrice;
+        priceData.lastUpdatedBlock = event.block.number;
+        priceData.lastUpdatedTimestamp = timestamp;
+        priceData.save();
+      }
+    }
+  }
+
+  // MATIC/USD
+  let existingMaticPrice = PriceData.load(MATIC_PRICE_ID);
+  let shouldRefreshMatic =
+    existingMaticPrice == null ||
+    timestamp.minus(existingMaticPrice.lastUpdatedTimestamp).gt(PRICE_STALENESS_THRESHOLD);
+
+  if (shouldRefreshMatic) {
+    let chainlinkMatic = AggregatorV3Interface.bind(CHAINLINK_MATIC_USD);
+    let maticResult = chainlinkMatic.try_latestRoundData();
+    if (!maticResult.reverted) {
+      let maticPrice = maticResult.value.getAnswer();
+      if (maticPrice.gt(BigInt.zero())) {
+        let priceData = existingMaticPrice != null ? existingMaticPrice : new PriceData(MATIC_PRICE_ID);
+        priceData.price = maticPrice;
         priceData.lastUpdatedBlock = event.block.number;
         priceData.lastUpdatedTimestamp = timestamp;
         priceData.save();

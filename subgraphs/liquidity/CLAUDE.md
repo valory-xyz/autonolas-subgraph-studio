@@ -194,7 +194,18 @@ poolLiquidityUsd (8 dec) = 2 * reserve1_ETH (18 dec) * ethUsdPrice (8 dec) / 1e1
 protocolOwnedLiquidityUsd = poolLiquidityUsd * treasuryPercentage / 10000
 ```
 
-Chainlink ETH/USD is fetched via `latestRoundData()` contract call (not event-based, since the Chainlink proxy at `0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419` does not re-emit `AnswerUpdated` events from its underlying aggregator). The price is cached and only refreshed when stale (>1 hour old) to minimize contract call overhead during indexing.
+### Chainlink Price Feeds
+
+Both feeds are on Ethereum mainnet, fetched via `latestRoundData()` contract call with 1-hour staleness caching:
+
+| Feed | Proxy Address | Used For |
+|---|---|---|
+| ETH/USD | `0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419` | Ethereum OLAS-ETH pool USD, Arbitrum OLAS-WETH, Optimism WETH-OLAS |
+| MATIC/USD | `0x7bAC85A8a13A4BcD8abb3eB7d6b4d632c5a57676` | Polygon OLAS-WMATIC |
+
+**Not available on-chain**: CELO/USD has no Chainlink feed on Ethereum mainnet. Celo and Solana POL USD must be computed by the off-chain aggregation layer using external price APIs (CoinGecko, etc.).
+
+Gnosis (WXDAI) and Base (USDC) pools are stablecoin-paired — their USD value is `2 * stablecoin_reserves` with no price feed needed.
 
 ---
 

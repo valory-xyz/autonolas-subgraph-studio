@@ -2,8 +2,8 @@
   "name": "autonolas-liquidity-l2-subgraph",
   "scripts": {
     "generate-manifests": "node ../../scripts/generate-manifests.js --path=.",
-    "codegen": "graph codegen subgraph.gnosis.yaml",
-    "build": "graph build subgraph.gnosis.yaml",
+    "codegen": "graph codegen subgraph.celo.yaml",
+    "build": "graph build subgraph.celo.yaml",
     "test": "graph test"
   },
   "dependencies": {

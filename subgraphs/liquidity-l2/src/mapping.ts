@@ -1,6 +1,7 @@
 import { Transfer } from '../generated/BalancerPool/BalancerV2WeightedPool';
 import { BalancerV2WeightedPool } from '../generated/BalancerPool/BalancerV2WeightedPool';
 import { BalancerV2Vault } from '../generated/BalancerPool/BalancerV2Vault';
+import { Sync, UniswapV2Pair } from '../generated/BalancerPool/UniswapV2Pair';
 
 import { BPTTransfer } from '../generated/schema';
 
@@ -11,10 +12,11 @@ import {
 } from './utils';
 
 /**
- * Handle BPT (Balancer Pool Token) Transfer events.
+ * Handle BPT / LP Token Transfer events.
  * Tracks total supply via mint/burn detection, and fetches current
- * pool reserves from the Balancer Vault on mint/burn only (not on
- * regular transfers, where reserves don't change).
+ * pool reserves from the Balancer Vault on mint/burn only.
+ * On Celo (Ubeswap/UniswapV2), the Vault calls fail silently via try_;
+ * reserves are provided by handleUniswapSync instead.
  */
 export function handleBPTTransfer(event: Transfer): void {
   let from = event.params.from;
@@ -53,7 +55,8 @@ export function handleBPTTransfer(event: Transfer): void {
     metrics.totalBurned = metrics.totalBurned.plus(value);
   }
 
-  // Fetch pool reserves only on mint/burn (join/exit events that change reserves)
+  // Fetch pool reserves from Balancer Vault on mint/burn only.
+  // On Celo (Ubeswap), these calls fail silently — reserves come from handleUniswapSync.
   if (isMint || isBurn) {
     let pool = BalancerV2WeightedPool.bind(poolAddress);
     let poolIdResult = pool.try_getPoolId();
@@ -79,6 +82,37 @@ export function handleBPTTransfer(event: Transfer): void {
 
   metrics.lastUpdatedBlock = event.block.number;
   metrics.lastUpdatedTimestamp = timestamp;
+  metrics.lastUpdatedTransaction = event.transaction.hash;
+  metrics.save();
+}
+
+/**
+ * Handle UniswapV2 Sync events (Celo/Ubeswap only).
+ * Updates pool reserves directly from the event params.
+ * Also populates token0/token1 addresses via contract calls on first invocation.
+ */
+export function handleUniswapSync(event: Sync): void {
+  let poolAddress = event.address;
+  let metrics = getOrCreatePoolMetrics(poolAddress);
+
+  metrics.reserve0 = event.params.reserve0;
+  metrics.reserve1 = event.params.reserve1;
+
+  // Populate token addresses on first Sync (one-time contract call)
+  if (metrics.token0.length == 0) {
+    let pair = UniswapV2Pair.bind(poolAddress);
+    let token0Result = pair.try_token0();
+    let token1Result = pair.try_token1();
+    if (!token0Result.reverted) {
+      metrics.token0 = token0Result.value;
+    }
+    if (!token1Result.reverted) {
+      metrics.token1 = token1Result.value;
+    }
+  }
+
+  metrics.lastUpdatedBlock = event.block.number;
+  metrics.lastUpdatedTimestamp = event.block.timestamp;
   metrics.lastUpdatedTransaction = event.transaction.hash;
   metrics.save();
 }
