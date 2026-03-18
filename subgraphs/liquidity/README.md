@@ -140,7 +140,7 @@ Chainlink prices (ETH, MATIC, SOL) are fetched on-chain by the Ethereum subgraph
 Solana vault accounts:
 - SOL vault (`CLA8hU8SkdCZ9cJVLMfZQfcgAsywZ9txBJ6qrRAqthLx`) — 9 decimals
 - OLAS vault (`6E8pzDK8uwpENc49kp5xo5EGydYjtamPSmUKXxum4ybb`) — 8 decimals
-- Treasury share: `bridgedLpBalance / totalBridgedSupply` from Ethereum subgraph (~99.995%)
+- Treasury share: approximated as 99.995% (Treasury holds nearly all bridged LP supply on L1). For exact computation, fetch the bridged LP token's `totalSupply` on Ethereum and divide by the Treasury's balance from the subgraph.
 
 ### Step 4: Sum
 

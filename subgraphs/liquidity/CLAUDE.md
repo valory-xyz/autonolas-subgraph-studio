@@ -211,7 +211,7 @@ All feeds are on Ethereum mainnet, fetched via `latestRoundData()` contract call
 |---|---|---|
 | ETH/USD | `0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419` | Ethereum OLAS-ETH pool USD, Arbitrum OLAS-WETH, Optimism WETH-OLAS |
 | MATIC/USD | `0x7bAC85A8a13A4BcD8abb3eB7d6b4d632c5a57676` | Polygon OLAS-WMATIC |
-| SOL/USD | `0x4ffC43a60e009B551865A93d232E33Fce9f01507` | Solana WSOL-OLAS (price only — pool reserves from Orca API off-chain) |
+| SOL/USD | `0x4ffC43a60e009B551865A93d232E33Fce9f01507` | Solana WSOL-OLAS (price only — pool reserves from Solana RPC off-chain) |
 
 **Not available on-chain**: CELO/USD has no Chainlink feed on Ethereum mainnet. Celo POL USD must be computed by the off-chain aggregation layer using external price APIs (CoinGecko, etc.).
 

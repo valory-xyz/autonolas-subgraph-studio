@@ -39,12 +39,15 @@ const OLAS_VAULT = '6E8pzDK8uwpENc49kp5xo5EGydYjtamPSmUKXxum4ybb';
 
 // ─── HTTP helpers ────────────────────────────────────────────────────────────
 
+const REQUEST_TIMEOUT_MS = 30000; // 30 seconds
+
 function fetch(url, options = {}) {
   return new Promise((resolve, reject) => {
     const mod = url.startsWith('https') ? https : http;
     const req = mod.request(url, {
       method: options.method || 'GET',
       headers: options.headers || {},
+      timeout: REQUEST_TIMEOUT_MS,
     }, (res) => {
       let data = '';
       res.on('data', chunk => data += chunk);
@@ -59,6 +62,10 @@ function fetch(url, options = {}) {
           reject(new Error(`Failed to parse JSON from ${url} (HTTP ${res.statusCode}): ${data.slice(0, 200)}`));
         }
       });
+    });
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error(`Request timeout (${REQUEST_TIMEOUT_MS}ms) for ${url}`));
     });
     req.on('error', reject);
     if (options.body) req.write(options.body);
@@ -284,9 +291,21 @@ async function main() {
   const l2Data = { gnosis: gnData, polygon: pgData, arbitrum: arbData, optimism: optData, base: baseData, celo: celoData };
   for (const [chain, data] of Object.entries(l2Data)) {
     const config = CHAIN_CONFIG[chain];
-    const pool = data.data.poolMetrics_collection[0];
+    const dex = chain === 'celo' ? 'Ubeswap' : 'Balancer V2';
+
+    // Defensive: check for GraphQL errors or missing data
+    if (data.errors || !data.data) {
+      const errMsg = data.errors ? data.errors.map(e => e.message).join('; ') : 'no data';
+      results.push({ chain, pair: config.pair, dex, poolTvl: null, treasuryPol: null, share: 0, method: `QUERY ERROR: ${errMsg}`, block: 0 });
+      continue;
+    }
+    if (data.data._meta && data.data._meta.hasIndexingErrors) {
+      results.push({ chain, pair: config.pair, dex, poolTvl: null, treasuryPol: null, share: 0, method: 'INDEXING ERRORS', block: data.data._meta.block.number });
+      continue;
+    }
+    const pool = (data.data.poolMetrics_collection || [])[0];
     if (!pool) {
-      results.push({ chain, pair: config.pair, dex: chain === 'celo' ? 'Ubeswap' : 'Balancer V2', poolTvl: null, treasuryPol: null, share: 0, method: 'NO POOL DATA', block: data.data._meta.block.number });
+      results.push({ chain, pair: config.pair, dex, poolTvl: null, treasuryPol: null, share: 0, method: 'NO POOL DATA', block: data.data._meta ? data.data._meta.block.number : 0 });
       continue;
     }
 
@@ -309,14 +328,13 @@ async function main() {
   }
 
   // 8. Solana
+  // Note: Treasury holds ~99.995% of bridged Solana LP on L1.
+  // The exact share requires fetching the bridged LP token's ERC20 totalSupply
+  // on Ethereum (not available in the subgraph). Using approximation for now.
   const solBalance = Number(solVaultA.result.value.uiAmount);
   const olasBalance = Number(solVaultB.result.value.uiAmount);
   const solTvl = solBalance * prices.sol + olasBalance * prices.olas;
-  const solBridged = bridged.solana?.balance || 0n;
-  // Total bridged supply on L1: query from Blockscout or hardcode known value
-  // The subgraph tracks bridgedPOLHolding balance but not the ERC20 totalSupply
-  // For now, approximate: Treasury holds ~99.995%, so POL ≈ TVL
-  const solShare = 99.995;
+  const solShare = 99.995; // approximation — Treasury holds nearly all bridged supply
   const solPol = solTvl * (solShare / 100);
 
   results.push({
