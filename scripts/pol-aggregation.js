@@ -21,13 +21,13 @@ const http = require('http');
 // ─── Configuration ───────────────────────────────────────────────────────────
 
 const SUBGRAPH_URLS = {
-  ethereum: process.env.SUBGRAPH_ETH_URL || 'https://api.studio.thegraph.com/query/81139/olas-liquidity-eth/v0.0.4',
+  ethereum: process.env.SUBGRAPH_ETH_URL || 'https://api.studio.thegraph.com/query/1716136/olas-ethereum-liquidity/version/latest',
   gnosis: process.env.SUBGRAPH_GNOSIS_URL || 'https://api.studio.thegraph.com/query/1716136/olas-gnosis-liquidity/version/latest',
-  polygon: process.env.SUBGRAPH_POLYGON_URL || 'https://api.studio.thegraph.com/query/81139/olas-liquidity-matic/v0.0.3',
+  polygon: process.env.SUBGRAPH_POLYGON_URL || 'https://api.studio.thegraph.com/query/1716136/olas-polygon-liquidity/version/latest',
   arbitrum: process.env.SUBGRAPH_ARBITRUM_URL || 'https://api.studio.thegraph.com/query/1716136/olas-arbitrum-liquidity/version/latest',
   optimism: process.env.SUBGRAPH_OPTIMISM_URL || 'https://api.studio.thegraph.com/query/1716136/olas-optimism-liquidity/version/latest',
   base: process.env.SUBGRAPH_BASE_URL || 'https://api.studio.thegraph.com/query/1716136/olas-base-liquidity/version/latest',
-  celo: process.env.SUBGRAPH_CELO_URL || 'https://api.studio.thegraph.com/query/81139/olas-liquidity-celo/v0.0.4',
+  celo: process.env.SUBGRAPH_CELO_URL || 'https://api.studio.thegraph.com/query/1716136/olas-celo-liquidity/version/latest',
 };
 
 const SOLANA_RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
