@@ -15,8 +15,10 @@ import {
   updateGlobalMetricsAfterSync,
   CHAINLINK_ETH_USD,
   CHAINLINK_MATIC_USD,
+  CHAINLINK_SOL_USD,
   ETH_PRICE_ID,
   MATIC_PRICE_ID,
+  SOL_PRICE_ID,
   PRICE_STALENESS_THRESHOLD,
 } from './utils';
 
@@ -110,6 +112,27 @@ export function handleSync(event: Sync): void {
       if (maticPrice.gt(BigInt.zero())) {
         let priceData = existingMaticPrice != null ? existingMaticPrice : new PriceData(MATIC_PRICE_ID);
         priceData.price = maticPrice;
+        priceData.lastUpdatedBlock = event.block.number;
+        priceData.lastUpdatedTimestamp = timestamp;
+        priceData.save();
+      }
+    }
+  }
+
+  // SOL/USD
+  let existingSolPrice = PriceData.load(SOL_PRICE_ID);
+  let shouldRefreshSol =
+    existingSolPrice == null ||
+    timestamp.minus(existingSolPrice.lastUpdatedTimestamp).gt(PRICE_STALENESS_THRESHOLD);
+
+  if (shouldRefreshSol) {
+    let chainlinkSol = AggregatorV3Interface.bind(CHAINLINK_SOL_USD);
+    let solResult = chainlinkSol.try_latestRoundData();
+    if (!solResult.reverted) {
+      let solPrice = solResult.value.getAnswer();
+      if (solPrice.gt(BigInt.zero())) {
+        let priceData = existingSolPrice != null ? existingSolPrice : new PriceData(SOL_PRICE_ID);
+        priceData.price = solPrice;
         priceData.lastUpdatedBlock = event.block.number;
         priceData.lastUpdatedTimestamp = timestamp;
         priceData.save();

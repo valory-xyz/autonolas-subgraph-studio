@@ -77,54 +77,125 @@ Source: [configuration.json](https://github.com/valory-xyz/autonolas-tokenomics/
 | Base | `0xEea5F1e202dc43607273d54101fF8b58FB008A99` | `0x586D916819d9B707101f81e4cDD22cE119D1C220` | Balancer |
 | Celo | `0x4E82BC73BFB9647074aA71CBF467e66c1808C571` | `0xa987Fe40034AaD2EbB0E01B22DFc57f20C87F949` | Uniswap |
 
-## USD Valuation Approach
+## Full POL Calculation Algorithm
 
-Two complementary methods (both explored in PR #90):
+Total POL USD is computed by `scripts/pol-aggregation.js`, which combines data from three sources: subgraph queries (on-chain), Solana RPC (off-chain), and CoinGecko API (off-chain). Here is the complete algorithm.
 
-1. **ETH-based (primary)**: `Pool Liquidity USD = 2 * ETH_reserves * ETH/USD_price` using Chainlink `AggregatorV3Interface` on each chain.
-2. **OLAS-based (validation)**: `Pool Liquidity USD = 2 * OLAS_reserves * OLAS/USD_price` using CoinGecko. Expected variance < 1% for balanced pools.
+### Step 1: Fetch Data (all in parallel)
 
-For non-ETH pools:
-- OLAS-WXDAI (Gnosis): WXDAI ~ $1, so `2 * WXDAI_reserves`
-- OLAS-USDC (Base): USDC ~ $1, so `2 * USDC_reserves`
-- OLAS-WMATIC (Polygon): Chainlink MATIC/USD feed
-- CELO-OLAS (Celo): Chainlink CELO/USD feed
+| Source | What's Fetched | Endpoint |
+|---|---|---|
+| Ethereum subgraph | `lptokenMetrics` (reserves, treasury %, prices), `bridgedPOLHoldings` (7 bridged LP balances), `priceDatas` (ETH/USD, MATIC/USD, SOL/USD) | GraphQL |
+| Gnosis subgraph | `poolMetrics` (reserve0=OLAS, reserve1=WXDAI, totalSupply) | GraphQL |
+| Polygon subgraph | `poolMetrics` (reserve0=WMATIC, reserve1=OLAS, totalSupply) | GraphQL |
+| Arbitrum subgraph | `poolMetrics` (reserve0=OLAS, reserve1=WETH, totalSupply) | GraphQL |
+| Optimism subgraph | `poolMetrics` (reserve0=WETH, reserve1=OLAS, totalSupply) | GraphQL |
+| Base subgraph | `poolMetrics` (reserve0=OLAS, reserve1=USDC, totalSupply) | GraphQL |
+| Celo subgraph | `poolMetrics` (reserve0=CELO, reserve1=OLAS, totalSupply) | GraphQL |
+| Solana RPC | SOL vault balance, OLAS vault balance | `getTokenAccountBalance` |
+| CoinGecko API | OLAS/USD, CELO/USD (+ SOL/USD fallback) | REST |
 
-**POL USD** = `Pool Liquidity USD * (treasury_LP_balance / total_LP_supply)`
+### Step 2: Resolve Prices
 
-## Implementation Plan
+| Price | Primary Source (on-chain) | Fallback (off-chain) |
+|---|---|---|
+| ETH/USD | Chainlink via Ethereum subgraph `ethUsdPrice` | — |
+| MATIC/USD | Chainlink via Ethereum subgraph `maticUsdPrice` | CoinGecko `polygon-ecosystem-token` |
+| SOL/USD | Chainlink via Ethereum subgraph `solUsdPrice` or `priceData("sol-usd")` | CoinGecko `solana` |
+| OLAS/USD | — | CoinGecko `autonolas` |
+| CELO/USD | — | CoinGecko `celo` |
 
-### Phase 1 — Complete Ethereum Mainnet (extend current subgraph)
+Chainlink prices (ETH, MATIC, SOL) are fetched on-chain by the Ethereum subgraph's `handleSync` handler with 1-hour staleness caching. OLAS and CELO prices have no Chainlink feed on Ethereum mainnet, so they always come from CoinGecko.
 
-1. **Chainlink ETH/USD oracle** — add `AggregatorV3Interface` data source, compute `poolLiquidityUsd` and `protocolOwnedLiquidityUsd` on each Sync event.
-2. **Bridged LP token tracking** — add 7 ERC-20 data sources (one per bridged LP token address on Ethereum) watching `Transfer` events. Track Treasury balance for each. New `BridgedPOLHolding` entity with `currentBalance`, `originChain`, `pair`.
-3. **Dune comparison script** — validate subgraph output against [Dune query 4963482](https://dune.com/queries/4963482).
+### Step 3: Compute POL Per Chain
 
-### Phase 2 — L2 Pool Subgraphs (new subgraph, template pattern)
+**Group A — Fully on-chain (subgraph only, no external price needed):**
 
-Create a multi-network liquidity subgraph (like `staking` or `service-registry`) to track pool reserves on each L2:
+| Chain | Formula | Notes |
+|---|---|---|
+| Ethereum | `protocolOwnedLiquidityUsd` from subgraph directly | Pre-computed: `2 × ETH_reserves × ETH/USD × treasury% / 10000` |
+| Gnosis | `2 × WXDAI_reserves × (bridged_balance / BPT_supply)` | WXDAI ≈ $1 (stablecoin) |
+| Base | `2 × USDC_reserves × (bridged_balance / BPT_supply)` | USDC ≈ $1 (stablecoin), 6 decimals |
 
-| Chain | Pool Address | DEX | Key Events |
-|---|---|---|---|
-| Gnosis | `0x79C872Ed3Acb3fc5770dd8a0cD9Cd5dB3B3Ac985` | Balancer V2 | `PoolBalanceChanged`, `Swap` |
-| Polygon | `0x62309056c759c36879Cde93693E7903bF415E4Bc` | Balancer V2 | `PoolBalanceChanged`, `Swap` |
-| Arbitrum | `0xAF8912a3C4f55a8584B67DF30ee0dDf0e60e01f8` | Balancer V2 | `PoolBalanceChanged`, `Swap` |
-| Optimism | `0x5bb3e58887264b667f915130fd04bbb56116c278` | Balancer V2 | `PoolBalanceChanged`, `Swap` |
-| Base | `0x5332584890d6e415a6dc910254d6430b8aab7e69` | Balancer V2 | `PoolBalanceChanged`, `Swap` |
-| Celo | `0x2976Fa805141b467BCBc6334a69AffF4D914d96A` | Balancer V2 | `PoolBalanceChanged`, `Swap` |
+**Group B — On-chain reserves + Chainlink price from Ethereum subgraph:**
 
-All 6 L2 pools are Balancer V2 (events come from the Vault contract, not the pool itself). Handler logic: `PoolBalanceChanged` updates reserves, `Swap` can update reserves or be used for volume tracking.
+| Chain | Formula | Price Source |
+|---|---|---|
+| Polygon | `2 × WMATIC_reserves × MATIC/USD × (bridged_balance / BPT_supply)` | `maticUsdPrice` from Ethereum subgraph |
+| Arbitrum | `2 × WETH_reserves × ETH/USD × (bridged_balance / BPT_supply)` | `ethUsdPrice` from Ethereum subgraph |
+| Optimism | `2 × WETH_reserves × ETH/USD × (bridged_balance / BPT_supply)` | `ethUsdPrice` from Ethereum subgraph |
 
-Each L2 subgraph computes:
-- Pool reserves (both tokens)
-- Total LP supply
-- Pool TVL in USD (via chain-native Chainlink price feed)
+**Group C — On-chain reserves + off-chain price (CoinGecko):**
 
-### Phase 3 — Aggregation and Solana
+| Chain | Formula | Off-Chain Dependency |
+|---|---|---|
+| Celo | `2 × CELO_reserves × CELO/USD × (bridged_balance / BPT_supply)` | CoinGecko CELO/USD (no Chainlink on Ethereum mainnet) |
 
-1. **Off-chain aggregation** — script/API that queries all subgraphs and computes:
-   - `Total POL USD = Ethereum_native_POL_USD + sum(bridged_LP_balance / L2_total_supply * L2_pool_TVL_USD)`
-2. **Solana** — Orca pool (`CeZ77ti3nPAmcgRkBkUC1JcoAhR8jRti2DHaCcuyUnzR`) cannot be indexed by The Graph. Requires an off-chain data source (Orca API, Jupiter API, or a Solana-specific indexer like Shyft/Helius).
+**Group D — Fully off-chain reserves + prices (Solana RPC + CoinGecko/Chainlink):**
+
+| Chain | Formula | Off-Chain Dependencies |
+|---|---|---|
+| Solana | `(SOL_vault × SOL/USD + OLAS_vault × OLAS/USD) × treasury_share` | Solana RPC for vault balances, CoinGecko for OLAS/USD, Chainlink SOL/USD from subgraph |
+
+Solana vault accounts:
+- SOL vault (`CLA8hU8SkdCZ9cJVLMfZQfcgAsywZ9txBJ6qrRAqthLx`) — 9 decimals
+- OLAS vault (`6E8pzDK8uwpENc49kp5xo5EGydYjtamPSmUKXxum4ybb`) — 8 decimals
+- Treasury share: `bridgedLpBalance / totalBridgedSupply` from Ethereum subgraph (~99.995%)
+
+### Step 4: Sum
+
+```
+Total POL USD = Ethereum + Gnosis + Polygon + Arbitrum + Optimism + Base + Celo + Solana
+```
+
+### Key Variables
+
+For each L2 chain, `bridged_balance` comes from the Ethereum subgraph's `bridgedPOLHoldings` entity (Treasury's balance of the bridged LP token on L1), and `BPT_supply` comes from the respective L2 subgraph's `poolMetrics.totalSupply`. The ratio `bridged_balance / BPT_supply` gives Treasury's share of the pool (currently 99.78–100% across all chains).
+
+### Running the Aggregation
+
+```bash
+node scripts/pol-aggregation.js            # human-readable table
+node scripts/pol-aggregation.js --json     # JSON output for CI/automation
+node scripts/pol-aggregation.js --verbose  # include raw subgraph data
+```
+
+Subgraph URLs can be overridden via environment variables: `SUBGRAPH_ETH_URL`, `SUBGRAPH_GNOSIS_URL`, `SUBGRAPH_POLYGON_URL`, `SUBGRAPH_ARBITRUM_URL`, `SUBGRAPH_OPTIMISM_URL`, `SUBGRAPH_BASE_URL`, `SUBGRAPH_CELO_URL`.
+
+## Implementation Status
+
+### Phase 1 — Ethereum Mainnet (DONE)
+
+- Chainlink ETH/USD, MATIC/USD, SOL/USD oracles — fetched via `latestRoundData()` with 1-hour staleness caching
+- 7 bridged LP token data sources tracking Treasury balances
+- USD valuation: `poolLiquidityUsd`, `protocolOwnedLiquidityUsd` computed on each Sync event
+
+### Phase 2 — L2 Pool Subgraphs (DONE)
+
+Multi-network `liquidity-l2` subgraph deployed on 6 chains:
+- 5 Balancer V2 pools (Gnosis, Polygon, Arbitrum, Optimism, Base) — BPT Transfer + Vault `getPoolTokens()` calls
+- 1 Ubeswap/UniswapV2 pool (Celo) — Transfer + Sync events (manual manifest)
+
+### Phase 3 — Off-Chain Aggregation (IN PROGRESS)
+
+**What works today**: All 7 EVM subgraphs provide reserves, supply, and bridged LP balances. The Ethereum subgraph provides Chainlink prices for ETH, MATIC, SOL. Stablecoin pools (Gnosis WXDAI, Base USDC) need no external price.
+
+**Solana**: Pool reserves fetched via Solana RPC `getTokenAccountBalance` calls on the vault accounts (SOL vault: `CLA8hU8SkdCZ9cJVLMfZQfcgAsywZ9txBJ6qrRAqthLx`, OLAS vault: `6E8pzDK8uwpENc49kp5xo5EGydYjtamPSmUKXxum4ybb`). SOL/USD price from Chainlink in the Ethereum subgraph.
+
+**Aggregation script**: `scripts/pol-aggregation.js` at repo root — queries all 7 subgraphs + Solana RPC + CoinGecko, computes total POL USD.
+
+```bash
+node scripts/pol-aggregation.js            # human-readable output
+node scripts/pol-aggregation.js --json     # JSON output for CI/automation
+node scripts/pol-aggregation.js --verbose  # include raw subgraph data
+```
+
+Subgraph URLs can be overridden via env vars: `SUBGRAPH_ETH_URL`, `SUBGRAPH_GNOSIS_URL`, etc.
+
+**Still needed**:
+- Celo subgraph redeployment with UniswapV2 Sync handler
+- CELO/USD from CoinGecko (no Chainlink feed on Ethereum mainnet) — already integrated in the script
+- Dune comparison automation (compare script output against Dune query results)
 
 ## Data Sources Reference
 
@@ -180,13 +251,66 @@ Total POL USD = `protocolOwnedLiquidityUsd` (native OLAS-ETH) + sum of bridged L
 - **Block timing**: Dune snapshots at a specific block; the subgraph may be a few blocks ahead or behind
 - **Price staleness**: Subgraph fetches Chainlink price on each Sync event; Dune may use a different price source or timestamp
 - **Rounding**: BigInt division truncates in the subgraph; Dune may use floating-point math
-- **Solana**: The Orca pool (`CeZ77ti3nPAmcgRkBkUC1JcoAhR8jRti2DHaCcuyUnzR`) is not indexed by the subgraph — this LP token's value will be missing from the subgraph total but present in Dune
 
-### Automation (Future)
+### Known Dune Query Issues (as of 2026-03-18)
 
-- Build a `scripts/compare-dune.js` script that automates the above steps
-- Run in CI after each subgraph deployment to catch regressions
-- Alert if any metric diverges beyond the tolerance threshold
+Analysis of the Dune POL query chain (5383248 → sub-queries) revealed two issues that explain the ~31% gap between Dune ($3.7M) and subgraph ($2.5M) totals:
+
+**1. Arbitrum double-counting bug in query 5383248**
+
+The `combined_pol` CTE includes `arbitrum_pol` twice:
+```sql
+select * from arbitrum_pol
+union all
+select * from arbitrum_pol    -- ← DUPLICATE
+union all
+select * from optimism_pol
+```
+Impact: inflates total by ~$106K (the Arbitrum POL value).
+
+**2. Inflated OLAS price from thin DEX trades**
+
+The ETH POL sub-query (4963482) values the pool as `2 × OLAS_reserves × OLAS_price`, where OLAS price comes from query 2767077 → 2766789:
+```sql
+-- query_2766789: last 10 DEX trades, unweighted average
+SELECT *, amount_usd / token_bought_amount AS olas_value
+FROM dex.trades WHERE token_bought_address = 0x0001A500A6B18995B03f44bb040A5fFc28E45CB0
+ORDER BY block_time DESC LIMIT 10
+
+-- query_2767077: simple average
+SELECT AVG(olas_value) as latest_price FROM query_2766789
+```
+
+This produces an unreliable OLAS price because:
+- Only 10 trades with no volume weighting (a $10 trade has the same weight as a $100K trade)
+- No time filter — trades can span hours
+- Includes all DEX venues, some with thin liquidity and skewed prices
+- Implied Dune OLAS price is ~$0.069 vs CoinGecko VWAP of ~$0.048 — a **42% markup**
+
+Since Dune uses `2 × OLAS_reserves × OLAS_price` for the ETH pool (the largest POL component at ~69% of total), this inflated price propagates to ~$1M of overcount.
+
+### Why the Subgraph Approach Is More Accurate
+
+The subgraph uses `2 × paired_token_reserves × Chainlink_price` — it does **not depend on OLAS price** for 6 of 8 chains:
+
+| Chain | Subgraph Method | OLAS Price Needed? |
+|---|---|---|
+| Ethereum | 2 × ETH × Chainlink ETH/USD | No |
+| Gnosis | 2 × WXDAI (~$1) | No |
+| Polygon | 2 × WMATIC × Chainlink MATIC/USD | No |
+| Arbitrum | 2 × WETH × Chainlink ETH/USD | No |
+| Optimism | 2 × WETH × Chainlink ETH/USD | No |
+| Base | 2 × USDC (~$1) | No |
+| Celo | 2 × CELO × CoinGecko CELO/USD | No |
+| Solana | SOL × Chainlink SOL/USD + OLAS × CoinGecko | Yes (partial) |
+
+Chainlink feeds are audited, volume-weighted, and manipulation-resistant. The subgraph's POL valuation is independent of OLAS market price for all major pools.
+
+### Automation
+
+**POL aggregation** is available now via `scripts/pol-aggregation.js` — run `node scripts/pol-aggregation.js` from the repo root for a full POL breakdown across all chains.
+
+**Dune comparison** (future): extend the aggregation script to also fetch Dune query results via API and compare per-chain values. Run in CI after each subgraph deployment to catch regressions.
 
 ## Development
 

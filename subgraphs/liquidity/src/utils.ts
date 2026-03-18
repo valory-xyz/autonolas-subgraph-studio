@@ -25,6 +25,9 @@ export const CHAINLINK_ETH_USD = Address.fromString(
 export const CHAINLINK_MATIC_USD = Address.fromString(
   '0x7bAC85A8a13A4BcD8abb3eB7d6b4d632c5a57676'
 );
+export const CHAINLINK_SOL_USD = Address.fromString(
+  '0x4ffC43a60e009B551865A93d232E33Fce9f01507'
+);
 
 // ──────────────────────────────────────────────────────────────
 // Bridged LP token addresses on Ethereum mainnet
@@ -62,6 +65,7 @@ export const WEI = BigInt.fromString('1000000000000000000'); // 1e18
 export const GLOBAL_ID = 'global';
 export const ETH_PRICE_ID = 'eth-usd';
 export const MATIC_PRICE_ID = 'matic-usd';
+export const SOL_PRICE_ID = 'sol-usd';
 
 // Chainlink price refresh interval: only call latestRoundData()
 // if the stored price is older than this many seconds
@@ -137,6 +141,7 @@ export function getOrCreateLPTokenMetrics(): LPTokenMetrics {
     metrics.currentReserve1 = BigInt.zero();
     metrics.ethUsdPrice = BigInt.zero();
     metrics.maticUsdPrice = BigInt.zero();
+    metrics.solUsdPrice = BigInt.zero();
     metrics.poolLiquidityUsd = BigInt.zero();
     metrics.protocolOwnedLiquidityUsd = BigInt.zero();
     metrics.lastUpdated = BigInt.zero();
@@ -215,6 +220,11 @@ export function recalculateUsd(metrics: LPTokenMetrics): void {
   let maticPriceData = PriceData.load(MATIC_PRICE_ID);
   if (maticPriceData != null && maticPriceData.price.gt(BigInt.zero())) {
     metrics.maticUsdPrice = maticPriceData.price;
+  }
+
+  let solPriceData = PriceData.load(SOL_PRICE_ID);
+  if (solPriceData != null && solPriceData.price.gt(BigInt.zero())) {
+    metrics.solUsdPrice = solPriceData.price;
   }
 }
 

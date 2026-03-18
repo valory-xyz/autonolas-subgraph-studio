@@ -37,6 +37,17 @@ function mockChainlinkPrices(): void {
     ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1000000)),
     ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1)),
   ]);
+  createMockedFunction(
+    TestAddresses.CHAINLINK_SOL_USD,
+    'latestRoundData',
+    'latestRoundData():(uint80,int256,uint256,uint256,uint80)'
+  ).returns([
+    ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1)),
+    ethereum.Value.fromSignedBigInt(TestValues.SOL_PRICE),
+    ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1000000)),
+    ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1000000)),
+    ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1)),
+  ]);
 }
 
 describe('handleLPTransfer', () => {
@@ -296,6 +307,28 @@ describe('handleSync', () => {
       'global',
       'maticUsdPrice',
       TestValues.MATIC_PRICE.toString()
+    );
+  });
+
+  test('Fetches and stores SOL/USD price from Chainlink', () => {
+    let event = createSyncEvent(
+      TestValues.RESERVE_OLAS,
+      TestValues.RESERVE_ETH,
+      TestAddresses.POOL
+    );
+    handleSync(event);
+
+    assert.fieldEquals(
+      'PriceData',
+      'sol-usd',
+      'price',
+      TestValues.SOL_PRICE.toString()
+    );
+    assert.fieldEquals(
+      'LPTokenMetrics',
+      'global',
+      'solUsdPrice',
+      TestValues.SOL_PRICE.toString()
     );
   });
 

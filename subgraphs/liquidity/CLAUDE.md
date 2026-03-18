@@ -187,25 +187,96 @@ All in `src/utils.ts`:
 | `updateGlobalMetricsAfterTransfer(amount, isMint, isBurn, timestamp)` | Updates supply, treasury %, recalculates USD |
 | `updateGlobalMetricsAfterSync(reserve0, reserve1, timestamp)` | Updates reserve fields, recalculates USD |
 
-### USD Calculation
+### USD Calculation (Ethereum pool only)
 
 ```
 poolLiquidityUsd (8 dec) = 2 * reserve1_ETH (18 dec) * ethUsdPrice (8 dec) / 1e18
 protocolOwnedLiquidityUsd = poolLiquidityUsd * treasuryPercentage / 10000
 ```
 
+### Full POL Calculation (all 8 chains)
+
+The complete algorithm is in `scripts/pol-aggregation.js` and documented in [README.md — Full POL Calculation Algorithm](README.md#full-pol-calculation-algorithm). Summary of data flow:
+
+- **Fully on-chain** (3 chains): Ethereum (Chainlink ETH/USD), Gnosis (WXDAI ≈ $1), Base (USDC ≈ $1)
+- **On-chain reserves + Chainlink price** (3 chains): Polygon (MATIC/USD), Arbitrum (ETH/USD), Optimism (ETH/USD)
+- **On-chain reserves + CoinGecko price** (1 chain): Celo (CELO/USD — no Chainlink on Ethereum mainnet)
+- **Off-chain reserves + mixed prices** (1 chain): Solana (Solana RPC for vault balances, Chainlink SOL/USD, CoinGecko OLAS/USD)
+
 ### Chainlink Price Feeds
 
-Both feeds are on Ethereum mainnet, fetched via `latestRoundData()` contract call with 1-hour staleness caching:
+All feeds are on Ethereum mainnet, fetched via `latestRoundData()` contract call with 1-hour staleness caching:
 
 | Feed | Proxy Address | Used For |
 |---|---|---|
 | ETH/USD | `0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419` | Ethereum OLAS-ETH pool USD, Arbitrum OLAS-WETH, Optimism WETH-OLAS |
 | MATIC/USD | `0x7bAC85A8a13A4BcD8abb3eB7d6b4d632c5a57676` | Polygon OLAS-WMATIC |
+| SOL/USD | `0x4ffC43a60e009B551865A93d232E33Fce9f01507` | Solana WSOL-OLAS (price only — pool reserves from Orca API off-chain) |
 
-**Not available on-chain**: CELO/USD has no Chainlink feed on Ethereum mainnet. Celo and Solana POL USD must be computed by the off-chain aggregation layer using external price APIs (CoinGecko, etc.).
+**Not available on-chain**: CELO/USD has no Chainlink feed on Ethereum mainnet. Celo POL USD must be computed by the off-chain aggregation layer using external price APIs (CoinGecko, etc.).
 
 Gnosis (WXDAI) and Base (USDC) pools are stablecoin-paired — their USD value is `2 * stablecoin_reserves` with no price feed needed.
+
+### Solana LP Valuation
+
+The bridged Solana LP token (`0x3685B8cC36B8df09ED9E81C1690100306bF23E04`) has **8 decimals** (not 18). Treasury holds 99.995% of the bridged supply. The SOL/USD price is available on-chain via Chainlink, but the Orca pool reserves must be fetched off-chain (The Graph cannot index Solana).
+
+**Pool type**: Orca Whirlpool (concentrated liquidity), NOT a standard AMM. All positions use **full-range ticks** (-443584 to 443584, tick spacing 64), so the pool behaves similarly to a constant-product AMM.
+
+#### Simple Approach: Solana RPC Vault Balances
+
+The simplest way to get pool reserves is to query the token vault balances directly from Solana RPC — no SDK needed:
+
+```bash
+# SOL vault balance (9 decimals)
+curl -s https://api.mainnet-beta.solana.com -X POST -H "Content-Type: application/json" -d '{
+  "jsonrpc": "2.0", "id": 1,
+  "method": "getTokenAccountBalance",
+  "params": ["CLA8hU8SkdCZ9cJVLMfZQfcgAsywZ9txBJ6qrRAqthLx"]
+}'
+
+# OLAS vault balance (8 decimals)
+curl -s https://api.mainnet-beta.solana.com -X POST -H "Content-Type: application/json" -d '{
+  "jsonrpc": "2.0", "id": 1,
+  "method": "getTokenAccountBalance",
+  "params": ["6E8pzDK8uwpENc49kp5xo5EGydYjtamPSmUKXxum4ybb"]
+}'
+```
+
+Then:
+```
+Pool TVL = SOL_vault_balance × SOL_USD + OLAS_vault_balance × OLAS_USD
+Treasury share = bridgedLpBalance / totalBridgedSupply  (from this subgraph)
+Solana POL = Pool TVL × Treasury share
+```
+
+Verified on 2026-03-18: SOL vault = 201.69 SOL, OLAS vault = 490,903.49 OLAS, Pool TVL ~ $42,684, Treasury share = 99.995%.
+
+#### Alternative: Orca SDK Approach
+
+The [autonolas-frontend-mono](https://github.com/valory-xyz/autonolas-frontend-mono/tree/main/apps/bond/components/BondingProducts/Bonding/TokenManagement) uses `@orca-so/whirlpools-sdk` to compute token amounts from position liquidity:
+
+1. Query all full-range positions from the Whirlpool via Shyft GraphQL API
+2. For each position, compute token amounts: `PoolUtil.getTokenAmountsFromLiquidity(liquidity, sqrtPrice, tickLowerSqrtPrice, tickUpperSqrtPrice, false)`
+3. Sum reserves across positions
+4. Compute LP price: `priceLp = (reserveOlas * 1e28) / totalLiquidity`
+
+This is more precise for partial positions but overkill when the vault balances give the total directly.
+
+**Solana pool constants**:
+
+| Constant | Address |
+|---|---|
+| Bridged token mint | `CeZ77ti3nPAmcgRkBkUC1JcoAhR8jRti2DHaCcuyUnzR` |
+| Lockbox | `3UaaD3puPemoZk7qFYJWWCvmN6diS7P63YR4Si9QRpaW` |
+| Position | `EHQbFx7m5gPBqXXiViNBfHJDRUuFgqqYsLzuWu18ckaR` |
+| Token vault A (SOL) | `CLA8hU8SkdCZ9cJVLMfZQfcgAsywZ9txBJ6qrRAqthLx` |
+| Token vault B (OLAS) | `6E8pzDK8uwpENc49kp5xo5EGydYjtamPSmUKXxum4ybb` |
+| Tick spacing | 64 |
+| Full range ticks | -443584 to 443584 |
+| LP token decimals | 8 (SVM_AMOUNT_DIVISOR = 1e8) |
+| SOL decimals | 9 |
+| OLAS decimals (on Solana) | 8 |
 
 ---
 
@@ -259,7 +330,19 @@ The Graph auto-generates query field names that differ from entity names. Correc
 
 ### Validating Against Dune
 
-Subgraph output should be compared against Dune queries [4963482](https://dune.com/queries/4963482) and [5383248](https://dune.com/queries/5383248/8807520) to ensure correctness. Key comparison points: treasury LP balance, pool reserves, USD valuations, bridged LP balances. Expect < 1% discrepancy from block timing and price source differences. Solana LP will be missing from subgraph totals (not indexable by The Graph). See [README.md — Validating Subgraph Against Dune](README.md#validating-subgraph-against-dune) for full details.
+See [README.md — Validating Subgraph Against Dune](README.md#validating-subgraph-against-dune) for full comparison approach and tables.
+
+### Dune vs Subgraph Methodology Differences
+
+The Dune POL total (~$3.7M) is ~31% higher than the subgraph total (~$2.5M). Root causes identified (2026-03-18):
+
+**Arbitrum double-counting**: Dune query 5383248 includes `arbitrum_pol` twice in the `UNION ALL`. Impact: +$106K.
+
+**OLAS price inflation**: Dune values the ETH pool as `2 × OLAS_reserves × OLAS_price` (query 4963482), where OLAS price comes from query 2767077 — the **unweighted average of the last 10 DEX trades** (query 2766789). This produces an OLAS price ~42% higher than CoinGecko's VWAP ($0.069 vs $0.048), inflating the total by ~$1M.
+
+**Subgraph approach**: Uses `2 × paired_token_reserves × Chainlink_price`. Does not depend on OLAS price for 7 of 8 chains. Chainlink feeds are audited, volume-weighted, and manipulation-resistant. Only the Solana pool partially depends on CoinGecko OLAS price.
+
+Dune query chain: 5383248 (aggregator) → 4963482 (ETH POL) → 2767077 (OLAS price) → 2766789 (last 10 DEX trades).
 
 ---
 
