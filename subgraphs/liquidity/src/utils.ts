@@ -202,7 +202,7 @@ export function getOrCreateBridgedPOLHolding(
  * Recalculate USD valuations on LPTokenMetrics using current reserves and Chainlink prices.
  * poolLiquidityUsd (8 decimals) = 2 * reserve1_ETH_wei * ethUsdPrice_8dec / 1e18
  * protocolOwnedLiquidityUsd = poolLiquidityUsd * treasuryPercentage / 10000
- * Also updates maticUsdPrice from the MATIC/USD feed (for off-chain POL aggregation).
+ * Also updates maticUsdPrice and solUsdPrice from their respective feeds (for off-chain POL aggregation).
  */
 export function recalculateUsd(metrics: LPTokenMetrics): void {
   let ethPriceData = PriceData.load(ETH_PRICE_ID);

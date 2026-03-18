@@ -49,10 +49,14 @@ function fetch(url, options = {}) {
       let data = '';
       res.on('data', chunk => data += chunk);
       res.on('end', () => {
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          reject(new Error(`HTTP ${res.statusCode} from ${url}: ${data.slice(0, 200)}`));
+          return;
+        }
         try {
           resolve(JSON.parse(data));
         } catch (e) {
-          reject(new Error(`Failed to parse response from ${url}: ${data.slice(0, 200)}`));
+          reject(new Error(`Failed to parse JSON from ${url} (HTTP ${res.statusCode}): ${data.slice(0, 200)}`));
         }
       });
     });
@@ -100,7 +104,7 @@ const ETH_QUERY_SAFE = `{
   lptokenMetrics(id: "global") {
     totalSupply treasurySupply treasuryPercentage
     currentReserve0 currentReserve1
-    ethUsdPrice maticUsdPrice
+    ethUsdPrice
     poolLiquidityUsd protocolOwnedLiquidityUsd
   }
   bridgedPOLHoldings(first: 10) {
@@ -185,12 +189,15 @@ async function main() {
 
   log('Fetching data from all sources...\n');
 
-  // Try full query first (v0.0.4+ with solUsdPrice), fall back to safe query
+  // Try queries with progressively fewer fields to support older deployments
   async function fetchEthSubgraph() {
     const full = await graphqlQuery(SUBGRAPH_URLS.ethereum, ETH_QUERY_FULL);
     if (full.data) return full;
     return graphqlQuery(SUBGRAPH_URLS.ethereum, ETH_QUERY_SAFE);
   }
+
+  // Note: ETH_QUERY_FULL includes maticUsdPrice + solUsdPrice (v0.0.4+)
+  //       ETH_QUERY_SAFE includes only ethUsdPrice (works with all versions)
 
   // Fetch everything in parallel
   const [ethData, gnData, pgData, arbData, optData, baseData, celoData, solVaultA, solVaultB, cgPrices] =

@@ -59,7 +59,7 @@ type LPTokenMetrics @entity(immutable: false) {
 
 # Chainlink price tracker (one entity per feed)
 type PriceData @entity(immutable: false) {
-  id: ID! # "eth-usd" or "matic-usd"
+  id: ID! # "eth-usd", "matic-usd", or "sol-usd"
   price: BigInt! # price in 8 decimals from Chainlink
   lastUpdatedBlock: BigInt!
   lastUpdatedTimestamp: BigInt!
