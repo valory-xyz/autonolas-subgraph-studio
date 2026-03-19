@@ -12,9 +12,20 @@ type PoolMetrics @entity(immutable: false) {
   totalSupply: BigInt! # BPT total supply (minted - burned)
   totalMinted: BigInt! # cumulative BPT minted
   totalBurned: BigInt! # cumulative BPT burned
+  # Chainlink price (Celo only — CELO/USD from on-chain oracle)
+  celoUsdPrice: BigInt! # 8 decimals, 0 on non-Celo chains
+
   lastUpdatedBlock: BigInt!
   lastUpdatedTimestamp: BigInt!
   lastUpdatedTransaction: Bytes!
+}
+
+# Chainlink price tracker (Celo only)
+type PriceData @entity(immutable: false) {
+  id: ID! # "celo-usd"
+  price: BigInt! # price in 8 decimals from Chainlink
+  lastUpdatedBlock: BigInt!
+  lastUpdatedTimestamp: BigInt!
 }
 
 # Individual BPT transfer event

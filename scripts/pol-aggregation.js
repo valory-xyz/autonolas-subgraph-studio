@@ -31,7 +31,6 @@ const SUBGRAPH_URLS = {
 };
 
 const SOLANA_RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
-const COINGECKO_API = 'https://api.coingecko.com/api/v3/simple/price';
 
 // Solana pool vault accounts
 const SOL_VAULT = 'CLA8hU8SkdCZ9cJVLMfZQfcgAsywZ9txBJ6qrRAqthLx';
@@ -121,12 +120,26 @@ const ETH_QUERY_SAFE = `{
   _meta { block { number } hasIndexingErrors }
 }`;
 
-const L2_QUERY = `{
+// Two L2 query variants: with and without celoUsdPrice (added with Celo Chainlink support)
+const L2_QUERY_FULL = `{
+  poolMetrics_collection(first: 1) {
+    id token0 token1 reserve0 reserve1 totalSupply celoUsdPrice
+  }
+  _meta { block { number } hasIndexingErrors }
+}`;
+
+const L2_QUERY_SAFE = `{
   poolMetrics_collection(first: 1) {
     id token0 token1 reserve0 reserve1 totalSupply
   }
   _meta { block { number } hasIndexingErrors }
 }`;
+
+async function queryL2(url) {
+  const full = await graphqlQuery(url, L2_QUERY_FULL);
+  if (full.data) return full;
+  return graphqlQuery(url, L2_QUERY_SAFE);
+}
 
 // ─── Chain-specific valuation logic ──────────────────────────────────────────
 
@@ -174,13 +187,15 @@ const CHAIN_CONFIG = {
   },
   celo: {
     pair: 'CELO-OLAS',
-    // token0 = CELO (if reserves available), value = 2 * CELO * CELO/USD
-    // Reserves may be 0 if Sync handler not deployed
-    valuate: (pool, prices) => {
+    // token0 = CELO, value = 2 * CELO * CELO/USD
+    // CELO/USD from Chainlink on Celo chain (stored in poolMetrics.celoUsdPrice)
+    valuate: (pool) => {
       const r0 = BigInt(pool.reserve0);
       if (r0 === 0n) return { tvl: null, method: 'RESERVES UNAVAILABLE (needs Sync handler redeploy)' };
+      if (!pool.celoUsdPrice || pool.celoUsdPrice === '0') return { tvl: null, method: 'CELO/USD PRICE UNAVAILABLE (needs Chainlink deployment)' };
       const celo = Number(r0) / 1e18;
-      return { tvl: celo * 2 * prices.celo, method: `2×CELO×$${prices.celo.toFixed(6)}` };
+      const celoPrice = Number(BigInt(pool.celoUsdPrice)) / 1e8;
+      return { tvl: celo * 2 * celoPrice, method: `2×CELO×$${celoPrice.toFixed(6)} (Chainlink)` };
     },
   },
 };
@@ -207,33 +222,28 @@ async function main() {
   //       ETH_QUERY_SAFE includes only ethUsdPrice (works with all versions)
 
   // Fetch everything in parallel
-  const [ethData, gnData, pgData, arbData, optData, baseData, celoData, solVaultA, solVaultB, cgPrices] =
+  const [ethData, gnData, pgData, arbData, optData, baseData, celoData, solVaultA, solVaultB] =
     await Promise.all([
       fetchEthSubgraph(),
-      graphqlQuery(SUBGRAPH_URLS.gnosis, L2_QUERY),
-      graphqlQuery(SUBGRAPH_URLS.polygon, L2_QUERY),
-      graphqlQuery(SUBGRAPH_URLS.arbitrum, L2_QUERY),
-      graphqlQuery(SUBGRAPH_URLS.optimism, L2_QUERY),
-      graphqlQuery(SUBGRAPH_URLS.base, L2_QUERY),
-      graphqlQuery(SUBGRAPH_URLS.celo, L2_QUERY),
+      queryL2(SUBGRAPH_URLS.gnosis),
+      queryL2(SUBGRAPH_URLS.polygon),
+      queryL2(SUBGRAPH_URLS.arbitrum),
+      queryL2(SUBGRAPH_URLS.optimism),
+      queryL2(SUBGRAPH_URLS.base),
+      queryL2(SUBGRAPH_URLS.celo),
       solanaRpc('getTokenAccountBalance', [SOL_VAULT]),
       solanaRpc('getTokenAccountBalance', [OLAS_VAULT]),
-      fetch(`${COINGECKO_API}?ids=autonolas,celo,solana,polygon-ecosystem-token&vs_currencies=usd`, {
-        headers: { 'Accept': 'application/json', 'User-Agent': 'autonolas-pol-aggregator/1.0' },
-      }),
     ]);
 
-  // ─── Prices ───
+  // ─── Prices (all from Chainlink via subgraphs) ───
   const metrics = ethData.data.lptokenMetrics;
   const prices = {
     eth: Number(BigInt(metrics.ethUsdPrice)) / 1e8,
     matic: Number(BigInt(metrics.maticUsdPrice || '0')) / 1e8,
     sol: 0,
-    olas: cgPrices.autonolas?.usd || 0,
-    celo: cgPrices.celo?.usd || 0,
   };
 
-  // SOL/USD: try from lptokenMetrics.solUsdPrice (v0.0.4+), then PriceData entity, then CoinGecko
+  // SOL/USD: try from lptokenMetrics.solUsdPrice (v0.0.4+), then PriceData entity
   if (metrics.solUsdPrice && metrics.solUsdPrice !== '0') {
     prices.sol = Number(BigInt(metrics.solUsdPrice)) / 1e8;
   }
@@ -243,21 +253,14 @@ async function main() {
       prices.sol = Number(BigInt(solPriceEntity.price)) / 1e8;
     }
   }
-  if (prices.sol === 0) {
-    prices.sol = cgPrices.solana?.usd || 0;
-  }
 
-  // MATIC fallback to CoinGecko
-  if (prices.matic === 0) {
-    prices.matic = cgPrices['polygon-ecosystem-token']?.usd || 0;
-  }
+  // CELO/USD comes from the Celo subgraph's poolMetrics.celoUsdPrice (Chainlink on Celo chain)
 
-  log('Prices:');
-  log(`  ETH/USD  (Chainlink): $${prices.eth.toFixed(2)}`);
-  log(`  MATIC/USD (Chainlink): $${prices.matic.toFixed(4)}`);
-  log(`  SOL/USD  (Chainlink): $${prices.sol.toFixed(2)}`);
-  log(`  OLAS/USD (CoinGecko): $${prices.olas.toFixed(6)}`);
-  log(`  CELO/USD (CoinGecko): $${prices.celo.toFixed(6)}`);
+  log('Prices (all Chainlink):');
+  log(`  ETH/USD:   $${prices.eth.toFixed(2)}`);
+  log(`  MATIC/USD: $${prices.matic.toFixed(4)}`);
+  log(`  SOL/USD:   $${prices.sol.toFixed(2)}`);
+  log(`  CELO/USD:  from Celo subgraph (Chainlink on Celo chain)`);
 
   // ─── Bridged LP balances from ETH subgraph ───
   const bridged = {};
@@ -328,14 +331,13 @@ async function main() {
   }
 
   // 8. Solana
-  // Note: Treasury holds ~99.995% of bridged Solana LP on L1.
-  // The exact share requires fetching the bridged LP token's ERC20 totalSupply
-  // on Ethereum (not available in the subgraph). Using approximation for now.
+  // Uses 2 × SOL_vault × SOL/USD (same balanced-pool approach as all other chains).
+  // SOL/USD from Chainlink via Ethereum subgraph. No OLAS price needed.
+  // Treasury holds ~99.995% of bridged supply (approximation).
   const solBalance = Number(solVaultA.result.value.uiAmount);
-  const olasBalance = Number(solVaultB.result.value.uiAmount);
-  const solTvl = solBalance * prices.sol + olasBalance * prices.olas;
+  const solTvl = prices.sol > 0 ? solBalance * 2 * prices.sol : null;
   const solShare = 99.995; // approximation — Treasury holds nearly all bridged supply
-  const solPol = solTvl * (solShare / 100);
+  const solPol = solTvl !== null ? solTvl * (solShare / 100) : null;
 
   results.push({
     chain: 'Solana',
@@ -344,9 +346,8 @@ async function main() {
     poolTvl: solTvl,
     treasuryPol: solPol,
     share: solShare,
-    method: `SOL×$${prices.sol.toFixed(2)} + OLAS×$${prices.olas.toFixed(6)}`,
+    method: solTvl !== null ? `2×SOL×$${prices.sol.toFixed(2)} (Chainlink)` : 'SOL/USD PRICE UNAVAILABLE',
     solReserves: solBalance,
-    olasReserves: olasBalance,
     block: 'Solana slot ' + solVaultA.result.context.slot,
   });
 

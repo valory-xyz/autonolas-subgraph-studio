@@ -28,6 +28,8 @@ dataSources:
           file: ../../abis/BalancerV2Vault.json
         - name: UniswapV2Pair
           file: ../../abis/UniswapV2Pair.json
+        - name: AggregatorV3Interface
+          file: ../../abis/AggregatorV3Interface.json
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleBPTTransfer

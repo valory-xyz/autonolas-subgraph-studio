@@ -1,15 +1,50 @@
+import { Address, BigInt } from '@graphprotocol/graph-ts';
 import { Transfer } from '../generated/BalancerPool/BalancerV2WeightedPool';
 import { BalancerV2WeightedPool } from '../generated/BalancerPool/BalancerV2WeightedPool';
 import { BalancerV2Vault } from '../generated/BalancerPool/BalancerV2Vault';
 import { Sync, UniswapV2Pair } from '../generated/BalancerPool/UniswapV2Pair';
+import { AggregatorV3Interface } from '../generated/BalancerPool/AggregatorV3Interface';
 
-import { BPTTransfer } from '../generated/schema';
+import { BPTTransfer, PriceData } from '../generated/schema';
 
 import {
   isZeroAddress,
   getOrCreatePoolMetrics,
   BALANCER_VAULT,
+  CHAINLINK_CELO_USD,
+  CELO_PRICE_ID,
+  PRICE_STALENESS_THRESHOLD,
 } from './utils';
+
+/**
+ * Refresh a Chainlink price feed if the cached value is stale (> 1 hour old).
+ */
+function refreshChainlinkPrice(
+  feedAddress: Address,
+  priceId: string,
+  blockNumber: BigInt,
+  timestamp: BigInt
+): void {
+  let existing = PriceData.load(priceId);
+  let shouldRefresh =
+    existing == null ||
+    timestamp.minus(existing.lastUpdatedTimestamp).gt(PRICE_STALENESS_THRESHOLD);
+
+  if (shouldRefresh) {
+    let chainlink = AggregatorV3Interface.bind(feedAddress);
+    let result = chainlink.try_latestRoundData();
+    if (!result.reverted) {
+      let price = result.value.getAnswer();
+      if (price.gt(BigInt.zero())) {
+        let priceData = existing != null ? existing : new PriceData(priceId);
+        priceData.price = price;
+        priceData.lastUpdatedBlock = blockNumber;
+        priceData.lastUpdatedTimestamp = timestamp;
+        priceData.save();
+      }
+    }
+  }
+}
 
 /**
  * Handle BPT / LP Token Transfer events.
@@ -89,10 +124,13 @@ export function handleBPTTransfer(event: Transfer): void {
 /**
  * Handle UniswapV2 Sync events (Celo/Ubeswap only).
  * Updates pool reserves directly from the event params.
- * Also populates token0/token1 addresses via contract calls on first invocation.
+ * Populates token0/token1 addresses on first invocation.
+ * Fetches CELO/USD price from Chainlink on Celo mainnet.
  */
 export function handleUniswapSync(event: Sync): void {
   let poolAddress = event.address;
+  let timestamp = event.block.timestamp;
+  let blockNumber = event.block.number;
   let metrics = getOrCreatePoolMetrics(poolAddress);
 
   metrics.reserve0 = event.params.reserve0;
@@ -111,8 +149,17 @@ export function handleUniswapSync(event: Sync): void {
     }
   }
 
-  metrics.lastUpdatedBlock = event.block.number;
-  metrics.lastUpdatedTimestamp = event.block.timestamp;
+  // Fetch CELO/USD from Chainlink (with staleness caching)
+  refreshChainlinkPrice(CHAINLINK_CELO_USD, CELO_PRICE_ID, blockNumber, timestamp);
+
+  // Update celoUsdPrice on metrics from PriceData
+  let celoPrice = PriceData.load(CELO_PRICE_ID);
+  if (celoPrice != null && celoPrice.price.gt(BigInt.zero())) {
+    metrics.celoUsdPrice = celoPrice.price;
+  }
+
+  metrics.lastUpdatedBlock = blockNumber;
+  metrics.lastUpdatedTimestamp = timestamp;
   metrics.lastUpdatedTransaction = event.transaction.hash;
   metrics.save();
 }

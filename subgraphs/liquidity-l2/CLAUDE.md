@@ -92,7 +92,8 @@ Shared handler for all 6 chains (both Balancer and Ubeswap pools). On each LP Tr
 Handles reserve updates for the Celo Ubeswap (UniswapV2) pool:
 1. Reads `reserve0` and `reserve1` directly from the Sync event params
 2. On first invocation, populates `token0`/`token1` addresses via `pair.token0()`/`pair.token1()` contract calls
-3. Updates `PoolMetrics` with fresh reserves and timestamp
+3. Fetches CELO/USD from Chainlink on Celo (`0x0568fD19986748cEfF3301e55c0eb1E729E0Ab7e`) with 1-hour staleness caching, stores in `PriceData("celo-usd")` and `poolMetrics.celoUsdPrice`
+4. Updates `PoolMetrics` with fresh reserves and timestamp
 
 ### Design Decisions
 
@@ -117,6 +118,9 @@ All in `src/utils.ts`:
 | Constant | Value |
 |----------|-------|
 | `BALANCER_VAULT` | `0xBA12222222228d8Ba445958a75a0704d566BF2C8` |
+| `CHAINLINK_CELO_USD` | `0x0568fD19986748cEfF3301e55c0eb1E729E0Ab7e` |
+| `CELO_PRICE_ID` | `"celo-usd"` |
+| `PRICE_STALENESS_THRESHOLD` | 3600 (1 hour) |
 | `ZERO_ADDRESS` | `0x0000000000000000000000000000000000000000` |
 
 ---
@@ -146,6 +150,7 @@ yarn generate-manifests    # Outputs: subgraph.gnosis.yaml, subgraph.matic.yaml,
 | BalancerV2WeightedPool | Balancer chains | BPT Transfer events + `getPoolId()` call |
 | BalancerV2Vault | Balancer chains | `getPoolTokens(poolId)` call for reserves |
 | UniswapV2Pair | Celo | Transfer events + Sync events + `token0()`/`token1()` calls |
+| AggregatorV3Interface | Celo | Chainlink CELO/USD `latestRoundData()` call |
 
 All ABIs are included in every manifest for codegen compatibility. The Celo manifest uses UniswapV2Pair as primary ABI; Balancer manifests use BalancerV2WeightedPool.
 
@@ -239,7 +244,7 @@ For example, if Gnosis pool has 191K WXDAI + 3.8M OLAS, TVL ~ $384K, and Treasur
 
 5. **Ubeswap/UniswapV2 Architecture (Celo)**: The Celo pool (`0x2976Fa805141b467BCBc6334a69AffF4D914d96A`) is a standard UniswapV2 pair. Reserves are emitted in `Sync(uint112, uint112)` events on every swap/join/exit. Token addresses come from `token0()`/`token1()` view functions. No Vault or poolId concept.
 
-6. **No USD Valuation On-Chain**: This subgraph does not compute USD values. Different chains have different paired tokens (WXDAI, WMATIC, WETH, USDC, CELO) requiring different price feeds. USD conversion is deferred to the off-chain aggregation layer.
+6. **No USD Valuation On-Chain (Balancer chains)**: The 5 Balancer subgraphs do not compute USD values — USD conversion is deferred to the off-chain aggregation layer. **Celo is the exception**: it fetches CELO/USD from Chainlink on Celo (`0x0568fD19986748cEfF3301e55c0eb1E729E0Ab7e`) and stores it in `poolMetrics.celoUsdPrice` and `PriceData("celo-usd")`.
 
 7. **No Treasury Tracking**: The subgraph does not track who holds LP tokens (no equivalent of `TreasuryHoldings`). It only tracks aggregate supply and pool reserves.
 

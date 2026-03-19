@@ -79,7 +79,7 @@ Source: [configuration.json](https://github.com/valory-xyz/autonolas-tokenomics/
 
 ## Full POL Calculation Algorithm
 
-Total POL USD is computed by `scripts/pol-aggregation.js`, which combines data from three sources: subgraph queries (on-chain), Solana RPC (off-chain), and CoinGecko API (off-chain). Here is the complete algorithm.
+Total POL USD is computed by `scripts/pol-aggregation.js`, which combines data from two sources: subgraph queries (on-chain via Chainlink) and Solana RPC (off-chain). **All prices come from Chainlink oracles** — no external price APIs are used.
 
 ### Step 1: Fetch Data (all in parallel)
 
@@ -91,21 +91,21 @@ Total POL USD is computed by `scripts/pol-aggregation.js`, which combines data f
 | Arbitrum subgraph | `poolMetrics` (reserve0=OLAS, reserve1=WETH, totalSupply) | GraphQL |
 | Optimism subgraph | `poolMetrics` (reserve0=WETH, reserve1=OLAS, totalSupply) | GraphQL |
 | Base subgraph | `poolMetrics` (reserve0=OLAS, reserve1=USDC, totalSupply) | GraphQL |
-| Celo subgraph | `poolMetrics` (reserve0=CELO, reserve1=OLAS, totalSupply) | GraphQL |
-| Solana RPC | SOL vault balance, OLAS vault balance | `getTokenAccountBalance` |
-| CoinGecko API | OLAS/USD, CELO/USD (+ SOL/USD fallback) | REST |
+| Celo subgraph | `poolMetrics` (reserve0=CELO, reserve1=OLAS, totalSupply, celoUsdPrice) | GraphQL |
+| Solana RPC | SOL vault balance | `getTokenAccountBalance` |
 
 ### Step 2: Resolve Prices
 
-| Price | Primary Source (on-chain) | Fallback (off-chain) |
-|---|---|---|
-| ETH/USD | Chainlink via Ethereum subgraph `ethUsdPrice` | — |
-| MATIC/USD | Chainlink via Ethereum subgraph `maticUsdPrice` | CoinGecko `polygon-ecosystem-token` |
-| SOL/USD | Chainlink via Ethereum subgraph `solUsdPrice` or `priceData("sol-usd")` | CoinGecko `solana` |
-| OLAS/USD | — | CoinGecko `autonolas` |
-| CELO/USD | — | CoinGecko `celo` |
+All prices come from Chainlink oracles, fetched on-chain by the respective subgraphs with 1-hour staleness caching:
 
-Chainlink prices (ETH, MATIC, SOL) are fetched on-chain by the Ethereum subgraph's `handleSync` handler with 1-hour staleness caching. OLAS and CELO prices have no Chainlink feed on Ethereum mainnet, so they always come from CoinGecko.
+| Price | Source | Subgraph |
+|---|---|---|
+| ETH/USD | Chainlink `0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419` | Ethereum (`ethUsdPrice`) |
+| MATIC/USD | Chainlink `0x7bAC85A8a13A4BcD8abb3eB7d6b4d632c5a57676` | Ethereum (`maticUsdPrice`) |
+| SOL/USD | Chainlink `0x4ffC43a60e009B551865A93d232E33Fce9f01507` | Ethereum (`solUsdPrice`) |
+| CELO/USD | Chainlink `0x0568fD19986748cEfF3301e55c0eb1E729E0Ab7e` | Celo (`celoUsdPrice`) |
+
+OLAS/USD price is **not needed** — all pools use the `2 × paired_token_reserves × paired_token_price` method, including Solana (`2 × SOL_vault × SOL/USD`).
 
 ### Step 3: Compute POL Per Chain
 
@@ -125,22 +125,22 @@ Chainlink prices (ETH, MATIC, SOL) are fetched on-chain by the Ethereum subgraph
 | Arbitrum | `2 × WETH_reserves × ETH/USD × (bridged_balance / BPT_supply)` | `ethUsdPrice` from Ethereum subgraph |
 | Optimism | `2 × WETH_reserves × ETH/USD × (bridged_balance / BPT_supply)` | `ethUsdPrice` from Ethereum subgraph |
 
-**Group C — On-chain reserves + off-chain price (CoinGecko):**
+**Group C — On-chain reserves + Chainlink price from Celo subgraph:**
 
-| Chain | Formula | Off-Chain Dependency |
+| Chain | Formula | Price Source |
 |---|---|---|
-| Celo | `2 × CELO_reserves × CELO/USD × (bridged_balance / BPT_supply)` | CoinGecko CELO/USD (no Chainlink on Ethereum mainnet) |
+| Celo | `2 × CELO_reserves × CELO/USD × (bridged_balance / BPT_supply)` | Chainlink CELO/USD on Celo chain (`0x0568fD19986748cEfF3301e55c0eb1E729E0Ab7e`), stored in Celo subgraph `poolMetrics.celoUsdPrice` |
 
-**Group D — Fully off-chain reserves + prices (Solana RPC + CoinGecko/Chainlink):**
+**Group D — Off-chain reserves + Chainlink price (Solana RPC):**
 
 | Chain | Formula | Off-Chain Dependencies |
 |---|---|---|
-| Solana | `(SOL_vault × SOL/USD + OLAS_vault × OLAS/USD) × treasury_share` | Solana RPC for vault balances, CoinGecko for OLAS/USD, Chainlink SOL/USD from subgraph |
+| Solana | `2 × SOL_vault × SOL/USD × treasury_share` | Solana RPC for SOL vault balance, Chainlink SOL/USD from Ethereum subgraph |
 
-Solana vault accounts:
+Solana vault account:
 - SOL vault (`CLA8hU8SkdCZ9cJVLMfZQfcgAsywZ9txBJ6qrRAqthLx`) — 9 decimals
-- OLAS vault (`6E8pzDK8uwpENc49kp5xo5EGydYjtamPSmUKXxum4ybb`) — 8 decimals
-- Treasury share: approximated as 99.995% (Treasury holds nearly all bridged LP supply on L1). For exact computation, fetch the bridged LP token's `totalSupply` on Ethereum and divide by the Treasury's balance from the subgraph.
+- Formula: `2 × SOL_vault × SOL/USD` (same balanced-pool approach as all other chains, no OLAS price needed)
+- Treasury share: approximated as 99.995% (Treasury holds nearly all bridged LP supply on L1)
 
 ### Step 4: Sum
 
@@ -180,9 +180,9 @@ Multi-network `liquidity-l2` subgraph deployed on 6 chains:
 
 **What works today**: All 7 EVM subgraphs provide reserves, supply, and bridged LP balances. The Ethereum subgraph provides Chainlink prices for ETH, MATIC, SOL. Stablecoin pools (Gnosis WXDAI, Base USDC) need no external price.
 
-**Solana**: Pool reserves fetched via Solana RPC `getTokenAccountBalance` calls on the vault accounts (SOL vault: `CLA8hU8SkdCZ9cJVLMfZQfcgAsywZ9txBJ6qrRAqthLx`, OLAS vault: `6E8pzDK8uwpENc49kp5xo5EGydYjtamPSmUKXxum4ybb`). SOL/USD price from Chainlink in the Ethereum subgraph.
+**Solana**: SOL vault balance fetched via Solana RPC `getTokenAccountBalance` on `CLA8hU8SkdCZ9cJVLMfZQfcgAsywZ9txBJ6qrRAqthLx`. Valued as `2 × SOL_vault × SOL/USD` where SOL/USD comes from Chainlink in the Ethereum subgraph.
 
-**Aggregation script**: `scripts/pol-aggregation.js` at repo root — queries all 7 subgraphs + Solana RPC + CoinGecko, computes total POL USD.
+**Aggregation script**: `scripts/pol-aggregation.js` at repo root — queries all 7 subgraphs + Solana RPC, computes total POL USD. All prices from Chainlink.
 
 ```bash
 node scripts/pol-aggregation.js            # human-readable output
@@ -194,7 +194,7 @@ Subgraph URLs can be overridden via env vars: `SUBGRAPH_ETH_URL`, `SUBGRAPH_GNOS
 
 **Still needed**:
 - Celo subgraph redeployment with UniswapV2 Sync handler
-- CELO/USD from CoinGecko (no Chainlink feed on Ethereum mainnet) — already integrated in the script
+- Celo subgraph redeployment with Chainlink CELO/USD feed
 - Dune comparison automation (compare script output against Dune query results)
 
 ## Data Sources Reference
@@ -205,7 +205,7 @@ Subgraph URLs can be overridden via env vars: `SUBGRAPH_ETH_URL`, `SUBGRAPH_GNOS
 | Dune query 4963482 | LP supply, POL, USD valuations (all chains) | [Dune](https://dune.com/queries/4963482) |
 | Dune query 5383248 | Total POL USD (shown on olas.network/bond) | [Dune](https://dune.com/queries/5383248/8807520) |
 | Dune query 5409446 | Protocol revenue from POL | [Dune](https://dune.com/queries/5409446/8836411) |
-| CoinGecko | OLAS/USD price | API |
+| Chainlink | ETH/USD, MATIC/USD, SOL/USD (Ethereum), CELO/USD (Celo) | Per-chain oracle contracts |
 | Chainlink | ETH/USD and other asset prices (on-chain) | Per-chain oracle contracts |
 | Tokenomics docs | Contract addresses, LP bridging, configuration | [GitHub](https://github.com/valory-xyz/autonolas-tokenomics/blob/main/docs) |
 
@@ -285,7 +285,7 @@ This produces an unreliable OLAS price because:
 - Only 10 trades with no volume weighting (a $10 trade has the same weight as a $100K trade)
 - No time filter — trades can span hours
 - Includes all DEX venues, some with thin liquidity and skewed prices
-- Implied Dune OLAS price is ~$0.069 vs CoinGecko VWAP of ~$0.048 — a **42% markup**
+- Implied Dune OLAS price is ~$0.069 vs market VWAP of ~$0.048 — a **42% markup**
 
 Since Dune uses `2 × OLAS_reserves × OLAS_price` for the ETH pool (the largest POL component at ~69% of total), this inflated price propagates to ~$1M of overcount.
 
@@ -301,8 +301,8 @@ The subgraph uses `2 × paired_token_reserves × Chainlink_price` — it does **
 | Arbitrum | 2 × WETH × Chainlink ETH/USD | No |
 | Optimism | 2 × WETH × Chainlink ETH/USD | No |
 | Base | 2 × USDC (~$1) | No |
-| Celo | 2 × CELO × CoinGecko CELO/USD | No |
-| Solana | SOL × Chainlink SOL/USD + OLAS × CoinGecko | Yes (partial) |
+| Celo | 2 × CELO × Chainlink CELO/USD (on Celo chain) | No |
+| Solana | 2 × SOL × Chainlink SOL/USD | No |
 
 Chainlink feeds are audited, volume-weighted, and manipulation-resistant. The subgraph's POL valuation is independent of OLAS market price for all major pools.
 
