@@ -136,16 +136,20 @@ export function handleUniswapSync(event: Sync): void {
   metrics.reserve0 = event.params.reserve0;
   metrics.reserve1 = event.params.reserve1;
 
-  // Populate token addresses on first Sync (one-time contract call)
-  if (metrics.token0.length == 0) {
+  // Populate token addresses if not yet set (checked independently)
+  if (metrics.token0.length == 0 || metrics.token1.length == 0) {
     let pair = UniswapV2Pair.bind(poolAddress);
-    let token0Result = pair.try_token0();
-    let token1Result = pair.try_token1();
-    if (!token0Result.reverted) {
-      metrics.token0 = token0Result.value;
+    if (metrics.token0.length == 0) {
+      let token0Result = pair.try_token0();
+      if (!token0Result.reverted) {
+        metrics.token0 = token0Result.value;
+      }
     }
-    if (!token1Result.reverted) {
-      metrics.token1 = token1Result.value;
+    if (metrics.token1.length == 0) {
+      let token1Result = pair.try_token1();
+      if (!token1Result.reverted) {
+        metrics.token1 = token1Result.value;
+      }
     }
   }
 

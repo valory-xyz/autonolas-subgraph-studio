@@ -157,6 +157,7 @@ const CHAIN_CONFIG = {
     pair: 'OLAS-WMATIC',
     // token0 = WMATIC, value = 2 * WMATIC * MATIC/USD
     valuate: (pool, prices) => {
+      if (prices.matic <= 0) return { tvl: null, method: 'MATIC/USD PRICE UNAVAILABLE' };
       const wmatic = Number(BigInt(pool.reserve0)) / 1e18;
       return { tvl: wmatic * 2 * prices.matic, method: `2×WMATIC×$${prices.matic.toFixed(4)}` };
     },
@@ -234,6 +235,15 @@ async function main() {
       solanaRpc('getTokenAccountBalance', [SOL_VAULT]),
       solanaRpc('getTokenAccountBalance', [OLAS_VAULT]),
     ]);
+
+  // ─── Validate ETH subgraph response ───
+  if (!ethData.data || !ethData.data.lptokenMetrics) {
+    const errMsg = ethData.errors ? ethData.errors.map(e => e.message).join('; ') : 'lptokenMetrics is null';
+    throw new Error(`Ethereum subgraph query failed: ${errMsg}`);
+  }
+  if (ethData.data._meta && ethData.data._meta.hasIndexingErrors) {
+    log('WARNING: Ethereum subgraph has indexing errors');
+  }
 
   // ─── Prices (all from Chainlink via subgraphs) ───
   const metrics = ethData.data.lptokenMetrics;
@@ -334,8 +344,18 @@ async function main() {
   // Uses 2 × SOL_vault × SOL/USD (same balanced-pool approach as all other chains).
   // SOL/USD from Chainlink via Ethereum subgraph. No OLAS price needed.
   // Treasury holds ~99.995% of bridged supply (approximation).
-  const solBalance = Number(solVaultA.result.value.uiAmount);
-  const solTvl = prices.sol > 0 ? solBalance * 2 * prices.sol : null;
+  const solVaultOk = solVaultA && solVaultA.result && solVaultA.result.value;
+  const solBalance = solVaultOk ? Number(solVaultA.result.value.uiAmount) : 0;
+  let solTvl = null;
+  let solMethod = 'SOLANA RPC ERROR';
+  if (!solVaultOk) {
+    solMethod = 'SOLANA RPC ERROR: ' + (solVaultA && solVaultA.error ? solVaultA.error.message : 'unexpected response');
+  } else if (prices.sol <= 0) {
+    solMethod = 'SOL/USD PRICE UNAVAILABLE';
+  } else {
+    solTvl = solBalance * 2 * prices.sol;
+    solMethod = `2×SOL×$${prices.sol.toFixed(2)} (Chainlink)`;
+  }
   const solShare = 99.995; // approximation — Treasury holds nearly all bridged supply
   const solPol = solTvl !== null ? solTvl * (solShare / 100) : null;
 
@@ -346,9 +366,9 @@ async function main() {
     poolTvl: solTvl,
     treasuryPol: solPol,
     share: solShare,
-    method: solTvl !== null ? `2×SOL×$${prices.sol.toFixed(2)} (Chainlink)` : 'SOL/USD PRICE UNAVAILABLE',
+    method: solMethod,
     solReserves: solBalance,
-    block: 'Solana slot ' + solVaultA.result.context.slot,
+    block: solVaultOk ? 'Solana slot ' + solVaultA.result.context.slot : 'N/A',
   });
 
   // ─── Output ───
@@ -413,8 +433,9 @@ async function main() {
     log('\nEthereum metrics:', JSON.stringify(metrics, null, 2));
     log('\nBridged LP holdings:', JSON.stringify(ethData.data.bridgedPOLHoldings, null, 2));
     log('\nPrice data:', JSON.stringify(ethData.data.priceDatas, null, 2));
+    const olasVaultOk = solVaultB && solVaultB.result && solVaultB.result.value;
     log(`\nSolana SOL vault: ${solBalance} SOL`);
-    log(`Solana OLAS vault: ${olasBalance} OLAS`);
+    log(`Solana OLAS vault: ${olasVaultOk ? solVaultB.result.value.uiAmount : 'N/A'} OLAS`);
   }
 }
 
