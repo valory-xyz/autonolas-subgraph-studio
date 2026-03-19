@@ -18,9 +18,15 @@ export const TREASURY_ADDRESS = Address.fromString(
   '0xa0DA53447C0f6C4987964d8463da7e6628B30f82'
 );
 
-// Chainlink ETH/USD price feed proxy on Ethereum mainnet
+// Chainlink price feed proxies on Ethereum mainnet
 export const CHAINLINK_ETH_USD = Address.fromString(
   '0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419'
+);
+export const CHAINLINK_MATIC_USD = Address.fromString(
+  '0x7bAC85A8a13A4BcD8abb3eB7d6b4d632c5a57676'
+);
+export const CHAINLINK_SOL_USD = Address.fromString(
+  '0x4ffC43a60e009B551865A93d232E33Fce9f01507'
 );
 
 // ──────────────────────────────────────────────────────────────
@@ -57,7 +63,9 @@ export const BRIDGED_LP_CELO = Address.fromString(
 export const BASIS_POINTS = BigInt.fromI32(10000); // 100% = 10000 basis points
 export const WEI = BigInt.fromString('1000000000000000000'); // 1e18
 export const GLOBAL_ID = 'global';
-export const PRICE_ID = 'eth-usd';
+export const ETH_PRICE_ID = 'eth-usd';
+export const MATIC_PRICE_ID = 'matic-usd';
+export const SOL_PRICE_ID = 'sol-usd';
 
 // Chainlink price refresh interval: only call latestRoundData()
 // if the stored price is older than this many seconds
@@ -132,6 +140,8 @@ export function getOrCreateLPTokenMetrics(): LPTokenMetrics {
     metrics.currentReserve0 = BigInt.zero();
     metrics.currentReserve1 = BigInt.zero();
     metrics.ethUsdPrice = BigInt.zero();
+    metrics.maticUsdPrice = BigInt.zero();
+    metrics.solUsdPrice = BigInt.zero();
     metrics.poolLiquidityUsd = BigInt.zero();
     metrics.protocolOwnedLiquidityUsd = BigInt.zero();
     metrics.lastUpdated = BigInt.zero();
@@ -189,21 +199,32 @@ export function getOrCreateBridgedPOLHolding(
 // ──────────────────────────────────────────────────────────────
 
 /**
- * Recalculate USD valuations on LPTokenMetrics using current reserves and ETH/USD price.
+ * Recalculate USD valuations on LPTokenMetrics using current reserves and Chainlink prices.
  * poolLiquidityUsd (8 decimals) = 2 * reserve1_ETH_wei * ethUsdPrice_8dec / 1e18
  * protocolOwnedLiquidityUsd = poolLiquidityUsd * treasuryPercentage / 10000
+ * Also updates maticUsdPrice and solUsdPrice from their respective feeds (for off-chain POL aggregation).
  */
 export function recalculateUsd(metrics: LPTokenMetrics): void {
-  let priceData = PriceData.load(PRICE_ID);
-  if (priceData != null && priceData.price.gt(BigInt.zero())) {
-    metrics.ethUsdPrice = priceData.price;
+  let ethPriceData = PriceData.load(ETH_PRICE_ID);
+  if (ethPriceData != null && ethPriceData.price.gt(BigInt.zero())) {
+    metrics.ethUsdPrice = ethPriceData.price;
     metrics.poolLiquidityUsd = BigInt.fromI32(2)
       .times(metrics.currentReserve1)
-      .times(priceData.price)
+      .times(ethPriceData.price)
       .div(WEI);
     metrics.protocolOwnedLiquidityUsd = metrics.poolLiquidityUsd
       .times(metrics.treasuryPercentage)
       .div(BASIS_POINTS);
+  }
+
+  let maticPriceData = PriceData.load(MATIC_PRICE_ID);
+  if (maticPriceData != null && maticPriceData.price.gt(BigInt.zero())) {
+    metrics.maticUsdPrice = maticPriceData.price;
+  }
+
+  let solPriceData = PriceData.load(SOL_PRICE_ID);
+  if (solPriceData != null && solPriceData.price.gt(BigInt.zero())) {
+    metrics.solUsdPrice = solPriceData.price;
   }
 }
 

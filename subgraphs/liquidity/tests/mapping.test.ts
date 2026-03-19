@@ -14,14 +14,36 @@ import { createTransferEvent, createSyncEvent } from './mapping-utils';
 import { TestAddresses, TestValues } from './test-helpers';
 
 // Mock Chainlink latestRoundData for handleSync tests
-function mockChainlinkPrice(price: BigInt): void {
+function mockChainlinkPrices(): void {
   createMockedFunction(
     TestAddresses.CHAINLINK_ETH_USD,
     'latestRoundData',
     'latestRoundData():(uint80,int256,uint256,uint256,uint80)'
   ).returns([
     ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1)),
-    ethereum.Value.fromSignedBigInt(price),
+    ethereum.Value.fromSignedBigInt(TestValues.ETH_PRICE),
+    ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1000000)),
+    ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1000000)),
+    ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1)),
+  ]);
+  createMockedFunction(
+    TestAddresses.CHAINLINK_MATIC_USD,
+    'latestRoundData',
+    'latestRoundData():(uint80,int256,uint256,uint256,uint80)'
+  ).returns([
+    ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1)),
+    ethereum.Value.fromSignedBigInt(TestValues.MATIC_PRICE),
+    ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1000000)),
+    ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1000000)),
+    ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1)),
+  ]);
+  createMockedFunction(
+    TestAddresses.CHAINLINK_SOL_USD,
+    'latestRoundData',
+    'latestRoundData():(uint80,int256,uint256,uint256,uint80)'
+  ).returns([
+    ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1)),
+    ethereum.Value.fromSignedBigInt(TestValues.SOL_PRICE),
     ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1000000)),
     ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1000000)),
     ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1)),
@@ -199,7 +221,7 @@ describe('handleLPTransfer', () => {
 describe('handleSync', () => {
   beforeEach(() => {
     clearStore();
-    mockChainlinkPrice(TestValues.ETH_PRICE);
+    mockChainlinkPrices();
   });
 
   afterEach(() => {
@@ -263,6 +285,50 @@ describe('handleSync', () => {
       'eth-usd',
       'price',
       TestValues.ETH_PRICE.toString()
+    );
+  });
+
+  test('Fetches and stores MATIC/USD price from Chainlink', () => {
+    let event = createSyncEvent(
+      TestValues.RESERVE_OLAS,
+      TestValues.RESERVE_ETH,
+      TestAddresses.POOL
+    );
+    handleSync(event);
+
+    assert.fieldEquals(
+      'PriceData',
+      'matic-usd',
+      'price',
+      TestValues.MATIC_PRICE.toString()
+    );
+    assert.fieldEquals(
+      'LPTokenMetrics',
+      'global',
+      'maticUsdPrice',
+      TestValues.MATIC_PRICE.toString()
+    );
+  });
+
+  test('Fetches and stores SOL/USD price from Chainlink', () => {
+    let event = createSyncEvent(
+      TestValues.RESERVE_OLAS,
+      TestValues.RESERVE_ETH,
+      TestAddresses.POOL
+    );
+    handleSync(event);
+
+    assert.fieldEquals(
+      'PriceData',
+      'sol-usd',
+      'price',
+      TestValues.SOL_PRICE.toString()
+    );
+    assert.fieldEquals(
+      'LPTokenMetrics',
+      'global',
+      'solUsdPrice',
+      TestValues.SOL_PRICE.toString()
     );
   });
 

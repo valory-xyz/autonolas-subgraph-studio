@@ -28,11 +28,5 @@
       "address": "0x5332584890d6e415a6dc910254d6430b8aab7e69",
       "startBlock": 12416046
     }
-  },
-  "celo": {
-    "BalancerPool": {
-      "address": "0x2976Fa805141b467BCBc6334a69AffF4D914d96A",
-      "startBlock": 27100181
-    }
   }
 }

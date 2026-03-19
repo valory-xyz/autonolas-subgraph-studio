@@ -1,3 +1,4 @@
+import { Address } from '@graphprotocol/graph-ts';
 import { Transfer } from '../generated/OLASETHLPToken/ERC20';
 import { Sync } from '../generated/OLASETHPair/UniswapV2Pair';
 import { AggregatorV3Interface } from '../generated/OLASETHPair/AggregatorV3Interface';
@@ -14,9 +15,44 @@ import {
   updateGlobalMetricsAfterTransfer,
   updateGlobalMetricsAfterSync,
   CHAINLINK_ETH_USD,
-  PRICE_ID,
+  CHAINLINK_MATIC_USD,
+  CHAINLINK_SOL_USD,
+  ETH_PRICE_ID,
+  MATIC_PRICE_ID,
+  SOL_PRICE_ID,
   PRICE_STALENESS_THRESHOLD,
 } from './utils';
+
+/**
+ * Refresh a Chainlink price feed if the cached value is stale (> 1 hour old).
+ * Fetches latestRoundData() from the feed, validates answer > 0, and persists to PriceData.
+ */
+function refreshChainlinkPrice(
+  feedAddress: Address,
+  priceId: string,
+  blockNumber: BigInt,
+  timestamp: BigInt
+): void {
+  let existing = PriceData.load(priceId);
+  let shouldRefresh =
+    existing == null ||
+    timestamp.minus(existing.lastUpdatedTimestamp).gt(PRICE_STALENESS_THRESHOLD);
+
+  if (shouldRefresh) {
+    let chainlink = AggregatorV3Interface.bind(feedAddress);
+    let result = chainlink.try_latestRoundData();
+    if (!result.reverted) {
+      let price = result.value.getAnswer();
+      if (price.gt(BigInt.zero())) {
+        let priceData = existing != null ? existing : new PriceData(priceId);
+        priceData.price = price;
+        priceData.lastUpdatedBlock = blockNumber;
+        priceData.lastUpdatedTimestamp = timestamp;
+        priceData.save();
+      }
+    }
+  }
+}
 
 /**
  * Handle LP Token Transfer events for the native OLAS-ETH pool.
@@ -54,45 +90,29 @@ export function handleLPTransfer(event: Transfer): void {
 
 /**
  * Handle Uniswap V2 Sync events.
- * Updates pool reserves and fetches latest ETH/USD price from Chainlink
- * (only when cached price is stale, i.e. older than PRICE_STALENESS_THRESHOLD).
+ * Updates pool reserves and refreshes Chainlink price feeds
+ * (only when cached prices are stale, i.e. older than PRICE_STALENESS_THRESHOLD).
  */
 export function handleSync(event: Sync): void {
   let poolAddress = event.address;
   let reserve0 = event.params.reserve0; // OLAS reserves
   let reserve1 = event.params.reserve1; // ETH reserves
   let timestamp = event.block.timestamp;
+  let blockNumber = event.block.number;
 
   // Update current pool reserves
   let reserves = getOrCreatePoolReserves(poolAddress);
   reserves.reserve0 = reserve0;
   reserves.reserve1 = reserve1;
-  reserves.lastSyncBlock = event.block.number;
+  reserves.lastSyncBlock = blockNumber;
   reserves.lastSyncTimestamp = timestamp;
   reserves.lastSyncTransaction = event.transaction.hash;
   reserves.save();
 
-  // Fetch ETH/USD price from Chainlink only if cached price is stale (> 1 hour old)
-  let existingPrice = PriceData.load(PRICE_ID);
-  let shouldRefresh =
-    existingPrice == null ||
-    timestamp.minus(existingPrice.lastUpdatedTimestamp).gt(PRICE_STALENESS_THRESHOLD);
-
-  if (shouldRefresh) {
-    let chainlink = AggregatorV3Interface.bind(CHAINLINK_ETH_USD);
-    let result = chainlink.try_latestRoundData();
-    if (!result.reverted) {
-      let ethPrice = result.value.getAnswer();
-      // Only persist valid positive prices; skip zero/negative oracle answers
-      if (ethPrice.gt(BigInt.zero())) {
-        let priceData = existingPrice != null ? existingPrice : new PriceData(PRICE_ID);
-        priceData.price = ethPrice;
-        priceData.lastUpdatedBlock = event.block.number;
-        priceData.lastUpdatedTimestamp = timestamp;
-        priceData.save();
-      }
-    }
-  }
+  // Refresh Chainlink price feeds (each only if stale)
+  refreshChainlinkPrice(CHAINLINK_ETH_USD, ETH_PRICE_ID, blockNumber, timestamp);
+  refreshChainlinkPrice(CHAINLINK_MATIC_USD, MATIC_PRICE_ID, blockNumber, timestamp);
+  refreshChainlinkPrice(CHAINLINK_SOL_USD, SOL_PRICE_ID, blockNumber, timestamp);
 
   // Update global metrics (includes USD recalculation)
   updateGlobalMetricsAfterSync(reserve0, reserve1, timestamp);

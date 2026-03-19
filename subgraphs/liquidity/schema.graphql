@@ -45,8 +45,10 @@ type LPTokenMetrics @entity(immutable: false) {
   currentReserve0: BigInt! # current OLAS reserves
   currentReserve1: BigInt! # current ETH reserves
 
-  # USD valuation (from Chainlink ETH/USD oracle)
+  # USD valuation (from Chainlink oracles on Ethereum mainnet)
   ethUsdPrice: BigInt! # latest ETH/USD price (8 decimals, e.g. 200000000000 = $2000)
+  maticUsdPrice: BigInt! # latest MATIC/USD price (8 decimals)
+  solUsdPrice: BigInt! # latest SOL/USD price (8 decimals)
   poolLiquidityUsd: BigInt! # total pool value in USD (8 decimals): 2 * ETH_reserves * ETH_price / 1e18
   protocolOwnedLiquidityUsd: BigInt! # treasury's share in USD (8 decimals): poolLiquidityUsd * treasuryPercentage / 10000
 
@@ -55,10 +57,10 @@ type LPTokenMetrics @entity(immutable: false) {
   firstTransferTimestamp: BigInt!
 }
 
-# Chainlink ETH/USD price tracker
+# Chainlink price tracker (one entity per feed)
 type PriceData @entity(immutable: false) {
-  id: ID! # "eth-usd"
-  price: BigInt! # ETH/USD price (8 decimals from Chainlink)
+  id: ID! # "eth-usd", "matic-usd", or "sol-usd"
+  price: BigInt! # price in 8 decimals from Chainlink
   lastUpdatedBlock: BigInt!
   lastUpdatedTimestamp: BigInt!
 }

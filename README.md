@@ -119,6 +119,22 @@ yarn build                             # Build subgraph (compiles to WASM)
 yarn test                              # Run Matchstick tests
 ```
 
+## Scripts
+
+Repo-level scripts in `scripts/` (run from repo root, no dependencies needed):
+
+```bash
+# Generate per-network manifests from a subgraph template
+node scripts/generate-manifests.js --path=subgraphs/<subgraph-name>
+
+# Compute total Protocol Owned Liquidity across all chains
+node scripts/pol-aggregation.js              # human-readable table
+node scripts/pol-aggregation.js --json       # JSON output for CI/automation
+node scripts/pol-aggregation.js --verbose    # include raw subgraph data
+```
+
+Subgraph URLs in `pol-aggregation.js` can be overridden via environment variables (e.g. `SUBGRAPH_ETH_URL=https://...`).
+
 ## Deployment
 
 Deployment is handled via CI/CD. Each subgraph is built and deployed from its own directory automatically.

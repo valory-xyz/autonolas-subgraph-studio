@@ -13,6 +13,12 @@ export namespace TestAddresses {
   export const CHAINLINK_ETH_USD = Address.fromString(
     '0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419'
   );
+  export const CHAINLINK_MATIC_USD = Address.fromString(
+    '0x7bAC85A8a13A4BcD8abb3eB7d6b4d632c5a57676'
+  );
+  export const CHAINLINK_SOL_USD = Address.fromString(
+    '0x4ffC43a60e009B551865A93d232E33Fce9f01507'
+  );
   export const USER_1 = Address.fromString(
     '0x0000000000000000000000000000000000000001'
   );
@@ -51,6 +57,10 @@ export namespace TestValues {
   export const RESERVE_ETH = BigInt.fromString('100000000000000000000');
   // ETH/USD price: $2000 (8 decimals)
   export const ETH_PRICE = BigInt.fromString('200000000000');
+  // MATIC/USD price: $0.22 (8 decimals)
+  export const MATIC_PRICE = BigInt.fromString('22000000');
+  // SOL/USD price: $92.12 (8 decimals)
+  export const SOL_PRICE = BigInt.fromString('9212000000');
   // Timestamp
   export const TIMESTAMP = BigInt.fromI32(1700000000);
   export const BLOCK = BigInt.fromI32(18000000);
