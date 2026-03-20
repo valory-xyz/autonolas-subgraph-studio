@@ -2,17 +2,12 @@ import { BigInt, log } from "@graphprotocol/graph-ts";
 import {
   LogNewQuestion as LogNewQuestionEvent,
   LogNewAnswer as LogNewAnswerEvent,
-  LogAnswerReveal as LogAnswerRevealEvent,
-  LogNotifyOfArbitrationRequest as LogNotifyOfArbitrationRequestEvent,
-  LogFinalize as LogFinalizeEvent,
 } from "../generated/Realitio/Realitio";
 import {
   Bet,
   Question,
-  QuestionFinalized,
   TraderAgent,
   FixedProductMarketMakerCreation,
-  LogNotifyOfArbitrationRequest,
   DailyProfitStatistic,
 } from "../generated/schema";
 import { CREATOR_ADDRESSES } from "./constants";
@@ -266,55 +261,4 @@ export function handleLogNewAnswer(event: LogNewAnswerEvent): void {
     global.totalExpectedPayout = global.totalExpectedPayout.plus(globalExpectedPayoutDelta);
     global.save();
   }
-}
-
-export function handleLogAnswerReveal(event: LogAnswerRevealEvent): void {
-  let question = Question.load(event.params.question_id.toHexString());
-
-  if (question === null || question.fixedProductMarketMaker === null) {
-    // only record data for our markets
-    return;
-  }
-
-  let questionFinalized = QuestionFinalized.load(event.params.question_id.toHexString());
-
-  if (questionFinalized === null) {
-    questionFinalized = new QuestionFinalized(event.params.question_id.toHexString());
-  }
-  questionFinalized.currentAnswer = event.params.answer;
-  questionFinalized.currentAnswerTimestamp = event.block.timestamp;
-  questionFinalized.save();
-}
-
-export function handleLogNotifyOfArbitrationRequest(event: LogNotifyOfArbitrationRequestEvent): void {
-  let question = Question.load(event.params.question_id.toHexString());
-
-  if (question === null || question.fixedProductMarketMaker === null) {
-    // only record data for our markets
-    return;
-  }
-
-  let entity = new LogNotifyOfArbitrationRequest(event.transaction.hash.concatI32(event.logIndex.toI32()));
-  entity.question_id = event.params.question_id;
-  entity.user = event.params.user;
-
-  entity.blockNumber = event.block.number;
-  entity.blockTimestamp = event.block.timestamp;
-  entity.transactionHash = event.transaction.hash;
-
-  entity.save();
-}
-
-export function handleLogFinalize(event: LogFinalizeEvent): void {
-  let question = Question.load(event.params.question_id.toHexString());
-
-  if (question === null || question.fixedProductMarketMaker === null) {
-    // only record data for our markets
-    return;
-  }
-
-  let questionFinalized = new QuestionFinalized(event.params.question_id.toHexString());
-  questionFinalized.currentAnswer = event.params.answer;
-  questionFinalized.currentAnswerTimestamp = event.block.timestamp;
-  questionFinalized.save();
 }

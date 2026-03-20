@@ -116,52 +116,12 @@ type PayoutRedemption @entity(immutable: true) {
   transactionHash: Bytes!
 }
 
-type LogSetQuestionFee @entity(immutable: true) {
-  id: Bytes!
-  arbitrator: Bytes! # address
-  amount: BigInt! # uint256
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
-}
-
-type LogNewTemplate @entity(immutable: true) {
-  id: Bytes!
-  template_id: BigInt! # uint256
-  user: Bytes! # address
-  question_text: String! # string
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
-}
-
 type Question @entity (immutable: false) {
   id: ID!
   currentAnswer: Bytes
   question: String! # string
   currentAnswerTimestamp: BigInt
   fixedProductMarketMaker: FixedProductMarketMakerCreation
-}
-
-type LogNewAnswer @entity (immutable: false) {
-  id: ID!
-  currentAnswer: Bytes
-  currentAnswerTimestamp: BigInt
-}
-
-type QuestionFinalized @entity (immutable: false) {
-  id: ID!
-  currentAnswer: Bytes
-  currentAnswerTimestamp: BigInt
-}
-
-type LogNotifyOfArbitrationRequest @entity (immutable: true) {
-  id: Bytes!
-  question_id: Bytes
-  user: Bytes
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
 }
 
 type DailyProfitStatistic @entity(immutable: false) {
