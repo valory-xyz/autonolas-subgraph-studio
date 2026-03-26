@@ -4,6 +4,7 @@ import {
   CreateService,
   RegisterInstance,
   TerminateService,
+  UpdateService,
 } from '../generated/ServiceRegistry/ServiceRegistry';
 import {
   ServiceAgentLinked,
@@ -109,6 +110,14 @@ function updateGlobalMetrics(event: ethereum.Event): void {
 
 export function handleCreateService(event: CreateService): void {
   getOrCreateService(event.params.serviceId, event.block.timestamp);
+}
+
+export function handleUpdateService(event: UpdateService): void {
+  let service = Service.load(event.params.serviceId.toString());
+  if (service != null) {
+    service.configHash = event.params.configHash;
+    service.save();
+  }
 }
 
 export function handleRegisterInstance(event: RegisterInstance): void {
