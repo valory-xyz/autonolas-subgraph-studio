@@ -4,6 +4,7 @@ import {
   CreateService,
   RegisterInstance,
   TerminateService,
+  UpdateService,
 } from '../generated/ServiceRegistryL2/ServiceRegistryL2';
 import {
   ExecutionSuccess,
@@ -114,6 +115,14 @@ export function handleCreateService(event: CreateService): void {
   );
   service.configHash = event.params.configHash;
   service.save();
+}
+
+export function handleUpdateService(event: UpdateService): void {
+  let service = Service.load(event.params.serviceId.toString());
+  if (service != null) {
+    service.configHash = event.params.configHash;
+    service.save();
+  }
 }
 
 export function handleRegisterInstance(event: RegisterInstance): void {

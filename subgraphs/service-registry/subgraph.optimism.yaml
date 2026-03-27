@@ -31,6 +31,8 @@ dataSources:
       eventHandlers:
         - event: CreateService(indexed uint256,bytes32)
           handler: handleCreateService
+        - event: UpdateService(indexed uint256,bytes32)
+          handler: handleUpdateService
         - event: CreateMultisigWithAgents(indexed uint256,indexed address)
           handler: handleCreateMultisig
         - event: RegisterInstance(indexed address,indexed uint256,indexed address,uint256)
