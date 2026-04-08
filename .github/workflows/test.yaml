@@ -1,0 +1,84 @@
+name: Subgraph Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Standalone manifests (subgraph.yaml exists)
+          - subgraph: liquidity
+            path: subgraphs/liquidity
+          - subgraph: tokenomics-eth
+            path: subgraphs/tokenomics-eth
+          - subgraph: governance
+            path: subgraphs/governance
+          - subgraph: legacy-mech-fees
+            path: subgraphs/legacy-mech-fees
+
+          # Template pattern — need generate-manifests + symlink
+          - subgraph: liquidity-l2
+            path: subgraphs/liquidity-l2
+            manifest: subgraph.gnosis.yaml
+            generate: true
+          - subgraph: staking
+            path: subgraphs/staking
+            manifest: subgraph.gnosis.yaml
+            generate: true
+          - subgraph: tokenomics-l2
+            path: subgraphs/tokenomics-l2
+            manifest: subgraph.gnosis.yaml
+            generate: true
+          - subgraph: service-registry
+            path: subgraphs/service-registry
+            manifest: subgraph.gnosis.yaml
+            generate: true
+
+          # Per-network manifests — need symlink only
+          - subgraph: new-mech-fees
+            path: subgraphs/new-mech-fees
+            manifest: subgraph.gnosis.yaml
+
+          # Nested subgraphs with standalone manifests
+          - subgraph: predict-omen
+            path: subgraphs/predict/predict-omen
+          - subgraph: predict-polymarket
+            path: subgraphs/predict/predict-polymarket
+          - subgraph: babydegen-optimism
+            path: subgraphs/babydegen/babydegen-optimism
+
+    name: test / ${{ matrix.subgraph }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        working-directory: ${{ matrix.path }}
+        run: yarn install --frozen-lockfile || yarn install
+
+      - name: Generate manifests
+        if: matrix.generate
+        working-directory: ${{ matrix.path }}
+        run: yarn generate-manifests
+
+      - name: Create subgraph.yaml symlink
+        if: matrix.manifest
+        working-directory: ${{ matrix.path }}
+        run: ln -sf ${{ matrix.manifest }} subgraph.yaml
+
+      - name: Generate types
+        working-directory: ${{ matrix.path }}
+        run: yarn graph codegen
+
+      - name: Run tests
+        working-directory: ${{ matrix.path }}
+        run: yarn graph test
