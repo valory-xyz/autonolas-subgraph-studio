@@ -28,7 +28,6 @@ const SUBGRAPH_URLS = {
   optimism: process.env.SUBGRAPH_OPTIMISM_URL || 'https://api.studio.thegraph.com/query/1716136/olas-optimism-liquidity/version/latest',
   base: process.env.SUBGRAPH_BASE_URL || 'https://api.studio.thegraph.com/query/1716136/olas-base-liquidity/version/latest',
   celo: process.env.SUBGRAPH_CELO_URL || 'https://api.studio.thegraph.com/query/1716136/olas-celo-liquidity/version/latest',
-  'base-weth': process.env.SUBGRAPH_BASE_WETH_URL || 'https://api.studio.thegraph.com/query/1716136/olas-base-weth-liquidity/version/latest',
 };
 
 const SOLANA_RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
@@ -123,8 +122,9 @@ const ETH_QUERY_SAFE = `{
 }`;
 
 // Two L2 query variants: with and without fee fields
+// Uses first: 10 to support multi-pool subgraphs (e.g. Base has 2 pools)
 const L2_QUERY_FULL = `{
-  poolMetrics_collection(first: 1) {
+  poolMetrics_collection(first: 10) {
     id token0 token1 reserve0 reserve1 totalSupply celoUsdPrice
     cumulativeFeesToken0 cumulativeFeesToken1 swapFeePercentage
   }
@@ -132,7 +132,7 @@ const L2_QUERY_FULL = `{
 }`;
 
 const L2_QUERY_SAFE = `{
-  poolMetrics_collection(first: 1) {
+  poolMetrics_collection(first: 10) {
     id token0 token1 reserve0 reserve1 totalSupply
   }
   _meta { block { number } hasIndexingErrors }
@@ -228,31 +228,37 @@ const CHAIN_CONFIG = {
     },
   },
   base: {
-    pair: 'OLAS-USDC',
-    // token1 = USDC (6 decimals, stablecoin), value = 2 * USDC
-    valuate: (pool) => {
-      const usdc = Number(BigInt(pool.reserve1)) / 1e6;
-      return { tvl: usdc * 2, method: '2×USDC' };
-    },
-    // token1 = USDC (priced, 6 decimals), token0 = OLAS
-    feesToUsd: (pool) => {
-      const f0 = BigInt(pool.cumulativeFeesToken0 || '0');
-      const f1 = BigInt(pool.cumulativeFeesToken1 || '0');
-      return l2FeesToUsd(f1, f0, BigInt(pool.reserve1), BigInt(pool.reserve0), 1.0, 6);
-    },
-  },
-  'base-weth': {
-    pair: 'WETH-OLAS',
-    // token0 = WETH, value = 2 * WETH * ETH/USD
-    valuate: (pool, prices) => {
-      const weth = Number(BigInt(pool.reserve0)) / 1e18;
-      return { tvl: weth * 2 * prices.eth, method: `2×WETH×$${prices.eth.toFixed(2)}` };
-    },
-    // token0 = WETH (priced), token1 = OLAS
-    feesToUsd: (pool, prices) => {
-      const f0 = BigInt(pool.cumulativeFeesToken0 || '0');
-      const f1 = BigInt(pool.cumulativeFeesToken1 || '0');
-      return l2FeesToUsd(f0, f1, BigInt(pool.reserve0), BigInt(pool.reserve1), prices.eth);
+    // Base has two pools in one subgraph. Each pool entry maps a pool address
+    // to its valuation and fee conversion logic.
+    pools: {
+      // OLAS-USDC pool
+      '0x5332584890d6e415a6dc910254d6430b8aab7e69': {
+        pair: 'OLAS-USDC',
+        bridgedOriginChain: 'base',
+        valuate: (pool) => {
+          const usdc = Number(BigInt(pool.reserve1)) / 1e6;
+          return { tvl: usdc * 2, method: '2×USDC' };
+        },
+        feesToUsd: (pool) => {
+          const f0 = BigInt(pool.cumulativeFeesToken0 || '0');
+          const f1 = BigInt(pool.cumulativeFeesToken1 || '0');
+          return l2FeesToUsd(f1, f0, BigInt(pool.reserve1), BigInt(pool.reserve0), 1.0, 6);
+        },
+      },
+      // WETH-OLAS pool
+      '0x2da6e67c45af2aaa539294d9fa27ea50ce4e2c5f': {
+        pair: 'WETH-OLAS',
+        bridgedOriginChain: 'base-weth',
+        valuate: (pool, prices) => {
+          const weth = Number(BigInt(pool.reserve0)) / 1e18;
+          return { tvl: weth * 2 * prices.eth, method: `2×WETH×$${prices.eth.toFixed(2)}` };
+        },
+        feesToUsd: (pool, prices) => {
+          const f0 = BigInt(pool.cumulativeFeesToken0 || '0');
+          const f1 = BigInt(pool.cumulativeFeesToken1 || '0');
+          return l2FeesToUsd(f0, f1, BigInt(pool.reserve0), BigInt(pool.reserve1), prices.eth);
+        },
+      },
     },
   },
   celo: {
@@ -300,7 +306,7 @@ async function main() {
   //       ETH_QUERY_SAFE includes only ethUsdPrice (works with all versions)
 
   // Fetch everything in parallel
-  const [ethData, gnData, pgData, arbData, optData, baseData, baseWethData, celoData, solVaultA, solVaultB] =
+  const [ethData, gnData, pgData, arbData, optData, baseData, celoData, solVaultA, solVaultB] =
     await Promise.all([
       fetchEthSubgraph(),
       queryL2(SUBGRAPH_URLS.gnosis),
@@ -308,7 +314,6 @@ async function main() {
       queryL2(SUBGRAPH_URLS.arbitrum),
       queryL2(SUBGRAPH_URLS.optimism),
       queryL2(SUBGRAPH_URLS.base),
-      queryL2(SUBGRAPH_URLS['base-weth']),
       queryL2(SUBGRAPH_URLS.celo),
       solanaRpc('getTokenAccountBalance', [SOL_VAULT]),
       solanaRpc('getTokenAccountBalance', [OLAS_VAULT]),
@@ -388,40 +393,22 @@ async function main() {
   });
 
   // 2-7. L2 chains
-  const l2Data = { gnosis: gnData, polygon: pgData, arbitrum: arbData, optimism: optData, base: baseData, 'base-weth': baseWethData, celo: celoData };
-  for (const [chain, data] of Object.entries(l2Data)) {
-    const config = CHAIN_CONFIG[chain];
-    const dex = chain === 'celo' ? 'Ubeswap' : 'Balancer V2';
-    const displayName = chain === 'base-weth' ? 'Base (WETH)' : chain.charAt(0).toUpperCase() + chain.slice(1);
+  const l2Data = { gnosis: gnData, polygon: pgData, arbitrum: arbData, optimism: optData, base: baseData, celo: celoData };
 
-    // Defensive: check for GraphQL errors or missing data
-    if (data.errors || !data.data) {
-      const errMsg = data.errors ? data.errors.map(e => e.message).join('; ') : 'no data';
-      results.push({ chain: displayName, pair: config.pair, dex, poolTvl: null, treasuryPol: null, share: 0, method: `QUERY ERROR: ${errMsg}`, block: 0, totalFeesUsd: null, protocolFeesUsd: null, externalFeesUsd: null });
-      continue;
-    }
-    if (data.data._meta && data.data._meta.hasIndexingErrors) {
-      results.push({ chain: displayName, pair: config.pair, dex, poolTvl: null, treasuryPol: null, share: 0, method: 'INDEXING ERRORS', block: data.data._meta.block.number, totalFeesUsd: null, protocolFeesUsd: null, externalFeesUsd: null });
-      continue;
-    }
-    const pool = (data.data.poolMetrics_collection || [])[0];
-    if (!pool) {
-      results.push({ chain: displayName, pair: config.pair, dex, poolTvl: null, treasuryPol: null, share: 0, method: 'NO POOL DATA', block: data.data._meta ? data.data._meta.block.number : 0, totalFeesUsd: null, protocolFeesUsd: null, externalFeesUsd: null });
-      continue;
-    }
-
-    const { tvl, method } = config.valuate(pool, prices);
+  // Process a single pool and push result
+  function processPool(chain, displayName, dex, pool, poolConfig, block) {
+    const { tvl, method } = poolConfig.valuate(pool, prices);
     const supply = BigInt(pool.totalSupply);
-    const bridgedBal = bridged[chain]?.balance || 0n;
+    const originChain = poolConfig.bridgedOriginChain || chain;
+    const bridgedBal = bridged[originChain]?.balance || 0n;
     const share = supply > 0n ? Number(bridgedBal) / Number(supply) : 0;
     const pol = tvl !== null ? tvl * share : null;
 
-    // Compute fees in USD (token-denominated → USD using same prices as POL valuation)
     let totalFeesUsd = null;
     let protocolFeesUsd = null;
     let externalFeesUsd = null;
-    if (config.feesToUsd && pool.cumulativeFeesToken0 !== undefined) {
-      totalFeesUsd = config.feesToUsd(pool, prices);
+    if (poolConfig.feesToUsd && pool.cumulativeFeesToken0 !== undefined) {
+      totalFeesUsd = poolConfig.feesToUsd(pool, prices);
       if (totalFeesUsd !== null) {
         protocolFeesUsd = totalFeesUsd * share;
         externalFeesUsd = totalFeesUsd - protocolFeesUsd;
@@ -430,17 +417,64 @@ async function main() {
 
     results.push({
       chain: displayName,
-      pair: config.pair,
+      pair: poolConfig.pair,
       dex,
       poolTvl: tvl,
       treasuryPol: pol,
       share: share * 100,
       method,
-      block: data.data._meta.block.number,
+      block,
       totalFeesUsd,
       protocolFeesUsd,
       externalFeesUsd,
     });
+  }
+
+  for (const [chain, data] of Object.entries(l2Data)) {
+    const config = CHAIN_CONFIG[chain];
+    const dex = chain === 'celo' ? 'Ubeswap' : 'Balancer V2';
+    const displayName = chain.charAt(0).toUpperCase() + chain.slice(1);
+
+    // Defensive: check for GraphQL errors or missing data
+    if (data.errors || !data.data) {
+      const errMsg = data.errors ? data.errors.map(e => e.message).join('; ') : 'no data';
+      const pair = config.pair || (config.pools ? Object.values(config.pools).map(p => p.pair).join(', ') : '?');
+      results.push({ chain: displayName, pair, dex, poolTvl: null, treasuryPol: null, share: 0, method: `QUERY ERROR: ${errMsg}`, block: 0, totalFeesUsd: null, protocolFeesUsd: null, externalFeesUsd: null });
+      continue;
+    }
+    if (data.data._meta && data.data._meta.hasIndexingErrors) {
+      const pair = config.pair || '?';
+      results.push({ chain: displayName, pair, dex, poolTvl: null, treasuryPol: null, share: 0, method: 'INDEXING ERRORS', block: data.data._meta.block.number, totalFeesUsd: null, protocolFeesUsd: null, externalFeesUsd: null });
+      continue;
+    }
+
+    const pools = data.data.poolMetrics_collection || [];
+    const block = data.data._meta.block.number;
+
+    // Multi-pool chain (e.g. Base with OLAS-USDC + WETH-OLAS)
+    if (config.pools) {
+      if (pools.length === 0) {
+        results.push({ chain: displayName, pair: '?', dex, poolTvl: null, treasuryPol: null, share: 0, method: 'NO POOL DATA', block, totalFeesUsd: null, protocolFeesUsd: null, externalFeesUsd: null });
+        continue;
+      }
+      for (const pool of pools) {
+        const poolAddr = pool.id.toLowerCase();
+        const poolConfig = config.pools[poolAddr];
+        if (poolConfig) {
+          processPool(chain, `${displayName} (${poolConfig.pair})`, dex, pool, poolConfig, block);
+        }
+      }
+      continue;
+    }
+
+    // Single-pool chain
+    const pool = pools[0];
+    if (!pool) {
+      results.push({ chain: displayName, pair: config.pair, dex, poolTvl: null, treasuryPol: null, share: 0, method: 'NO POOL DATA', block: block || 0, totalFeesUsd: null, protocolFeesUsd: null, externalFeesUsd: null });
+      continue;
+    }
+
+    processPool(chain, displayName, dex, pool, config, block);
   }
 
   // 8. Solana

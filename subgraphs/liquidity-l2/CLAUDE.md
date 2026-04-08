@@ -1,6 +1,6 @@
 # Liquidity L2 Subgraph — Technical Reference
 
-Tracks Balancer V2 pool reserves and BPT (Balancer Pool Token) supply for OLAS liquidity pools across 7 L2 chains (including 2 pools on Base). Uses the template pattern for multi-network deployment.
+Tracks Balancer V2 pool reserves and BPT (Balancer Pool Token) supply for OLAS liquidity pools across 6 L2 chains (including 2 pools on Base in one subgraph). Uses the template pattern for multi-network deployment.
 
 Part of the broader POL (Protocol Owned Liquidity) tracking system. See [../liquidity/README.md](../liquidity/README.md) for the full POL picture.
 
@@ -12,7 +12,7 @@ subgraphs/liquidity-l2/
 ├── schema.graphql
 ├── subgraph.template.yaml           # Template with {{ network }}, {{ BalancerPool.address }}, {{ BalancerPool.startBlock }}
 ├── networks.json                    # Per-network pool addresses and start blocks
-├── subgraph.{network}.yaml          # Generated per-network manifests (7 deployments: 6 networks + base-weth)
+├── subgraph.{network}.yaml          # Generated per-network manifests (4 networks) + manual base/celo
 ├── src/
 │   ├── mapping.ts                   # BPT Transfer handler with Vault contract calls
 │   └── utils.ts                     # Constants, helpers, get-or-create
@@ -34,8 +34,8 @@ subgraphs/liquidity-l2/
 | Polygon (matic) | `0x62309056c759c36879Cde93693E7903bF415E4Bc` | OLAS-WMATIC | Balancer V2 | 51,626,717 |
 | Arbitrum One | `0xAF8912a3C4f55a8584B67DF30ee0dDf0e60e01f8` | OLAS-WETH | Balancer V2 | 175,754,394 |
 | Optimism | `0x5bb3e58887264b667f915130fd04bbb56116c278` | WETH-OLAS | Balancer V2 | 117,547,761 |
-| Base | `0x5332584890d6e415a6dc910254d6430b8aab7e69` | OLAS-USDC | Balancer V2 | 12,416,046 |
-| Base (WETH) | `0x2da6e67C45aF2aaA539294D9FA27ea50CE4e2C5f` | WETH-OLAS | Balancer V2 | 23,026,768 |
+| Base (pool 1) | `0x5332584890d6e415a6dc910254d6430b8aab7e69` | OLAS-USDC | Balancer V2 | 12,416,046 |
+| Base (pool 2) | `0x2da6e67C45aF2aaA539294D9FA27ea50CE4e2C5f` | WETH-OLAS | Balancer V2 | 23,026,768 |
 | Celo | `0x2976Fa805141b467BCBc6334a69AffF4D914d96A` | CELO-OLAS | Ubeswap (UniswapV2) | 27,100,181 |
 
 ---
@@ -167,7 +167,7 @@ All in `src/utils.ts`:
 
 ## Multi-Network Pattern
 
-Uses the **Template Pattern** for 6 Balancer deployments (5 chains + Base WETH-OLAS), plus a **manual manifest** for Celo:
+Uses the **Template Pattern** for 4 Balancer chains, plus **manual manifests** for Base (2 pools) and Celo (Ubeswap):
 
 1. `networks.json`: Pool address and startBlock for Gnosis, Polygon, Arbitrum, Optimism, Base
 2. `subgraph.template.yaml`: Placeholders `{{ network }}`, `{{ BalancerPool.address }}`, `{{ BalancerPool.startBlock }}`
@@ -280,7 +280,7 @@ For example, if Gnosis pool has 191K WXDAI + 3.8M OLAS, TVL ~ $384K, and Treasur
 
 5. **Ubeswap/UniswapV2 Architecture (Celo)**: The Celo pool (`0x2976Fa805141b467BCBc6334a69AffF4D914d96A`) is a standard UniswapV2 pair. Reserves are emitted in `Sync(uint112, uint112)` events on every swap/join/exit. Token addresses come from `token0()`/`token1()` view functions. No Vault or poolId concept.
 
-6. **No USD Valuation On-Chain (Balancer chains)**: The 6 Balancer subgraphs (5 chains + Base WETH-OLAS) do not compute USD values — USD conversion is deferred to the off-chain aggregation layer. **Celo is the exception**: it fetches CELO/USD from Chainlink on Celo (`0x0568fD19986748cEfF3301e55c0eb1E729E0Ab7e`) and stores it in `poolMetrics.celoUsdPrice` and `PriceData("celo-usd")`.
+6. **No USD Valuation On-Chain (Balancer chains)**: The Balancer subgraphs do not compute USD values — USD conversion is deferred to the off-chain aggregation layer. **Celo is the exception**: it fetches CELO/USD from Chainlink on Celo (`0x0568fD19986748cEfF3301e55c0eb1E729E0Ab7e`) and stores it in `poolMetrics.celoUsdPrice` and `PriceData("celo-usd")`.
 
 7. **No Treasury Tracking**: The subgraph does not track who holds LP tokens (no equivalent of `TreasuryHoldings`). It only tracks aggregate supply and pool reserves.
 

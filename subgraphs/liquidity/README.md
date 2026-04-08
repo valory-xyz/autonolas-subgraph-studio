@@ -17,7 +17,7 @@ The Ethereum subgraph tracks the **OLAS-ETH Uniswap V2 pool on Ethereum mainnet*
 - Treasury share of total supply (basis points)
 - **Swap fee tracking**: daily and cumulative fees in USD, split between protocol and external LPs
 
-The L2 subgraph (`liquidity-l2`) tracks 7 L2 pools (6 Balancer V2 including 2 on Base, + 1 Ubeswap/Celo) with reserves, BPT supply, and swap fees in token terms.
+The L2 subgraph (`liquidity-l2`) tracks 7 pools across 6 L2 chains (including 2 Balancer V2 pools on Base in one subgraph, + 1 Ubeswap/Celo) with reserves, BPT supply, and swap fees in token terms.
 
 ### Prior Work (Closed PRs)
 - [PR #90](https://github.com/valory-xyz/autonolas-subgraph-studio/pull/90) — Added Chainlink ETH/USD oracle integration and `poolLiquidityUsd` / `protocolOwnedLiquidityUsd` fields. Added Dune comparison scripts. Closed Feb 2026, paused for later.
@@ -222,12 +222,12 @@ node scripts/pol-aggregation.js --verbose  # include raw subgraph data
 ### Phase 2 — L2 Pool Subgraphs (DONE)
 
 Multi-network `liquidity-l2` subgraph deployed as 7 subgraphs across 6 chains:
-- 6 Balancer V2 pools (Gnosis, Polygon, Arbitrum, Optimism, Base OLAS-USDC, Base WETH-OLAS) — BPT Transfer + Vault `getPoolTokens()` calls + Vault Swap events for fees
-- 1 Ubeswap/UniswapV2 pool (Celo) — Transfer + Sync + Swap events (manual manifest)
+- 5 Balancer V2 subgraphs (Gnosis, Polygon, Arbitrum, Optimism, Base) — BPT Transfer + Vault `getPoolTokens()` calls + Vault Swap events for fees. Base has 2 pools (OLAS-USDC + WETH-OLAS) in one subgraph.
+- 1 Ubeswap/UniswapV2 subgraph (Celo) — Transfer + Sync + Swap events (manual manifest)
 
 ### Phase 3 — Off-Chain Aggregation (DONE)
 
-**Aggregation script**: `scripts/pol-aggregation.js` at repo root — queries all 8 subgraphs + Solana RPC, computes total POL USD and total protocol fees USD. All prices from Chainlink.
+**Aggregation script**: `scripts/pol-aggregation.js` at repo root — queries all 7 subgraphs + Solana RPC, computes total POL USD and total protocol fees USD. All prices from Chainlink. The Base subgraph returns two pool metrics (OLAS-USDC + WETH-OLAS) which are processed separately.
 
 ### Phase 4 — Swap Fee Tracking (DONE)
 

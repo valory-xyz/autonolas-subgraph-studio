@@ -133,7 +133,7 @@ node scripts/pol-aggregation.js --json       # JSON with totalPolUsd, totalProto
 node scripts/pol-aggregation.js --verbose    # include raw subgraph data
 ```
 
-The `pol-aggregation.js` script queries all 8 liquidity subgraphs + Solana RPC, computes total POL USD and cumulative protocol fees USD. All prices from Chainlink oracles. Subgraph URLs can be overridden via environment variables (e.g. `SUBGRAPH_ETH_URL=https://...`). See [`subgraphs/liquidity/README.md`](subgraphs/liquidity/README.md#running-the-aggregation) for detailed usage.
+The `pol-aggregation.js` script queries all 7 liquidity subgraphs + Solana RPC, computes total POL USD and cumulative protocol fees USD. All prices from Chainlink oracles. Subgraph URLs can be overridden via environment variables (e.g. `SUBGRAPH_ETH_URL=https://...`). See [`subgraphs/liquidity/README.md`](subgraphs/liquidity/README.md#running-the-aggregation) for detailed usage.
 
 ## Deployment
 

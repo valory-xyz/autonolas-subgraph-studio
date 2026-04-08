@@ -10,7 +10,7 @@ dataSources:
     source:
       address: "0xEBdde456EA288b49f7D5975E7659bA1Ccf607efc"
       abi: StakingFactory
-      startBlock: 24634867
+      startBlock: 20409818
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -74,8 +74,7 @@ templates:
           handler: handleServiceForceUnstaked
         - event: ServiceInactivityWarning(uint256,indexed uint256,uint256)
           handler: handleServiceInactivityWarning
-        - event: ServiceStaked(uint256,indexed uint256,indexed address,indexed
-            address,uint256[])
+        - event: ServiceStaked(uint256,indexed uint256,indexed address,indexed address,uint256[])
           handler: handleServiceStaked
         - event: ServiceUnstaked(uint256,indexed uint256,indexed address,indexed
             address,uint256[],uint256,uint256)

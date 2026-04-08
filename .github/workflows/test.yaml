@@ -11,6 +11,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # Only subgraphs with Matchstick test files (tests/*.test.ts).
+        # Other subgraphs have build-only checks in the "build" job below.
         subgraph: [liquidity, liquidity-l2, staking, tokenomics-eth]
     name: test-${{ matrix.subgraph }}
     defaults:
