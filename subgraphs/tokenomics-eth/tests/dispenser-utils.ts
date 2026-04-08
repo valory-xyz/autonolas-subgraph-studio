@@ -5,7 +5,7 @@ import {
   OwnerUpdated,
   TokenomicsUpdated,
   TreasuryUpdated
-} from "../generated/Dispenser/Dispenser"
+} from "../generated/DispenserV1/DispenserV1"
 
 export function createIncentivesClaimedEvent(
   owner: Address,
