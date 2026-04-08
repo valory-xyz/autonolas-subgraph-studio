@@ -25,8 +25,6 @@ export const DAY_SECONDS = BigInt.fromI32(86400);
 export const WEI = BigInt.fromString('1000000000000000000'); // 1e18
 export const SWAP_FEE_NUMERATOR = BigInt.fromI32(3);
 export const SWAP_FEE_DENOMINATOR = BigInt.fromI32(1000);
-// Swap fee staleness: only refresh getSwapFeePercentage() if older than 1 hour
-export const FEE_STALENESS_THRESHOLD = BigInt.fromI32(3600);
 
 export function isZeroAddress(address: Address): boolean {
   return address.equals(ZERO_ADDRESS);

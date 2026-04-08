@@ -139,41 +139,56 @@ export function handleSwap(event: Swap): void {
   let feeToken0 = amount0In.times(SWAP_FEE_NUMERATOR).div(SWAP_FEE_DENOMINATOR);
   let feeToken1 = amount1In.times(SWAP_FEE_NUMERATOR).div(SWAP_FEE_DENOMINATOR);
 
-  // Convert fees to USD using cached Chainlink ETH/USD price and pool reserves
+  // Convert fees to USD only when all required pricing inputs are available.
+  // If ETH/USD price or reserves are missing (early indexing), skip USD fields
+  // to avoid permanently undercounting cumulative USD fees.
   let metrics = getOrCreateLPTokenMetrics();
   let feeUsd = BigInt.zero();
+  let protocolFeeUsd = BigInt.zero();
+  let externalFeeUsd = BigInt.zero();
 
-  if (metrics.ethUsdPrice.gt(BigInt.zero())) {
+  let hasEthUsdPrice = metrics.ethUsdPrice.gt(BigInt.zero());
+  let hasPoolReserves =
+    metrics.currentReserve0.gt(BigInt.zero()) && metrics.currentReserve1.gt(BigInt.zero());
+  let canPriceToken1Fee = feeToken1.equals(BigInt.zero()) || hasEthUsdPrice;
+  let canPriceToken0Fee = feeToken0.equals(BigInt.zero()) || (hasEthUsdPrice && hasPoolReserves);
+  let canUpdateUsdFees = canPriceToken0Fee && canPriceToken1Fee;
+
+  if (canUpdateUsdFees) {
     // ETH-denominated fee → USD
     if (feeToken1.gt(BigInt.zero())) {
       feeUsd = feeUsd.plus(feeToken1.times(metrics.ethUsdPrice).div(WEI));
     }
 
     // OLAS-denominated fee → price via pool ratio (OLAS→ETH) then ETH→USD
-    if (feeToken0.gt(BigInt.zero()) && metrics.currentReserve0.gt(BigInt.zero())) {
+    if (feeToken0.gt(BigInt.zero())) {
       let feeInEth = feeToken0.times(metrics.currentReserve1).div(metrics.currentReserve0);
       feeUsd = feeUsd.plus(feeInEth.times(metrics.ethUsdPrice).div(WEI));
     }
+
+    // Protocol/external split based on treasury percentage (basis points)
+    protocolFeeUsd = feeUsd.times(metrics.treasuryPercentage).div(BASIS_POINTS);
+    externalFeeUsd = feeUsd.minus(protocolFeeUsd);
   }
 
-  // Protocol/external split based on treasury percentage (basis points)
-  let protocolFeeUsd = feeUsd.times(metrics.treasuryPercentage).div(BASIS_POINTS);
-  let externalFeeUsd = feeUsd.minus(protocolFeeUsd);
-
-  // Update daily fees
+  // Update daily fees (always track token amounts; USD only when priceable)
   let daily = getOrCreateDailyFees(timestamp);
   daily.totalFeesToken0 = daily.totalFeesToken0.plus(feeToken0);
   daily.totalFeesToken1 = daily.totalFeesToken1.plus(feeToken1);
-  daily.totalFeesUsd = daily.totalFeesUsd.plus(feeUsd);
-  daily.protocolFeesUsd = daily.protocolFeesUsd.plus(protocolFeeUsd);
-  daily.externalFeesUsd = daily.externalFeesUsd.plus(externalFeeUsd);
+  if (canUpdateUsdFees) {
+    daily.totalFeesUsd = daily.totalFeesUsd.plus(feeUsd);
+    daily.protocolFeesUsd = daily.protocolFeesUsd.plus(protocolFeeUsd);
+    daily.externalFeesUsd = daily.externalFeesUsd.plus(externalFeeUsd);
+  }
   daily.swapCount = daily.swapCount + 1;
   daily.save();
 
-  // Update cumulative fees on global metrics
-  metrics.cumulativeFeesUsd = metrics.cumulativeFeesUsd.plus(feeUsd);
-  metrics.cumulativeProtocolFeesUsd = metrics.cumulativeProtocolFeesUsd.plus(protocolFeeUsd);
-  metrics.cumulativeExternalFeesUsd = metrics.cumulativeExternalFeesUsd.plus(externalFeeUsd);
+  // Update cumulative fees on global metrics (USD only when priceable)
+  if (canUpdateUsdFees) {
+    metrics.cumulativeFeesUsd = metrics.cumulativeFeesUsd.plus(feeUsd);
+    metrics.cumulativeProtocolFeesUsd = metrics.cumulativeProtocolFeesUsd.plus(protocolFeeUsd);
+    metrics.cumulativeExternalFeesUsd = metrics.cumulativeExternalFeesUsd.plus(externalFeeUsd);
+  }
   metrics.lastUpdated = timestamp;
   metrics.save();
 }

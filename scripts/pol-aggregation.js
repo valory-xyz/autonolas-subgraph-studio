@@ -150,13 +150,22 @@ async function queryL2(url) {
 // Convert cumulative L2 token-denominated fees to USD.
 // For each chain: feePriced is the fee in the priced token, feeOlas in OLAS.
 // OLAS-denominated fees are valued using the pool ratio: feeOlas × (reservePriced / reserveOlas) × price.
+// Uses BigInt arithmetic to avoid precision loss for large cumulative values
+// (Number.MAX_SAFE_INTEGER ≈ 9e15, but 18-decimal token amounts can exceed this).
 function l2FeesToUsd(feePriced, feeOlas, reservePriced, reserveOlas, price, decimals = 18) {
-  const fp = Number(feePriced) / (10 ** decimals);
-  const fo = Number(feeOlas) / 1e18;
-  const rp = Number(reservePriced) / (10 ** decimals);
-  const ro = Number(reserveOlas) / 1e18;
-  const olasInPriced = ro > 0 ? fo * (rp / ro) : 0;
-  return (fp + olasInPriced) * price;
+  const outputScale = 10n ** 8n;
+  const pricedDecimalsScale = 10n ** BigInt(decimals);
+  // Scale feePriced to 8-decimal fixed-point
+  const fpScaled = (feePriced * outputScale) / pricedDecimalsScale;
+
+  let olasInPricedScaled = 0n;
+  if (reserveOlas > 0n) {
+    // feeOlas * reservePriced / reserveOlas → priced-token units, then to 8-decimal
+    olasInPricedScaled = (feeOlas * reservePriced * outputScale) / (reserveOlas * pricedDecimalsScale);
+  }
+
+  const totalPricedScaled = fpScaled + olasInPricedScaled;
+  return (Number(totalPricedScaled) / Number(outputScale)) * price;
 }
 
 const CHAIN_CONFIG = {
