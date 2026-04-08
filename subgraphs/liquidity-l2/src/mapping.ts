@@ -1,19 +1,24 @@
-import { Address, BigInt } from '@graphprotocol/graph-ts';
+import { Address, BigInt, Bytes } from '@graphprotocol/graph-ts';
 import { Transfer } from '../generated/BalancerPool/BalancerV2WeightedPool';
 import { BalancerV2WeightedPool } from '../generated/BalancerPool/BalancerV2WeightedPool';
 import { BalancerV2Vault } from '../generated/BalancerPool/BalancerV2Vault';
-import { Sync, UniswapV2Pair } from '../generated/BalancerPool/UniswapV2Pair';
+import { Swap as VaultSwap } from '../generated/BalancerPool/BalancerV2Vault';
+import { Sync, UniswapV2Pair, Swap as UniswapSwap } from '../generated/BalancerPool/UniswapV2Pair';
 import { AggregatorV3Interface } from '../generated/BalancerPool/AggregatorV3Interface';
 
-import { BPTTransfer, PriceData } from '../generated/schema';
+import { BPTTransfer, PoolMetrics, PriceData } from '../generated/schema';
 
 import {
   isZeroAddress,
   getOrCreatePoolMetrics,
+  getOrCreateDailyFees,
   BALANCER_VAULT,
   CHAINLINK_CELO_USD,
   CELO_PRICE_ID,
   PRICE_STALENESS_THRESHOLD,
+  WEI,
+  SWAP_FEE_NUMERATOR,
+  SWAP_FEE_DENOMINATOR,
 } from './utils';
 
 /**
@@ -163,6 +168,108 @@ export function handleUniswapSync(event: Sync): void {
   }
 
   metrics.lastUpdatedBlock = blockNumber;
+  metrics.lastUpdatedTimestamp = timestamp;
+  metrics.lastUpdatedTransaction = event.transaction.hash;
+  metrics.save();
+}
+
+/**
+ * Handle Balancer V2 Vault Swap events for fee tracking.
+ * Processes ALL Vault swaps; filters by poolId to only track our pool.
+ * Fee = amountIn * swapFeePercentage / 1e18.
+ */
+export function handleVaultSwap(event: VaultSwap): void {
+  let poolAddress = event.address; // This is the Vault address, not the pool
+  // We need to find the pool address from the poolId — first 20 bytes of poolId
+  let poolId = event.params.poolId;
+
+  // Load metrics using the pool address derived from poolId (first 20 bytes).
+  // Only process if PoolMetrics already exists (created by a prior mint/burn).
+  // This prevents creating orphan entities for unrelated Vault swaps.
+  let poolAddrBytes = Bytes.fromUint8Array(poolId.slice(0, 20));
+  let poolAddr = Address.fromBytes(poolAddrBytes);
+  let metrics = PoolMetrics.load(poolAddr);
+
+  // Skip if this pool hasn't been initialized by a mint/burn event
+  if (metrics == null) {
+    return;
+  }
+
+  // If poolId hasn't been set yet on an existing entity, populate it
+  if (metrics.poolId.length == 0) {
+    metrics.poolId = poolId;
+  }
+
+  // Verify this swap is for our pool
+  if (!metrics.poolId.equals(poolId)) {
+    return;
+  }
+
+  // Get swap fee percentage (cached, refresh if not set)
+  if (metrics.swapFeePercentage.equals(BigInt.zero())) {
+    let pool = BalancerV2WeightedPool.bind(poolAddr);
+    let feeResult = pool.try_getSwapFeePercentage();
+    if (!feeResult.reverted) {
+      metrics.swapFeePercentage = feeResult.value;
+    }
+  }
+
+  // Compute fee: amountIn * swapFeePercentage / 1e18
+  let amountIn = event.params.amountIn;
+  let fee = amountIn.times(metrics.swapFeePercentage).div(WEI);
+
+  // Determine if tokenIn is token0 or token1
+  let tokenIn = event.params.tokenIn;
+  let feeToken0 = BigInt.zero();
+  let feeToken1 = BigInt.zero();
+
+  if (tokenIn.equals(Address.fromBytes(metrics.token0))) {
+    feeToken0 = fee;
+  } else {
+    feeToken1 = fee;
+  }
+
+  // Update daily fees
+  let daily = getOrCreateDailyFees(event.block.timestamp);
+  daily.totalFeesToken0 = daily.totalFeesToken0.plus(feeToken0);
+  daily.totalFeesToken1 = daily.totalFeesToken1.plus(feeToken1);
+  daily.swapCount = daily.swapCount + 1;
+  daily.save();
+
+  // Update cumulative fees on pool metrics
+  metrics.cumulativeFeesToken0 = metrics.cumulativeFeesToken0.plus(feeToken0);
+  metrics.cumulativeFeesToken1 = metrics.cumulativeFeesToken1.plus(feeToken1);
+  metrics.lastUpdatedBlock = event.block.number;
+  metrics.lastUpdatedTimestamp = event.block.timestamp;
+  metrics.lastUpdatedTransaction = event.transaction.hash;
+  metrics.save();
+}
+
+/**
+ * Handle UniswapV2 Swap events (Celo/Ubeswap only).
+ * Fee = 0.3% of input amounts.
+ */
+export function handleUniswapSwap(event: UniswapSwap): void {
+  let amount0In = event.params.amount0In;
+  let amount1In = event.params.amount1In;
+  let timestamp = event.block.timestamp;
+
+  // Compute fees: 0.3% of input amounts
+  let feeToken0 = amount0In.times(SWAP_FEE_NUMERATOR).div(SWAP_FEE_DENOMINATOR);
+  let feeToken1 = amount1In.times(SWAP_FEE_NUMERATOR).div(SWAP_FEE_DENOMINATOR);
+
+  // Update daily fees
+  let daily = getOrCreateDailyFees(timestamp);
+  daily.totalFeesToken0 = daily.totalFeesToken0.plus(feeToken0);
+  daily.totalFeesToken1 = daily.totalFeesToken1.plus(feeToken1);
+  daily.swapCount = daily.swapCount + 1;
+  daily.save();
+
+  // Update cumulative fees on pool metrics
+  let metrics = getOrCreatePoolMetrics(event.address);
+  metrics.cumulativeFeesToken0 = metrics.cumulativeFeesToken0.plus(feeToken0);
+  metrics.cumulativeFeesToken1 = metrics.cumulativeFeesToken1.plus(feeToken1);
+  metrics.lastUpdatedBlock = event.block.number;
   metrics.lastUpdatedTimestamp = timestamp;
   metrics.lastUpdatedTransaction = event.transaction.hash;
   metrics.save();

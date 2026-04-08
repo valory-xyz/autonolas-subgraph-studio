@@ -26,9 +26,14 @@ try {
 
 // Replace placeholders
 function replacePlaceholders(template, network, networkData) {
-  let result = template.replace(/{{ network }}/g, network);
+  // Support a "network" override field for cases where the manifest key
+  // differs from the Graph Node network name (e.g. "base-weth" → "base")
+  const graphNetwork = networkData.network || network;
+  let result = template.replace(/{{ network }}/g, graphNetwork);
 
   for (const [contractName, contractData] of Object.entries(networkData)) {
+    // Skip non-contract fields (e.g. "network" override)
+    if (typeof contractData !== 'object' || contractData === null) continue;
     result = result.replace(
       new RegExp(`{{ ${contractName}\\.address }}`, 'g'),
       contractData.address

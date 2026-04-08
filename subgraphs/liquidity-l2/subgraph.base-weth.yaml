@@ -9,11 +9,11 @@ dataSources:
   # from the Balancer Vault via getPoolTokens() contract call.
   - kind: ethereum/contract
     name: BalancerPool
-    network: optimism
+    network: base
     source:
-      address: "0x5bb3e58887264b667f915130fd04bbb56116c278"
+      address: "0x2da6e67C45aF2aaA539294D9FA27ea50CE4e2C5f"
       abi: BalancerV2WeightedPool
-      startBlock: 117547761
+      startBlock: 23026768
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -39,11 +39,11 @@ dataSources:
   # Processes ALL Vault swaps; handler filters by poolId and skips non-matching.
   - kind: ethereum/contract
     name: BalancerVault
-    network: optimism
+    network: base
     source:
       address: "0xBA12222222228d8Ba445958a75a0704d566BF2C8"
       abi: BalancerV2Vault
-      startBlock: 117547761
+      startBlock: 23026768
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7

@@ -52,6 +52,11 @@ type LPTokenMetrics @entity(immutable: false) {
   poolLiquidityUsd: BigInt! # total pool value in USD (8 decimals): 2 * ETH_reserves * ETH_price / 1e18
   protocolOwnedLiquidityUsd: BigInt! # treasury's share in USD (8 decimals): poolLiquidityUsd * treasuryPercentage / 10000
 
+  # Fee tracking (cumulative, 8 decimals for USD)
+  cumulativeFeesUsd: BigInt! # all-time cumulative total fees in USD
+  cumulativeProtocolFeesUsd: BigInt! # all-time cumulative protocol (treasury) fees in USD
+  cumulativeExternalFeesUsd: BigInt! # all-time cumulative external LP fees in USD
+
   # Timestamps
   lastUpdated: BigInt!
   firstTransferTimestamp: BigInt!
@@ -67,6 +72,18 @@ type PriceData @entity(immutable: false) {
 
 # Bridged LP token holdings in Treasury on Ethereum mainnet
 # Each entity tracks Treasury's balance of one bridged LP token
+# Daily swap fee aggregation for the OLAS-ETH pool
+type DailyFees @entity(immutable: false) {
+  id: ID! # UTC midnight timestamp string (e.g. "1704067200")
+  dayTimestamp: BigInt! # UTC midnight: timestamp / 86400 * 86400
+  totalFeesToken0: BigInt! # daily fees in OLAS (wei)
+  totalFeesToken1: BigInt! # daily fees in ETH (wei)
+  totalFeesUsd: BigInt! # daily total fees in USD (8 decimals)
+  protocolFeesUsd: BigInt! # protocol (treasury) share in USD (8 decimals)
+  externalFeesUsd: BigInt! # external LPs share in USD (8 decimals)
+  swapCount: Int! # number of swaps this day
+}
+
 type BridgedPOLHolding @entity(immutable: false) {
   id: Bytes! # bridged LP token address on Ethereum
   originChain: String! # source chain name (gnosis, polygon, solana, etc.)

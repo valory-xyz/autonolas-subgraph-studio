@@ -28,5 +28,12 @@
       "address": "0x5332584890d6e415a6dc910254d6430b8aab7e69",
       "startBlock": 12416046
     }
+  },
+  "base-weth": {
+    "network": "base",
+    "BalancerPool": {
+      "address": "0x2da6e67C45aF2aaA539294D9FA27ea50CE4e2C5f",
+      "startBlock": 23026768
+    }
   }
 }

@@ -28,6 +28,7 @@ const SUBGRAPH_URLS = {
   optimism: process.env.SUBGRAPH_OPTIMISM_URL || 'https://api.studio.thegraph.com/query/1716136/olas-optimism-liquidity/version/latest',
   base: process.env.SUBGRAPH_BASE_URL || 'https://api.studio.thegraph.com/query/1716136/olas-base-liquidity/version/latest',
   celo: process.env.SUBGRAPH_CELO_URL || 'https://api.studio.thegraph.com/query/1716136/olas-celo-liquidity/version/latest',
+  'base-weth': process.env.SUBGRAPH_BASE_WETH_URL || 'https://api.studio.thegraph.com/query/1716136/olas-base-weth-liquidity/version/latest',
 };
 
 const SOLANA_RPC = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
@@ -98,6 +99,7 @@ const ETH_QUERY_FULL = `{
     currentReserve0 currentReserve1
     ethUsdPrice maticUsdPrice solUsdPrice
     poolLiquidityUsd protocolOwnedLiquidityUsd
+    cumulativeFeesUsd cumulativeProtocolFeesUsd cumulativeExternalFeesUsd
   }
   bridgedPOLHoldings(first: 10) {
     id originChain pair currentBalance totalSold
@@ -120,10 +122,11 @@ const ETH_QUERY_SAFE = `{
   _meta { block { number } hasIndexingErrors }
 }`;
 
-// Two L2 query variants: with and without celoUsdPrice (added with Celo Chainlink support)
+// Two L2 query variants: with and without fee fields
 const L2_QUERY_FULL = `{
   poolMetrics_collection(first: 1) {
     id token0 token1 reserve0 reserve1 totalSupply celoUsdPrice
+    cumulativeFeesToken0 cumulativeFeesToken1 swapFeePercentage
   }
   _meta { block { number } hasIndexingErrors }
 }`;
@@ -144,13 +147,31 @@ async function queryL2(url) {
 // ─── Chain-specific valuation logic ──────────────────────────────────────────
 
 // Token identification per chain (which reserve is the "priced" token)
+// Convert cumulative L2 token-denominated fees to USD.
+// For each chain: feePriced is the fee in the priced token, feeOlas in OLAS.
+// OLAS-denominated fees are valued using the pool ratio: feeOlas × (reservePriced / reserveOlas) × price.
+function l2FeesToUsd(feePriced, feeOlas, reservePriced, reserveOlas, price, decimals = 18) {
+  const fp = Number(feePriced) / (10 ** decimals);
+  const fo = Number(feeOlas) / 1e18;
+  const rp = Number(reservePriced) / (10 ** decimals);
+  const ro = Number(reserveOlas) / 1e18;
+  const olasInPriced = ro > 0 ? fo * (rp / ro) : 0;
+  return (fp + olasInPriced) * price;
+}
+
 const CHAIN_CONFIG = {
   gnosis: {
     pair: 'OLAS-WXDAI',
-    // token1 = WXDAI (stablecoin), value = 2 * WXDAI reserves
+    // token0 = OLAS, token1 = WXDAI (stablecoin), value = 2 * WXDAI reserves
     valuate: (pool) => {
       const wxdai = Number(BigInt(pool.reserve1)) / 1e18;
       return { tvl: wxdai * 2, method: '2×WXDAI' };
+    },
+    // token1 = WXDAI (priced), token0 = OLAS
+    feesToUsd: (pool) => {
+      const f0 = BigInt(pool.cumulativeFeesToken0 || '0');
+      const f1 = BigInt(pool.cumulativeFeesToken1 || '0');
+      return l2FeesToUsd(f1, f0, BigInt(pool.reserve1), BigInt(pool.reserve0), 1.0);
     },
   },
   polygon: {
@@ -161,6 +182,13 @@ const CHAIN_CONFIG = {
       const wmatic = Number(BigInt(pool.reserve0)) / 1e18;
       return { tvl: wmatic * 2 * prices.matic, method: `2×WMATIC×$${prices.matic.toFixed(4)}` };
     },
+    // token0 = WMATIC (priced), token1 = OLAS
+    feesToUsd: (pool, prices) => {
+      if (prices.matic <= 0) return null;
+      const f0 = BigInt(pool.cumulativeFeesToken0 || '0');
+      const f1 = BigInt(pool.cumulativeFeesToken1 || '0');
+      return l2FeesToUsd(f0, f1, BigInt(pool.reserve0), BigInt(pool.reserve1), prices.matic);
+    },
   },
   arbitrum: {
     pair: 'OLAS-WETH',
@@ -168,6 +196,12 @@ const CHAIN_CONFIG = {
     valuate: (pool, prices) => {
       const weth = Number(BigInt(pool.reserve1)) / 1e18;
       return { tvl: weth * 2 * prices.eth, method: `2×WETH×$${prices.eth.toFixed(2)}` };
+    },
+    // token1 = WETH (priced), token0 = OLAS
+    feesToUsd: (pool, prices) => {
+      const f0 = BigInt(pool.cumulativeFeesToken0 || '0');
+      const f1 = BigInt(pool.cumulativeFeesToken1 || '0');
+      return l2FeesToUsd(f1, f0, BigInt(pool.reserve1), BigInt(pool.reserve0), prices.eth);
     },
   },
   optimism: {
@@ -177,6 +211,12 @@ const CHAIN_CONFIG = {
       const weth = Number(BigInt(pool.reserve0)) / 1e18;
       return { tvl: weth * 2 * prices.eth, method: `2×WETH×$${prices.eth.toFixed(2)}` };
     },
+    // token0 = WETH (priced), token1 = OLAS
+    feesToUsd: (pool, prices) => {
+      const f0 = BigInt(pool.cumulativeFeesToken0 || '0');
+      const f1 = BigInt(pool.cumulativeFeesToken1 || '0');
+      return l2FeesToUsd(f0, f1, BigInt(pool.reserve0), BigInt(pool.reserve1), prices.eth);
+    },
   },
   base: {
     pair: 'OLAS-USDC',
@@ -184,6 +224,26 @@ const CHAIN_CONFIG = {
     valuate: (pool) => {
       const usdc = Number(BigInt(pool.reserve1)) / 1e6;
       return { tvl: usdc * 2, method: '2×USDC' };
+    },
+    // token1 = USDC (priced, 6 decimals), token0 = OLAS
+    feesToUsd: (pool) => {
+      const f0 = BigInt(pool.cumulativeFeesToken0 || '0');
+      const f1 = BigInt(pool.cumulativeFeesToken1 || '0');
+      return l2FeesToUsd(f1, f0, BigInt(pool.reserve1), BigInt(pool.reserve0), 1.0, 6);
+    },
+  },
+  'base-weth': {
+    pair: 'WETH-OLAS',
+    // token0 = WETH, value = 2 * WETH * ETH/USD
+    valuate: (pool, prices) => {
+      const weth = Number(BigInt(pool.reserve0)) / 1e18;
+      return { tvl: weth * 2 * prices.eth, method: `2×WETH×$${prices.eth.toFixed(2)}` };
+    },
+    // token0 = WETH (priced), token1 = OLAS
+    feesToUsd: (pool, prices) => {
+      const f0 = BigInt(pool.cumulativeFeesToken0 || '0');
+      const f1 = BigInt(pool.cumulativeFeesToken1 || '0');
+      return l2FeesToUsd(f0, f1, BigInt(pool.reserve0), BigInt(pool.reserve1), prices.eth);
     },
   },
   celo: {
@@ -197,6 +257,14 @@ const CHAIN_CONFIG = {
       const celo = Number(r0) / 1e18;
       const celoPrice = Number(BigInt(pool.celoUsdPrice)) / 1e8;
       return { tvl: celo * 2 * celoPrice, method: `2×CELO×$${celoPrice.toFixed(6)} (Chainlink)` };
+    },
+    // token0 = CELO (priced), token1 = OLAS
+    feesToUsd: (pool) => {
+      if (!pool.celoUsdPrice || pool.celoUsdPrice === '0') return null;
+      const celoPrice = Number(BigInt(pool.celoUsdPrice)) / 1e8;
+      const f0 = BigInt(pool.cumulativeFeesToken0 || '0');
+      const f1 = BigInt(pool.cumulativeFeesToken1 || '0');
+      return l2FeesToUsd(f0, f1, BigInt(pool.reserve0), BigInt(pool.reserve1), celoPrice);
     },
   },
 };
@@ -223,7 +291,7 @@ async function main() {
   //       ETH_QUERY_SAFE includes only ethUsdPrice (works with all versions)
 
   // Fetch everything in parallel
-  const [ethData, gnData, pgData, arbData, optData, baseData, celoData, solVaultA, solVaultB] =
+  const [ethData, gnData, pgData, arbData, optData, baseData, baseWethData, celoData, solVaultA, solVaultB] =
     await Promise.all([
       fetchEthSubgraph(),
       queryL2(SUBGRAPH_URLS.gnosis),
@@ -231,6 +299,7 @@ async function main() {
       queryL2(SUBGRAPH_URLS.arbitrum),
       queryL2(SUBGRAPH_URLS.optimism),
       queryL2(SUBGRAPH_URLS.base),
+      queryL2(SUBGRAPH_URLS['base-weth']),
       queryL2(SUBGRAPH_URLS.celo),
       solanaRpc('getTokenAccountBalance', [SOL_VAULT]),
       solanaRpc('getTokenAccountBalance', [OLAS_VAULT]),
@@ -289,6 +358,12 @@ async function main() {
   const ethPolUsd = Number(BigInt(metrics.protocolOwnedLiquidityUsd)) / 1e8;
   const ethPoolUsd = Number(BigInt(metrics.poolLiquidityUsd)) / 1e8;
   const ethShare = Number(BigInt(metrics.treasuryPercentage)) / 100;
+
+  // Ethereum fees (already in USD from subgraph, 8 decimals)
+  const ethTotalFeesUsd = metrics.cumulativeFeesUsd ? Number(BigInt(metrics.cumulativeFeesUsd)) / 1e8 : null;
+  const ethProtocolFeesUsd = metrics.cumulativeProtocolFeesUsd ? Number(BigInt(metrics.cumulativeProtocolFeesUsd)) / 1e8 : null;
+  const ethExternalFeesUsd = metrics.cumulativeExternalFeesUsd ? Number(BigInt(metrics.cumulativeExternalFeesUsd)) / 1e8 : null;
+
   results.push({
     chain: 'Ethereum',
     pair: 'OLAS-WETH',
@@ -298,27 +373,31 @@ async function main() {
     share: ethShare,
     method: `2×ETH×$${prices.eth.toFixed(2)}`,
     block: ethData.data._meta.block.number,
+    totalFeesUsd: ethTotalFeesUsd,
+    protocolFeesUsd: ethProtocolFeesUsd,
+    externalFeesUsd: ethExternalFeesUsd,
   });
 
   // 2-7. L2 chains
-  const l2Data = { gnosis: gnData, polygon: pgData, arbitrum: arbData, optimism: optData, base: baseData, celo: celoData };
+  const l2Data = { gnosis: gnData, polygon: pgData, arbitrum: arbData, optimism: optData, base: baseData, 'base-weth': baseWethData, celo: celoData };
   for (const [chain, data] of Object.entries(l2Data)) {
     const config = CHAIN_CONFIG[chain];
     const dex = chain === 'celo' ? 'Ubeswap' : 'Balancer V2';
+    const displayName = chain === 'base-weth' ? 'Base (WETH)' : chain.charAt(0).toUpperCase() + chain.slice(1);
 
     // Defensive: check for GraphQL errors or missing data
     if (data.errors || !data.data) {
       const errMsg = data.errors ? data.errors.map(e => e.message).join('; ') : 'no data';
-      results.push({ chain, pair: config.pair, dex, poolTvl: null, treasuryPol: null, share: 0, method: `QUERY ERROR: ${errMsg}`, block: 0 });
+      results.push({ chain: displayName, pair: config.pair, dex, poolTvl: null, treasuryPol: null, share: 0, method: `QUERY ERROR: ${errMsg}`, block: 0, totalFeesUsd: null, protocolFeesUsd: null, externalFeesUsd: null });
       continue;
     }
     if (data.data._meta && data.data._meta.hasIndexingErrors) {
-      results.push({ chain, pair: config.pair, dex, poolTvl: null, treasuryPol: null, share: 0, method: 'INDEXING ERRORS', block: data.data._meta.block.number });
+      results.push({ chain: displayName, pair: config.pair, dex, poolTvl: null, treasuryPol: null, share: 0, method: 'INDEXING ERRORS', block: data.data._meta.block.number, totalFeesUsd: null, protocolFeesUsd: null, externalFeesUsd: null });
       continue;
     }
     const pool = (data.data.poolMetrics_collection || [])[0];
     if (!pool) {
-      results.push({ chain, pair: config.pair, dex, poolTvl: null, treasuryPol: null, share: 0, method: 'NO POOL DATA', block: data.data._meta ? data.data._meta.block.number : 0 });
+      results.push({ chain: displayName, pair: config.pair, dex, poolTvl: null, treasuryPol: null, share: 0, method: 'NO POOL DATA', block: data.data._meta ? data.data._meta.block.number : 0, totalFeesUsd: null, protocolFeesUsd: null, externalFeesUsd: null });
       continue;
     }
 
@@ -328,15 +407,30 @@ async function main() {
     const share = supply > 0n ? Number(bridgedBal) / Number(supply) : 0;
     const pol = tvl !== null ? tvl * share : null;
 
+    // Compute fees in USD (token-denominated → USD using same prices as POL valuation)
+    let totalFeesUsd = null;
+    let protocolFeesUsd = null;
+    let externalFeesUsd = null;
+    if (config.feesToUsd && pool.cumulativeFeesToken0 !== undefined) {
+      totalFeesUsd = config.feesToUsd(pool, prices);
+      if (totalFeesUsd !== null) {
+        protocolFeesUsd = totalFeesUsd * share;
+        externalFeesUsd = totalFeesUsd - protocolFeesUsd;
+      }
+    }
+
     results.push({
-      chain: chain.charAt(0).toUpperCase() + chain.slice(1),
+      chain: displayName,
       pair: config.pair,
-      dex: chain === 'celo' ? 'Ubeswap' : 'Balancer V2',
+      dex,
       poolTvl: tvl,
       treasuryPol: pol,
       share: share * 100,
       method,
       block: data.data._meta.block.number,
+      totalFeesUsd,
+      protocolFeesUsd,
+      externalFeesUsd,
     });
   }
 
@@ -369,16 +463,23 @@ async function main() {
     method: solMethod,
     solReserves: solBalance,
     block: solVaultOk ? 'Solana slot ' + solVaultA.result.context.slot : 'N/A',
+    totalFeesUsd: null, // Solana fees not tracked (no subgraph)
+    protocolFeesUsd: null,
+    externalFeesUsd: null,
   });
 
   // ─── Output ───
-  let total = 0;
-  let totalKnown = 0;
+  let totalPol = 0;
+  let totalPolKnown = 0;
+  let totalProtocolFees = 0;
+  let totalExternalFees = 0;
+  let totalFeesKnown = 0;
 
   const pad = (s, n) => String(s).padEnd(n);
   const rpad = (s, n) => String(s).padStart(n);
   const fmtUsd = (v) => v !== null ? '$' + v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : 'N/A';
 
+  // ─── POL Table ───
   log('\n' + '='.repeat(90));
   log('POL VALUATION BY CHAIN');
   log('='.repeat(90));
@@ -392,20 +493,50 @@ async function main() {
     log(`${pad(r.chain, 15)} ${pad(r.pair, 15)} ${rpad(tvlStr, 16)} ${rpad(polStr, 16)} ${rpad(shareStr, 8)}  ${r.method}`);
 
     if (r.treasuryPol !== null) {
-      total += r.treasuryPol;
-      totalKnown++;
+      totalPol += r.treasuryPol;
+      totalPolKnown++;
     }
   }
 
   log('-'.repeat(90));
-  log(`${pad('TOTAL', 15)} ${pad('', 15)} ${rpad('', 16)} ${rpad(fmtUsd(total), 16)} ${rpad('', 8)}  (${totalKnown}/${results.length} chains valued)`);
+  log(`${pad('TOTAL', 15)} ${pad('', 15)} ${rpad('', 16)} ${rpad(fmtUsd(totalPol), 16)} ${rpad('', 8)}  (${totalPolKnown}/${results.length} chains valued)`);
+
+  // ─── Fees Table ───
+  log('\n' + '='.repeat(90));
+  log('CUMULATIVE PROTOCOL FEES BY CHAIN');
+  log('='.repeat(90));
+  log(`${pad('Chain', 15)} ${pad('Pair', 15)} ${rpad('Total Fees', 16)} ${rpad('Protocol Fees', 16)} ${rpad('External Fees', 16)}`);
+  log('-'.repeat(90));
+
+  for (const r of results) {
+    const totalStr = fmtUsd(r.totalFeesUsd);
+    const protocolStr = fmtUsd(r.protocolFeesUsd);
+    const externalStr = fmtUsd(r.externalFeesUsd);
+    log(`${pad(r.chain, 15)} ${pad(r.pair, 15)} ${rpad(totalStr, 16)} ${rpad(protocolStr, 16)} ${rpad(externalStr, 16)}`);
+
+    if (r.protocolFeesUsd !== null) {
+      totalProtocolFees += r.protocolFeesUsd;
+      totalExternalFees += r.externalFeesUsd;
+      totalFeesKnown++;
+    }
+  }
+
+  const totalAllFees = totalProtocolFees + totalExternalFees;
+  log('-'.repeat(90));
+  log(`${pad('TOTAL', 15)} ${pad('', 15)} ${rpad(fmtUsd(totalAllFees), 16)} ${rpad(fmtUsd(totalProtocolFees), 16)} ${rpad(fmtUsd(totalExternalFees), 16)}  (${totalFeesKnown}/${results.length} chains valued)`);
 
   // Missing chains
-  const missing = results.filter(r => r.treasuryPol === null);
-  if (missing.length > 0) {
+  const missingPol = results.filter(r => r.treasuryPol === null);
+  const missingFees = results.filter(r => r.protocolFeesUsd === null);
+  if (missingPol.length > 0 || missingFees.length > 0) {
     log('\nMissing:');
-    for (const m of missing) {
-      log(`  ${m.chain} ${m.pair}: ${m.method}`);
+    for (const m of missingPol) {
+      log(`  POL  — ${m.chain} ${m.pair}: ${m.method}`);
+    }
+    for (const m of missingFees) {
+      if (!missingPol.find(p => p.chain === m.chain)) {
+        log(`  Fees — ${m.chain} ${m.pair}: fee data not available`);
+      }
     }
   }
 
@@ -418,8 +549,12 @@ async function main() {
       timestamp: new Date().toISOString(),
       prices,
       chains: results,
-      totalPolUsd: total,
-      chainsValued: totalKnown,
+      totalPolUsd: totalPol,
+      totalProtocolFeesUsd: totalProtocolFees,
+      totalExternalFeesUsd: totalExternalFees,
+      totalFeesUsd: totalAllFees,
+      polChainsValued: totalPolKnown,
+      feesChainsValued: totalFeesKnown,
       chainsTotal: results.length,
     };
     console.log(JSON.stringify(output, null, 2));

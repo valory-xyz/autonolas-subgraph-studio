@@ -5,6 +5,7 @@ import {
   PoolReserves,
   PriceData,
   BridgedPOLHolding,
+  DailyFees,
 } from '../generated/schema';
 
 // ──────────────────────────────────────────────────────────────
@@ -52,6 +53,9 @@ export const BRIDGED_LP_OPTIMISM = Address.fromString(
 export const BRIDGED_LP_BASE = Address.fromString(
   '0x9946d6FD1210D85EC613Ca956F142D911C97a074'
 );
+export const BRIDGED_LP_BASE_WETH = Address.fromString(
+  '0xad47b6ffEe3ed15fCE55eCA42AcE9736901b94A1'
+);
 export const BRIDGED_LP_CELO = Address.fromString(
   '0xC085F31E4ca659fF8A17042dDB26f1dcA2fBdAB4'
 );
@@ -70,6 +74,11 @@ export const SOL_PRICE_ID = 'sol-usd';
 // Chainlink price refresh interval: only call latestRoundData()
 // if the stored price is older than this many seconds
 export const PRICE_STALENESS_THRESHOLD = BigInt.fromI32(3600); // 1 hour
+
+// Fee calculation constants
+export const DAY_SECONDS = BigInt.fromI32(86400);
+export const SWAP_FEE_NUMERATOR = BigInt.fromI32(3);
+export const SWAP_FEE_DENOMINATOR = BigInt.fromI32(1000);
 
 // ──────────────────────────────────────────────────────────────
 // Address checks
@@ -109,6 +118,7 @@ export function getBridgedLPOriginChain(address: Address): string {
   if (address.equals(BRIDGED_LP_ARBITRUM)) return 'arbitrum';
   if (address.equals(BRIDGED_LP_OPTIMISM)) return 'optimism';
   if (address.equals(BRIDGED_LP_BASE)) return 'base';
+  if (address.equals(BRIDGED_LP_BASE_WETH)) return 'base-weth';
   if (address.equals(BRIDGED_LP_CELO)) return 'celo';
   return 'unknown';
 }
@@ -120,6 +130,7 @@ export function getBridgedLPPair(address: Address): string {
   if (address.equals(BRIDGED_LP_ARBITRUM)) return 'OLAS-WETH';
   if (address.equals(BRIDGED_LP_OPTIMISM)) return 'WETH-OLAS';
   if (address.equals(BRIDGED_LP_BASE)) return 'OLAS-USDC';
+  if (address.equals(BRIDGED_LP_BASE_WETH)) return 'WETH-OLAS';
   if (address.equals(BRIDGED_LP_CELO)) return 'CELO-OLAS';
   return 'unknown';
 }
@@ -144,6 +155,9 @@ export function getOrCreateLPTokenMetrics(): LPTokenMetrics {
     metrics.solUsdPrice = BigInt.zero();
     metrics.poolLiquidityUsd = BigInt.zero();
     metrics.protocolOwnedLiquidityUsd = BigInt.zero();
+    metrics.cumulativeFeesUsd = BigInt.zero();
+    metrics.cumulativeProtocolFeesUsd = BigInt.zero();
+    metrics.cumulativeExternalFeesUsd = BigInt.zero();
     metrics.lastUpdated = BigInt.zero();
     metrics.firstTransferTimestamp = BigInt.zero();
   }
@@ -192,6 +206,23 @@ export function getOrCreateBridgedPOLHolding(
     holding.transactionCount = 0;
   }
   return holding;
+}
+
+export function getOrCreateDailyFees(timestamp: BigInt): DailyFees {
+  let dayTimestamp = timestamp.div(DAY_SECONDS).times(DAY_SECONDS);
+  let id = dayTimestamp.toString();
+  let daily = DailyFees.load(id);
+  if (daily == null) {
+    daily = new DailyFees(id);
+    daily.dayTimestamp = dayTimestamp;
+    daily.totalFeesToken0 = BigInt.zero();
+    daily.totalFeesToken1 = BigInt.zero();
+    daily.totalFeesUsd = BigInt.zero();
+    daily.protocolFeesUsd = BigInt.zero();
+    daily.externalFeesUsd = BigInt.zero();
+    daily.swapCount = 0;
+  }
+  return daily;
 }
 
 // ──────────────────────────────────────────────────────────────

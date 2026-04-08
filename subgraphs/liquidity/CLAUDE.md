@@ -1,6 +1,6 @@
 # Protocol Owned Liquidity Subgraph — Ethereum Mainnet
 
-Tracks the full Olas Protocol Owned Liquidity on Ethereum mainnet: the native OLAS-ETH Uniswap V2 pool (reserves, supply, treasury holdings, USD valuation via Chainlink) and 7 bridged LP tokens from L2/Solana held by Treasury.
+Tracks the full Olas Protocol Owned Liquidity on Ethereum mainnet: the native OLAS-ETH Uniswap V2 pool (reserves, supply, treasury holdings, USD valuation via Chainlink, swap fees) and 8 bridged LP tokens from L2/Solana held by Treasury.
 
 See [README.md](README.md) for the full POL picture across all chains.
 See [../liquidity-l2/CLAUDE.md](../liquidity-l2/CLAUDE.md) for the L2 Balancer pool subgraph.
@@ -11,7 +11,7 @@ See [../liquidity-l2/CLAUDE.md](../liquidity-l2/CLAUDE.md) for the L2 Balancer p
 ```
 subgraphs/liquidity/
 ├── schema.graphql
-├── subgraph.yaml          # prune: auto enabled, 9 data sources
+├── subgraph.yaml          # prune: auto enabled, 11 data sources
 ├── src/
 │   ├── mapping.ts         # Event handlers (handleLPTransfer, handleSync, handleBridgedLPTransfer)
 │   └── utils.ts           # Constants, helpers, get-or-create patterns, USD math
@@ -28,12 +28,14 @@ subgraphs/liquidity/
 |---|---|---|---|---|---|
 | OLASETHLPToken | OLAS-ETH LP (ERC20) | `0x09D1d767eDF8Fa23A64C51fa559E0688E526812F` | ERC20 | `Transfer` | `handleLPTransfer` |
 | OLASETHPair | OLAS-ETH LP (UniV2) | `0x09D1d767eDF8Fa23A64C51fa559E0688E526812F` | UniswapV2Pair + AggregatorV3Interface | `Sync` | `handleSync` |
+| OLASETHSwap | OLAS-ETH LP (UniV2) | `0x09D1d767eDF8Fa23A64C51fa559E0688E526812F` | UniswapV2Pair | `Swap` | `handleSwap` |
 | BridgedLP_Gnosis | Gnosis OLAS-WXDAI | `0x27df632fd0dcf191C418c803801D521cd579F18e` | ERC20 | `Transfer` | `handleBridgedLPTransfer` |
 | BridgedLP_Polygon | Polygon OLAS-WMATIC | `0xf9825A563222f9eFC81e369311DAdb13D68e60a4` | ERC20 | `Transfer` | `handleBridgedLPTransfer` |
 | BridgedLP_Solana | Solana WSOL-OLAS | `0x3685B8cC36B8df09ED9E81C1690100306bF23E04` | ERC20 | `Transfer` | `handleBridgedLPTransfer` |
 | BridgedLP_Arbitrum | Arbitrum OLAS-WETH | `0x36B203Cb3086269f005a4b987772452243c0767f` | ERC20 | `Transfer` | `handleBridgedLPTransfer` |
 | BridgedLP_Optimism | Optimism WETH-OLAS | `0x2FD007a534eB7527b535a1DF35aba6bD2a8b660F` | ERC20 | `Transfer` | `handleBridgedLPTransfer` |
 | BridgedLP_Base | Base OLAS-USDC | `0x9946d6FD1210D85EC613Ca956F142D911C97a074` | ERC20 | `Transfer` | `handleBridgedLPTransfer` |
+| BridgedLP_Base_WETH | Base WETH-OLAS | `0xad47b6ffEe3ed15fCE55eCA42AcE9736901b94A1` | ERC20 | `Transfer` | `handleBridgedLPTransfer` |
 | BridgedLP_Celo | Celo CELO-OLAS | `0xC085F31E4ca659fF8A17042dDB26f1dcA2fBdAB4` | ERC20 | `Transfer` | `handleBridgedLPTransfer` |
 
 Native pool (OLASETHLPToken, OLASETHPair) starts from block 17,679,229. Each bridged LP token starts from its first Transfer block on Ethereum mainnet:
@@ -111,8 +113,25 @@ Singleton aggregate metrics (id: `"global"`).
 | ethUsdPrice | `BigInt!` | Latest ETH/USD from Chainlink (8 decimals) |
 | poolLiquidityUsd | `BigInt!` | Total pool value in USD (8 decimals) |
 | protocolOwnedLiquidityUsd | `BigInt!` | Treasury's share in USD (8 decimals) |
+| cumulativeFeesUsd | `BigInt!` | All-time cumulative total swap fees in USD (8 decimals) |
+| cumulativeProtocolFeesUsd | `BigInt!` | All-time cumulative protocol (treasury) fees in USD |
+| cumulativeExternalFeesUsd | `BigInt!` | All-time cumulative external LP fees in USD |
 | lastUpdated | `BigInt!` | |
 | firstTransferTimestamp | `BigInt!` | |
+
+### DailyFees (mutable)
+Daily swap fee aggregation for the OLAS-ETH pool.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| id | `ID!` | UTC midnight timestamp string (e.g. `"1704067200"`) |
+| dayTimestamp | `BigInt!` | UTC midnight: `timestamp / 86400 * 86400` |
+| totalFeesToken0 | `BigInt!` | Daily fees in OLAS (wei) |
+| totalFeesToken1 | `BigInt!` | Daily fees in ETH (wei) |
+| totalFeesUsd | `BigInt!` | Daily total fees in USD (8 decimals) |
+| protocolFeesUsd | `BigInt!` | Protocol (treasury) share in USD (8 decimals) |
+| externalFeesUsd | `BigInt!` | External LPs share in USD (8 decimals) |
+| swapCount | `Int!` | Number of swaps this day |
 
 ### PriceData (mutable)
 Chainlink ETH/USD price (id: `"eth-usd"`).
@@ -150,17 +169,26 @@ Treasury's balance of one bridged LP token from an L2/Solana chain.
 - **Treasury tracking**: If `to` is treasury → `updateTreasuryHoldings(amount, isIncoming=true)`; if `from` is treasury → `updateTreasuryHoldings(amount, isIncoming=false)`
 - After each transfer: recalculates `treasuryPercentage` and USD valuations
 
-### 2. handleSync
+### 2. handleSwap
+**File**: `src/mapping.ts` | **Event**: `Swap(indexed address, uint256, uint256, uint256, uint256, indexed address)`
+
+- Computes swap fees: 0.3% of input amounts (`amount0In * 3 / 1000` for OLAS, `amount1In * 3 / 1000` for ETH)
+- Converts fees to USD: ETH fees via Chainlink ETH/USD, OLAS fees via pool ratio (`reserve1 / reserve0 * ETH/USD`)
+- Splits between protocol (treasury share) and external LPs using `treasuryPercentage` from `LPTokenMetrics`
+- Updates `DailyFees` entity (daily aggregation by UTC day: `timestamp / 86400 * 86400`)
+- Updates cumulative fee fields on `LPTokenMetrics`
+
+### 3. handleSync
 **File**: `src/mapping.ts` | **Event**: `Sync(uint112, uint112)`
 
 - Updates `PoolReserves` entity with current `reserve0` (OLAS) and `reserve1` (ETH)
 - **Chainlink price fetch (cached)**: Only calls `latestRoundData()` if the stored price is older than 1 hour (`PRICE_STALENESS_THRESHOLD = 3600 seconds`). Reuses cached `PriceData` otherwise to reduce contract call overhead during indexing.
 - Recalculates `poolLiquidityUsd` and `protocolOwnedLiquidityUsd`
 
-### 3. handleBridgedLPTransfer
+### 4. handleBridgedLPTransfer
 **File**: `src/mapping.ts` | **Event**: `Transfer(indexed address, indexed address, uint256)`
 
-- Shared handler for all 7 bridged LP token data sources
+- Shared handler for all 8 bridged LP token data sources
 - Only processes transfers to/from Treasury address — all others are ignored
 - Uses `event.address` to identify which bridged LP token is being transferred
 - Creates/updates `BridgedPOLHolding` entity with balance, metadata (originChain, pair)
@@ -182,6 +210,7 @@ All in `src/utils.ts`:
 | `getOrCreateTreasuryHoldings()` | Load-or-create keyed by treasury address |
 | `getOrCreatePoolReserves(poolAddress)` | Load-or-create keyed by pool address |
 | `getOrCreateBridgedPOLHolding(tokenAddress)` | Load-or-create keyed by bridged LP address; auto-populates originChain and pair |
+| `getOrCreateDailyFees(timestamp)` | Load-or-create daily fee entity keyed by UTC day timestamp |
 | `recalculateUsd(metrics)` | Computes `poolLiquidityUsd` and `protocolOwnedLiquidityUsd` from reserves + Chainlink price |
 | `updateTreasuryHoldings(amount, isIncoming, timestamp)` | Updates balance, cumulative totals, timestamps, count |
 | `updateGlobalMetricsAfterTransfer(amount, isMint, isBurn, timestamp)` | Updates supply, treasury %, recalculates USD |
@@ -284,21 +313,21 @@ This is more precise for partial positions but overkill when the vault balances 
 
 **Spec**: v1.0.0 | **API**: 0.0.7 | **Network**: mainnet | **Pruning**: auto
 
-9 data sources total:
-- 2 for the native OLAS-ETH pool (Transfer + Sync events from the same contract)
-- 7 for bridged LP tokens (Transfer events only, filtered for Treasury in handler)
+11 data sources total:
+- 3 for the native OLAS-ETH pool (Transfer + Sync + Swap events from the same contract)
+- 8 for bridged LP tokens (Transfer events only, filtered for Treasury in handler) — includes 2 Base pools (OLAS-USDC + WETH-OLAS)
 
 ---
 
 ## Testing
 
-**Framework**: Matchstick-as 0.5.0 | **14 tests**
+**Framework**: Matchstick-as 0.5.0 | **23 tests**
 
 ### Test Files
 | File | Purpose |
 |------|---------|
-| `tests/mapping.test.ts` | 14 test cases across 3 handler groups |
-| `tests/mapping-utils.ts` | Event factory functions (`createTransferEvent`, `createSyncEvent`) |
+| `tests/mapping.test.ts` | 23 test cases across 4 handler groups |
+| `tests/mapping-utils.ts` | Event factory functions (`createTransferEvent`, `createSyncEvent`, `createSwapEvent`) |
 | `tests/test-helpers.ts` | Namespaced constants (`TestAddresses`, `TestValues`) |
 
 ### Test Coverage
@@ -306,8 +335,9 @@ This is more precise for partial positions but overkill when the vault balances 
 | Handler | Tests | What's Covered |
 |---------|-------|----------------|
 | handleLPTransfer | 5 | Mint increases supply, burn decreases supply, treasury incoming/outgoing updates holdings, treasury percentage in basis points |
-| handleSync | 5 | Reserve updates, global metrics reserves, Chainlink ETH/USD price fetch (mocked via `createMockedFunction`), `poolLiquidityUsd` math, `protocolOwnedLiquidityUsd` with treasury share |
-| handleBridgedLPTransfer | 4 | Treasury incoming creates entity with correct metadata (originChain, pair), treasury outgoing decreases balance, non-treasury transfers ignored, multiple bridged tokens tracked independently |
+| handleSync | 7 | Reserve updates, global metrics reserves, Chainlink ETH/USD/MATIC/SOL price fetch (mocked via `createMockedFunction`), `poolLiquidityUsd` math, `protocolOwnedLiquidityUsd` with treasury share |
+| handleSwap | 6 | ETH input fee calculation (0.3%), OLAS input fee via pool ratio, protocol/external split using treasury %, daily accumulation with swapCount, cross-day separate DailyFees entities, cumulative fees on LPTokenMetrics |
+| handleBridgedLPTransfer | 5 | Treasury incoming creates entity with correct metadata (originChain, pair), treasury outgoing decreases balance, non-treasury transfers ignored, Base WETH-OLAS bridged LP metadata (originChain="base-weth", pair="WETH-OLAS"), multiple bridged tokens tracked independently |
 
 ### Running Tests
 ```bash
@@ -326,6 +356,7 @@ The Graph auto-generates query field names that differ from entity names. Correc
 | TreasuryHoldings | `treasuryHoldings(id: "0xa0da53447c0f6c4987964d8463da7e6628b30f82")` | `treasuryHoldings_collection` |
 | BridgedPOLHolding | `bridgedPOLHolding(id: "0x27df632fd0dcf191c418c803801d521cd579f18e")` | `bridgedPOLHoldings` |
 | PriceData | `priceData(id: "eth-usd")` | `priceDatas` |
+| DailyFees | `dailyFees(id: "1704067200")` | `dailyFees_collection` |
 | PoolReserves | `poolReserves(id: "0x09d1d767edf8fa23a64c51fa559e0688e526812f")` | `poolReserves_collection` |
 
 ### Validating Against Dune
@@ -356,7 +387,7 @@ The Olas protocol acquires LP tokens permanently through its **bonding mechanism
 
 1. **Native OLAS-ETH Pool (Uniswap V2 on Ethereum)**: The primary source of POL. The subgraph tracks the pool's LP token supply (mint/burn), the Treasury's LP balance, and pool reserves (OLAS + ETH). The Treasury currently owns ~99.95% of all LP tokens and has never sold any (`totalSold = 0`).
 
-2. **Bridged LP Tokens from L2 Chains**: The protocol also owns LP positions in Balancer V2 pools on 6 L2 chains plus an Orca pool on Solana. These LP tokens are bridged to Ethereum mainnet (via OmniBridge or Wormhole Portal) where the Treasury holds them. This subgraph tracks the Treasury's balance of each bridged LP token by watching ERC-20 Transfer events on the 7 bridged token contracts.
+2. **Bridged LP Tokens from L2 Chains**: The protocol also owns LP positions in Balancer V2 pools on 6 L2 chains (including 2 pools on Base) plus an Orca pool on Solana. These LP tokens are bridged to Ethereum mainnet (via OmniBridge or Wormhole Portal) where the Treasury holds them. This subgraph tracks the Treasury's balance of each bridged LP token by watching ERC-20 Transfer events on the 8 bridged token contracts.
 
 3. **USD Valuation**: Pool liquidity in USD is computed as `2 * ETH_reserves * ETH/USD_price` (since in a balanced Uniswap V2 pool, each side is worth half the total). The ETH/USD price comes from the Chainlink oracle at `0x5f4eC3Df9cbd43714FE2740f5E3616155c5b8419` via `latestRoundData()` contract calls. Protocol-owned liquidity USD is the Treasury's proportional share.
 
@@ -372,7 +403,7 @@ The Olas protocol acquires LP tokens permanently through its **bonding mechanism
 
 5. **Underflow Protection**: Outgoing bridged LP transfers clamp `currentBalance` to zero if the transfer amount exceeds the tracked balance. This guards against data inconsistency from partial-history indexing (e.g., if `startBlock` is set after the Treasury already received tokens).
 
-6. **No Daily Aggregation**: The subgraph only tracks current state (latest balances, reserves, prices). There are no daily snapshot or time-series entities — historical data can be reconstructed from immutable `LPTransfer` entities or by querying at specific blocks.
+6. **Swap Fee Tracking**: The subgraph tracks swap fees via `Swap` events from the Uniswap V2 pair. Fees are 0.3% of swap input amounts, converted to USD using Chainlink ETH/USD (for ETH fees) or pool ratio + Chainlink (for OLAS fees). Fees are split between protocol (treasury share) and external LPs using `treasuryPercentage`. Daily aggregation is stored in `DailyFees` entities keyed by UTC midnight timestamp. Cumulative totals are tracked on `LPTokenMetrics`.
 
 ### Unit Conventions
 

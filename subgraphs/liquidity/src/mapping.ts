@@ -1,6 +1,7 @@
 import { Address } from '@graphprotocol/graph-ts';
 import { Transfer } from '../generated/OLASETHLPToken/ERC20';
 import { Sync } from '../generated/OLASETHPair/UniswapV2Pair';
+import { Swap } from '../generated/OLASETHSwap/UniswapV2Pair';
 import { AggregatorV3Interface } from '../generated/OLASETHPair/AggregatorV3Interface';
 
 import { BigInt } from '@graphprotocol/graph-ts';
@@ -11,6 +12,8 @@ import {
   isTreasuryAddress,
   getOrCreatePoolReserves,
   getOrCreateBridgedPOLHolding,
+  getOrCreateDailyFees,
+  getOrCreateLPTokenMetrics,
   updateTreasuryHoldings,
   updateGlobalMetricsAfterTransfer,
   updateGlobalMetricsAfterSync,
@@ -21,6 +24,10 @@ import {
   MATIC_PRICE_ID,
   SOL_PRICE_ID,
   PRICE_STALENESS_THRESHOLD,
+  SWAP_FEE_NUMERATOR,
+  SWAP_FEE_DENOMINATOR,
+  WEI,
+  BASIS_POINTS,
 } from './utils';
 
 /**
@@ -116,6 +123,59 @@ export function handleSync(event: Sync): void {
 
   // Update global metrics (includes USD recalculation)
   updateGlobalMetricsAfterSync(reserve0, reserve1, timestamp);
+}
+
+/**
+ * Handle Uniswap V2 Swap events for the OLAS-ETH pool.
+ * Computes swap fees (0.3% of input), converts to USD, and splits
+ * between protocol (treasury share) and external LPs.
+ */
+export function handleSwap(event: Swap): void {
+  let amount0In = event.params.amount0In;
+  let amount1In = event.params.amount1In;
+  let timestamp = event.block.timestamp;
+
+  // Compute fees: 0.3% of input amounts
+  let feeToken0 = amount0In.times(SWAP_FEE_NUMERATOR).div(SWAP_FEE_DENOMINATOR);
+  let feeToken1 = amount1In.times(SWAP_FEE_NUMERATOR).div(SWAP_FEE_DENOMINATOR);
+
+  // Convert fees to USD using cached Chainlink ETH/USD price and pool reserves
+  let metrics = getOrCreateLPTokenMetrics();
+  let feeUsd = BigInt.zero();
+
+  if (metrics.ethUsdPrice.gt(BigInt.zero())) {
+    // ETH-denominated fee → USD
+    if (feeToken1.gt(BigInt.zero())) {
+      feeUsd = feeUsd.plus(feeToken1.times(metrics.ethUsdPrice).div(WEI));
+    }
+
+    // OLAS-denominated fee → price via pool ratio (OLAS→ETH) then ETH→USD
+    if (feeToken0.gt(BigInt.zero()) && metrics.currentReserve0.gt(BigInt.zero())) {
+      let feeInEth = feeToken0.times(metrics.currentReserve1).div(metrics.currentReserve0);
+      feeUsd = feeUsd.plus(feeInEth.times(metrics.ethUsdPrice).div(WEI));
+    }
+  }
+
+  // Protocol/external split based on treasury percentage (basis points)
+  let protocolFeeUsd = feeUsd.times(metrics.treasuryPercentage).div(BASIS_POINTS);
+  let externalFeeUsd = feeUsd.minus(protocolFeeUsd);
+
+  // Update daily fees
+  let daily = getOrCreateDailyFees(timestamp);
+  daily.totalFeesToken0 = daily.totalFeesToken0.plus(feeToken0);
+  daily.totalFeesToken1 = daily.totalFeesToken1.plus(feeToken1);
+  daily.totalFeesUsd = daily.totalFeesUsd.plus(feeUsd);
+  daily.protocolFeesUsd = daily.protocolFeesUsd.plus(protocolFeeUsd);
+  daily.externalFeesUsd = daily.externalFeesUsd.plus(externalFeeUsd);
+  daily.swapCount = daily.swapCount + 1;
+  daily.save();
+
+  // Update cumulative fees on global metrics
+  metrics.cumulativeFeesUsd = metrics.cumulativeFeesUsd.plus(feeUsd);
+  metrics.cumulativeProtocolFeesUsd = metrics.cumulativeProtocolFeesUsd.plus(protocolFeeUsd);
+  metrics.cumulativeExternalFeesUsd = metrics.cumulativeExternalFeesUsd.plus(externalFeeUsd);
+  metrics.lastUpdated = timestamp;
+  metrics.save();
 }
 
 /**
