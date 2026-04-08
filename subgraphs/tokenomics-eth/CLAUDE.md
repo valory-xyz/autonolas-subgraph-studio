@@ -267,9 +267,9 @@ The `handleEpochSave()` function in `src/mappings.ts` is the core epoch lifecycl
 **Framework**: Matchstick-as 0.5.0
 
 Basic scaffold tests verifying entity creation for core events:
-- `depository.test.ts`: BondCalculatorUpdated event creates entity with correct fields
-- `dispenser.test.ts`: IncentivesClaimed event creates entity with owner, reward, topUp
-- `tokenomics.test.ts`: AgentRegistryUpdated event creates entity with correct address
+- `depository.test.ts`: BondCalculatorUpdated event creates entity (imports from `DepositoryV2`)
+- `dispenser.test.ts`: IncentivesClaimed event creates entity (imports from `DispenserV1`)
+- `tokenomics.test.ts`: AgentRegistryUpdated event creates entity (imports from `Tokenomics`)
 
 Tests use mock events from `*-utils.ts` helper files.
 
