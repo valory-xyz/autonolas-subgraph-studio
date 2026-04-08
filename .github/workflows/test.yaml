@@ -50,12 +50,7 @@ jobs:
           node-version: "22"
 
       - name: Install dependencies
-        run: |
-          if [ -f yarn.lock ]; then
-            yarn install --frozen-lockfile
-          else
-            yarn install
-          fi
+        run: yarn install --frozen-lockfile || yarn install
 
       - name: Generate manifests (if template exists)
         run: |
@@ -117,12 +112,7 @@ jobs:
           node-version: "22"
 
       - name: Install dependencies
-        run: |
-          if [ -f yarn.lock ]; then
-            yarn install --frozen-lockfile
-          else
-            yarn install
-          fi
+        run: yarn install --frozen-lockfile || yarn install
 
       - name: Generate manifests (if template exists)
         run: |
@@ -131,7 +121,7 @@ jobs:
           fi
 
       - name: Generate types
-        run: graph codegen ${{ matrix.manifest }}
+        run: yarn graph codegen ${{ matrix.manifest }}
 
       - name: Build
-        run: graph build ${{ matrix.manifest }}
+        run: yarn graph build ${{ matrix.manifest }}
