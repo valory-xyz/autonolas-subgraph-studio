@@ -1,0 +1,138 @@
+name: Test Subgraphs
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # Discover which subgraphs have test files, and build a matrix
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.find.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find subgraphs with tests
+        id: find
+        run: |
+          matrix="["
+          first=true
+          for dir in subgraphs/*/; do
+            if ls "$dir"/tests/*.test.ts 1>/dev/null 2>&1; then
+              name=$(basename "$dir")
+              if [ "$first" = true ]; then first=false; else matrix+=","; fi
+              matrix+="{\"name\":\"$name\"}"
+            fi
+          done
+          matrix+="]"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "Discovered subgraphs with tests: $matrix"
+
+  test:
+    needs: detect
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        subgraph: ${{ fromJson(needs.detect.outputs.matrix) }}
+    name: test-${{ matrix.subgraph.name }}
+    defaults:
+      run:
+        working-directory: subgraphs/${{ matrix.subgraph.name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        run: |
+          if [ -f yarn.lock ]; then
+            yarn install --frozen-lockfile
+          else
+            yarn install
+          fi
+
+      - name: Generate manifests (if template exists)
+        run: |
+          if [ -f subgraph.template.yaml ]; then
+            yarn generate-manifests
+          fi
+
+      - name: Generate types
+        run: yarn codegen
+
+      - name: Build
+        run: yarn build
+
+      - name: Run tests
+        run: |
+          # Matchstick requires subgraph.yaml — create symlink if needed
+          if [ ! -f subgraph.yaml ]; then
+            manifest=$(ls subgraph.gnosis.yaml subgraph.*.yaml 2>/dev/null | head -1)
+            if [ -n "$manifest" ]; then
+              ln -sf "$manifest" subgraph.yaml
+              echo "Symlinked subgraph.yaml -> $manifest"
+            fi
+          fi
+          yarn test
+
+  # Build-only check for subgraphs without tests
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - path: governance
+            manifest: subgraph.yaml
+          - path: legacy-mech-fees
+            manifest: subgraph.yaml
+          - path: new-mech-fees
+            manifest: subgraph.gnosis.yaml
+          - path: service-registry
+            manifest: subgraph.gnosis.yaml
+          - path: tokenomics-l2
+            manifest: subgraph.gnosis.yaml
+          - path: predict/predict-omen
+            manifest: subgraph.yaml
+          - path: predict/predict-polymarket
+            manifest: subgraph.yaml
+          - path: babydegen/babydegen-optimism
+            manifest: subgraph.yaml
+    name: build-${{ matrix.path }}
+    defaults:
+      run:
+        working-directory: subgraphs/${{ matrix.path }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        run: |
+          if [ -f yarn.lock ]; then
+            yarn install --frozen-lockfile
+          else
+            yarn install
+          fi
+
+      - name: Generate manifests (if template exists)
+        run: |
+          if [ -f subgraph.template.yaml ]; then
+            yarn generate-manifests || node ../../scripts/generate-manifests.js --path=.
+          fi
+
+      - name: Generate types
+        run: graph codegen ${{ matrix.manifest }}
+
+      - name: Build
+        run: graph build ${{ matrix.manifest }}
