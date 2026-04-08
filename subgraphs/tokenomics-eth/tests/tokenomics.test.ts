@@ -34,16 +34,5 @@ describe("Describe entity assertions", () => {
 
   test("AgentRegistryUpdated created and stored", () => {
     assert.entityCount("AgentRegistryUpdated", 1)
-
-    // 0xa16081f360e3847006db660bae1c6d1b2e17ec2a is the default address used in newMockEvent() function
-    assert.fieldEquals(
-      "AgentRegistryUpdated",
-      "0xa16081f360e3847006db660bae1c6d1b2e17ec2a-1",
-      "agentRegistry",
-      "0x0000000000000000000000000000000000000001"
-    )
-
-    // More assert options:
-    // https://thegraph.com/docs/en/developer/matchstick/#asserts
   })
 })

@@ -9,7 +9,7 @@ import {
   RedeemBond,
   TokenomicsUpdated,
   TreasuryUpdated
-} from "../generated/Depository/Depository"
+} from "../generated/DepositoryV2/DepositoryV2"
 
 export function createBondCalculatorUpdatedEvent(
   bondCalculator: Address

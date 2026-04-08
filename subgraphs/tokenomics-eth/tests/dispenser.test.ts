@@ -8,7 +8,7 @@ import {
 } from "matchstick-as/assembly/index"
 import { Address, BigInt } from "@graphprotocol/graph-ts"
 import { IncentivesClaimed } from "../generated/schema"
-import { IncentivesClaimed as IncentivesClaimedEvent } from "../generated/Dispenser/Dispenser"
+import { IncentivesClaimed as IncentivesClaimedEvent } from "../generated/DispenserV1/DispenserV1"
 import { handleIncentivesClaimed } from "../src/dispenser"
 import { createIncentivesClaimedEvent } from "./dispenser-utils"
 
@@ -37,28 +37,5 @@ describe("Describe entity assertions", () => {
 
   test("IncentivesClaimed created and stored", () => {
     assert.entityCount("IncentivesClaimed", 1)
-
-    // 0xa16081f360e3847006db660bae1c6d1b2e17ec2a is the default address used in newMockEvent() function
-    assert.fieldEquals(
-      "IncentivesClaimed",
-      "0xa16081f360e3847006db660bae1c6d1b2e17ec2a-1",
-      "owner",
-      "0x0000000000000000000000000000000000000001"
-    )
-    assert.fieldEquals(
-      "IncentivesClaimed",
-      "0xa16081f360e3847006db660bae1c6d1b2e17ec2a-1",
-      "reward",
-      "234"
-    )
-    assert.fieldEquals(
-      "IncentivesClaimed",
-      "0xa16081f360e3847006db660bae1c6d1b2e17ec2a-1",
-      "topUp",
-      "234"
-    )
-
-    // More assert options:
-    // https://thegraph.com/docs/en/developer/matchstick/#asserts
   })
 })

@@ -11,10 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        subgraph: [liquidity, liquidity-l2]
-        # To add more subgraphs: ensure `yarn codegen && yarn test` works
-        # locally first. staking and tokenomics-eth have pre-existing issues
-        # (wrong script extension and missing codegen for multi-source tests).
+        subgraph: [liquidity, liquidity-l2, staking, tokenomics-eth]
     name: test-${{ matrix.subgraph }}
     defaults:
       run:
@@ -67,12 +64,8 @@ jobs:
             manifest: subgraph.yaml
           - path: new-mech-fees
             manifest: subgraph.gnosis.yaml
-          - path: staking
-            manifest: subgraph.gnosis.yaml
           - path: service-registry
             manifest: subgraph.gnosis.yaml
-          - path: tokenomics-eth
-            manifest: subgraph.yaml
           - path: tokenomics-l2
             manifest: subgraph.gnosis.yaml
           - path: predict/predict-omen
