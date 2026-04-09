@@ -4,9 +4,10 @@ indexerHints:
 schema:
   file: ./schema.graphql
 dataSources:
-  # Balancer V2 Weighted Pool (BPT token)
-  # Tracks BPT supply via Transfer events and fetches pool reserves
-  # from the Balancer Vault via getPoolTokens() contract call.
+  # Base has two Balancer V2 pools: OLAS-USDC and WETH-OLAS.
+  # Both share the same Vault for swap fee tracking.
+
+  # Pool 1: OLAS-USDC
   - kind: ethereum/contract
     name: BalancerPool
     network: base
@@ -33,4 +34,59 @@ dataSources:
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleBPTTransfer
+      file: ./src/mapping.ts
+
+  # Pool 2: WETH-OLAS
+  - kind: ethereum/contract
+    name: BalancerPoolWETH
+    network: base
+    source:
+      address: "0x2da6e67C45aF2aaA539294D9FA27ea50CE4e2C5f"
+      abi: BalancerV2WeightedPool
+      startBlock: 23026768
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - PoolMetrics
+        - BPTTransfer
+      abis:
+        - name: BalancerV2WeightedPool
+          file: ../../abis/BalancerV2WeightedPool.json
+        - name: BalancerV2Vault
+          file: ../../abis/BalancerV2Vault.json
+        - name: UniswapV2Pair
+          file: ../../abis/UniswapV2Pair.json
+        - name: AggregatorV3Interface
+          file: ../../abis/AggregatorV3Interface.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleBPTTransfer
+      file: ./src/mapping.ts
+
+  # Balancer V2 Vault — Swap events for fee tracking (shared by both pools)
+  # Processes ALL Vault swaps; handler filters by poolId and skips non-matching.
+  - kind: ethereum/contract
+    name: BalancerVault
+    network: base
+    source:
+      address: "0xBA12222222228d8Ba445958a75a0704d566BF2C8"
+      abi: BalancerV2Vault
+      startBlock: 12416046
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - DailyFees
+        - PoolMetrics
+      abis:
+        - name: BalancerV2Vault
+          file: ../../abis/BalancerV2Vault.json
+        - name: BalancerV2WeightedPool
+          file: ../../abis/BalancerV2WeightedPool.json
+      eventHandlers:
+        - event: Swap(indexed bytes32,indexed address,indexed address,uint256,uint256)
+          handler: handleVaultSwap
       file: ./src/mapping.ts

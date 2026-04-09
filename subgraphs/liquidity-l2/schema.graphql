@@ -12,6 +12,11 @@ type PoolMetrics @entity(immutable: false) {
   totalSupply: BigInt! # BPT total supply (minted - burned)
   totalMinted: BigInt! # cumulative BPT minted
   totalBurned: BigInt! # cumulative BPT burned
+  # Fee tracking (cumulative, in token terms)
+  cumulativeFeesToken0: BigInt! # all-time cumulative fees in token0 (wei)
+  cumulativeFeesToken1: BigInt! # all-time cumulative fees in token1 (wei)
+  swapFeePercentage: BigInt! # cached swap fee % (18 decimals, Balancer; 0 on Celo)
+
   # Chainlink price (Celo only — CELO/USD from on-chain oracle)
   celoUsdPrice: BigInt! # 8 decimals, 0 on non-Celo chains
 
@@ -26,6 +31,15 @@ type PriceData @entity(immutable: false) {
   price: BigInt! # price in 8 decimals from Chainlink
   lastUpdatedBlock: BigInt!
   lastUpdatedTimestamp: BigInt!
+}
+
+# Daily swap fee aggregation
+type DailyFees @entity(immutable: false) {
+  id: ID! # UTC midnight timestamp string
+  dayTimestamp: BigInt! # UTC midnight: timestamp / 86400 * 86400
+  totalFeesToken0: BigInt! # daily fees in token0 (wei)
+  totalFeesToken1: BigInt! # daily fees in token1 (wei)
+  swapCount: Int! # number of swaps this day
 }
 
 # Individual BPT transfer event

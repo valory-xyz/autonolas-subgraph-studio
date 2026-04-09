@@ -10,12 +10,14 @@ Replace the current Dune-based POL tracking ([Dune query 5383248](https://dune.c
 
 ## Current State
 
-The subgraph today tracks **only the OLAS-ETH Uniswap V2 pool on Ethereum mainnet**:
+The Ethereum subgraph tracks the **OLAS-ETH Uniswap V2 pool on Ethereum mainnet**:
 - LP token supply (mint/burn via Transfer events)
-- Treasury LP token balance
-- Pool reserves (OLAS + ETH)
+- Treasury LP token balance and 8 bridged LP token balances (including 2 Base pools)
+- Pool reserves (OLAS + ETH) with Chainlink USD valuation
 - Treasury share of total supply (basis points)
-- **No USD valuation, no L2 chains, no bridged tokens**
+- **Swap fee tracking**: daily and cumulative fees in USD, split between protocol and external LPs
+
+The L2 subgraph (`liquidity-l2`) tracks 7 pools across 6 L2 chains (including 2 Balancer V2 pools on Base in one subgraph, + 1 Ubeswap/Celo) with reserves, BPT supply, and swap fees in token terms.
 
 ### Prior Work (Closed PRs)
 - [PR #90](https://github.com/valory-xyz/autonolas-subgraph-studio/pull/90) — Added Chainlink ETH/USD oracle integration and `poolLiquidityUsd` / `protocolOwnedLiquidityUsd` fields. Added Dune comparison scripts. Closed Feb 2026, paused for later.
@@ -52,6 +54,7 @@ Source: [lp_token_bridging.md](https://github.com/valory-xyz/autonolas-tokenomic
 | Arbitrum | OLAS-WETH | Balancer V2 | `0xAF8912a3C4f55a8584B67DF30ee0dDf0e60e01f8` | `0x36B203Cb3086269f005a4b987772452243c0767f` | Wormhole Portal | 19,120,775 |
 | Optimism | WETH-OLAS | Balancer V2 | `0x5bb3e58887264b667f915130fd04bbb56116c278` | `0x2FD007a534eB7527b535a1DF35aba6bD2a8b660F` | Wormhole Portal | 19,457,188 |
 | Base | OLAS-USDC | Balancer V2 | `0x5332584890d6e415a6dc910254d6430b8aab7e69` | `0x9946d6FD1210D85EC613Ca956F142D911C97a074` | Wormhole Portal | 19,532,493 |
+| Base | WETH-OLAS | Balancer V2 | `0x2da6e67C45aF2aaA539294D9FA27ea50CE4e2C5f` | `0xad47b6ffEe3ed15fCE55eCA42AcE9736901b94A1` | Wormhole Portal | 21,293,873 |
 | Celo | CELO-OLAS | Balancer V2 | `0x2976Fa805141b467BCBc6334a69AffF4D914d96A` | `0xC085F31E4ca659fF8A17042dDB26f1dcA2fBdAB4` | Wormhole Portal | 20,488,304 |
 
 ### 3. Related Tokenomics Contracts
@@ -85,13 +88,13 @@ Total POL USD is computed by `scripts/pol-aggregation.js`, which combines data f
 
 | Source | What's Fetched | Endpoint |
 |---|---|---|
-| Ethereum subgraph | `lptokenMetrics` (reserves, treasury %, prices), `bridgedPOLHoldings` (7 bridged LP balances), `priceDatas` (ETH/USD, MATIC/USD, SOL/USD) | GraphQL |
-| Gnosis subgraph | `poolMetrics` (reserve0=OLAS, reserve1=WXDAI, totalSupply) | GraphQL |
-| Polygon subgraph | `poolMetrics` (reserve0=WMATIC, reserve1=OLAS, totalSupply) | GraphQL |
-| Arbitrum subgraph | `poolMetrics` (reserve0=OLAS, reserve1=WETH, totalSupply) | GraphQL |
-| Optimism subgraph | `poolMetrics` (reserve0=WETH, reserve1=OLAS, totalSupply) | GraphQL |
-| Base subgraph | `poolMetrics` (reserve0=OLAS, reserve1=USDC, totalSupply) | GraphQL |
-| Celo subgraph | `poolMetrics` (reserve0=CELO, reserve1=OLAS, totalSupply, celoUsdPrice) | GraphQL |
+| Ethereum subgraph | `lptokenMetrics` (reserves, treasury %, prices, cumulative fees USD), `bridgedPOLHoldings` (8 bridged LP balances), `priceDatas` (ETH/USD, MATIC/USD, SOL/USD) | GraphQL |
+| Gnosis subgraph | `poolMetrics` (reserves, supply, cumulative token fees) | GraphQL |
+| Polygon subgraph | `poolMetrics` (reserves, supply, cumulative token fees) | GraphQL |
+| Arbitrum subgraph | `poolMetrics` (reserves, supply, cumulative token fees) | GraphQL |
+| Optimism subgraph | `poolMetrics` (reserves, supply, cumulative token fees) | GraphQL |
+| Base subgraph | `poolMetrics` (reserves, supply, cumulative token fees) | GraphQL |
+| Celo subgraph | `poolMetrics` (reserves, supply, celoUsdPrice, cumulative token fees) | GraphQL |
 | Solana RPC | SOL vault balance | `getTokenAccountBalance` |
 
 ### Step 2: Resolve Prices
@@ -115,7 +118,7 @@ OLAS/USD price is **not needed** — all pools use the `2 × paired_token_reserv
 |---|---|---|
 | Ethereum | `protocolOwnedLiquidityUsd` from subgraph directly | Pre-computed: `2 × ETH_reserves × ETH/USD × treasury% / 10000` |
 | Gnosis | `2 × WXDAI_reserves × (bridged_balance / BPT_supply)` | WXDAI ≈ $1 (stablecoin) |
-| Base | `2 × USDC_reserves × (bridged_balance / BPT_supply)` | USDC ≈ $1 (stablecoin), 6 decimals |
+| Base (USDC) | `2 × USDC_reserves × (bridged_balance / BPT_supply)` | USDC ≈ $1 (stablecoin), 6 decimals |
 
 **Group B — On-chain reserves + Chainlink price from Ethereum subgraph:**
 
@@ -124,6 +127,7 @@ OLAS/USD price is **not needed** — all pools use the `2 × paired_token_reserv
 | Polygon | `2 × WMATIC_reserves × MATIC/USD × (bridged_balance / BPT_supply)` | `maticUsdPrice` from Ethereum subgraph |
 | Arbitrum | `2 × WETH_reserves × ETH/USD × (bridged_balance / BPT_supply)` | `ethUsdPrice` from Ethereum subgraph |
 | Optimism | `2 × WETH_reserves × ETH/USD × (bridged_balance / BPT_supply)` | `ethUsdPrice` from Ethereum subgraph |
+| Base (WETH) | `2 × WETH_reserves × ETH/USD × (bridged_balance / BPT_supply)` | `ethUsdPrice` from Ethereum subgraph |
 
 **Group C — On-chain reserves + Chainlink price from Celo subgraph:**
 
@@ -145,8 +149,28 @@ Solana vault account:
 ### Step 4: Sum
 
 ```
-Total POL USD = Ethereum + Gnosis + Polygon + Arbitrum + Optimism + Base + Celo + Solana
+Total POL USD = Ethereum + Gnosis + Polygon + Arbitrum + Optimism + Base (USDC) + Base (WETH) + Celo + Solana
 ```
+
+### Step 5: Compute Protocol Fees (cumulative)
+
+**Ethereum**: Fees are pre-computed in USD by the subgraph (`cumulativeFeesUsd`, `cumulativeProtocolFeesUsd`, `cumulativeExternalFeesUsd` on `LPTokenMetrics`, 8 decimals). Swap fee = 0.3% of input, split by `treasuryPercentage`.
+
+**L2 chains**: Fees are tracked in token amounts (`cumulativeFeesToken0`, `cumulativeFeesToken1` on `PoolMetrics`). The aggregation script converts to USD using the same prices as POL valuation:
+
+| Chain | Fee USD Conversion |
+|---|---|
+| Gnosis | `feeWXDAI × $1 + feeOLAS × (WXDAI_reserve / OLAS_reserve) × $1` |
+| Polygon | `feeWMATIC × MATIC/USD + feeOLAS × (WMATIC_reserve / OLAS_reserve) × MATIC/USD` |
+| Arbitrum | `feeWETH × ETH/USD + feeOLAS × (WETH_reserve / OLAS_reserve) × ETH/USD` |
+| Optimism | `feeWETH × ETH/USD + feeOLAS × (WETH_reserve / OLAS_reserve) × ETH/USD` |
+| Base (USDC) | `feeUSDC × $1 + feeOLAS × (USDC_reserve / OLAS_reserve) × $1` |
+| Base (WETH) | `feeWETH × ETH/USD + feeOLAS × (WETH_reserve / OLAS_reserve) × ETH/USD` |
+| Celo | `feeCELO × CELO/USD + feeOLAS × (CELO_reserve / OLAS_reserve) × CELO/USD` |
+
+Protocol/external split on L2: `protocolFees = totalFees × (bridged_LP_balance / BPT_supply)`, using the same treasury share as POL.
+
+**Solana**: Fee tracking not available (no subgraph).
 
 ### Key Variables
 
@@ -154,48 +178,66 @@ For each L2 chain, `bridged_balance` comes from the Ethereum subgraph's `bridged
 
 ### Running the Aggregation
 
+The script computes **two values**: total POL (protocol owned liquidity) and total protocol fees across all chains. Both are shown in terminal output and included in JSON output.
+
 ```bash
-node scripts/pol-aggregation.js            # human-readable table
-node scripts/pol-aggregation.js --json     # JSON output for CI/automation
+# From repo root (no dependencies needed — uses only Node.js built-ins)
+node scripts/pol-aggregation.js            # human-readable tables (POL + Fees)
+node scripts/pol-aggregation.js --json     # JSON output with totalPolUsd, totalProtocolFeesUsd, totalFeesUsd
 node scripts/pol-aggregation.js --verbose  # include raw subgraph data
 ```
 
-Subgraph URLs can be overridden via environment variables: `SUBGRAPH_ETH_URL`, `SUBGRAPH_GNOSIS_URL`, `SUBGRAPH_POLYGON_URL`, `SUBGRAPH_ARBITRUM_URL`, `SUBGRAPH_OPTIMISM_URL`, `SUBGRAPH_BASE_URL`, `SUBGRAPH_CELO_URL`.
+**Terminal output** shows two tables:
+1. **POL Valuation by Chain** — Pool TVL, Treasury POL, share %, valuation method
+2. **Cumulative Protocol Fees by Chain** — Total fees, protocol fees, external fees (all in USD)
+
+**JSON output** (with `--json`) includes per-chain results and aggregate totals:
+```json
+{
+  "totalPolUsd": 2500000.00,
+  "totalProtocolFeesUsd": 50000.00,
+  "totalExternalFeesUsd": 25.00,
+  "totalFeesUsd": 50025.00,
+  "polChainsValued": 8,
+  "feesChainsValued": 7,
+  "chainsTotal": 8
+}
+```
+
+**Environment variables** to override subgraph endpoints:
+- `SUBGRAPH_ETH_URL`, `SUBGRAPH_GNOSIS_URL`, `SUBGRAPH_POLYGON_URL`
+- `SUBGRAPH_ARBITRUM_URL`, `SUBGRAPH_OPTIMISM_URL`, `SUBGRAPH_BASE_URL`, `SUBGRAPH_CELO_URL`
+- `SOLANA_RPC_URL` (defaults to `https://api.mainnet-beta.solana.com`)
+
+**Prerequisites**: Node.js 18+. No `yarn install` needed — the script uses only built-in `https`/`http` modules.
 
 ## Implementation Status
 
 ### Phase 1 — Ethereum Mainnet (DONE)
 
 - Chainlink ETH/USD, MATIC/USD, SOL/USD oracles — fetched via `latestRoundData()` with 1-hour staleness caching
-- 7 bridged LP token data sources tracking Treasury balances
+- 8 bridged LP token data sources tracking Treasury balances (including 2 Base pools: OLAS-USDC + WETH-OLAS)
 - USD valuation: `poolLiquidityUsd`, `protocolOwnedLiquidityUsd` computed on each Sync event
 
 ### Phase 2 — L2 Pool Subgraphs (DONE)
 
-Multi-network `liquidity-l2` subgraph deployed on 6 chains:
-- 5 Balancer V2 pools (Gnosis, Polygon, Arbitrum, Optimism, Base) — BPT Transfer + Vault `getPoolTokens()` calls
-- 1 Ubeswap/UniswapV2 pool (Celo) — Transfer + Sync events (manual manifest)
+Multi-network `liquidity-l2` subgraph deployed as 7 subgraphs across 6 chains:
+- 5 Balancer V2 subgraphs (Gnosis, Polygon, Arbitrum, Optimism, Base) — BPT Transfer + Vault `getPoolTokens()` calls + Vault Swap events for fees. Base has 2 pools (OLAS-USDC + WETH-OLAS) in one subgraph.
+- 1 Ubeswap/UniswapV2 subgraph (Celo) — Transfer + Sync + Swap events (manual manifest)
 
-### Phase 3 — Off-Chain Aggregation (IN PROGRESS)
+### Phase 3 — Off-Chain Aggregation (DONE)
 
-**What works today**: All 7 EVM subgraphs provide reserves, supply, and bridged LP balances. The Ethereum subgraph provides Chainlink prices for ETH, MATIC, SOL. Stablecoin pools (Gnosis WXDAI, Base USDC) need no external price.
+**Aggregation script**: `scripts/pol-aggregation.js` at repo root — queries all 7 subgraphs + Solana RPC, computes total POL USD and total protocol fees USD. All prices from Chainlink. The Base subgraph returns two pool metrics (OLAS-USDC + WETH-OLAS) which are processed separately.
 
-**Solana**: SOL vault balance fetched via Solana RPC `getTokenAccountBalance` on `CLA8hU8SkdCZ9cJVLMfZQfcgAsywZ9txBJ6qrRAqthLx`. Valued as `2 × SOL_vault × SOL/USD` where SOL/USD comes from Chainlink in the Ethereum subgraph.
+### Phase 4 — Swap Fee Tracking (DONE)
 
-**Aggregation script**: `scripts/pol-aggregation.js` at repo root — queries all 7 subgraphs + Solana RPC, computes total POL USD. All prices from Chainlink.
+**Ethereum**: `handleSwap` handler on the OLAS-ETH pair. Fees = 0.3% of input, converted to USD via Chainlink, split by treasury percentage. Stored in `DailyFees` entities and cumulative fields on `LPTokenMetrics`.
 
-```bash
-node scripts/pol-aggregation.js            # human-readable output
-node scripts/pol-aggregation.js --json     # JSON output for CI/automation
-node scripts/pol-aggregation.js --verbose  # include raw subgraph data
-```
+**L2 Balancer chains**: `handleVaultSwap` on the Balancer V2 Vault. Processes all Vault Swap events, filters by `poolId` in handler. Fee = `amountIn × swapFeePercentage / 1e18`. Tracked in token terms; USD conversion in aggregation script.
 
-Subgraph URLs can be overridden via env vars: `SUBGRAPH_ETH_URL`, `SUBGRAPH_GNOSIS_URL`, etc.
+**Celo**: `handleUniswapSwap` on the Ubeswap pair. Fee = 0.3% of input. Tracked in token terms.
 
-**Still needed**:
-- Celo subgraph redeployment with UniswapV2 Sync handler
-- Celo subgraph redeployment with Chainlink CELO/USD feed
-- Dune comparison automation (compare script output against Dune query results)
+**Aggregation script** updated to compute total fees USD across all chains, with protocol/external split using treasury share.
 
 ## Data Sources Reference
 
@@ -306,11 +348,150 @@ The subgraph uses `2 × paired_token_reserves × Chainlink_price` — it does **
 
 Chainlink feeds are audited, volume-weighted, and manipulation-resistant. The subgraph's POL valuation is independent of OLAS market price for all major pools.
 
+## Validating Protocol Fees Against Dune
+
+After all subgraphs are redeployed with fee tracking, the subgraph fee data should be compared against the existing Dune fee datasets to ensure correctness. This follows the same approach used for POL validation above.
+
+### Dune Fee Datasets
+
+The Dune fee data lives in per-chain materialized views by user `adrian0x`:
+
+| Chain | Dune Dataset | Columns |
+|---|---|---|
+| Ethereum | `dune.adrian0x.result_ethereum_earned_fees_by_day` | `day`, `ethereum_protocol_earned_fees`, `ethereum_external_earned_fees`, `cumulative_protocol_earned_fees` |
+| Gnosis | `dune.adrian0x.result_gnosis_earned_fees_by_day` | `day`, `gnosis_protocol_earned_fees`, `gnosis_external_earned_fees` |
+| Arbitrum | `dune.adrian0x.result_arbitrum_earned_fees_by_day` | `day`, `arbitrum_protocol_earned_fees`, `arbitrum_external_earned_fees` |
+| Polygon | `dune.adrian0x.result_polygon_earned_fees_by_day` | `day`, `polygon_protocol_earned_fees`, `polygon_external_earned_fees` |
+| Optimism | `dune.adrian0x.result_optimism_protocol_earned_fees_by_day` | `day`, `optimism_protocol_earned_fees`, `optimism_external_earned_fees` |
+| Base | `dune.adrian0x.result_base_protocol_earned_fees_by_day` | `day`, `base_protocol_earned_fees`, `base_external_earned_fees` |
+
+The aggregation query [5409446](https://dune.com/queries/5409446/8836411) combines all chains with daily and cumulative totals.
+
+**Note**: The Dune datasets may not yet include the second Base pool (WETH-OLAS). Verify coverage before comparing.
+
+### What to Compare
+
+**Per-chain cumulative totals** (simplest — one comparison per chain):
+
+| Chain | Subgraph Source | Dune Source |
+|---|---|---|
+| Ethereum | `lptokenMetrics.cumulativeFeesUsd` (÷ 1e8) | `SUM(ethereum_protocol_earned_fees + ethereum_external_earned_fees)` |
+| Ethereum (protocol only) | `lptokenMetrics.cumulativeProtocolFeesUsd` (÷ 1e8) | `MAX(cumulative_protocol_earned_fees)` |
+| Gnosis | `poolMetrics.cumulativeFeesToken0` + `cumulativeFeesToken1` → USD via script | `SUM(gnosis_protocol_earned_fees + gnosis_external_earned_fees)` |
+| Polygon | Same pattern | Same pattern |
+| Arbitrum | Same pattern | Same pattern |
+| Optimism | Same pattern | Same pattern |
+| Base (USDC) | Same pattern | Same pattern |
+| Base (WETH) | Same pattern | May not exist in Dune yet |
+
+**Daily spot checks** (pick 5–10 random dates across the history):
+
+| Subgraph | Dune |
+|---|---|
+| `dailyFees(id: "<dayTimestamp>") { totalFeesUsd protocolFeesUsd }` | `SELECT * FROM dune.adrian0x.result_ethereum_earned_fees_by_day WHERE day = '<date>'` |
+| L2: `dailyFees(id: "<dayTimestamp>") { totalFeesToken0 totalFeesToken1 }` → convert to USD | Per-chain dataset filtered by day |
+
+### Step-by-Step Comparison Plan
+
+**1. Pick a comparison date range**
+
+Choose a 30-day window where both the subgraph and Dune have data. Start from the most recent complete day (UTC midnight) and go back 30 days.
+
+**2. Query subgraph fees (Ethereum)**
+
+```graphql
+# Cumulative totals
+{
+  lptokenMetrics(id: "global") {
+    cumulativeFeesUsd
+    cumulativeProtocolFeesUsd
+    cumulativeExternalFeesUsd
+  }
+}
+
+# Daily breakdown for spot checks
+{
+  dailyFees_collection(
+    first: 30
+    orderBy: dayTimestamp
+    orderDirection: desc
+  ) {
+    id dayTimestamp totalFeesUsd protocolFeesUsd externalFeesUsd swapCount
+  }
+}
+```
+
+**3. Query subgraph fees (L2 — per chain)**
+
+```graphql
+# Cumulative totals
+{
+  poolMetrics_collection(first: 1) {
+    cumulativeFeesToken0
+    cumulativeFeesToken1
+    reserve0 reserve1
+  }
+}
+
+# Daily breakdown
+{
+  dailyFees_collection(
+    first: 30
+    orderBy: dayTimestamp
+    orderDirection: desc
+  ) {
+    id dayTimestamp totalFeesToken0 totalFeesToken1 swapCount
+  }
+}
+```
+
+Convert L2 token fees to USD using the same formulas as the aggregation script (see [Step 5: Compute Protocol Fees](#step-5-compute-protocol-fees-cumulative) above).
+
+**4. Query Dune fees (via Dune MCP or API)**
+
+```sql
+-- Per-chain daily fees (example: Ethereum)
+SELECT day, ethereum_protocol_earned_fees, ethereum_external_earned_fees
+FROM dune.adrian0x.result_ethereum_earned_fees_by_day
+WHERE day >= CURRENT_DATE - INTERVAL '30' DAY
+ORDER BY day DESC;
+
+-- Cross-chain cumulative totals
+SELECT
+  SUM(Total_Protocol_Earned_Fees) AS total_protocol,
+  SUM(Total_External_Earned_Fees) AS total_external
+FROM dune.adrian0x.result_total_protocol_earned_fees;
+```
+
+**5. Compare and report**
+
+For each chain and date:
+```
+deviation = |subgraph_value - dune_value| / dune_value × 100%
+```
+
+Report PASS (< 5% deviation) or FAIL (≥ 5%) per metric. Document any systematic biases.
+
+### Expected Discrepancy Sources
+
+| Source | Impact | Direction |
+|---|---|---|
+| **Fee calculation method** | Subgraph computes `0.3% × amountIn` (UniV2) or `amountIn × swapFeePercentage / 1e18` (Balancer). Dune may use a different formula or data source (e.g., reserve deltas, `dex.trades` table). | Could go either way |
+| **USD conversion** | Subgraph uses cached Chainlink price (1-hour staleness on L1). Dune may use spot prices from `prices.usd` or trade-time prices. | Small, < 2% |
+| **Rounding** | Subgraph uses BigInt truncation (18-decimal tokens → 8-decimal USD). Dune uses float64. | Subgraph slightly lower |
+| **Protocol/external split** | Subgraph uses real-time `treasuryPercentage` per swap. Dune may use a daily average or snapshot. | Small |
+| **Block coverage** | Subgraph indexes all blocks from startBlock. Dune datasets may have different start dates or may miss events during RPC outages. | Could cause cumulative drift |
+| **Base WETH-OLAS pool** | Dune may not include the second Base pool. | Subgraph higher on Base |
+| **Swap fee percentage changes (Balancer)** | If the Balancer pool fee changed over time, the subgraph caches the fee at first use. Dune may track historical fee rates. | Unlikely for OLAS pools |
+
 ### Automation
 
-**POL aggregation** is available now via `scripts/pol-aggregation.js` — run `node scripts/pol-aggregation.js` from the repo root for a full POL breakdown across all chains.
+After manual validation confirms reasonable agreement (< 5% per chain), the comparison can be automated:
 
-**Dune comparison** (future): extend the aggregation script to also fetch Dune query results via API and compare per-chain values. Run in CI after each subgraph deployment to catch regressions.
+1. Add a `--compare-dune` flag to `scripts/pol-aggregation.js`
+2. Use the Dune API (`DUNE_API_KEY` env var) to fetch cumulative totals
+3. Output a per-chain comparison table with deviations
+4. Fail CI if any chain exceeds the tolerance threshold
 
 ## Development
 
@@ -356,6 +537,24 @@ yarn build      # Compile to WebAssembly
 }
 ```
 
+#### Daily Fees (last 7 days)
+```graphql
+{
+  dailyFees_collection(
+    first: 7
+    orderBy: dayTimestamp
+    orderDirection: desc
+  ) {
+    id
+    dayTimestamp
+    totalFeesUsd
+    protocolFeesUsd
+    externalFeesUsd
+    swapCount
+  }
+}
+```
+
 #### Bridged LP Token Balances
 ```graphql
 {
@@ -392,7 +591,7 @@ yarn build      # Compile to WebAssembly
 
 | Subgraph | Block | Key Finding |
 |---|---|---|
-| Ethereum mainnet | 24,677,330 | Treasury owns 99.95% of OLAS-ETH LP ($1.83M POL), all 7 bridged LP tokens tracked, Chainlink price caching active |
+| Ethereum mainnet | 24,677,330 | Treasury owns 99.95% of OLAS-ETH LP ($1.83M POL), all 8 bridged LP tokens tracked, Chainlink price caching active |
 | Gnosis L2 | 45,195,995 | Pool TVL ~$384K, 99.88% of BPT bridged to L1 Treasury |
 | Polygon L2 | 84,315,911 | 99.86% of BPT bridged to L1 Treasury |
 

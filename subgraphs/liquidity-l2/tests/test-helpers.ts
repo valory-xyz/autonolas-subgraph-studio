@@ -36,6 +36,10 @@ export namespace TestValues {
   export const RESERVE_OLAS = BigInt.fromString('500000000000000000000000');
   // WXDAI reserves: 100,000 WXDAI
   export const RESERVE_WXDAI = BigInt.fromString('100000000000000000000000');
+  // Swap fee percentage: 1% = 0.01e18 = 10000000000000000
+  export const SWAP_FEE_PERCENTAGE = BigInt.fromString('10000000000000000');
+  // Swap amount: 1000 WXDAI
+  export const SWAP_AMOUNT = BigInt.fromString('1000000000000000000000');
   // Timestamp
   export const TIMESTAMP = BigInt.fromI32(1700000000);
   export const BLOCK = BigInt.fromI32(30000000);

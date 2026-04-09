@@ -20,6 +20,7 @@ dataSources:
       entities:
         - PoolMetrics
         - BPTTransfer
+        - DailyFees
         - PriceData
       abis:
         - name: BalancerV2WeightedPool
@@ -35,4 +36,6 @@ dataSources:
           handler: handleBPTTransfer
         - event: Sync(uint112,uint112)
           handler: handleUniswapSync
+        - event: Swap(indexed address,uint256,uint256,uint256,uint256,indexed address)
+          handler: handleUniswapSwap
       file: ./src/mapping.ts

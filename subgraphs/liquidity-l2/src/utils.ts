@@ -1,5 +1,5 @@
 import { BigInt, Address, Bytes } from '@graphprotocol/graph-ts';
-import { PoolMetrics } from '../generated/schema';
+import { PoolMetrics, DailyFees } from '../generated/schema';
 
 export const ZERO_ADDRESS = Address.fromString(
   '0x0000000000000000000000000000000000000000'
@@ -20,6 +20,12 @@ export const CELO_PRICE_ID = 'celo-usd';
 // Chainlink price refresh interval (1 hour)
 export const PRICE_STALENESS_THRESHOLD = BigInt.fromI32(3600);
 
+// Fee calculation constants
+export const DAY_SECONDS = BigInt.fromI32(86400);
+export const WEI = BigInt.fromString('1000000000000000000'); // 1e18
+export const SWAP_FEE_NUMERATOR = BigInt.fromI32(3);
+export const SWAP_FEE_DENOMINATOR = BigInt.fromI32(1000);
+
 export function isZeroAddress(address: Address): boolean {
   return address.equals(ZERO_ADDRESS);
 }
@@ -36,10 +42,27 @@ export function getOrCreatePoolMetrics(poolAddress: Address): PoolMetrics {
     metrics.totalSupply = BigInt.zero();
     metrics.totalMinted = BigInt.zero();
     metrics.totalBurned = BigInt.zero();
+    metrics.cumulativeFeesToken0 = BigInt.zero();
+    metrics.cumulativeFeesToken1 = BigInt.zero();
+    metrics.swapFeePercentage = BigInt.zero();
     metrics.celoUsdPrice = BigInt.zero();
     metrics.lastUpdatedBlock = BigInt.zero();
     metrics.lastUpdatedTimestamp = BigInt.zero();
     metrics.lastUpdatedTransaction = Bytes.empty();
   }
   return metrics;
+}
+
+export function getOrCreateDailyFees(timestamp: BigInt): DailyFees {
+  let dayTimestamp = timestamp.div(DAY_SECONDS).times(DAY_SECONDS);
+  let id = dayTimestamp.toString();
+  let daily = DailyFees.load(id);
+  if (daily == null) {
+    daily = new DailyFees(id);
+    daily.dayTimestamp = dayTimestamp;
+    daily.totalFeesToken0 = BigInt.zero();
+    daily.totalFeesToken1 = BigInt.zero();
+    daily.swapCount = 0;
+  }
+  return daily;
 }

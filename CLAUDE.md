@@ -49,7 +49,7 @@ yarn build                             # Build subgraph (compiles to WASM)
 yarn test                              # Run Matchstick tests
 ```
 
-Deployment is handled via CI/CD — no manual deployment scripts.
+CI runs on every PR via `.github/workflows/test.yaml` — tests subgraphs with Matchstick tests (liquidity, liquidity-l2, staking, tokenomics-eth) and build-checks all others. Deployment is handled via `.github/workflows/deploy-subgraph.yaml` (manual dispatch from main).
 
 ## Conventions
 

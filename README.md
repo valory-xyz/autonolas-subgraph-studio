@@ -121,19 +121,19 @@ yarn test                              # Run Matchstick tests
 
 ## Scripts
 
-Repo-level scripts in `scripts/` (run from repo root, no dependencies needed):
+Repo-level scripts in `scripts/` (run from repo root, no dependencies needed — uses only Node.js built-ins):
 
 ```bash
 # Generate per-network manifests from a subgraph template
 node scripts/generate-manifests.js --path=subgraphs/<subgraph-name>
 
-# Compute total Protocol Owned Liquidity across all chains
-node scripts/pol-aggregation.js              # human-readable table
-node scripts/pol-aggregation.js --json       # JSON output for CI/automation
+# Compute total Protocol Owned Liquidity and Protocol Fees across all chains
+node scripts/pol-aggregation.js              # human-readable tables (POL + Fees)
+node scripts/pol-aggregation.js --json       # JSON with totalPolUsd, totalProtocolFeesUsd, totalFeesUsd
 node scripts/pol-aggregation.js --verbose    # include raw subgraph data
 ```
 
-Subgraph URLs in `pol-aggregation.js` can be overridden via environment variables (e.g. `SUBGRAPH_ETH_URL=https://...`).
+The `pol-aggregation.js` script queries all 7 liquidity subgraphs + Solana RPC, computes total POL USD and cumulative protocol fees USD. All prices from Chainlink oracles. Subgraph URLs can be overridden via environment variables (e.g. `SUBGRAPH_ETH_URL=https://...`). See [`subgraphs/liquidity/README.md`](subgraphs/liquidity/README.md#running-the-aggregation) for detailed usage.
 
 ## Deployment
 

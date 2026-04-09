@@ -42,6 +42,9 @@ export namespace TestAddresses {
   export const BRIDGED_LP_BASE = Address.fromString(
     '0x9946d6FD1210D85EC613Ca956F142D911C97a074'
   );
+  export const BRIDGED_LP_BASE_WETH = Address.fromString(
+    '0xad47b6ffEe3ed15fCE55eCA42AcE9736901b94A1'
+  );
 }
 
 export namespace TestValues {

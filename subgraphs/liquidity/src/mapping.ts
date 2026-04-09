@@ -1,6 +1,7 @@
 import { Address } from '@graphprotocol/graph-ts';
 import { Transfer } from '../generated/OLASETHLPToken/ERC20';
 import { Sync } from '../generated/OLASETHPair/UniswapV2Pair';
+import { Swap } from '../generated/OLASETHSwap/UniswapV2Pair';
 import { AggregatorV3Interface } from '../generated/OLASETHPair/AggregatorV3Interface';
 
 import { BigInt } from '@graphprotocol/graph-ts';
@@ -11,6 +12,8 @@ import {
   isTreasuryAddress,
   getOrCreatePoolReserves,
   getOrCreateBridgedPOLHolding,
+  getOrCreateDailyFees,
+  getOrCreateLPTokenMetrics,
   updateTreasuryHoldings,
   updateGlobalMetricsAfterTransfer,
   updateGlobalMetricsAfterSync,
@@ -21,6 +24,10 @@ import {
   MATIC_PRICE_ID,
   SOL_PRICE_ID,
   PRICE_STALENESS_THRESHOLD,
+  SWAP_FEE_NUMERATOR,
+  SWAP_FEE_DENOMINATOR,
+  WEI,
+  BASIS_POINTS,
 } from './utils';
 
 /**
@@ -116,6 +123,74 @@ export function handleSync(event: Sync): void {
 
   // Update global metrics (includes USD recalculation)
   updateGlobalMetricsAfterSync(reserve0, reserve1, timestamp);
+}
+
+/**
+ * Handle Uniswap V2 Swap events for the OLAS-ETH pool.
+ * Computes swap fees (0.3% of input), converts to USD, and splits
+ * between protocol (treasury share) and external LPs.
+ */
+export function handleSwap(event: Swap): void {
+  let amount0In = event.params.amount0In;
+  let amount1In = event.params.amount1In;
+  let timestamp = event.block.timestamp;
+
+  // Compute fees: 0.3% of input amounts
+  let feeToken0 = amount0In.times(SWAP_FEE_NUMERATOR).div(SWAP_FEE_DENOMINATOR);
+  let feeToken1 = amount1In.times(SWAP_FEE_NUMERATOR).div(SWAP_FEE_DENOMINATOR);
+
+  // Convert fees to USD only when all required pricing inputs are available.
+  // If ETH/USD price or reserves are missing (early indexing), skip USD fields
+  // to avoid permanently undercounting cumulative USD fees.
+  let metrics = getOrCreateLPTokenMetrics();
+  let feeUsd = BigInt.zero();
+  let protocolFeeUsd = BigInt.zero();
+  let externalFeeUsd = BigInt.zero();
+
+  let hasEthUsdPrice = metrics.ethUsdPrice.gt(BigInt.zero());
+  let hasPoolReserves =
+    metrics.currentReserve0.gt(BigInt.zero()) && metrics.currentReserve1.gt(BigInt.zero());
+  let canPriceToken1Fee = feeToken1.equals(BigInt.zero()) || hasEthUsdPrice;
+  let canPriceToken0Fee = feeToken0.equals(BigInt.zero()) || (hasEthUsdPrice && hasPoolReserves);
+  let canUpdateUsdFees = canPriceToken0Fee && canPriceToken1Fee;
+
+  if (canUpdateUsdFees) {
+    // ETH-denominated fee → USD
+    if (feeToken1.gt(BigInt.zero())) {
+      feeUsd = feeUsd.plus(feeToken1.times(metrics.ethUsdPrice).div(WEI));
+    }
+
+    // OLAS-denominated fee → price via pool ratio (OLAS→ETH) then ETH→USD
+    if (feeToken0.gt(BigInt.zero())) {
+      let feeInEth = feeToken0.times(metrics.currentReserve1).div(metrics.currentReserve0);
+      feeUsd = feeUsd.plus(feeInEth.times(metrics.ethUsdPrice).div(WEI));
+    }
+
+    // Protocol/external split based on treasury percentage (basis points)
+    protocolFeeUsd = feeUsd.times(metrics.treasuryPercentage).div(BASIS_POINTS);
+    externalFeeUsd = feeUsd.minus(protocolFeeUsd);
+  }
+
+  // Update daily fees (always track token amounts; USD only when priceable)
+  let daily = getOrCreateDailyFees(timestamp);
+  daily.totalFeesToken0 = daily.totalFeesToken0.plus(feeToken0);
+  daily.totalFeesToken1 = daily.totalFeesToken1.plus(feeToken1);
+  if (canUpdateUsdFees) {
+    daily.totalFeesUsd = daily.totalFeesUsd.plus(feeUsd);
+    daily.protocolFeesUsd = daily.protocolFeesUsd.plus(protocolFeeUsd);
+    daily.externalFeesUsd = daily.externalFeesUsd.plus(externalFeeUsd);
+  }
+  daily.swapCount = daily.swapCount + 1;
+  daily.save();
+
+  // Update cumulative fees on global metrics (USD only when priceable)
+  if (canUpdateUsdFees) {
+    metrics.cumulativeFeesUsd = metrics.cumulativeFeesUsd.plus(feeUsd);
+    metrics.cumulativeProtocolFeesUsd = metrics.cumulativeProtocolFeesUsd.plus(protocolFeeUsd);
+    metrics.cumulativeExternalFeesUsd = metrics.cumulativeExternalFeesUsd.plus(externalFeeUsd);
+  }
+  metrics.lastUpdated = timestamp;
+  metrics.save();
 }
 
 /**
