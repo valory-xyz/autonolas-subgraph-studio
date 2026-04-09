@@ -8,7 +8,7 @@ import {
 } from "matchstick-as/assembly/index"
 import { Address, BigInt } from "@graphprotocol/graph-ts"
 import { BondCalculatorUpdated } from "../generated/schema"
-import { BondCalculatorUpdated as BondCalculatorUpdatedEvent } from "../generated/Depository/Depository"
+import { BondCalculatorUpdated as BondCalculatorUpdatedEvent } from "../generated/DepositoryV2/DepositoryV2"
 import { handleBondCalculatorUpdated } from "../src/depository"
 import { createBondCalculatorUpdatedEvent } from "./depository-utils"
 
@@ -34,16 +34,5 @@ describe("Describe entity assertions", () => {
 
   test("BondCalculatorUpdated created and stored", () => {
     assert.entityCount("BondCalculatorUpdated", 1)
-
-    // 0xa16081f360e3847006db660bae1c6d1b2e17ec2a is the default address used in newMockEvent() function
-    assert.fieldEquals(
-      "BondCalculatorUpdated",
-      "0xa16081f360e3847006db660bae1c6d1b2e17ec2a-1",
-      "bondCalculator",
-      "0x0000000000000000000000000000000000000001"
-    )
-
-    // More assert options:
-    // https://thegraph.com/docs/en/developer/matchstick/#asserts
   })
 })

@@ -10,6 +10,7 @@
     "build:ethereum": "graph build subgraph.ethereum.yaml",
     "build:arbitrum-one": "graph build subgraph.arbitrum-one.yaml",
     "build:celo": "graph build subgraph.celo.yaml",
+    "pretest": "ln -sf subgraph.gnosis.yaml subgraph.yaml && graph codegen",
     "test": "graph test"
   },
   "dependencies": {
