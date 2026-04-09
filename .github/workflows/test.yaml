@@ -1,9 +1,9 @@
-name: Test Subgraphs
+name: Subgraph Tests
 
 on:
+  pull_request:
   push:
     branches: [main]
-  pull_request:
 
 jobs:
   test:
@@ -11,94 +11,74 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Only subgraphs with Matchstick test files (tests/*.test.ts).
-        # Other subgraphs have build-only checks in the "build" job below.
-        subgraph: [liquidity, liquidity-l2, staking, tokenomics-eth]
-    name: test-${{ matrix.subgraph }}
-    defaults:
-      run:
-        working-directory: subgraphs/${{ matrix.subgraph }}
+        include:
+          # Standalone manifests (subgraph.yaml exists)
+          - subgraph: liquidity
+            path: subgraphs/liquidity
+          - subgraph: tokenomics-eth
+            path: subgraphs/tokenomics-eth
+          - subgraph: governance
+            path: subgraphs/governance
+          - subgraph: legacy-mech-fees
+            path: subgraphs/legacy-mech-fees
+
+          # Template pattern — need generate-manifests + symlink
+          - subgraph: liquidity-l2
+            path: subgraphs/liquidity-l2
+            manifest: subgraph.gnosis.yaml
+            generate: true
+          - subgraph: staking
+            path: subgraphs/staking
+            manifest: subgraph.gnosis.yaml
+            generate: true
+          - subgraph: tokenomics-l2
+            path: subgraphs/tokenomics-l2
+            manifest: subgraph.gnosis.yaml
+            generate: true
+          - subgraph: service-registry
+            path: subgraphs/service-registry
+            manifest: subgraph.gnosis.yaml
+            generate: true
+
+          # Per-network manifests — need symlink only
+          - subgraph: new-mech-fees
+            path: subgraphs/new-mech-fees
+            manifest: subgraph.gnosis.yaml
+
+          # Nested subgraphs with standalone manifests
+          - subgraph: predict-omen
+            path: subgraphs/predict/predict-omen
+          - subgraph: predict-polymarket
+            path: subgraphs/predict/predict-polymarket
+          - subgraph: babydegen-optimism
+            path: subgraphs/babydegen/babydegen-optimism
+
+    name: test / ${{ matrix.subgraph }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "20"
 
       - name: Install dependencies
+        working-directory: ${{ matrix.path }}
         run: yarn install --frozen-lockfile || yarn install
 
-      - name: Generate manifests (if template exists)
-        run: |
-          if [ -f subgraph.template.yaml ]; then
-            yarn generate-manifests
-          fi
+      - name: Generate manifests
+        if: matrix.generate
+        working-directory: ${{ matrix.path }}
+        run: yarn generate-manifests
+
+      - name: Create subgraph.yaml symlink
+        if: matrix.manifest
+        working-directory: ${{ matrix.path }}
+        run: ln -sf ${{ matrix.manifest }} subgraph.yaml
 
       - name: Generate types
-        run: yarn codegen
-
-      - name: Build
-        run: yarn build
+        working-directory: ${{ matrix.path }}
+        run: yarn graph codegen
 
       - name: Run tests
-        run: |
-          # Matchstick requires subgraph.yaml — create symlink if needed
-          if [ ! -f subgraph.yaml ]; then
-            manifest=$(ls subgraph.gnosis.yaml subgraph.*.yaml 2>/dev/null | head -1)
-            if [ -n "$manifest" ]; then
-              ln -sf "$manifest" subgraph.yaml
-              echo "Symlinked subgraph.yaml -> $manifest"
-            fi
-          fi
-          yarn test
-
-  # Build-only check for subgraphs without tests
-  build:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - path: governance
-            manifest: subgraph.yaml
-          - path: legacy-mech-fees
-            manifest: subgraph.yaml
-          - path: new-mech-fees
-            manifest: subgraph.gnosis.yaml
-          - path: service-registry
-            manifest: subgraph.gnosis.yaml
-          - path: tokenomics-l2
-            manifest: subgraph.gnosis.yaml
-          - path: predict/predict-omen
-            manifest: subgraph.yaml
-          - path: predict/predict-polymarket
-            manifest: subgraph.yaml
-          - path: babydegen/babydegen-optimism
-            manifest: subgraph.yaml
-    name: build-${{ matrix.path }}
-    defaults:
-      run:
-        working-directory: subgraphs/${{ matrix.path }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
-      - name: Install dependencies
-        run: yarn install --frozen-lockfile || yarn install
-
-      - name: Generate manifests (if template exists)
-        run: |
-          if [ -f subgraph.template.yaml ]; then
-            yarn generate-manifests || node ../../scripts/generate-manifests.js --path=.
-          fi
-
-      - name: Generate types
-        run: yarn graph codegen ${{ matrix.manifest }}
-
-      - name: Build
-        run: yarn graph build ${{ matrix.manifest }}
+        working-directory: ${{ matrix.path }}
+        run: yarn graph test
