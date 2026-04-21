@@ -17,6 +17,7 @@ subgraphs/
   liquidity/                   # Protocol Owned Liquidity — Ethereum mainnet (OLAS-ETH + bridged L2 LP tokens)
   liquidity-l2/                # Protocol Owned Liquidity — L2 Balancer pools (6 networks, template pattern)
   new-mech-fees/               # Multi-network mech fees (Gnosis, Base, Polygon, Optimism)
+  pearl/                       # Pearl Mini cohort subgraphs (Polygon, planning) — see subgraphs/pearl/SUBGRAPH_PLAN.md
   predict/                     # Prediction markets (Omen on Gnosis, Polymarket)
   service-registry/            # Service registry (7 networks, template pattern)
   staking/                     # Staking contracts (7 networks, template pattern)
@@ -66,3 +67,9 @@ Each subgraph should have its own `CLAUDE.md` with subgraph-specific context (en
 1. **Update the subgraph's CLAUDE.md** to reflect new/changed entities, handlers, contracts, or business rules
 2. If adding a new subgraph, create a CLAUDE.md for it following the pattern in existing subgraphs (see `subgraphs/predict/predict-omen/CLAUDE.md` or `subgraphs/babydegen/babydegen-optimism/CLAUDE.md` for examples)
 3. Keep CLAUDE.md concise but comprehensive — it serves as the primary AI context for future development
+
+## Scoping Docs
+
+Subgraphs still in planning (no code yet) may ship a scoping doc instead of a CLAUDE.md. Current:
+
+- [`subgraphs/pearl/SUBGRAPH_PLAN.md`](subgraphs/pearl/SUBGRAPH_PLAN.md) — Pearl Mini cohort (Polygon). On-chain-only constraint, three-piece architecture (`pearl-cohort`, `pearl-trades`, deferred `pearl-tempo`), ROI handling, NegRisk coverage, out-of-scope boundary (no server-side join).
