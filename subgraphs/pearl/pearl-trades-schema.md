@@ -192,6 +192,17 @@ Changes to `src/` relative to the current `predict-polymarket` handlers:
 4. Proceed with the existing `handleOrderFilled` logic (bet creation,
    `processTradeActivity`, daily stat, market participant).
 
+> **Correctness note on `TokenRegistry.load`.** The existing handler
+> looks up the outcome token via `TokenRegistry.load(outcomeTokenId)`
+> and early-returns on null. If `TokenRegistered` fired before the
+> trade-source start block, the bet is silently dropped. This is an
+> actual bug risk for the current polystrat deployment on markets
+> created before its start block. The generalized deployment must use
+> an earlier start block for market-creation sources — see plan §7.1
+> item 3 for the two-start-blocks pattern, framed there as a
+> correctness requirement. Same risk applies to `Question` via
+> `ConditionPreparation`.
+
 ### 4.5 Modified: `handleTerminateService`
 
 Set `Multisig.terminatedAt`. Doesn't touch `TraderAgent` — trading

@@ -15,20 +15,35 @@ replaces two earlier drafts — see §9 for what changed and why.
 
 Load-bearing constraints that drive every design decision below.
 
-### 1.1 On-chain data only
+### 1.1 On-chain data only (no server-side joins)
 
-The subgraph **only indexes on-chain data**. Server-side prediction
-records (the prediction server's request log: `mode`, `tool`, `tier`,
-per-prediction cost, request identifiers) are out of scope and **must
-not be joined with on-chain data** for privacy and regulatory reasons.
+The subgraph **only indexes on-chain data**, and on-chain data is only
+allowed to be joined with **other on-chain data**. Server-side
+prediction records (the prediction server's request log: `mode`,
+`tool`, `tier`, per-prediction cost, request identifiers) are out of
+scope and **must not be joined with on-chain data**.
+
+The rule, stated precisely: any observer can match public on-chain
+data with other public on-chain data — so the subgraph is free to do
+the same. What's forbidden is matching on-chain identifiers (Safe
+addresses, EOAs, serviceIds) with **private data we hold**, i.e. the
+server-side prediction pipeline's request records. That specific join
+is what privacy and regulatory constraints prohibit.
 
 Concretely, the schema must not contain:
 
-- Any field or entity that correlates a prediction request to a specific
-  on-chain bet.
-- Any shared identifier (request id, session id, timestamp-window join
-  key) that would let an external consumer reconstruct that correlation.
-- Any change to the prediction server to emit request metadata on-chain.
+- Any field or entity that correlates a prediction request to a
+  specific on-chain bet.
+- Any shared identifier (request id, session id, timestamp-window
+  join key) that would let an external consumer reconstruct that
+  correlation by joining to server-side data.
+- Any change to the prediction server to emit request metadata
+  on-chain.
+
+On-chain data from other systems (Tempo payment channels, other
+subgraphs, public block data) can be freely joined with this
+subgraph's entities. That's public-with-public, not public-with-
+private. See §6.4 for the Tempo case.
 
 This boundary is enforced at schema review time via the "deliberately
 absent" section in [`pearl-trades-schema.md`](./pearl-trades-schema.md).
@@ -91,11 +106,15 @@ removed. The generalization adds these concrete pieces:
 1. **`Multisig` helper entity** — a minimal index of every Olas multisig
    on Polygon, keyed on the multisig address. Populated from
    `ServiceRegistryL2.CreateMultisigWithAgents` (creates the row with
-   `serviceId`) and `RegisterInstance` (appends to `agentIds` and
-   `operators` as deduplicated arrays). Carries only the service-
-   registration metadata needed for cohort filtering and lazy
-   `TraderAgent` creation; full registration records (`(agentInstance,
-   agentId, operator)` tuples with timestamps) stay in
+   `serviceId`) and `RegisterInstance(operator, serviceId, agentInstance, agentId)`
+   (appends to `agentIds` and `operators` as deduplicated arrays).
+   `RegisterInstance` is the **only** event that carries the
+   `(operator, agentInstance)` pair on `ServiceRegistryL2` —
+   `ActivateRegistration` and `DeployService` fire on the service
+   lifecycle but don't emit those fields, so they're not needed for
+   this subgraph. Carries only the service-registration metadata needed
+   for cohort filtering and lazy `TraderAgent` creation; full
+   registration records (timestamped per-instance history) stay in
    `subgraphs/service-registry/`.
 2. **`TraderAgent` is created lazily on first trade**, not on service
    registration. In `handleOrderFilled`, we look up the maker in the
@@ -272,12 +291,29 @@ which is the cohort-filter use case.
   shared identifier.
 - No ROI-by-mode / ROI-by-tier.
 
-### 6.4 Deferred: Tempo channel data
+### 6.4 Future workstream: Tempo channel data
 
-MPP payment-channel events on Tempo are technically on-chain. A
-provisional stance (channel-level aggregates only, no Safe/EOA join) is
-captured separately and needs policy sign-off before any implementation.
-Not part of this plan.
+MPP payment-channel events on Tempo (`ChannelOpened`, deposits, voucher
+claims, settlements) are on-chain. Per §1.1 the constraint is about
+joining with server-side private data, not about joining two on-chain
+sources — so a Tempo subgraph that correlates channels with Safe / EOA
+addresses from this subgraph is **permitted**. The earlier conservative
+stance (channel-level aggregates only, no Safe/EOA join) was
+over-restrictive and is superseded.
+
+Concretely, a future Tempo subgraph can answer:
+
+- Per-user prediction spend (channel deposits attributed to the Safe
+  that opened the channel).
+- Effort-tier distribution inferred from voucher price points (tiers
+  have different on-chain prices).
+- Revenue, channel counts, settlement cadence.
+
+This is **follow-up work, not current scope.** It's a separate subgraph
+on the Tempo network, potentially with cross-subgraph joins to
+`predict-polymarket` via Safe address. Sequencing: ship the generalized
+predict-polymarket first; design the Tempo subgraph once the Tempo
+network's indexing support (graph-node data source) is confirmed.
 
 ---
 
@@ -293,16 +329,28 @@ Not part of this plan.
 2. **New parallel deployment.** The existing polystrat-only deployment
    stays up until cutover. Either a new version on the existing subgraph
    name or a distinct Studio name during transition.
-3. **Two-start-blocks pattern.** Market-creation sources
-   (`ConditionPreparation`, UMA `QuestionInitialized`, `TokenRegistered`)
-   from the earlier of (a) current start block or (b) a point early
-   enough that every cohort's trading history is covered. Trade /
-   redemption sources start from the earliest Olas-agent trading block,
-   not the current polystrat-only start block.
+3. **Two-start-blocks pattern — correctness-critical, not just
+   efficiency.** Market-creation sources (`ConditionPreparation`, UMA
+   `QuestionInitialized`, `TokenRegistered`, NegRisk `QuestionPrepared`)
+   start from a block **earlier than the earliest cohort trade** — ideally
+   covering every market any cohort Safe might trade on (Pearl Mini users
+   can trade on markets created months before their Safe exists). Trade
+   / redemption / classifier sources start from the earliest Olas-agent
+   trading block.
+
+   **Why correctness.** `handleOrderFilled` does
+   `TokenRegistry.load(outcomeTokenId)` and early-returns on null; if
+   `TokenRegistered` fired before the trade-source start block, the bet
+   is silently dropped. Same risk for `Question` via `ConditionPreparation`.
+   The current polystrat-only subgraph may have this bug for markets
+   created before its start block; the generalized deployment must fix
+   it. Validation: spot-check cohort bets against a known pre-start-block
+   market before cutover.
 4. **Parity check on cutover.** Run both deployments in parallel. Query
    the polystrat cohort on both (old deployment directly, new via
-   `agentIds_contains: [86]`) and assert equivalence for N days before
-   switching consumers.
+   `multisig_: { agentIds_contains: [86] }`) and assert equivalence for
+   N days before switching consumers. Include a check that bet counts
+   for pre-start-block markets are non-zero where expected.
 5. **Retire the old deployment.**
 
 ### 7.2 Reindex cost
