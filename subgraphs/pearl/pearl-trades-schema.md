@@ -39,7 +39,7 @@ Two things this doc deliberately isn't:
 | `ServiceClassification` | **New** | Mirrors `ApplicationClassifier.mapServiceIdStatuses` on-chain. Populated from `ServiceApplicationTypeUpdated` events. Keyed on `serviceId`. |
 | `ClassificationChange` | **New** | Immutable audit-trail row per `ServiceApplicationTypeUpdated`. Answers "when was this service classified / reclassified, by whom." |
 | `ApplicationType` | **New enum** | `{ NON_EXISTENT, PEARL, OTHER }` — mirrors the on-chain enum. Must grow in lockstep with classifier UUPS upgrades (see plan §7.3). |
-| `TraderAgent` | **Extended** | Adds `classification: ServiceClassification` (resolved via `serviceId` at agent creation); adds optional `ownerEOA` / `agentEOA` populated only for PEARL services from `PolySafeCreator`. No rename — keeps schema continuity with the existing deployment. |
+| `TraderAgent` | **Extended** | Adds `classification: ServiceClassification` (resolved via `serviceId` at agent creation); adds `agentIds: [Int!]!` populated from `RegisterInstance` so the polystrat-only view (`agentIds_contains: [86]`) is preserved after the cohort gate is removed; adds optional `ownerEOA` / `agentEOA` populated only for PEARL services from `PolySafeCreator`. No rename — keeps schema continuity with the existing deployment. |
 | `Funding` | **New** (cohort-scoped) | USDC / wMATIC `Transfer` events touching a known PEARL Safe / owner EOA / agent EOA. Non-PEARL services don't create these entities. |
 | `FundingDaily` | **New** (cohort-scoped) | Per-Safe, per-asset daily aggregate to keep "first deposit / total in / total out" queries cheap. |
 | `PayoutRedemption` | **Field added:** `source: PayoutSource!` | Distinguishes `CONDITIONAL_TOKENS` vs `NEG_RISK_ADAPTER` in the audit trail. Without this field, NegRisk vs vanilla redemptions are indistinguishable. |
@@ -109,6 +109,13 @@ type TraderAgent @entity(immutable: false) {
   # before classifier deployment).
   classification: ServiceClassification
 
+  # NEW — every agentId registered to this service, captured from
+  # ServiceRegistryL2.RegisterInstance. Array because a service can
+  # register multiple agent types. Preserves the polystrat-only view
+  # (agentIds_contains: [86]) after the cohort gate is removed. Mirrors
+  # service-registry/'s Service.agentIds pattern.
+  agentIds: [Int!]!
+
   # NEW — populated only when classification.appType == PEARL, from
   # PolySafeCreator events. Null for all other cohorts. Used for
   # funding-flow attribution and Pearl Mini-specific queries.
@@ -134,13 +141,18 @@ type TraderAgent @entity(immutable: false) {
 Client query pattern:
 
 ```graphql
-# All Pearl Mini agents
+# All Pearl Mini agents — classifier-driven, human-readable cohort
 traderAgents(where: { classification_: { appType: PEARL } }) { ... }
 
-# All polystrat agents (replaces the old implicit filter)
-traderAgents(where: { classification_: { appType: OTHER }, serviceId_gt: 0 }) { ... }
-# (polystrat is modeled as OTHER in the current enum; see §6)
+# All polystrat agents — raw registry-id filter, equivalent to the
+# current implicit filter. Keep working even if polystrat is never
+# given its own ApplicationType enum value.
+traderAgents(where: { agentIds_contains: [86] }) { ... }
 ```
+
+The two filters are independent and can be combined or used alone —
+classifier for human-readable cohort names (as they're added to the
+on-chain enum), `agentIds_contains` for durable raw-id queries.
 
 ### 3.3 Funding (new, cohort-scoped)
 
@@ -209,13 +221,22 @@ handlers:
 ### 4.1 Removed
 
 - `TraderService` creation in `handleRegisterInstance`. No gate on
-  `agentId == 86`. The handler becomes a no-op or is removed entirely
-  — agent creation moves to `handleCreateMultisigWithAgents` with no
-  prerequisite `TraderService` lookup.
+  `agentId == 86`. Agent creation moves to
+  `handleCreateMultisigWithAgents` with no prerequisite `TraderService`
+  lookup. The `handleRegisterInstance` handler is **not** removed — it's
+  repurposed (see §4.2) to populate `agentIds` on `TraderAgent`.
 
 ### 4.2 Added
 
-1. **`ApplicationClassifier` data source + handler.**
+1. **Repurposed `handleRegisterInstance` — `agentIds` population.**
+   The old cohort-gate body is replaced with: load-or-create
+   `TraderAgent` by the service's multisig (via `serviceId` lookup),
+   append `event.params.agentId.toI32()` to `agentIds` if not already
+   present. Handler runs for every service registration, regardless of
+   agentId. Preserves the polystrat-only query path
+   (`agentIds_contains: [86]`) and supports services that register
+   multiple agent types.
+2. **`ApplicationClassifier` data source + handler.**
    `handleServiceApplicationTypeUpdated(serviceId, appType)`:
    - Load-or-create `ServiceClassification` by `serviceId`.
    - Capture `previousType` = existing `appType` or `NON_EXISTENT`.
@@ -224,21 +245,21 @@ handlers:
    - Walk any `TraderAgent` entities whose `serviceId` matches and update
      their `classification` link. (In practice this is a single entity,
      since one service maps to one multisig.)
-2. **`PolySafeCreator` data source + handler.**
+3. **`PolySafeCreator` data source + handler.**
    `handleSafeCreated(safe, owner, …)`:
    - Load-or-create `TraderAgent` by `safe` address.
    - Set `ownerEOA` = `owner`.
    - `agentEOA` is populated later when
      `IdentityRegistryBridger.AgentWalletSet` fires (via the existing
      `service-registry` path, re-indexed here or cross-read — see §5).
-3. **ERC-20 `Transfer` handlers (USDC + wMATIC), cohort-scoped.**
+4. **ERC-20 `Transfer` handlers (USDC + wMATIC), cohort-scoped.**
    Handler steps:
    - Look up whether `from` or `to` is a known PEARL Safe / owner EOA /
      agent EOA (via a side index — see §4.3 below).
    - If neither side is a PEARL cohort address, early return. This is
      the cost-control lever that keeps indexing bounded.
    - Create `Funding` row, update `FundingDaily`, attribute to the Safe.
-4. **`PayoutRedemption.source` populated by source handler.**
+5. **`PayoutRedemption.source` populated by source handler.**
    `handlePayoutRedemption` (ConditionalTokens) → `CONDITIONAL_TOKENS`;
    `handleNegRiskPayoutRedemption` (NegRiskAdapter) → `NEG_RISK_ADAPTER`.
 
@@ -295,10 +316,12 @@ Worth resolving before handler work begins:
 
 1. **Current enum granularity.** `ApplicationClassifier.ApplicationType`
    today is `{NON_EXISTENT, PEARL, OTHER}`. Polystrat is therefore
-   classified as `OTHER`. If product wants first-class POLYSTRAT
-   labeling (or any other named cohort), that's a classifier UUPS upgrade
-   + subgraph schema update in lockstep. Flag for discussion — do we
-   extend now or later?
+   classified as `OTHER` for now — which is acceptable because the
+   `agentIds_contains: [86]` filter gives the polystrat view directly
+   without requiring a named enum value. Adding a first-class POLYSTRAT
+   enum value is a separate UUPS upgrade + schema update that can
+   happen later without a data migration. Flag for discussion: extend
+   now or later?
 2. **`TraderAgent` not renamed to `PearlSafe`.** Since the entity now
    covers every Olas agent, not just Pearl Safes, keeping the original
    name is correct and preserves query compatibility with consumers of

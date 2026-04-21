@@ -112,11 +112,24 @@ removed. In its place:
    entity gains a `classification: ServiceClassification` link resolved
    via `serviceId`. Clients filter with
    `traderAgents(where: { classification_: { appType: PEARL } })`.
-3. **Index `PolySafeCreator`** as a narrow data source purely to capture
+3. **Preserve polystrat queryability via `agentIds` on `TraderAgent`.**
+   The previous subgraph implicitly encoded `agentId == 86` via its
+   cohort gate; removing the gate loses that view unless `agentId` is
+   carried on the entity directly. `TraderAgent` therefore gains
+   `agentIds: [Int!]!`, populated from `RegisterInstance` (same pattern
+   as `service-registry/`'s `Service.agentIds`). A service can register
+   multiple agent types, so the field is an array. Polystrat-only
+   queries then use `traderAgents(where: { agentIds_contains: [86] })`
+   and get exactly the current view. This is independent of the
+   `ApplicationClassifier` — polystrat can remain an `OTHER` classifier
+   value indefinitely without losing queryability, and if it later
+   gets its own enum value via a classifier UUPS upgrade, the
+   `agentIds` filter continues to work unchanged.
+4. **Index `PolySafeCreator`** as a narrow data source purely to capture
    Pearl Mini owner EOAs. Populates `ownerEOA` + `agentEOA` on
    `TraderAgent` when the classification resolves to `PEARL`. For non-
    PEARL services, these fields remain null.
-4. **Funding flows are cohort-scoped.** USDC + wMATIC `Transfer` handlers
+5. **Funding flows are cohort-scoped.** USDC + wMATIC `Transfer` handlers
    attribute only when the counterparty side is a known PEARL Safe / owner
    EOA / agent EOA. Non-PEARL services don't create `Funding` entities —
    keeps indexing cost proportional to the Pearl Mini cohort, not to
