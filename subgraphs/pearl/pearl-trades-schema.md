@@ -1,373 +1,346 @@
-# `pearl-trades` Schema — Proposed Delta vs `predict-polymarket`
+# Predict-Polymarket Generalization — Schema Delta
 
 **Status:** Draft for review (no code written yet)
 **Parent plan:** [`SUBGRAPH_PLAN.md`](./SUBGRAPH_PLAN.md)
-**Reference schema:** [`subgraphs/predict/predict-polymarket/schema.graphql`](../predict/predict-polymarket/schema.graphql)
+**Target:** modifies [`subgraphs/predict/predict-polymarket/schema.graphql`](../predict/predict-polymarket/schema.graphql) in place (deployed in parallel; see §5)
 **Reference handlers / business rules:** [`subgraphs/predict/predict-polymarket/CLAUDE.md`](../predict/predict-polymarket/CLAUDE.md)
 
-This doc is the concrete surface where the on-chain-only policy boundary
-either holds or breaks (see `SUBGRAPH_PLAN.md` §1). Review the delta here
-before any handler work on `pearl-trades/`.
+This document is the concrete surface where the on-chain-only policy
+boundary (plan §1.1) either holds or breaks. Review the delta here before
+any handler work.
+
+> **Filename note.** Kept as `pearl-trades-schema.md` for continuity with
+> the review thread on PR #115. The subject is now the generalized
+> predict-polymarket schema — there is no separate `pearl-trades`
+> subgraph. Pearl Mini is one cohort among several surfaced by the
+> generalized deployment.
 
 ---
 
-## 1. Delta Summary
+## 1. What This Doc Is Not
+
+Two things this doc deliberately isn't:
+
+- **Not a new subgraph.** The plan moved away from cloning
+  `predict-polymarket` per cohort (see plan §10). This schema modifies
+  the existing subgraph in place, deployed in parallel with the current
+  polystrat-only deployment for cutover safety.
+- **Not a policy-boundary change.** Every field in the schema below can
+  be derived from on-chain events alone. Nothing ties to server-side
+  prediction data, by design. See §7.
+
+---
+
+## 2. Delta Summary
 
 | Entity | Change | Rationale |
 |---|---|---|
-| `TraderService` | **Removed** | polystrat-specific gate (`agentId == 86`). Pearl Mini gates on `PolySafeCreator`-emitted Safes, not on the Olas service-registry agentId. |
-| `TraderAgent` | **Renamed → `PearlSafe`** + cohort fields added | The entity is conceptually a Safe address, not a generic trader. New fields (`ownerEOA`, `agentEOA`, `agentId`, `terminatedAt`) surface the cohort identity that is meaningful for Pearl Mini. |
-| `Funding` | **New** | Wallet-level funding flows (first deposit / top-up / withdrawal) were explicitly flagged in the scoping doc and are not tracked in predict-polymarket. |
-| `FundingDaily` | **New** | Daily aggregate to keep funding queries cheap without scanning every `Funding` row. |
-| `Bet` | **Field rename** `bettor` → `safe` | Follows the `PearlSafe` rename. |
-| `MarketParticipant` | **Field rename** `traderAgent` → `safe` | Same. |
-| `PayoutRedemption` | **Field rename** `redeemer` → `safe` | Same. |
-| `DailyProfitStatistic` | **Field rename** `traderAgent` → `safe` | Same. |
-| `Global` | **Field renames** `totalTraderAgents` → `totalSafes`, `totalActiveTraderAgents` → `totalActiveSafes` | Same. |
-| `Question` / `MarketMetadata` / `QuestionResolution` / `TokenRegistry` / `QuestionIdToConditionId` / `MarketParticipated` | **Unchanged** | These entities describe market state, not cohort identity. They are cohort-agnostic and carry over verbatim. |
+| `TraderService` | **Removed** | Polystrat-specific gate (`agentId == 86`). Cohort membership now resolved via `ApplicationClassifier`, which classifies at `serviceId` granularity regardless of agent id. |
+| `ServiceClassification` | **New** | Mirrors `ApplicationClassifier.mapServiceIdStatuses` on-chain. Populated from `ServiceApplicationTypeUpdated` events. Keyed on `serviceId`. |
+| `ClassificationChange` | **New** | Immutable audit-trail row per `ServiceApplicationTypeUpdated`. Answers "when was this service classified / reclassified, by whom." |
+| `ApplicationType` | **New enum** | `{ NON_EXISTENT, PEARL, OTHER }` — mirrors the on-chain enum. Must grow in lockstep with classifier UUPS upgrades (see plan §7.3). |
+| `TraderAgent` | **Extended** | Adds `classification: ServiceClassification` (resolved via `serviceId` at agent creation); adds optional `ownerEOA` / `agentEOA` populated only for PEARL services from `PolySafeCreator`. No rename — keeps schema continuity with the existing deployment. |
+| `Funding` | **New** (cohort-scoped) | USDC / wMATIC `Transfer` events touching a known PEARL Safe / owner EOA / agent EOA. Non-PEARL services don't create these entities. |
+| `FundingDaily` | **New** (cohort-scoped) | Per-Safe, per-asset daily aggregate to keep "first deposit / total in / total out" queries cheap. |
+| `PayoutRedemption` | **Field added:** `source: PayoutSource!` | Distinguishes `CONDITIONAL_TOKENS` vs `NEG_RISK_ADAPTER` in the audit trail. Without this field, NegRisk vs vanilla redemptions are indistinguishable. |
+| `PayoutSource` | **New enum** | `{ CONDITIONAL_TOKENS, NEG_RISK_ADAPTER }`. |
+| `Bet` / `MarketParticipant` / `DailyProfitStatistic` / `Global` / `Question` / `MarketMetadata` / `QuestionResolution` / `TokenRegistry` / `QuestionIdToConditionId` / `MarketParticipated` | **Unchanged** | Cohort-agnostic market/trade state. The only reason to touch these is the enum-value addition above on `PayoutRedemption`. |
 
 **Nothing in this schema references a server-side `mode`, `tool`, `tier`,
 request id, or any identifier that could be joined to the prediction
-server.** This is the observable half of the §1.1 constraint. The other
-half lives in the handlers (which must not invent such fields at runtime)
-and in review discipline.
+server** — by construction. §7 lists what's deliberately absent, for
+review discipline.
 
 ---
 
-## 2. Proposed `schema.graphql`
+## 3. Proposed Schema
+
+Only new / modified entities are shown below. Unchanged entities carry
+over verbatim from
+[`predict-polymarket/schema.graphql`](../predict/predict-polymarket/schema.graphql).
+
+### 3.1 Classification (new)
 
 ```graphql
-# =============================================================================
-# Cohort identity
-# =============================================================================
+# Mirrors ApplicationClassifier.ApplicationType on-chain.
+# Must be extended in lockstep with UUPS upgrades of the classifier.
+enum ApplicationType {
+  NON_EXISTENT
+  PEARL
+  OTHER
+}
 
-# Represents a Pearl Mini Safe, its paired Olas service, and its agent EOA.
-# Primary key for all analytics.
-#
-# Created by handleSafeCreated (PolySafeCreator.*). The serviceId + agentEOA
-# are populated when ServiceRegistryL2.CreateMultisigWithAgents and
-# IdentityRegistryBridger.AgentWalletSet fire for the same Safe.
-type PearlSafe @entity(immutable: false) {
-  id: Bytes!                  # Safe address
-  serviceId: BigInt           # set on CreateMultisigWithAgents (nullable because events are async)
-  agentId: BigInt             # ERC-8004 identity NFT id (from IdentityRegistryBridger)
-  ownerEOA: Bytes!            # Privy-derived owner wallet (from PolySafeCreator)
-  agentEOA: Bytes             # agent wallet (from IdentityRegistryBridger.AgentWalletSet)
+# One row per classified service. Upserted on every
+# ServiceApplicationTypeUpdated event. Non-immutable because appType can
+# be re-recorded by the maintainer.
+type ServiceClassification @entity(immutable: false) {
+  id: ID!                        # serviceId as string
+  appType: ApplicationType!
+  classifiedAt: BigInt!          # timestamp of most recent ServiceApplicationTypeUpdated
+  classifiedBy: Bytes!           # maintainer that recorded the current appType
+  history: [ClassificationChange!]! @derivedFrom(field: "classification")
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
 
-  # Lifecycle
-  createdAt: BigInt!
-  terminatedAt: BigInt        # ServiceRegistryL2.TerminateService — clear-data flow
+# Immutable audit-trail row per ServiceApplicationTypeUpdated event.
+type ClassificationChange @entity(immutable: true) {
+  id: Bytes!                     # txHash + logIndex
+  classification: ServiceClassification!
+  previousType: ApplicationType! # NON_EXISTENT on first record
+  newType: ApplicationType!
+  classifiedBy: Bytes!
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+```
 
-  # Activity
+### 3.2 `TraderAgent` (extended; no rename)
+
+```graphql
+type TraderAgent @entity(immutable: false) {
+  id: Bytes!                        # multisig Safe address — unchanged
+  serviceId: BigInt!                # unchanged
+
+  # NEW — resolved at agent creation via serviceId. May be null if the
+  # service has not yet been classified (backfill lag, or service created
+  # before classifier deployment).
+  classification: ServiceClassification
+
+  # NEW — populated only when classification.appType == PEARL, from
+  # PolySafeCreator events. Null for all other cohorts. Used for
+  # funding-flow attribution and Pearl Mini-specific queries.
+  ownerEOA: Bytes                   # Privy-derived owner EOA
+  agentEOA: Bytes                   # agent EOA from IdentityRegistryBridger.AgentWalletSet
+
+  # Unchanged fields follow
   firstParticipation: BigInt
   lastActive: BigInt
   totalBets: Int!
-
-  # Financial metrics — identical semantics to predict-polymarket TraderAgent
-  totalTraded: BigInt!                # all bets, updated at bet time
-  totalTradedSettled: BigInt!         # settled markets, updated at resolution for ALL bets
-  totalPayout: BigInt!                # actual USDC claimed via PayoutRedemption
-  totalExpectedPayout: BigInt!        # sum of expectedPayouts from settled markets
-
-  # Derived
-  bets: [Bet!]! @derivedFrom(field: "safe")
-  dailyProfitStatistics: [DailyProfitStatistic!]! @derivedFrom(field: "safe")
-  funding: [Funding!]! @derivedFrom(field: "safe")
-
-  # Block metadata
+  totalTraded: BigInt!
+  totalTradedSettled: BigInt!
+  totalPayout: BigInt!
+  totalExpectedPayout: BigInt!
+  bets: [Bet!]! @derivedFrom(field: "bettor")
+  dailyProfitStatistics: [DailyProfitStatistic!]! @derivedFrom(field: "traderAgent")
   blockNumber: BigInt!
   blockTimestamp: BigInt!
   transactionHash: Bytes!
 }
+```
 
-# =============================================================================
-# Wallet funding flows (new vs predict-polymarket)
-# =============================================================================
+Client query pattern:
 
-# A single USDC or MATIC (native wrapped) Transfer event touching a Safe,
-# owner EOA, or agent EOA. Filtered at handler time to cohort addresses.
-#
-# Tracked to answer: "how much did users deposit for first funding, top-ups,
-# withdrawals" — per the scoping doc's fundingBySafe view.
+```graphql
+# All Pearl Mini agents
+traderAgents(where: { classification_: { appType: PEARL } }) { ... }
+
+# All polystrat agents (replaces the old implicit filter)
+traderAgents(where: { classification_: { appType: OTHER }, serviceId_gt: 0 }) { ... }
+# (polystrat is modeled as OTHER in the current enum; see §6)
+```
+
+### 3.3 Funding (new, cohort-scoped)
+
+```graphql
+enum FundingAsset { USDC, MATIC }
+enum FundingDirection { IN, OUT }
+enum FundingAddress { SAFE, OWNER, AGENT }
+
+# One Funding row per ERC-20 Transfer touching a known PEARL cohort
+# address. Handler early-returns for non-PEARL counterparties, so this
+# entity only exists for Pearl Mini Safes.
 type Funding @entity(immutable: true) {
-  id: Bytes!                  # txHash + logIndex
-  safe: PearlSafe!            # the Safe the flow is attributed to
-  counterparty: Bytes!        # the non-cohort address on the other side
+  id: Bytes!                     # txHash + logIndex
+  safe: TraderAgent!             # the Safe the flow is attributed to
+  counterparty: Bytes!
   asset: FundingAsset!
   direction: FundingDirection!
-  touches: FundingAddress!    # which cohort address actually received/sent (safe/owner/agent)
-  amount: BigInt!             # positive; direction encodes in/out
+  touches: FundingAddress!       # which cohort address (safe/owner/agent) actually moved
+  amount: BigInt!                # positive; direction encodes in/out
   blockNumber: BigInt!
   blockTimestamp: BigInt!
   transactionHash: Bytes!
 }
 
-enum FundingAsset {
-  USDC
-  MATIC
-}
-
-enum FundingDirection {
-  IN
-  OUT
-}
-
-enum FundingAddress {
-  SAFE
-  OWNER
-  AGENT
-}
-
-# Daily aggregate per Safe — keeps "first deposit / total in / total out"
-# queries O(days) rather than O(transfers). Per-asset.
+# Daily aggregate — keeps "first deposit / total in / total out" O(days)
+# rather than O(transfers). Per-asset, per-Safe.
 type FundingDaily @entity(immutable: false) {
-  id: ID!                     # safe + "_" + asset + "_" + dayTimestamp
-  safe: PearlSafe!
+  id: ID!                        # safeAddress + "_" + asset + "_" + dayTimestamp
+  safe: TraderAgent!
   asset: FundingAsset!
-  date: BigInt!               # UTC midnight
+  date: BigInt!                  # UTC midnight
   totalIn: BigInt!
   totalOut: BigInt!
   transferCount: Int!
 }
+```
 
-# =============================================================================
-# Market state — unchanged vs predict-polymarket (cohort-agnostic)
-# =============================================================================
+### 3.4 `PayoutRedemption` (field added)
 
-# Bridge entity linking UMA question IDs to ConditionalTokens condition IDs.
-type QuestionIdToConditionId @entity(immutable: true) {
-  id: Bytes!                  # questionId
-  oracle: Bytes!
-  conditionId: Bytes!
-  transactionHash: Bytes!
-}
-
-# Market identity. Primary key is conditionId, NOT questionId.
-type Question @entity(immutable: true) {
-  id: Bytes!                  # conditionId
-  questionId: Bytes!
-  isNegRisk: Boolean!
-  marketId: Bytes             # NegRisk grouping id
-  metadata: MarketMetadata!
-  bets: [Bet!]! @derivedFrom(field: "question")
-  participants: [MarketParticipant!]! @derivedFrom(field: "question")
-  resolution: QuestionResolution @derivedFrom(field: "question")
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
-}
-
-# Extracted from UMA OO V3 ancillary data.
-type MarketMetadata @entity(immutable: true) {
-  id: Bytes!                  # questionId
-  title: String!
-  outcomes: [String!]!
-  rawAncillaryData: String!
-}
-
-# Maps an outcome token id to its (conditionId, outcomeIndex). Essential
-# for OrderFilled handler to know which outcome is being bought/sold.
-type TokenRegistry @entity(immutable: true) {
-  id: Bytes!                  # tokenId as bytes
-  tokenId: BigInt!
-  conditionId: Bytes!
-  outcomeIndex: BigInt!       # 0 or 1
-  transactionHash: Bytes!
-}
-
-# Final oracle resolution — drives settlement in handleQuestionResolved.
-type QuestionResolution @entity(immutable: true) {
-  id: Bytes!                  # conditionId
-  question: Question!
-  winningIndex: BigInt!       # -1 invalid, 0 or 1 winner
-  settledPrice: BigInt!
-  payouts: [BigInt!]!
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
-}
-
-# Marker for markets any cohort Safe participated in — used for
-# Global.totalMarketsParticipated.
-type MarketParticipated @entity(immutable: true) {
-  id: Bytes!                  # conditionId
-}
-
-# =============================================================================
-# Per-Safe trading activity (field renames vs predict-polymarket)
-# =============================================================================
-
-# A single CTF Exchange OrderFilled attributed to a Safe (as maker or taker).
-# Sells use NEGATIVE amount and shares (matches predict-polymarket convention).
-type Bet @entity(immutable: false) {
-  id: Bytes!                  # txHash + logIndex
-  safe: PearlSafe!            # renamed from bettor
-  outcomeIndex: BigInt!
-  amount: BigInt!             # USDC (6-decimal), positive for buy, negative for sell
-  shares: BigInt!             # outcome tokens, positive for buy, negative for sell
-  isBuy: Boolean!
-  countedInTotal: Boolean!    # set true at resolution
-  countedInProfit: Boolean!   # set true at resolution
-  question: Question
-  dailyStatistic: DailyProfitStatistic
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
-}
-
-# Per-Safe × per-market aggregate. Iterated at resolution time.
-type MarketParticipant @entity(immutable: false) {
-  id: ID!                     # safeAddress + "_" + conditionId
-  safe: PearlSafe!            # renamed from traderAgent
-  question: Question!
-  totalBets: Int!
-  totalTraded: BigInt!
-  totalTradedSettled: BigInt!
-  totalPayout: BigInt!
-  outcomeShares0: BigInt!     # net shares, buys add / sells subtract
-  outcomeShares1: BigInt!
-  expectedPayout: BigInt!     # set at resolution from outcome share balances
-  settled: Boolean!           # idempotency; set true at resolution
-  bets: [Bet!]!
-  createdAt: BigInt!
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
-}
-
-# Audit-trail entity for every PayoutRedemption event (CTF + NegRiskAdapter).
-# Profit is computed at resolution, not here — this only tracks claimed amounts.
-type PayoutRedemption @entity(immutable: true) {
-  id: Bytes!                  # txHash + logIndex
-  safe: PearlSafe!            # renamed from redeemer
-  conditionId: Bytes!
-  question: Question
-  payoutAmount: BigInt!
-  source: PayoutSource!       # new vs predict-polymarket — distinguishes adapters
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
-}
-
+```graphql
 enum PayoutSource {
-  CONDITIONAL_TOKENS          # vanilla binary markets
-  NEG_RISK_ADAPTER            # multi-outcome markets
+  CONDITIONAL_TOKENS             # vanilla binary markets
+  NEG_RISK_ADAPTER               # multi-outcome markets
 }
 
-# Day-level P&L per Safe. Populated on bet placement, resolution, and payout.
-type DailyProfitStatistic @entity(immutable: false) {
-  id: ID!                     # safeAddress + "_" + dayTimestamp
-  safe: PearlSafe!            # renamed from traderAgent
-  date: BigInt!
-
-  # Activity placed on this day
-  bets: [Bet!]! @derivedFrom(field: "dailyStatistic")
-  totalBets: Int!
-  totalTraded: BigInt!
-  totalPayout: BigInt!
-
-  # Profit realized on this day (from settlements)
-  dailyProfit: BigInt!
-  profitParticipants: [Question!]!
-}
-
-# =============================================================================
-# Global singleton — field renames only
-# =============================================================================
-
-type Global @entity(immutable: false) {
-  id: ID!                     # empty string "" (matches predict-polymarket convention)
-  totalSafes: Int!            # renamed from totalTraderAgents
-  totalActiveSafes: Int!      # renamed from totalActiveTraderAgents
-  totalBets: Int!
-  totalPayout: BigInt!
-  totalTraded: BigInt!
-  totalTradedSettled: BigInt!
-  totalExpectedPayout: BigInt!
-  totalMarketsParticipated: Int!
+type PayoutRedemption @entity(immutable: true) {
+  id: Bytes!                     # txHash + logIndex — unchanged
+  redeemer: TraderAgent!         # unchanged
+  conditionId: Bytes!            # unchanged
+  question: Question             # unchanged
+  payoutAmount: BigInt!          # unchanged
+  source: PayoutSource!          # NEW
+  blockNumber: BigInt!           # unchanged
+  blockTimestamp: BigInt!        # unchanged
+  transactionHash: Bytes!        # unchanged
 }
 ```
 
 ---
 
-## 3. Handler-Level Implications of This Schema
+## 4. Handler-Level Implications
 
-The schema changes are deliberately narrow, but they imply the following
-handler changes relative to `predict-polymarket`:
+Changes to `src/` relative to the current `predict-polymarket`
+handlers:
 
-1. **Gate in `handleOrderFilled` / `handleCreateMultisigWithAgents`.** Loads
-   `PearlSafe.load(event.params.maker)` instead of `TraderAgent.load(...)`
-   and skips if null. The `PearlSafe` entity is created in handlers for
-   `PolySafeCreator.*` events, not in `handleRegisterInstance`. The
-   `agentId == 86` filter is gone entirely.
-2. **Safe population is multi-event.** `PolySafeCreator` creates the
-   `PearlSafe` with `ownerEOA` set. `ServiceRegistryL2.CreateMultisigWithAgents`
-   sets `serviceId`. `IdentityRegistryBridger.AgentWalletSet` sets
-   `agentId` + `agentEOA`. These events may arrive in any order; handlers
-   must `load-or-create` and null-check fields that might not yet be set.
-3. **Funding handlers are new.** USDC and MATIC `Transfer` handlers check
-   whether `from` or `to` is a known cohort address (Safe, owner EOA, or
-   agent EOA), attribute to the Safe, and update `Funding` + `FundingDaily`.
-   The cohort-address lookup should use a side index (e.g., a helper
-   entity keyed on the raw address) so it's O(1) without scanning all
-   `PearlSafe` entities.
-4. **`PayoutRedemption.source` is populated** based on which handler fired
-   (`handlePayoutRedemption` on ConditionalTokens → `CONDITIONAL_TOKENS`;
-   `handleNegRiskPayoutRedemption` on NegRiskAdapter → `NEG_RISK_ADAPTER`).
-   Without this field, NegRisk vs vanilla redemptions are indistinguishable
-   in the audit trail.
-5. **Idempotency for Safe termination.** `handleTerminateService` sets
-   `terminatedAt` but must not delete the Safe or its history — downstream
-   analytics care about "did a cleared user have realised P&L."
-6. **Settlement logic is unchanged.** `processMarketResolution`,
-   `processTradeActivity`, and `processRedemption` from
-   `predict-polymarket/src/utils.ts` port over with field renames only
-   (`agent.*` → `safe.*`). Map caching pattern, delta accumulation for
-   `Global`, idempotency via `participant.settled` — all carry over.
+### 4.1 Removed
 
----
+- `TraderService` creation in `handleRegisterInstance`. No gate on
+  `agentId == 86`. The handler becomes a no-op or is removed entirely
+  — agent creation moves to `handleCreateMultisigWithAgents` with no
+  prerequisite `TraderService` lookup.
 
-## 4. Review Questions
+### 4.2 Added
 
-Before implementation starts, the following are worth a look:
+1. **`ApplicationClassifier` data source + handler.**
+   `handleServiceApplicationTypeUpdated(serviceId, appType)`:
+   - Load-or-create `ServiceClassification` by `serviceId`.
+   - Capture `previousType` = existing `appType` or `NON_EXISTENT`.
+   - Write new `appType`, `classifiedAt`, `classifiedBy`.
+   - Append a `ClassificationChange` row.
+   - Walk any `TraderAgent` entities whose `serviceId` matches and update
+     their `classification` link. (In practice this is a single entity,
+     since one service maps to one multisig.)
+2. **`PolySafeCreator` data source + handler.**
+   `handleSafeCreated(safe, owner, …)`:
+   - Load-or-create `TraderAgent` by `safe` address.
+   - Set `ownerEOA` = `owner`.
+   - `agentEOA` is populated later when
+     `IdentityRegistryBridger.AgentWalletSet` fires (via the existing
+     `service-registry` path, re-indexed here or cross-read — see §5).
+3. **ERC-20 `Transfer` handlers (USDC + wMATIC), cohort-scoped.**
+   Handler steps:
+   - Look up whether `from` or `to` is a known PEARL Safe / owner EOA /
+     agent EOA (via a side index — see §4.3 below).
+   - If neither side is a PEARL cohort address, early return. This is
+     the cost-control lever that keeps indexing bounded.
+   - Create `Funding` row, update `FundingDaily`, attribute to the Safe.
+4. **`PayoutRedemption.source` populated by source handler.**
+   `handlePayoutRedemption` (ConditionalTokens) → `CONDITIONAL_TOKENS`;
+   `handleNegRiskPayoutRedemption` (NegRiskAdapter) → `NEG_RISK_ADAPTER`.
 
-1. **Rename scope.** Renaming `TraderAgent` → `PearlSafe` makes queries
-   clearer but forks the schema shape from `predict-polymarket`. Is that
-   worth it, or should we keep `TraderAgent` and accept the naming
-   mismatch? Recommendation: rename — the Safe-centric framing is load-
-   bearing for this cohort.
-2. **`Funding` granularity.** Per-transfer entity + per-day aggregate. An
-   alternative is aggregates only, but debugging a "missing top-up"
-   report requires the raw events. Recommendation: keep both; drop
-   `Funding` (the raw entity) only if storage pressure appears.
-3. **`counterparty` field on `Funding`.** Useful for audit ("where did
-   this USDC come from"), but if the counterparty is itself a cohort
-   address (Safe-to-Safe), the same transfer will appear twice (once
-   IN, once OUT). Handler logic must decide whether that's one entity or
-   two. Recommendation: two entities (one per cohort address touched),
-   with `touches` making the distinction explicit.
-4. **`MarketParticipated` marker.** Carried over verbatim but could be
-   replaced by a count on `Global` incremented when the first cohort
-   bet in a market is seen. Keeping the marker entity as-is is simpler
-   and matches `predict-polymarket`.
-5. **Anything in the schema that smells like a server-side join.** The
-   schema was deliberately constructed to have none. If any field in
-   review feels borderline (e.g., "should we add a `tier` enum"), the
-   answer is **no, per §1.1** — and that's the whole point of doing
-   schema review before code.
+### 4.3 Modified
+
+- **Cohort-address side index.** The ERC-20 `Transfer` handler can't
+  afford to scan `TraderAgent` to check cohort membership per event. A
+  small helper entity (`CohortAddress { id: Bytes!, safe: TraderAgent!,
+  kind: FundingAddress! }`) indexed on the raw address gives O(1)
+  lookup. Populated whenever a Safe, owner EOA, or agent EOA is set on
+  a PEARL-classified `TraderAgent`.
+- **`handleOrderFilled` gate.** Unchanged in structure — still
+  `TraderAgent.load(maker)` and early-return if null. The difference is
+  that `TraderAgent` now exists for all Olas agents, not just polystrat.
+- **Settlement logic.** Unchanged. `processMarketResolution`,
+  `processTradeActivity`, `processRedemption` from
+  `predict-polymarket/src/utils.ts` port verbatim. Map caching, delta
+  accumulation for `Global`, idempotency via `participant.settled` —
+  all carry over.
 
 ---
 
-## 5. What's Deliberately Absent
+## 5. Deployment Strategy — Parallel, Not Mutate
+
+The existing `predict-polymarket` deployment stays up and untouched
+until cutover. Steps:
+
+1. **New deployment with the generalized schema.** Either `predict-polymarket`
+   as a new version, or a distinct name during transition. The repo
+   currently has the subgraph at `subgraphs/predict/predict-polymarket/` —
+   implementation can stay in place; the deployment name is the switch.
+2. **Two-start-blocks pattern.** Market-creation sources (`ConditionPreparation`,
+   UMA `QuestionInitialized`, `TokenRegistered`) from the earlier of
+   (a) current `predict-polymarket` start block or (b) a point early
+   enough that every classified cohort's trading history is covered.
+   Trade / redemption / classifier / PolySafeCreator / Transfer sources
+   start from the earliest Olas-agent trading block, not the current
+   polystrat start block.
+3. **Parity check on cutover.** Run both deployments in parallel. Query
+   the polystrat cohort on both and assert equivalence (modulo the new
+   enum filter). Switch consumer dashboards when parity holds for N
+   days.
+4. **Retire the old deployment** once traffic has moved.
+
+Reindex cost is proportional to Olas-agent trade volume, not total
+Polymarket volume — see plan §7.2. A sizing check (distinct Olas-multisig
+makers on `CTFExchange.OrderFilled`) should run before cutover.
+
+---
+
+## 6. Review Questions
+
+Worth resolving before handler work begins:
+
+1. **Current enum granularity.** `ApplicationClassifier.ApplicationType`
+   today is `{NON_EXISTENT, PEARL, OTHER}`. Polystrat is therefore
+   classified as `OTHER`. If product wants first-class POLYSTRAT
+   labeling (or any other named cohort), that's a classifier UUPS upgrade
+   + subgraph schema update in lockstep. Flag for discussion — do we
+   extend now or later?
+2. **`TraderAgent` not renamed to `PearlSafe`.** Since the entity now
+   covers every Olas agent, not just Pearl Safes, keeping the original
+   name is correct and preserves query compatibility with consumers of
+   the current polystrat-only deployment.
+3. **Optional vs required `classification` field.** Modeled as nullable
+   because agents may exist transiently between service creation and
+   classifier record (backfill lag, or service created before classifier
+   deployment). Alternative: make it required, with a NON_EXISTENT
+   default row written at agent creation. Nullable is simpler; required
+   is stricter. Recommendation: nullable + handler that defensively
+   load-or-creates a `NON_EXISTENT` classification if needed.
+4. **`Funding` counterparty on cohort-to-cohort transfers.** If two
+   PEARL Safes transfer between themselves, the same `Transfer` maps to
+   two `Funding` rows (one IN, one OUT) — `touches` disambiguates.
+   Acceptable; flagged so query patterns account for it.
+5. **Cost control for `Transfer` indexing.** USDC + wMATIC are among the
+   highest-volume ERC-20s on Polygon. Even with cohort-scoped attribution
+   (early-return on non-PEARL sides), the indexer still receives every
+   event. If this proves expensive at beta scale, alternatives:
+   (a) balance-snapshot pattern (query balances periodically, not per
+   transfer), (b) separate funding-only subgraph, (c) reduce to USDC
+   only. Recommendation: ship with both assets, measure, optimize.
+6. **ERC-8004 metadata as a secondary signal (later).** If
+   `IdentityRegistryBridger.MetadataSet` grows an `application_type` key,
+   adding a secondary read is a follow-up. Resolution rule on conflict:
+   `ApplicationClassifier` wins. Captured as an open item in plan §4.4.
+
+---
+
+## 7. Deliberately Absent
 
 For audit discipline, absence is as important as presence. None of the
 following appear in this schema, and none should be added without an
-explicit policy revisit:
+explicit policy revisit against plan §1.1:
 
 - No `mode` / `tool` / `tier` field on any entity.
 - No `requestId` / `predictionId` / server-correlation identifier.
 - No `source = SERVER` enum variant, no "off-chain" enrichment hook.
 - No timestamp-join helper fields (e.g., "request_minute bucket") that
   would make a server-side join one query away.
+- No free-text `label` / `note` fields on `TraderAgent` or `Bet` that
+  could be repurposed to carry server-side metadata informally.
 
 If any of these become necessary for a future product ask, the answer is
-a policy decision on §1.1, not a schema change.
+a policy decision on plan §1.1, not a schema change.
