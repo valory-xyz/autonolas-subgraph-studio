@@ -13,7 +13,7 @@ before any handler work.
 > the review thread on PR #115. The subject is now the generalized
 > predict-polymarket schema — there is no separate `pearl-trades`
 > subgraph. Pearl Mini is one cohort among several, filtered client-side
-> (see plan §4).
+> via the `multisig_:` link (see plan §4).
 
 ---
 
@@ -22,6 +22,11 @@ before any handler work.
 - **Not a new subgraph.** Modifies the existing `predict-polymarket`
   in place; deployed in parallel with the current polystrat-only
   deployment for cutover safety (§4).
+- **Not a service-registry fork.** The `Multisig` helper introduced
+  here carries only the minimum cohort-filter metadata needed inside
+  this subgraph. Full registration records (`(agentInstance, agentId,
+  operator)` tuples, timestamps, per-instance history) stay in
+  `subgraphs/service-registry/`.
 - **Not a classifier integration.** `ApplicationClassifier` is a
   documented future follow-up in plan §4.2, not part of this change.
 - **Not a funding-flow indexer.** USDC/MATIC `Transfer` handling is
@@ -33,9 +38,9 @@ before any handler work.
 
 | Entity | Change | Rationale |
 |---|---|---|
-| `TraderService` | **Removed** | Polystrat-specific gate (`agentId == 86`). Cohort filtering is now client-side against `TraderAgent.agentIds` and `AgentInstance.operator`. |
-| `AgentInstance` | **New** | One row per `ServiceRegistryL2.RegisterInstance` event. Captures the full `(operator, agentInstance, agentId, service)` tuple so clients can filter by operator address (e.g. PolySafeCreator for Pearl Mini) or agent id without cross-subgraph joins. |
-| `TraderAgent` | **Extended** | Adds `agentIds: [Int!]!` (deduplicated, fast polystrat filter) and derived `agentInstances: [AgentInstance!]!`. No rename — keeps schema continuity. |
+| `TraderService` | **Removed** | Polystrat-specific gate (`agentId == 86`). Cohort filtering moves to client queries against the `Multisig` link. |
+| `Multisig` | **New** | Minimal index of every Olas multisig on Polygon. Carries `serviceId`, `agentIds: [Int!]!`, `operators: [Bytes!]!`, all deduplicated arrays. Created on `CreateMultisigWithAgents`, accumulated on `RegisterInstance`. Enables the cohort-filter predicate in `handleOrderFilled` and the public cohort filters (`multisig_: { agentIds_contains: [86] }`, etc.). Does not duplicate service-registry's full registration records — carries only what cohort filtering needs inside this subgraph. |
+| `TraderAgent` | **Created lazily + link added** | Creation moves from `handleCreateMultisigWithAgents` to `handleOrderFilled` on first-trade. The entity only exists for services that have actually traded — the name stays semantically accurate. `multisig: Multisig!` link added for cohort filtering. No `agentIds` on `TraderAgent` — that lives on `Multisig`. |
 | `PayoutRedemption` | **Field added:** `source: PayoutSource!` | Distinguishes `CONDITIONAL_TOKENS` vs `NEG_RISK_ADAPTER`. Without this field, NegRisk vs vanilla redemptions are indistinguishable in the audit trail. Orthogonal to the cohort work but shipped in the same change. |
 | `PayoutSource` | **New enum** | `{ CONDITIONAL_TOKENS, NEG_RISK_ADAPTER }`. |
 | `Bet` / `MarketParticipant` / `DailyProfitStatistic` / `Global` / `Question` / `MarketMetadata` / `QuestionResolution` / `TokenRegistry` / `QuestionIdToConditionId` / `MarketParticipated` | **Unchanged** | Cohort-agnostic market/trade state. |
@@ -52,48 +57,42 @@ Only new / modified entities are shown. Unchanged entities carry over
 verbatim from
 [`predict-polymarket/schema.graphql`](../predict/predict-polymarket/schema.graphql).
 
-### 3.1 `AgentInstance` (new)
+### 3.1 `Multisig` (new)
 
 ```graphql
-# One row per ServiceRegistryL2.RegisterInstance event. Captures the
-# full registration tuple so clients can filter by operator (e.g. the
-# PolySafeCreator contract for Pearl Mini services) or agent id.
+# Minimal service-registration index for every Olas multisig on
+# Polygon. Populated eagerly from ServiceRegistryL2 events. Used as
+# the predicate for lazy TraderAgent creation in handleOrderFilled,
+# and as the target of cohort-filter queries via the multisig_: link
+# on TraderAgent.
 #
-# If the same agent-instance address is registered under multiple
-# services over time, id collision is avoided by deriving the id from
-# (agentInstance, serviceId) — see handler note in §4.
-type AgentInstance @entity(immutable: true) {
-  id: Bytes!                     # concat(agentInstance, serviceId) — unique per registration
-  agentInstance: Bytes!          # the agent's EOA registered to act for the service
-  service: TraderAgent!          # the TraderAgent (multisig) of the service
-  agentId: Int!                  # RegisterInstance.agentId
-  operator: Bytes!               # RegisterInstance.operator — who registered this instance
-  registeredAt: BigInt!          # block timestamp
+# Scope note: this is NOT a duplicate of service-registry's Multisig
+# entity. It carries only the deduplicated arrays needed for cohort
+# filtering inside this subgraph. Full registration records (with
+# per-instance tuples, timestamps, operator history) live in
+# service-registry/.
+type Multisig @entity(immutable: false) {
+  id: Bytes!                     # multisig address
+  serviceId: BigInt!
+  agentIds: [Int!]!              # deduplicated; appended on RegisterInstance
+  operators: [Bytes!]!            # deduplicated; appended on RegisterInstance
+  traderAgent: TraderAgent       # @derivedFrom not used — link set at lazy creation
+  createdAt: BigInt!
+  terminatedAt: BigInt           # set by handleTerminateService
   blockNumber: BigInt!
   transactionHash: Bytes!
 }
 ```
 
-### 3.2 `TraderAgent` (extended; no rename)
+### 3.2 `TraderAgent` (lazy-created; no rename; `multisig` link)
 
 ```graphql
 type TraderAgent @entity(immutable: false) {
   id: Bytes!                        # multisig Safe address — unchanged
-  serviceId: BigInt!                # unchanged
+  multisig: Multisig!               # NEW — link for cohort filter queries
+  serviceId: BigInt!                # unchanged (denormalized for convenience)
 
-  # NEW — every agentId registered to this service, deduplicated.
-  # Populated from ServiceRegistryL2.RegisterInstance. Preserves the
-  # polystrat-only view via agentIds_contains: [86]. Mirrors
-  # service-registry/'s Service.agentIds pattern.
-  agentIds: [Int!]!
-
-  # NEW — derived list of full registration records. Each
-  # AgentInstance carries (agentInstance, agentId, operator). Use this
-  # collection when filtering by operator (e.g. PolySafeCreator for
-  # Pearl Mini).
-  agentInstances: [AgentInstance!]! @derivedFrom(field: "service")
-
-  # Unchanged fields follow
+  # Unchanged trade-activity fields
   firstParticipation: BigInt
   lastActive: BigInt
   totalBets: Int!
@@ -109,19 +108,23 @@ type TraderAgent @entity(immutable: false) {
 }
 ```
 
+Removed fields relative to the prior draft: `agentIds`, `agentInstances`,
+`classification`, `ownerEOA`, `agentEOA`. Cohort metadata lives on
+`Multisig`; registration records live in `service-registry/`.
+
 Client query patterns:
 
 ```graphql
 # Polystrat — equivalent to the current implicit filter
-traderAgents(where: { agentIds_contains: [86] }) { ... }
+traderAgents(where: { multisig_: { agentIds_contains: [86] } }) { ... }
 
 # Pearl Mini — services registered via PolySafeCreator as operator
 traderAgents(
-  where: { agentInstances_: { operator_in: ["0xA749f605D93B3efcc207C54270d83C6E8fa70fF8"] } }
+  where: { multisig_: { operators_contains: ["0xA749f605D93B3efcc207C54270d83C6E8fa70fF8"] } }
 ) { ... }
 
-# Full registration records (who deployed what)
-agentInstances(where: { service: "0x..." }) { operator, agentId, agentInstance }
+# All Olas multisigs, including ones that haven't traded yet
+multisigs { id, serviceId, agentIds, operators, traderAgent { id, totalBets } }
 ```
 
 The address/label mapping (`0xA749f605...` → "Pearl Mini", `86` →
@@ -157,44 +160,44 @@ Changes to `src/` relative to the current `predict-polymarket` handlers:
 
 ### 4.1 Removed
 
-- `TraderService` creation in `handleRegisterInstance`. No gate on
-  `agentId == 86`. Agent creation moves to
-  `handleCreateMultisigWithAgents` with no prerequisite lookup.
+- `TraderService` creation. No `agentId == 86` gate anywhere.
 
-### 4.2 Repurposed: `handleRegisterInstance`
+### 4.2 Modified: `handleCreateMultisigWithAgents`
 
-Was a cohort gate; now populates `TraderAgent.agentIds` and creates
-`AgentInstance`:
+- Creates a `Multisig` entity keyed on the multisig address, with
+  `serviceId`, empty `agentIds`/`operators`, `createdAt`.
+- **Does NOT create `TraderAgent`.** That creation is deferred to first
+  trade (§4.4).
 
-1. Look up the `TraderAgent` for `event.params.serviceId` via a
-   `serviceId → multisig` helper (populated on `CreateMultisigWithAgents`
-   — see §4.3). If not yet created, buffer the event or early-return
-   and handle on `CreateMultisigWithAgents` ordering; in practice
-   `CreateMultisigWithAgents` precedes `RegisterInstance` in standard
-   flows.
-2. Append `event.params.agentId.toI32()` to `TraderAgent.agentIds` if
-   not already present.
-3. Create an `AgentInstance` entity:
-   - `id` = `concat(agentInstance, serviceId)` (bytes) — unique per
-     registration.
-   - `agentInstance`, `agentId`, `operator`, `registeredAt` from the
-     event.
-   - `service` = the `TraderAgent`.
+### 4.3 Repurposed: `handleRegisterInstance`
 
-### 4.3 Modified: `handleCreateMultisigWithAgents`
+- Loads `Multisig` by the service's multisig address. (Needs a
+  `serviceId → multisig` lookup — see §5 review questions; likely a
+  small `ServiceIndex` helper populated on `CreateMultisigWithAgents`,
+  or resolution via `ServiceRegistryL2.getService` call. Prefer the
+  helper — no contract calls in handlers.)
+- If the `Multisig` exists, append `event.params.agentId.toI32()` to
+  `agentIds` and `event.params.operator` to `operators` (dedup both).
+- Does not touch `TraderAgent`.
 
-Creates the `TraderAgent` unconditionally (no `TraderService` gate) and
-initializes `agentIds` as an empty array. Also updates a small
-`ServiceToSafe` helper (one row per `serviceId` → multisig) that
-`handleRegisterInstance` uses for O(1) lookup. The helper is internal;
-not listed in §2 because it isn't part of the public schema surface.
+### 4.4 Modified: `handleOrderFilled` — lazy `TraderAgent` creation
 
-> Alternative: drop the helper and make `AgentInstance.id` derive from
-> `(agentInstance)` alone, looking up `TraderAgent` via a
-> `ServiceRegistryL2` contract call. Avoid contract calls — the helper
-> is cheaper.
+1. Load `Multisig` by `event.params.maker`.
+2. If `Multisig` is null → non-Olas maker, early return.
+3. Load `TraderAgent` by the same address. If null:
+   - Create `TraderAgent` with `multisig` = the loaded Multisig,
+     `serviceId` copied from Multisig, zeros for cumulative fields.
+   - Set `Multisig.traderAgent` to the new entity.
+   - Increment `Global.totalTraderAgents`.
+4. Proceed with the existing `handleOrderFilled` logic (bet creation,
+   `processTradeActivity`, daily stat, market participant).
 
-### 4.4 Settlement / payout logic unchanged
+### 4.5 Modified: `handleTerminateService`
+
+Set `Multisig.terminatedAt`. Doesn't touch `TraderAgent` — trading
+history persists across service termination for audit purposes.
+
+### 4.6 Settlement / payout logic unchanged
 
 `processMarketResolution`, `processTradeActivity`, `processRedemption`
 from `predict-polymarket/src/utils.ts` port verbatim. Map caching, delta
@@ -207,35 +210,42 @@ invoked it (`handlePayoutRedemption` on ConditionalTokens →
 `CONDITIONAL_TOKENS`; `handleNegRiskPayoutRedemption` on NegRiskAdapter
 → `NEG_RISK_ADAPTER`).
 
-### 4.5 Unchanged handlers
+### 4.7 Unchanged handlers
 
-- `handleOrderFilled` (CTFExchange + NegRiskCTFExchange). Still does
-  `TraderAgent.load(maker)` and early-returns on null. The difference
-  is that `TraderAgent` now exists for all Olas agents.
 - UMA `handleQuestionResolved` / `handleUmaQuestionResolved`.
-- NegRisk handlers.
+- NegRisk handlers (other than the payout-source annotation).
 - `handleTokenRegistered`.
 - `handleConditionPreparation`.
 
 ---
 
-## 5. Deployment Strategy — Parallel, Not Mutate
+## 5. Review Questions
 
-Per plan §7, the existing `predict-polymarket` deployment stays up and
-untouched until cutover:
-
-1. New deployment with the generalized schema under a new version or
-   distinct Studio name.
-2. Two-start-blocks pattern (plan §7.1 item 3).
-3. Parity check on cutover — run both deployments in parallel, validate
-   the polystrat cohort via `agentIds_contains: [86]` on the new
-   deployment matches the current deployment, wait N days before
-   consumers swap.
-4. Retire the old deployment.
-
-Reindex cost is proportional to Olas-agent trade volume. A sizing check
-(distinct Olas-multisig makers on `CTFExchange.OrderFilled`) runs before
-cutover (plan §7.2).
+1. **`serviceId → multisig` lookup in `handleRegisterInstance`.**
+   Preferred implementation: a tiny internal `ServiceIndex { id:
+   serviceId, multisig: Bytes }` entity written on
+   `CreateMultisigWithAgents`. Alternative: read-through a contract
+   call (`ServiceRegistryL2.getService`), slower and not recommended.
+   Confirm the helper is acceptable (it's schema noise but cheap).
+2. **`Multisig.traderAgent` field.** Modeled as a plain forward link
+   (set explicitly at lazy creation) rather than `@derivedFrom` — lets
+   us use it as a presence flag too (null = hasn't traded). If stricter
+   modeling is preferred, make it `@derivedFrom(field: "multisig")` and
+   use a separate boolean or check `TraderAgent.load(multisig.id)`
+   explicitly in queries.
+3. **`TraderAgent.serviceId` denormalization.** Duplicates
+   `multisig.serviceId`. Kept for query convenience and schema
+   continuity with the current deployment. Drop if preferred; consumers
+   would then navigate `multisig { serviceId }`.
+4. **`PayoutSource` grouping with the cohort change.** Orthogonal to
+   cohort work but cheap to ship together. Alternative: ship as a
+   separate minor-version change. Recommendation: bundle — it's one
+   enum + one field addition.
+5. **Cross-subgraph consistency.** This subgraph's `Multisig` is
+   intentionally a subset of `service-registry/`'s `Multisig`. If the
+   two ever drift (e.g. a service is terminated on-chain but one
+   subgraph misses the event), consumers that join across should be
+   aware. Document in subgraph CLAUDE.md at implementation time.
 
 ---
 
@@ -250,37 +260,20 @@ explicit policy revisit against plan §1.1:
 - No `source = SERVER` enum variant, no off-chain enrichment hook.
 - No timestamp-join helper fields (e.g., "request_minute bucket") that
   would make a server-side join one query away.
-- No free-text `label` / `note` fields on `TraderAgent` / `Bet` /
-  `AgentInstance` that could be repurposed to carry server-side
-  metadata informally.
+- No free-text `label` / `note` fields on `TraderAgent` / `Multisig`
+  that could be repurposed to carry server-side metadata informally.
 
 Also deliberately absent (scope-reduction, not policy):
 
 - No `ServiceClassification` / `ClassificationChange` / `ApplicationType`
   entities — deferred to a follow-up once `ApplicationClassifier`
   deploys. See plan §4.2.
-- No `Funding` / `FundingDaily` / ERC-20 `Transfer` handling — plan
-  §6.1.
-- No `ownerEOA` / `agentEOA` fields on `TraderAgent` — plan §6.2.
+- No `AgentInstance` entity with full `(agentInstance, agentId,
+  operator)` tuples — that level of detail belongs in
+  `subgraphs/service-registry/`, not here.
+- No `Funding` / `FundingDaily` / ERC-20 `Transfer` handling —
+  plan §6.1.
+- No `ownerEOA` / `agentEOA` fields — plan §6.2.
 - No `PolySafeCreator` data source. Its address is consumed as a
-  client-side constant for `operator_in:` filtering, not indexed as
-  events.
-
----
-
-## 7. Review Questions
-
-1. **`AgentInstance.id` scheme.** Proposed: `concat(agentInstance, serviceId)`
-   so re-registrations of the same address under different services
-   don't collide. If re-registrations within a single service matter,
-   switch to `txHash + logIndex`. Flag for discussion.
-2. **`ServiceToSafe` helper entity** (§4.3). Adds one small write per
-   `CreateMultisigWithAgents`. Acceptable; alternative is a contract
-   call from the `RegisterInstance` handler, which is slower.
-3. **`TraderAgent` not renamed.** Since the entity now covers every
-   Olas agent, not just polystrat or Pearl Safes, the current name is
-   correct and preserves query compatibility with existing consumers.
-4. **`PayoutSource` grouping with the cohort change.** Orthogonal to
-   cohort work but cheap to ship together. Alternative: ship as a
-   separate minor-version change. Recommendation: bundle — it's one
-   enum + one field addition.
+  client-side constant for `operators_contains:` filtering, not
+  indexed as events.
