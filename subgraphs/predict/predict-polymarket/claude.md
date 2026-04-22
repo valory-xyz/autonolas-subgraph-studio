@@ -1,11 +1,12 @@
-# Autonolas Predict Polymarket Subgraph - Technical Implementation Guide
+# Autonolas Predict Polymarket Subgraph — Technical Implementation Guide
 
-> **AI Assistant Context**: This document provides technical details about the Polymarket Predict subgraph's architecture and implementation for AI-assisted development.
+> **AI Assistant Context**: This document describes the subgraph's current architecture. It was generalized from a polystrat-only (agent ID 86) indexer to a cohort-agnostic one — see [`subgraphs/pearl/SUBGRAPH_PLAN.md`](../../pearl/SUBGRAPH_PLAN.md) for the motivation. Cohort filtering is now client-side.
 
 ## Table of Contents
 - [Architecture Overview](#architecture-overview)
 - [Core Data Model](#core-data-model)
 - [Event Handlers & Data Flow](#event-handlers--data-flow)
+- [Cohort Filtering (Client-Side)](#cohort-filtering-client-side)
 - [Common Queries](#common-queries)
 - [Development Workflow](#development-workflow)
 
@@ -14,729 +15,290 @@
 ## Architecture Overview
 
 ### Purpose
-A GraphQL API for tracking Autonolas agent activity on Polymarket prediction markets on Polygon. Tracks agent registration, market metadata, and trading statistics.
+GraphQL API tracking Autonolas agent activity on Polymarket (Polygon). Indexes **every** Olas multisig on Polygon and lazy-creates a `TraderAgent` on its first trade. Cohort filtering (polystrat, Pearl Mini, etc.) is resolved client-side against the `Multisig.agentIds` / `Multisig.operators` arrays via the `multisig_:` link on `TraderAgent`.
 
 ### Directory Structure
 ```
 subgraphs/predict/predict-polymarket/
-├── schema.graphql                   # GraphQL schema definitions
-├── subgraph.yaml                    # Subgraph configuration & event mappings
+├── schema.graphql                   # GraphQL schema
+├── subgraph.yaml                    # Data sources & event mappings
 ├── src/
-│   ├── service-registry-l-2.ts      # Agent registration
-│   ├── conditional-tokens.ts        # Condition preparation and payout handling
-│   ├── ctf-exchange.ts              # Order tracking from CTF Exchange (agents as makers)
-│   ├── uma-mapping.ts               # Market metadata extraction from UMA events
-│   ├── neg-risk-mapping.ts          # NegRisk market handling
-│   ├── constants.ts                 # Constants
-│   └── utils.ts                     # Utility functions (settlement, payout, trade activity)
-├── tests/                           # Test files
-│   ├── ctf-exchange.test.ts         # CTF Exchange handler tests
-│   ├── profit.test.ts               # Profit calculation integration tests
-│   ├── profit.ts                    # Test event creators
-│   ├── test-helpers.ts              # Shared test utilities
-│   └── ...
-├── scripts/                         # Validation scripts
-│   ├── validate-global.js           # Global vs TraderAgent consistency
-│   ├── validate-agent.js            # Single agent deep validation
-│   └── README.md                    # Script documentation
-└── generated/                       # Auto-generated bindings
+│   ├── service-registry-l-2.ts      # Multisig entity lifecycle
+│   ├── conditional-tokens.ts        # Condition preparation, vanilla payouts
+│   ├── ctf-exchange.ts              # OrderFilled + lazy TraderAgent creation
+│   ├── uma-mapping.ts               # UMA question metadata + resolution
+│   ├── neg-risk-mapping.ts          # NegRisk markets + NegRisk payouts
+│   ├── constants.ts                 # ONE_DAY, PayoutSource enum values
+│   └── utils.ts                     # processTradeActivity, processMarketResolution, processRedemption
+├── tests/                           # Matchstick tests
+└── generated/                       # Auto-generated bindings (gitignored)
 ```
 
 ### Key Contracts
-1. **ServiceRegistryL2** (0xE3607b00E75f6405248323A9417ff6b39B244b50) - Agent registration on Polygon
-2. **ConditionalTokens** (0x4D97DCd97eC945f40cF65F87097ACe5EA0476045) - Condition preparation and payouts
-3. **CTFExchange** - Order book exchange for trading outcome tokens (agents as makers)
-4. **OptimisticOracleV3** (0x65070BE91477460D8A7AeEb94ef92fe056C2f2A7) - UMA oracle for market metadata
+1. **ServiceRegistryL2** (`0xE3607b00E75f6405248323A9417ff6b39B244b50`) — Olas service lifecycle on Polygon.
+2. **ConditionalTokens** (`0x4D97DCd97eC945f40cF65F87097ACe5EA0476045`) — Condition preparation and payouts.
+3. **CTFExchange** / **NegRiskCTFExchange** — Order book; agents are **makers**.
+4. **OptimisticOracleV3** (`0x65070BE91477460D8A7AeEb94ef92fe056C2f2A7`) — UMA oracle.
+5. **UmaCtfAdapter** (`0x157Ce2d672854c848c9b79C49a8Cc6cc89176a49`) — Alternate UMA adapter.
+6. **NegRiskAdapter** (`0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296`) — Multi-outcome wrapper.
 
 ### Core Business Rules
 
-1.  **Selective Tracking**:
-    * **Agents**: Only tracks services with agent ID 86 registered through the `ServiceRegistryL2` contract on Polygon.
-    * **Markets**: Binary markets (2 outcomes) tracked via UMA OptimisticOracleV3 and ConditionalTokens.
-2.  **Two-Tier Accounting**:
-    * `totalTraded` tracks all bets regardless of settlement status (updated immediately when bets are placed)
-    * `totalTradedSettled` tracks settled markets only (updated at resolution for ALL bets — both winning and losing)
-3.  **Settlement-Day Profit Attribution**: ALL profit/loss is calculated at resolution time when `QuestionResolved` fires. Uses outcome share balances to compute `expectedPayout` for each participant:
-    * **Valid answer (0 or 1)**: Winning shares worth 1:1 in USDC collateral. `expectedPayout = outcomeShares for winning outcome`.
-    * **Invalid answer (-1)**: Each share worth 1/2 collateral. `expectedPayout = max(0, shares0)/2 + max(0, shares1)/2`.
-    * **Profit**: `expectedPayout - totalTraded` (attributed to the resolution day).
-4.  **Payout Tracking**: `handlePayoutRedemption` only tracks actual USDC claimed (`totalPayout`) and creates immutable `PayoutRedemption` entries for debugging. No profit calculation occurs at payout time.
-5.  **Sell Bet Convention**: Sell bets use **negative** amounts and shares (matching omen convention). `isBuy` field distinguishes direction.
-6.  **No Re-Answer Logic**: Unlike omen, Polymarket resolutions are final — no answer change handling needed.
+1. **Generalized indexing (no agent-ID gate).** Every Olas multisig on Polygon is indexed via the `Multisig` entity, regardless of `agentId`. Cohort identity is inferred client-side from `Multisig.agentIds` / `Multisig.operators` (see [Cohort Filtering](#cohort-filtering-client-side)). This was historically a polystrat-only subgraph filtered on `agentId == 86`; that filter is gone.
+2. **Lazy `TraderAgent` creation.** `TraderAgent` is created on first trade in `handleOrderFilled`, *not* at service registration. Its presence is a semantic signal that a service has actually traded. `Global.totalTraderAgents` reflects trading services only.
+3. **Binary markets only.** Markets with `outcomeSlotCount != 2` are ignored.
+4. **Agents are MAKERS.** On CTFExchange/NegRiskCTFExchange we filter on `event.params.maker`, never `taker`.
+5. **Two-tier volume accounting.** `totalTraded` updates immediately on every trade; `totalTradedSettled` updates at resolution for *all* bets (winning and losing).
+6. **Settlement-day profit attribution.** All P&L is attributed on `QuestionResolved` using outcome-share balances — never at payout time.
+    - Valid answer: `expectedPayout = max(0, outcomeShares[winningIndex])`.
+    - Invalid answer (`-1`): `expectedPayout = max(0,shares0)/2 + max(0,shares1)/2`.
+    - `profit = expectedPayout - (totalTraded - totalTradedSettled)` at resolution.
+7. **Payout tracking is separate.** `handlePayoutRedemption` / `handleNegRiskPayoutRedemption` only update `totalPayout` and emit an immutable `PayoutRedemption` record with a `source: PayoutSource` discriminator.
+8. **Sell convention.** Sells use negative `amount` and `shares`; `isBuy` distinguishes direction.
+9. **No re-answer logic.** Polymarket resolutions are final.
 
 ---
 
 ## Core Data Model
 
-### Primary Entities (schema.graphql)
+### Multisig (new; cohort-filter index)
+Minimal service-registration index for every Olas multisig on Polygon. Source of truth for the cohort-filter predicate inside this subgraph. Full registration records (per-instance history with timestamps) live in [`subgraphs/service-registry/`](../../service-registry/), not here.
 
-#### TraderService
-Helper entity for filtering agents with ID 86.
-
-**Key Fields:**
 ```graphql
-type TraderService @entity(immutable: true) {
-  id: ID!                       # serviceId
+type Multisig @entity(immutable: false) {
+  id: Bytes!                 # multisig address
+  serviceId: BigInt!
+  agentIds: [Int!]!          # deduplicated; appended on RegisterInstance
+  operators: [Bytes!]!       # deduplicated; appended on RegisterInstance
+  traderAgent: TraderAgent   # null until first trade (lazy creation)
+  createdAt: BigInt!
+  terminatedAt: BigInt       # set by handleTerminateService
+  blockNumber: BigInt!
+  transactionHash: Bytes!
 }
 ```
 
-**Pattern**: Only created when a service registers with agent ID 86, allowing proper TraderAgent filtering.
-
----
-
-#### TraderAgent
-Represents an Autonolas trading agent with cumulative performance metrics.
-
-**Key Fields:**
+### TraderAgent (lazy-created; multisig-linked)
 ```graphql
-type TraderAgent @entity {
-  id: Bytes!                    # Agent's multisig address
-  serviceId: BigInt!            # ServiceRegistryL2 ID
-
-  # Activity tracking
+type TraderAgent @entity(immutable: false) {
+  id: Bytes!                         # multisig Safe address
+  multisig: Multisig!                # link for cohort queries
+  serviceId: BigInt!                 # denormalized from multisig.serviceId
   firstParticipation: BigInt
   lastActive: BigInt
   totalBets: Int!
-
-  # Financial metrics
-  totalTraded: BigInt!          # All bets volume (updated immediately when bets are placed)
-  totalTradedSettled: BigInt!   # Volume for settled markets only (updated at resolution for ALL bets)
-  totalPayout: BigInt!          # Actual USDC claimed via PayoutRedemption
-  totalExpectedPayout: BigInt!  # Sum of expectedPayouts from settled markets
-
-  # Block metadata
+  totalTraded: BigInt!
+  totalTradedSettled: BigInt!
+  totalPayout: BigInt!
+  totalExpectedPayout: BigInt!
+  bets: [Bet!]! @derivedFrom(field: "bettor")
+  dailyProfitStatistics: [DailyProfitStatistic!]! @derivedFrom(field: "traderAgent")
   blockNumber: BigInt!
   blockTimestamp: BigInt!
   transactionHash: Bytes!
 }
 ```
 
-**Important**: `totalTraded` represents all bets volume (updated immediately), `totalTradedSettled` is updated at resolution for ALL bets (winning and losing). `totalExpectedPayout` tracks what agents are entitled to from settled markets. Compare with `totalPayout` to measure claim rate.
-
----
-
-#### QuestionIdToConditionId
-Bridge entity linking UMA question IDs to ConditionalTokens condition IDs.
-
-**Key Fields:**
+### PayoutRedemption (now source-annotated)
 ```graphql
-type QuestionIdToConditionId @entity(immutable: true) {
-  id: Bytes!                    # questionId
-  conditionId: Bytes!           # bytes32
-  transactionHash: Bytes!
+enum PayoutSource {
+  CONDITIONAL_TOKENS    # vanilla binary markets
+  NEG_RISK_ADAPTER      # multi-outcome markets via NegRiskAdapter
 }
-```
 
-**Pattern**: Created during ConditionPreparation to establish the link between UMA's oracle system and ConditionalTokens.
-
----
-
-#### Question
-Represents a market with metadata and links to its condition.
-
-**Key Fields:**
-```graphql
-type Question @entity(immutable: true) {
-  id: Bytes!                    # conditionId (NOT questionId)
-  questionId: Bytes!            # bytes32
-  isNegRisk: Boolean!           # Whether this is a NegRisk market
-  marketId: Bytes               # Grouping ID for NegRisk markets
-  metadata: MarketMetadata!     # Market details
-  bets: [Bet!]!                 # Derived from Bet.question
-  participants: [MarketParticipant!]! # Derived from MarketParticipant.question
-  resolution: QuestionResolution # Derived from QuestionResolution.question
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
-}
-```
-
-**Pattern**: Created during QuestionInitialized with the conditionId as the primary ID, linked to metadata. `participants` derived field used at resolution to iterate all agents in this market.
-
----
-
-#### MarketMetadata
-Market details extracted from UMA ancillary data.
-
-**Key Fields:**
-```graphql
-type MarketMetadata @entity(immutable: true) {
-  id: Bytes!                    # questionId
-  title: String!                # Market question title
-  outcomes: [String!]!          # Array of outcome names (e.g., ["Yes", "No"])
-  rawAncillaryData: String!     # Full ancillary data string
-}
-```
-
-**Pattern**: Parsed from UMA OptimisticOracleV3 ancillary data string format.
-
----
-
-#### Bet
-Individual trade placed by an agent.
-
-**Key Fields:**
-```graphql
-type Bet @entity(immutable: false) {
-  id: Bytes!                    # transaction hash + log index
-  bettor: TraderAgent!
-  outcomeIndex: BigInt!         # 0 or 1 for binary markets
-  amount: BigInt!               # USDC spent (positive for buy, negative for sell)
-  shares: BigInt!               # Outcome tokens (positive for buy, negative for sell)
-  isBuy: Boolean!               # true for buys, false for sells
-  countedInTotal: Boolean!      # Volume added to settled totals
-  countedInProfit: Boolean!     # PnL impact processed
-  question: Question            # Market this bet is for
-  dailyStatistic: DailyProfitStatistic # Day when bet was placed
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
-}
-```
-
-**Pattern**: Created during OrderFilled when an agent (as maker) trades outcome tokens. Sell bets have negative `amount` and `shares`.
-
----
-
-#### DailyProfitStatistic
-Tracks day-to-day performance for an agent.
-
-**Key Fields:**
-```graphql
-type DailyProfitStatistic @entity(immutable: false) {
-  id: ID!                       # agentAddress_dayTimestamp
-  traderAgent: TraderAgent!
-  date: BigInt!                 # Normalized to start of day UTC
-
-  # Activity placed on this day
-  totalBets: Int!               # Bets placed today
-  totalTraded: BigInt!          # Volume placed today (regardless of settlement)
-  totalPayout: BigInt!          # Payouts received today
-
-  # Profit realized on this day
-  dailyProfit: BigInt!          # Net profit/loss (adjusted on settlement/payout days)
-  profitParticipants: [Question!]! # Markets affecting PnL on this day
-}
-```
-
-**Pattern**: Automatically created/updated when bets are placed, markets settle, or payouts are redeemed.
-
----
-
-#### MarketParticipant
-Tracks an agent's participation in a specific market.
-
-**Key Fields:**
-```graphql
-type MarketParticipant @entity(immutable: false) {
-  id: ID!                       # agentAddress_conditionId
-  traderAgent: TraderAgent!
-  question: Question!
-  totalBets: Int!
-  totalTraded: BigInt!          # All volume in this market
-  totalTradedSettled: BigInt!   # Settled volume only (updated at resolution)
-  totalPayout: BigInt!          # Payouts from this market
-  outcomeShares0: BigInt!       # Net shares of outcome 0 (buys add, sells subtract)
-  outcomeShares1: BigInt!       # Net shares of outcome 1
-  expectedPayout: BigInt!       # Calculated at resolution from shares + winning outcome
-  settled: Boolean!             # Idempotency flag, set true at resolution
-  bets: [Bet!]!
-  createdAt: BigInt!
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
-}
-```
-
-**Pattern**: Created on first bet in a market. Tracks outcome share positions. `expectedPayout` and `settled` are set at resolution time.
-
----
-
-#### TokenRegistry
-Maps outcome token IDs to their condition and outcome index.
-
-**Key Fields:**
-```graphql
-type TokenRegistry @entity(immutable: true) {
-  id: Bytes!                    # tokenId as bytes
-  tokenId: BigInt!
-  conditionId: Bytes!
-  outcomeIndex: BigInt!         # 0 or 1 for binary markets
-  transactionHash: Bytes!
-}
-```
-
-**Pattern**: Created during TokenRegistered events from CTF Exchange. Essential for identifying which outcome an agent is betting on.
-
----
-
-#### QuestionResolution
-Tracks market finalization when UMA resolves the question.
-
-**Key Fields:**
-```graphql
-type QuestionResolution @entity(immutable: true) {
-  id: Bytes!                    # conditionId
-  question: Question!
-  winningIndex: BigInt!         # -1 for invalid, 0 or 1 for winner
-  settledPrice: BigInt!
-  payouts: [BigInt!]!
-  blockNumber: BigInt!
-  blockTimestamp: BigInt!
-  transactionHash: Bytes!
-}
-```
-
-**Pattern**: Created during QuestionResolved events. Determines which bets won/lost.
-
----
-
-#### ConditionPreparation (Deprecated)
-Immutable record of condition setup from ConditionalTokens.
-
-**Note**: This entity is no longer used in the current implementation. The bridge is established via QuestionIdToConditionId instead.
-
-
----
-
-#### Global
-Aggregate statistics across all agents.
-
-**Key Fields:**
-```graphql
-type Global @entity {
-  id: ID!                       # Singleton: "" (empty string)
-
-  totalTraderAgents: Int!
-  totalActiveTraderAgents: Int!
-  totalBets: Int!               # All bets including open markets
-
-  # Financial metrics
-  totalTraded: BigInt!          # All bets volume (updated immediately)
-  totalTradedSettled: BigInt!   # Volume for settled markets only (updated at resolution)
-  totalPayout: BigInt!          # All payouts
-  totalExpectedPayout: BigInt!  # Sum of expectedPayouts from settled markets
-  totalMarketsParticipated: Int! # Unique markets where any agent participated
-}
-```
-
-**Important**: `totalTradedSettled` is updated at resolution for ALL bets (winning and losing). `totalExpectedPayout` tracks the theoretical total agents are entitled to.
-
----
-
-#### PayoutRedemption
-Immutable log entity for every payout redemption event (debugging/auditing).
-
-**Key Fields:**
-```graphql
 type PayoutRedemption @entity(immutable: true) {
-  id: Bytes!                    # txHash + logIndex
+  id: Bytes!              # txHash + logIndex
   redeemer: TraderAgent!
   conditionId: Bytes!
   question: Question
   payoutAmount: BigInt!
+  source: PayoutSource!
   blockNumber: BigInt!
   blockTimestamp: BigInt!
   transactionHash: Bytes!
 }
 ```
 
-**Pattern**: Created during PayoutRedemption events. Provides an audit trail for all payouts.
+### Internal helpers (not for consumers)
+- **`ServiceIndex { id: serviceIdBytes, multisig: Bytes! }`** — serviceId → multisig lookup, written when `CreateMultisigWithAgents` fires.
+- **`PendingMultisig { id: serviceIdBytes, agentIds, operators }`** — buffers `RegisterInstance` events that fire before `CreateMultisigWithAgents` (the typical initial-deployment order on Polygon). Drained into `Multisig` when the multisig is created.
+
+### Unchanged entities
+`Question`, `MarketMetadata`, `Bet`, `TokenRegistry`, `QuestionResolution`, `MarketParticipant`, `DailyProfitStatistic`, `MarketParticipated`, `QuestionIdToConditionId`, `Global`.
+
+Consumers use these exactly as before. See `schema.graphql` for the full surface.
 
 ---
 
 ## Event Handlers & Data Flow
 
-### 1. Agent Registration (service-registry-l-2.ts)
+### 1. Service registration (`service-registry-l-2.ts`)
 
-#### Event 1: `RegisterInstance(operator, serviceId, agentInstance, agentId)`
+Polygon order for a fresh service: `RegisterInstance*` → `CreateMultisigWithAgents`. Handlers accept either order.
 
-**Handler**: `handleRegisterInstance`
+**`handleRegisterInstance(operator, serviceId, agentInstance, agentId)`**
+- If `ServiceIndex[serviceId]` exists → load `Multisig`, dedup-append `agentId` and `operator`.
+- Otherwise → dedup-append to `PendingMultisig[serviceId]` (created on demand).
+- No `TraderAgent` touched.
 
-```typescript
-export function handleRegisterInstance(event: RegisterInstanceEvent): void {
-  let agentId = event.params.agentId.toI32();
-  // Only create TraderService if it has agent ID 86
-  if (agentId !== PREDICT_AGENT_ID) return;
+**`handleCreateMultisigWithAgents(serviceId, multisig)`**
+- Create `Multisig[multisig]` with `createdAt`, empty arrays.
+- If `PendingMultisig[serviceId]` exists → drain `agentIds`/`operators` into `Multisig` (dedup-merged).
+- Write `ServiceIndex[serviceId] = multisig` for any future `RegisterInstance`.
+- No `TraderAgent` touched.
 
-  let serviceId = event.params.serviceId.toString();
-  let traderService = TraderService.load(serviceId);
-  if (traderService !== null) return;
+**`handleTerminateService(serviceId)`**
+- Resolve `multisig` via `ServiceIndex[serviceId]`, set `Multisig.terminatedAt`.
+- Trading history persists across termination for audit.
 
-  traderService = new TraderService(serviceId);
-  traderService.save()
-}
-```
+### 2. Market condition setup (`conditional-tokens.ts`)
 
-**Pattern**: Creates TraderService marker entity only for services with agent ID 86, enabling selective tracking in the next handler.
+**`handleConditionPreparation`** — unchanged. Writes `QuestionIdToConditionId` bridge for binary (2-outcome) markets. `Question` itself is created later by `uma-mapping` / `neg-risk-mapping` once metadata is available.
 
----
+### 3. Market metadata (`uma-mapping.ts`, `neg-risk-mapping.ts`)
 
-#### Event 2: `CreateMultisigWithAgents(serviceId, multisig)`
+Unchanged:
+- `handleOOQuestionInitialized` / `handleUmaQuestionInitialized` → create `MarketMetadata` + `Question` (vanilla binary).
+- `handleQuestionPrepared` → create `MarketMetadata` + `Question` (NegRisk; outcomes always `["Yes","No"]`).
 
-**Handler**: `handleCreateMultisigWithAgents`
+### 4. Token registration (`ctf-exchange.ts`)
 
-```typescript
-export function handleCreateMultisigWithAgents(event: CreateMultisigWithAgentsEvent): void {
-  // Skip non-trader services
-  let traderService = TraderService.load(event.params.serviceId.toString())
-  if (traderService === null) return;
+**`handleTokenRegistered`** — unchanged. Writes `TokenRegistry[tokenId]` for outcome 0 and outcome 1. Early-returns on duplicate (CTFExchange fires swapped-pair duplicates).
 
-  let traderAgent = TraderAgent.load(event.params.multisig);
-  if (traderAgent === null) {
-    traderAgent = new TraderAgent(event.params.multisig);
-    traderAgent.totalBets = 0;
-    traderAgent.serviceId = event.params.serviceId;
-    traderAgent.totalPayout = BigInt.zero();
-    traderAgent.totalTraded = BigInt.zero();
-    traderAgent.totalTradedSettled = BigInt.zero();
-    traderAgent.blockNumber = event.block.number;
-    traderAgent.blockTimestamp = event.block.timestamp;
-    traderAgent.transactionHash = event.transaction.hash;
-    traderAgent.save();
+### 5. Trade placement (`ctf-exchange.ts`)
 
-    let global = getGlobal();
-    global.totalTraderAgents += 1;
-    global.save();
-  }
-}
-```
+**`handleOrderFilled`** — this is the critical change-point.
 
-**Pattern**: Two-step filtering ensures only services with agent ID 86 create TraderAgent entities. Uses TraderService as a gate.
+1. `Multisig.load(event.params.maker)` — **early return if null** (non-Olas maker).
+2. `TraderAgent.load(maker)` — if null:
+    - Create `TraderAgent`, link `multisig: Multisig!`, copy `serviceId`, zero cumulative fields.
+    - Set `Multisig.traderAgent = TraderAgent.id` (back-link).
+    - Increment `Global.totalTraderAgents`.
+3. Decode direction and amounts (buy: `makerAssetId==0`; sell: `takerAssetId==0`). Sells carry negative `amount`/`shares`.
+4. `TokenRegistry.load(outcomeTokenId)` — warn+return on miss (see correctness note below).
+5. Update daily stat, create `Bet`, link `question`.
+6. `processTradeActivity` — updates `Global`, `TraderAgent`, and `MarketParticipant` in one pass; tracks outcome share positions (buys add, sells subtract).
 
----
+> **Correctness note — two-start-blocks pattern.** `TokenRegistered` (on CTFExchange sources) and `ConditionPreparation` / `QuestionInitialized` fire well before any trade. If trade sources start at a later block than these market-creation sources, the `TokenRegistry.load` / `Question.load` will be null and the bet is silently dropped. See [`SUBGRAPH_PLAN.md` §7.1](../../pearl/SUBGRAPH_PLAN.md) — the generalized deployment uses an earlier start block for market-creation sources to avoid this bug.
 
-### 2. Market Condition Setup (conditional-tokens.ts)
+### 6. Resolution (`uma-mapping.ts`, `neg-risk-mapping.ts`)
 
-**Event**: `ConditionPreparation(conditionId, oracle, questionId, outcomeSlotCount)`
+**`handleOOQuestionResolved` / `handleUmaQuestionResolved` / `handleOutcomeReported`** — all route to `processMarketResolution(conditionId, winningOutcome, settledPrice, payouts, event)` in `utils.ts`.
 
-**Handler**: `handleConditionPreparation`
+`processMarketResolution` iterates every `MarketParticipant` for the conditionId:
+- Skips `settled == true` (idempotency).
+- Computes `expectedPayout` from outcome-share balances (rules above).
+- Sets `participant.totalTradedSettled = totalTraded`, `participant.settled = true`.
+- Aggregates into cached `TraderAgent` and `DailyProfitStatistic` (batch-saved at end) and delta-accumulates into `Global`.
+- Marks bets `countedInProfit = true`, `countedInTotal = true`.
 
-```typescript
-export function handleConditionPreparation(event: ConditionPreparationEvent): void {
-  // Only handle binary markets (2 outcomes)
-  if (event.params.outcomeSlotCount.toI32() != 2) {
-    return;
-  }
+### 7. Payout (`conditional-tokens.ts`, `neg-risk-mapping.ts`)
 
-  let entity = new ConditionPreparation(event.params.conditionId.toHexString());
-  entity.conditionId = event.params.conditionId;
-  entity.oracle = event.params.oracle;
-  entity.questionId = event.params.questionId;
-  entity.outcomeSlotCount = event.params.outcomeSlotCount;
-  entity.blockNumber = event.block.number;
-  entity.blockTimestamp = event.block.timestamp;
-  entity.transactionHash = event.transaction.hash;
-  entity.save();
+**`handlePayoutRedemption`** → `processRedemption(..., "CONDITIONAL_TOKENS")`.
+**`handleNegRiskPayoutRedemption`** → `processRedemption(..., "NEG_RISK_ADAPTER")`.
 
-  let question = new Question(event.params.questionId)
-  question.conditionId = event.params.conditionId;
-  question.isNeqRisk = false;
-  question.metadata = null; // Will be populated by UMA event
-  question.blockNumber = event.block.number;
-  question.blockTimestamp = event.block.timestamp;
-  question.transactionHash = event.transaction.hash;
-  question.save();
-}
-```
-
-**Pattern**: Only binary markets tracked. Question entity created with null metadata, waiting for UMA event.
+`processRedemption`:
+- Validates `TraderAgent`, `Question`, `MarketParticipant` exist (early return on miss).
+- Creates immutable `PayoutRedemption` with the supplied `source`.
+- Updates `totalPayout` on `TraderAgent`, `MarketParticipant`, `Global`, and `DailyProfitStatistic`.
+- **No `dailyProfit` change** — profit was attributed at resolution.
 
 ---
 
-### 3. Market Metadata Extraction (uma-mapping.ts)
+## Cohort Filtering (Client-Side)
 
-**Event**: `QuestionInitialized(questionID, timestamp, requester, ancillaryData, rewardToken, reward, proposalBond)`
+The subgraph itself does not know or label cohorts. Clients filter through the `multisig_:` link on `TraderAgent`:
 
-**Handler**: `handleQuestionInitialized`
+```graphql
+# Polystrat — the classic filter, now explicit
+traderAgents(where: { multisig_: { agentIds_contains: [86] } }) { ... }
 
-```typescript
-export function handleQuestionInitialized(event: QuestionInitialized): void {
-  let metadata = new MarketMetadata(event.params.questionID)
+# Pearl Mini — services created via PolySafeCreator
+traderAgents(
+  where: { multisig_: { operators_contains: ["0xA749f605D93B3efcc207C54270d83C6E8fa70fF8"] } }
+) { ... }
 
-  // ancillaryData format: "q: title: Will BTC hit 100k?, res_data: p1: 0, p2: 1, outcomes: [Yes, No]"
-  let rawData = event.params.ancillaryData.toString()
-
-  metadata.title = extractTitle(rawData)
-  metadata.outcomes = extractBinaryOutcomes(rawData)
-  metadata.save()
-}
+# All Olas multisigs (including ones that haven't traded yet)
+multisigs { id, serviceId, agentIds, operators, traderAgent { id, totalBets } }
 ```
 
-**Helper Functions**:
-- `extractTitle(rawData)`: Parses title from UMA ancillary data string
-- `extractBinaryOutcomes(rawData)`: Extracts outcome names from "p1 corresponds to X, p2 to Y" or "outcomes: [X, Y]" format
+Consumers own the address/label mapping (e.g. `0xA749f605...` → "Pearl Mini", `86` → "polystrat") as a small local constant. See [`SUBGRAPH_PLAN.md` §4.1](../../pearl/SUBGRAPH_PLAN.md) and §8 for cohort-ownership conventions.
 
-**Pattern**: Parses UMA's structured ancillary data format to extract human-readable market information.
-
----
-
-### 4. Token Registration (ctf-exchange.ts)
-
-**Event**: `TokenRegistered(token0, token1, conditionId)`
-
-**Handler**: `handleTokenRegistered`
-
-```typescript
-export function handleTokenRegistered(event: TokenRegisteredEvent): void {
-  // Register Outcome 0 (Usually "No")
-  let token0Id = Bytes.fromByteArray(Bytes.fromBigInt(event.params.token0));
-  let registry0 = new TokenRegistry(token0Id);
-  registry0.tokenId = event.params.token0;
-  registry0.conditionId = event.params.conditionId;
-  registry0.outcomeIndex = BigInt.fromI32(0);
-  registry0.transactionHash = event.transaction.hash;
-  registry0.save();
-
-  // Register Outcome 1 (Usually "Yes")
-  let token1Id = Bytes.fromByteArray(Bytes.fromBigInt(event.params.token1));
-  let registry1 = new TokenRegistry(token1Id);
-  registry1.tokenId = event.params.token1;
-  registry1.conditionId = event.params.conditionId;
-  registry1.outcomeIndex = BigInt.fromI32(1);
-  registry1.transactionHash = event.transaction.hash;
-  registry1.save();
-}
-```
-
-**Pattern**: Creates TokenRegistry entries for both outcome tokens, mapping each token ID to its outcome index (0 or 1). Essential for identifying which outcome an agent is betting on when processing OrderFilled events.
-
----
-
-### 5. Bet Placement (ctf-exchange.ts)
-
-**Event**: `OrderFilled(orderHash, maker, taker, makerAssetId, takerAssetId, makerAmountFilled, takerAmountFilled)`
-
-**Handler**: `handleOrderFilled`
-
-```typescript
-export function handleOrderFilled(event: OrderFilledEvent): void {
-  // 1. Identify if the maker is one of our TraderAgents
-  let agentId = event.params.maker;  // IMPORTANT: Agents are MAKERS, not takers
-  let agent = TraderAgent.load(agentId);
-  if (agent === null) return;
-
-  // 2. Determine trade direction and amounts
-  // Sells use NEGATIVE amounts (omen convention)
-  let isBuying = event.params.makerAssetId.isZero();
-  let usdcAmount = isBuying
-    ? event.params.makerAmountFilled
-    : BigInt.zero().minus(event.params.takerAmountFilled);  // negative for sells
-  let sharesAmount = isBuying
-    ? event.params.takerAmountFilled
-    : BigInt.zero().minus(event.params.makerAmountFilled);  // negative for sells
-  let outcomeTokenId = isBuying ? event.params.takerAssetId : event.params.makerAssetId;
-
-  // 3. Lookup outcome index from TokenRegistry
-  let tokenRegistry = TokenRegistry.load(Bytes.fromByteArray(Bytes.fromBigInt(outcomeTokenId)));
-  if (tokenRegistry === null) return;
-
-  // 4. Update Daily Stats
-  let dailyStat = getDailyProfitStatistic(agent.id, event.block.timestamp);
-  dailyStat.totalBets += 1;
-  dailyStat.totalTraded = dailyStat.totalTraded.plus(usdcAmount);
-  dailyStat.save();
-
-  // 5. Create Bet entity
-  let betId = event.transaction.hash.concat(Bytes.fromI32(event.logIndex.toI32()));
-  let bet = new Bet(betId);
-  bet.bettor = agent.id;
-  bet.outcomeIndex = tokenRegistry.outcomeIndex;
-  bet.amount = usdcAmount;
-  bet.shares = sharesAmount;
-  bet.countedInTotal = false;  // Will be set to true during settlement
-  bet.countedInProfit = false;
-  bet.question = tokenRegistry.conditionId;
-  bet.dailyStatistic = dailyStat.id;
-  bet.save();
-
-  // 6. Update TraderAgent, MarketParticipant, and Global
-  processTradeActivity(agent, tokenRegistry.conditionId, betId, usdcAmount, ...);
-}
-```
-
-**Critical Pattern - Agents as Makers**:
-- **Our agents operate as MAKERS, not takers** in the CTF Exchange order book
-- The **maker** creates the limit order (our agent), the **taker** fills it (counterparty)
-- We track via `event.params.maker`
-
-**Asset Flow (Maker Perspective)**:
-- **Buying (makerAssetId = 0)**: Maker gives USDC, receives outcome tokens
-- **Selling (takerAssetId = 0)**: Maker gives outcome tokens, receives USDC
-
----
-
-### 6. Market Resolution (uma-mapping.ts)
-
-**Event**: `QuestionResolved(questionID, settledPrice, payouts)`
-
-**Handler**: `handleQuestionResolved`
-
-```typescript
-export function handleQuestionResolved(event: QuestionResolvedEvent): void {
-  let bridge = QuestionIdToConditionId.load(event.params.questionID);
-  if (bridge == null) return;
-
-  // 1. Create Resolution entity
-  let resolution = new QuestionResolution(bridge.conditionId);
-  resolution.question = bridge.conditionId;
-  resolution.settledPrice = event.params.settledPrice;
-  resolution.payouts = event.params.payouts;
-
-  // 2. Determine winner
-  let winningOutcome = BigInt.fromI32(-1); // Default for Invalid
-  if (event.params.payouts.length >= 2) {
-    let p0 = event.params.payouts[0];
-    let p1 = event.params.payouts[1];
-    if (p1 > p0) winningOutcome = BigInt.fromI32(1); // YES won
-    else if (p0 > p1) winningOutcome = BigInt.fromI32(0); // NO won
-  }
-  resolution.winningIndex = winningOutcome;
-  resolution.save();
-
-  // 3. Process ALL participants (using caching for performance)
-  processMarketResolution(bridge.conditionId, winningOutcome, settledPrice, payouts, event);
-}
-```
-
-**`processMarketResolution`** (in utils.ts) iterates all participants in the market:
-- Skips already settled participants (idempotency via `settled` flag)
-- **Calculates expectedPayout** from outcome share balances:
-  - Outcome 0 wins: `expectedPayout = max(0, outcomeShares0)`
-  - Outcome 1 wins: `expectedPayout = max(0, outcomeShares1)`
-  - Invalid (-1): `expectedPayout = max(0, shares0)/2 + max(0, shares1)/2`
-- **Profit**: `expectedPayout - (totalTraded - totalTradedSettled)` — attributed to resolution day
-- Sets `participant.settled = true`, `totalTradedSettled = totalTraded`
-- Uses Map caches for TraderAgent and DailyProfitStatistic, delta accumulation for Global
-- Marks all bets as `countedInProfit = true`, `countedInTotal = true`
-
-**Key difference from omen**: No re-answer logic needed since Polymarket resolutions are final.
-
----
-
-### 7. Payout Handling (conditional-tokens.ts)
-
-**Event**: `PayoutRedemption(redeemer, collateralToken, parentCollectionId, conditionId, indexSets, payout)`
-
-**Handler**: `handlePayoutRedemption`
-
-Delegates to `processRedemption()` in utils.ts:
-- Validates agent, question, and participant exist
-- Creates immutable `PayoutRedemption` entity (audit trail)
-- Updates payout totals only: `agent.totalPayout`, `participant.totalPayout`, `global.totalPayout`
-- Updates daily stat: `dailyStat.totalPayout` (no `dailyProfit` change — profit was already calculated at resolution)
-
-**Key point**: No profit calculation at payout time. All profit/loss is attributed at resolution.
+On-chain classification via `ApplicationClassifier` is a documented future enhancement (see `SUBGRAPH_PLAN.md` §4.2), not part of current scope.
 
 ---
 
 ## Common Queries
 
-### Agent Statistics
-Track an individual agent's performance.
-
+### Agent P&L + markets
 ```graphql
 {
-  traderAgent(id: "0x...") {
-    serviceId
-    firstParticipation
-    lastActive
-    totalBets
+  dailyProfitStatistics(where: { traderAgent: "0x..." }, orderBy: date) {
+    date
+    dailyProfit
     totalTraded
-    totalTradedSettled
     totalPayout
-    blockNumber
-    blockTimestamp
+    profitParticipants { id, metadata { title } }
   }
 }
 ```
 
-**Use Case**: Get basic statistics for a specific agent.
-
----
-
-### Market Information
-Query market metadata and conditions.
-
-```graphql
-{
-  question(id: "0x...") {
-    conditionId
-    metadata {
-      title
-      outcomes
-      description
-    }
-  }
-}
-```
-
-**Use Case**: Get human-readable market information linked to a condition.
-
----
-
-### All Agents
-List all registered agents.
-
+### Pearl Mini cohort — realized + open positions
 ```graphql
 {
   traderAgents(
-    orderBy: blockTimestamp
-    orderDirection: desc
+    where: { multisig_: { operators_contains: ["0xA749f605D93B3efcc207C54270d83C6E8fa70fF8"] } }
   ) {
     id
-    serviceId
-    totalBets
     totalTraded
-    totalPayout
-    firstParticipation
-    lastActive
+    totalTradedSettled
+    totalExpectedPayout
+    totalPayout  # compare with totalExpectedPayout to surface unclaimed winnings
   }
 }
 ```
 
-**Use Case**: Get overview of all registered agents.
-
----
-
-### Global Statistics
-
+### Global statistics
 ```graphql
 {
-  global(id: "") {
+  globals {
     totalTraderAgents
     totalActiveTraderAgents
     totalBets
     totalTraded
     totalTradedSettled
+    totalExpectedPayout
     totalPayout
   }
 }
 ```
 
-**Use Case**: Platform-wide metrics dashboard.
+### Audit trail — distinguishing vanilla vs NegRisk payouts
+```graphql
+{
+  payoutRedemptions(where: { source: NEG_RISK_ADAPTER }, first: 100, orderBy: blockTimestamp, orderDirection: desc) {
+    redeemer { id }
+    conditionId
+    payoutAmount
+    transactionHash
+  }
+}
+```
 
 ---
 
 ## Development Workflow
 
-### Project Structure
-This subgraph is part of the autonolas-subgraph-studio monorepo:
-- `src/service-registry-l-2.ts`: Agent registration (services with agent ID 86 only)
-- `src/conditional-tokens.ts`: Condition preparation and payout handling
-- `src/ctf-exchange.ts`: Order tracking from CTF Exchange (agents as makers)
-- `src/uma-mapping.ts`: Market metadata extraction from UMA events
-- `schema.graphql`: GraphQL schema
-- `tests/`: Comprehensive test suite including integration tests
-
 ### Setup
 ```bash
-npm install
+yarn install
 ```
 
 ### Build
 ```bash
-npm run codegen   # Generate TypeScript bindings from schema
-npm run build     # Compile AssemblyScript to WASM
+yarn codegen   # regenerate TS from schema + ABIs
+yarn build     # AssemblyScript → WASM
+yarn test      # Matchstick
 ```
 
 ### Deploy
@@ -744,188 +306,60 @@ npm run build     # Compile AssemblyScript to WASM
 graph deploy --studio autonolas-predict-polymarket
 ```
 
-**Note**: Check the [root README](../../../README.md) for detailed build and deployment instructions.
+See the [root README](../../../README.md) for deployment details.
 
----
+### Configuration (`subgraph.yaml`)
 
-## Configuration Reference (subgraph.yaml)
+| Data source | Key events | Handler file |
+|---|---|---|
+| ServiceRegistryL2 | `RegisterInstance`, `CreateMultisigWithAgents`, `TerminateService` | `src/service-registry-l-2.ts` |
+| ConditionalTokens | `ConditionPreparation`, `PayoutRedemption` | `src/conditional-tokens.ts` |
+| OptimisticOracleV3 | `QuestionInitialized`, `QuestionResolved` | `src/uma-mapping.ts` |
+| UmaCtfAdapter | `QuestionInitialized`, `QuestionResolved` | `src/uma-mapping.ts` |
+| NegRiskAdapter | `QuestionPrepared`, `OutcomeReported`, `PayoutRedemption` | `src/neg-risk-mapping.ts` |
+| CTFExchange, NegRiskCTFExchange | `OrderFilled`, `TokenRegistered` | `src/ctf-exchange.ts` |
 
-### Data Sources
-
-1. **ServiceRegistryL2** (0xE3607b00E75f6405248323A9417ff6b39B244b50)
-   - Network: Polygon (matic)
-   - Start block: 80360433
-   - Events: `RegisterInstance`, `CreateMultisigWithAgents`
-   - Handler: [src/service-registry-l-2.ts](src/service-registry-l-2.ts)
-
-2. **ConditionalTokens** (0x4D97DCd97eC945f40cF65F87097ACe5EA0476045)
-   - Network: Polygon (matic)
-   - Start block: 80360433
-   - Events: `ConditionPreparation`, `PayoutRedemption`
-   - Handler: [src/conditional-tokens.ts](src/conditional-tokens.ts)
-
-3. **OptimisticOracleV3** (0x65070BE91477460D8A7AeEb94ef92fe056C2f2A7)
-   - Network: Polygon (matic)
-   - Start block: 80360433
-   - Events: `QuestionInitialized`
-   - Handler: [src/uma-mapping.ts](src/uma-mapping.ts)
-
----
-
-## Implemented Features
-
-This subgraph includes comprehensive tracking for Autonolas agents on Polymarket:
-
-### Core Tracking
-- ✅ **Agent Registration**: Tracks services with agent ID 86
-- ✅ **Market Creation**: Binary market tracking via ConditionalTokens
-- ✅ **Market Metadata**: Extracts human-readable info from UMA oracle
-- ✅ **Token Registry**: Maps outcome tokens to their indices
-
-### Trading Activity
-- ✅ **Bet Tracking**: Individual trades with amount, shares, and outcome
-- ✅ **Maker-Based Tracking**: Identifies agents as makers in CTF Exchange
-- ✅ **Market Participation**: Per-market statistics for each agent
-- ✅ **Daily Statistics**: Day-to-day performance metrics
-
-### Profitability & Settlement
-- ✅ **Resolution-Time Settlement**: ALL profit/loss calculated at resolution for both winning and losing bets
-- ✅ **Expected Payout**: Calculated from outcome share balances at resolution
-- ✅ **Payout Tracking**: Immutable `PayoutRedemption` entity for audit trail (no profit at payout time)
-- ✅ **Settled vs Unsettled**: `participant.settled` flag prevents double-processing
-- ✅ **Invalid Market Handling**: Share-based expectedPayout calculation at resolution
-- ✅ **Sell Bet Support**: Negative amounts/shares convention for sells
-
-### Performance Optimizations
-- ✅ **Caching Strategy**: Map-based entity caching during settlement
-- ✅ **Batch Saves**: Bulk updates to minimize I/O
-- ✅ **Selective Indexing**: Early returns for non-tracked markets/agents
-
----
-
-## Key Differences from Omen Subgraph
-
-This Polymarket subgraph differs from the Omen implementation:
-
-1. **Agent Filtering**: Only tracks services with agent ID 86 using TraderService helper entity
-2. **Network**: Polygon instead of Gnosis Chain
-3. **Platform**: Polymarket (UMA + ConditionalTokens) instead of Omen (Reality.eth + ConditionalTokens)
-4. **Market Metadata**: Extracts market info from UMA OptimisticOracleV3 ancillary data
-5. **No Re-Answer Logic**: Polymarket resolutions are final — no answer change handling (omen has ~415/15,000 markets with re-answers)
-6. **No Fee Tracking**: Polymarket doesn't have per-trade fees like omen (no `totalFees`/`totalFeesSettled` fields)
-7. **USDC Denomination**: 6-decimal USDC instead of 18-decimal xDAI
-8. **Shared Settlement Architecture**: Same resolution-time profit pattern as omen — ALL profit/loss at settlement using outcome share balances
-
----
-
-## Common Development Tasks
-
-### Adding a New Entity Field
-
-1. Update [schema.graphql](schema.graphql):
-```graphql
-type TraderAgent @entity {
-  # ... existing fields
-  newField: BigInt! # Add new field
-}
-```
-
-2. Regenerate bindings:
-```bash
-npm run codegen
-```
-
-3. Update handlers to populate new field:
-```typescript
-agent.newField = BigInt.fromI32(0);
-agent.save();
-```
-
-4. Rebuild and redeploy:
-```bash
-npm run build
-graph deploy --studio autonolas-predict-polymarket
-```
-
----
-
-## Utility Functions Reference (src/utils.ts)
+### Utility Functions (`src/utils.ts`)
 
 | Function | Purpose |
-|----------|---------|
-| `getGlobal()` | Returns singleton Global entity (creates if null, including `totalExpectedPayout`) |
-| `saveMapValues<T>(map)` | Batch-saves all entities in a Map cache |
-| `getDayTimestamp(timestamp)` | Normalizes to UTC midnight: `timestamp / 86400 * 86400` |
-| `getDailyProfitStatistic(agent, timestamp)` | Get-or-create daily stat for agent on specific day |
-| `addProfitParticipant(stat, questionId)` | Adds market to `profitParticipants` (deduplicated) |
-| `processTradeActivity(agent, conditionId, betId, amount, timestamp, blockNumber, txHash, outcomeIndex, sharesAmount)` | Consolidated trade update: Global, TraderAgent, MarketParticipant. Tracks outcomeShares0/1. |
-| `processMarketResolution(conditionId, winningOutcome, settledPrice, payouts, event)` | Settlement: iterates participants, calculates expectedPayout, profit, updates settled totals. Uses Map caches. |
-| `processRedemption(redeemer, conditionId, payoutAmount, timestamp, blockNumber, txHash, logIndex)` | Payout tracking only: creates PayoutRedemption, updates totalPayout. No profit. |
+|---|---|
+| `getGlobal()` | Singleton `Global` (id=`""`); creates if absent. |
+| `saveMapValues<T>(map)` | Batch-saves all entities in a cache. |
+| `getDayTimestamp(ts)` | UTC midnight: `ts / 86400 * 86400`. |
+| `getDailyProfitStatistic(agent, ts)` | Get-or-create daily stat for `(agent, day)`. |
+| `addProfitParticipant(stat, questionId)` | Dedup-append to `profitParticipants`. |
+| `processTradeActivity(...)` | Trade-time updates to `Global`, `TraderAgent`, `MarketParticipant`; tracks `outcomeShares0/1`. |
+| `processMarketResolution(...)` | Resolution-time settlement: `expectedPayout`, profit, idempotency via `settled`. Uses Map caches + delta accumulation. |
+| `processRedemption(..., source)` | Payout-only update; creates `PayoutRedemption` with the supplied `source`. |
 
----
-
-## Dependencies
-
-**Runtime** (package.json):
-- `@graphprotocol/graph-cli`: ^0.97.0
-- `@graphprotocol/graph-ts`: ^0.38.0
-
-**ABIs Used**:
-- ServiceRegistryL2.json
-- ConditionalTokens.json
-- OptimisticOracleV3.json
-
----
-
-## Additional Resources
-
-- **The Graph Docs**: https://thegraph.com/docs
-- **AssemblyScript Docs**: https://www.assemblyscript.org/
-- **Polymarket Docs**: https://docs.polymarket.com/
+### Constants (`src/constants.ts`)
+- `ONE_DAY = BigInt.fromI32(86400)`
+- `PAYOUT_SOURCE_CONDITIONAL_TOKENS = "CONDITIONAL_TOKENS"`
+- `PAYOUT_SOURCE_NEG_RISK_ADAPTER = "NEG_RISK_ADAPTER"`
 
 ---
 
 ## Summary for AI Assistants
 
-### Critical Points to Remember
+### Critical points
+1. **No agent-ID gate.** Every Olas multisig on Polygon is indexed via `Multisig`. `TraderAgent` is lazy-created on first trade.
+2. **Cohort is a client concern.** Use `traderAgents(where: { multisig_: { agentIds_contains: [...] | operators_contains: [...] } })`.
+3. **Agents are MAKERS** on CTF/NegRisk exchanges.
+4. **Volume accounting is two-tier.** `totalTraded` is immediate; `totalTradedSettled` updates at resolution for all bets.
+5. **All profit is attributed at resolution**, not at payout.
+6. **Payouts are source-tagged.** `PayoutSource = CONDITIONAL_TOKENS | NEG_RISK_ADAPTER`.
+7. **Sell convention.** Sells carry negative `amount` and `shares`.
+8. **Idempotency.** `MarketParticipant.settled` prevents double-processing at resolution.
+9. **No re-answer logic.** Polymarket resolutions are final.
+10. **`Question` id is `conditionId`** (not `questionId`); `Global` id is `""` (empty string).
+11. **Handlers depend on Map caches** (`agentCache`, `dailyStatsCache`) + delta accumulation on `Global` to keep resolution O(participants).
 
-1. **Agent ID 86 Only**: Two-step filtering via TraderService + TraderAgent entities
-2. **Binary Markets Only**: Only tracks markets with 2 outcomes via ConditionalTokens
-3. **Agents as Makers**: Our agents are MAKERS (not takers) in CTF Exchange - identify via `event.params.maker`
-4. **Two-Tier Accounting**:
-   - `totalTraded` = all bets volume (updated immediately when bets are placed)
-   - `totalTradedSettled` = settled markets only (updated at resolution for ALL bets — both winning and losing)
-5. **Settlement-Day Profit Attribution**: ALL profit/loss calculated at resolution time using outcome share balances. No profit at payout time.
-   - `expectedPayout = outcomeShares for winning outcome` (or shares0/2 + shares1/2 for invalid)
-   - `profit = expectedPayout - totalTraded`
-6. **Payout Tracking is Separate**: `processRedemption` only updates `totalPayout` and creates immutable `PayoutRedemption` entries. No `dailyProfit` change.
-7. **Sell Convention**: Sells use negative amounts and shares. `isBuy` field distinguishes direction.
-8. **Participant-Level Settlement**: Iteration via `question.participants.load()` at resolution, not bets.
-9. **Idempotency**: `participant.settled` flag prevents double-processing. No re-answer logic needed (Polymarket resolutions are final).
-10. **Question Entity ID**: Uses `conditionId` as primary key (NOT questionId)
-11. **Global Singleton ID**: Uses empty string "" (NOT "1")
-12. **Performance Caching**: Uses Map-based caching for TraderAgent and DailyProfitStatistic, delta accumulation for Global
-13. **`totalExpectedPayout` vs `totalPayout`**: Compare these on TraderAgent/Global to measure claim rate
+### Event ordering on Polygon
+`RegisterInstance*` → `CreateMultisigWithAgents` is the typical order for fresh services; `handleRegisterInstance` buffers to `PendingMultisig` in that case. For re-registrations after `TerminateService`, `RegisterInstance` may fire with a pre-existing `ServiceIndex` — both orderings are supported.
 
-### Common Modification Patterns
-
-**Adding New Statistics:**
-1. Update schema.graphql
-2. Run `npm run codegen`
-3. Update relevant handlers
-4. Rebuild and deploy
-
-**When Adding New Tracking Features:**
-1. Update schema.graphql with new entities or fields
-2. Run `npm run codegen` to regenerate TypeScript bindings
-3. Update relevant handlers to populate new data
-4. Add tests in the tests/ directory
-5. Rebuild and deploy: `npm run build && graph deploy`
-
-**Constants Reference:**
-- `PREDICT_AGENT_ID = 86` in [src/constants.ts](src/constants.ts)
-- `ONE_DAY = 86400` for daily statistics calculations
+### Start-block correctness
+Market-creation sources (`ConditionPreparation`, `QuestionInitialized`, `TokenRegistered`, `QuestionPrepared`) must start from a block **earlier** than the earliest trade by any indexed multisig, or trades on pre-start-block markets are silently dropped at `TokenRegistry.load` / `Question.load`. See [`SUBGRAPH_PLAN.md` §7.1](../../pearl/SUBGRAPH_PLAN.md).
 
 ---
 
-*This document is maintained for AI-assisted development. Update when handlers, schema, or patterns change.*
+*Keep this document current when schema, handlers, or entity semantics change.*

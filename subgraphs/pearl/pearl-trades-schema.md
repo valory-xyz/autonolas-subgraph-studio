@@ -1,9 +1,9 @@
 # Predict-Polymarket Generalization — Schema Delta
 
-**Status:** Draft for review (no code written yet)
+**Status:** Implemented (2026-04-22). The schema delta described here has landed in [`subgraphs/predict/predict-polymarket/schema.graphql`](../predict/predict-polymarket/schema.graphql); handlers follow [`predict-polymarket/claude.md`](../predict/predict-polymarket/claude.md). Two small internal helpers not listed in §3 were added during implementation to handle the `RegisterInstance` → `CreateMultisigWithAgents` event ordering on Polygon — see [§3.4](#34-internal-helpers-added-during-implementation). This document is retained for design intent and review history.
 **Parent plan:** [`SUBGRAPH_PLAN.md`](./SUBGRAPH_PLAN.md)
 **Target:** modifies [`subgraphs/predict/predict-polymarket/schema.graphql`](../predict/predict-polymarket/schema.graphql) in place (deployed in parallel; see §4)
-**Reference handlers / business rules:** [`subgraphs/predict/predict-polymarket/CLAUDE.md`](../predict/predict-polymarket/CLAUDE.md)
+**Reference handlers / business rules:** [`subgraphs/predict/predict-polymarket/claude.md`](../predict/predict-polymarket/claude.md)
 
 This document is the concrete surface where the on-chain-only policy
 boundary (plan §1.1) either holds or breaks. Review the delta here
@@ -151,6 +151,39 @@ type PayoutRedemption @entity(immutable: true) {
   transactionHash: Bytes!        # unchanged
 }
 ```
+
+### 3.4 Internal helpers (added during implementation)
+
+The design in §3.1–3.3 assumed the multisig address was known at the point
+`RegisterInstance` fires — which doesn't hold on Polygon, where the typical
+initial-deployment event order for a fresh service is `RegisterInstance*` →
+`CreateMultisigWithAgents`. Two tiny internal helper entities were added to
+bridge this ordering without changing the consumer-visible surface:
+
+```graphql
+# Internal: serviceId -> multisig address lookup.
+# Written when CreateMultisigWithAgents fires. Consulted by handleRegisterInstance
+# (and handleTerminateService) to find the Multisig for a given serviceId.
+type ServiceIndex @entity(immutable: false) {
+  id: Bytes!        # bytes(serviceId)
+  multisig: Bytes!  # multisig address
+}
+
+# Internal: buffer for RegisterInstance events that fire before
+# CreateMultisigWithAgents. Drained into Multisig.agentIds / Multisig.operators
+# when the Multisig entity is created.
+type PendingMultisig @entity(immutable: false) {
+  id: Bytes!             # bytes(serviceId)
+  agentIds: [Int!]!
+  operators: [Bytes!]!
+}
+```
+
+These are not part of the public contract — consumers should not query them —
+but are worth documenting here so future schema reviews understand why they
+exist. The alternative (a contract `eth_call` from the handler to
+`ServiceRegistryL2.getService`) was rejected per §5.1 ("prefer the helper —
+no contract calls in handlers").
 
 ---
 

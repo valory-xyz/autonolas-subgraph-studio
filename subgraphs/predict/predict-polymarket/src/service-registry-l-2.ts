@@ -1,51 +1,113 @@
-import { BigInt } from "@graphprotocol/graph-ts";
+import { Bytes } from "@graphprotocol/graph-ts";
 import {
   CreateMultisigWithAgents as CreateMultisigWithAgentsEvent,
   RegisterInstance as RegisterInstanceEvent,
+  TerminateService as TerminateServiceEvent,
 } from "../generated/ServiceRegistryL2/ServiceRegistryL2";
-import { TraderAgent, TraderService } from "../generated/schema";
-import { getGlobal } from "./utils";
-import { PREDICT_AGENT_ID } from "./constants";
+import {
+  Multisig,
+  PendingMultisig,
+  ServiceIndex,
+} from "../generated/schema";
+
+function serviceIdKey(serviceIdBytes: Bytes): Bytes {
+  return serviceIdBytes;
+}
+
+function dedupPushI32(arr: i32[], value: i32): i32[] {
+  if (arr.indexOf(value) == -1) arr.push(value);
+  return arr;
+}
+
+function dedupPushBytes(arr: Bytes[], value: Bytes): Bytes[] {
+  for (let i = 0; i < arr.length; i++) {
+    if (arr[i].equals(value)) return arr;
+  }
+  arr.push(value);
+  return arr;
+}
 
 export function handleRegisterInstance(event: RegisterInstanceEvent): void {
+  let serviceIdBytes = Bytes.fromByteArray(
+    Bytes.fromBigInt(event.params.serviceId),
+  );
   let agentId = event.params.agentId.toI32();
-  // Only create TraderService if it has relevant agent id
-  // Allows then to track TraderAgent properly
-  if (agentId !== PREDICT_AGENT_ID) return;
+  let operator = event.params.operator;
 
-  let serviceId = event.params.serviceId.toHexString();
-  let traderService = TraderService.load(serviceId);
-  if (traderService !== null) return;
+  let index = ServiceIndex.load(serviceIdKey(serviceIdBytes));
+  if (index !== null) {
+    let multisig = Multisig.load(index.multisig);
+    if (multisig !== null) {
+      multisig.agentIds = dedupPushI32(multisig.agentIds, agentId);
+      multisig.operators = dedupPushBytes(multisig.operators, operator);
+      multisig.save();
+      return;
+    }
+  }
 
-  traderService = new TraderService(serviceId);
-  traderService.save()
+  let pending = PendingMultisig.load(serviceIdKey(serviceIdBytes));
+  if (pending === null) {
+    pending = new PendingMultisig(serviceIdKey(serviceIdBytes));
+    pending.agentIds = [];
+    pending.operators = [];
+  }
+  pending.agentIds = dedupPushI32(pending.agentIds, agentId);
+  pending.operators = dedupPushBytes(pending.operators, operator);
+  pending.save();
 }
 
 export function handleCreateMultisigWithAgents(
-  event: CreateMultisigWithAgentsEvent
+  event: CreateMultisigWithAgentsEvent,
 ): void {
-  // Skip non-trader services
-  let traderService = TraderService.load(event.params.serviceId.toHexString())
-  if (traderService === null) return;
-  
-  let traderAgent = TraderAgent.load(event.params.multisig);
-  if (traderAgent === null) {
-    traderAgent = new TraderAgent(event.params.multisig);
-    traderAgent.totalBets = 0;
-    traderAgent.serviceId = event.params.serviceId;
-    traderAgent.totalPayout = BigInt.zero();
-    traderAgent.totalTraded = BigInt.zero();
-    traderAgent.totalTradedSettled = BigInt.zero();
-    traderAgent.totalExpectedPayout = BigInt.zero();
+  let multisigAddress = event.params.multisig;
+  let serviceIdBytes = Bytes.fromByteArray(
+    Bytes.fromBigInt(event.params.serviceId),
+  );
 
-    traderAgent.blockNumber = event.block.number;
-    traderAgent.blockTimestamp = event.block.timestamp;
-    traderAgent.transactionHash = event.transaction.hash;
-
-    traderAgent.save();
-
-    let global = getGlobal();
-    global.totalTraderAgents += 1;
-    global.save();
+  let multisig = Multisig.load(multisigAddress);
+  if (multisig === null) {
+    multisig = new Multisig(multisigAddress);
+    multisig.serviceId = event.params.serviceId;
+    multisig.agentIds = [];
+    multisig.operators = [];
+    multisig.createdAt = event.block.timestamp;
+    multisig.blockNumber = event.block.number;
+    multisig.transactionHash = event.transaction.hash;
   }
+
+  let pending = PendingMultisig.load(serviceIdKey(serviceIdBytes));
+  if (pending !== null) {
+    let agentIds = multisig.agentIds;
+    let pendingAgentIds = pending.agentIds;
+    for (let i = 0; i < pendingAgentIds.length; i++) {
+      agentIds = dedupPushI32(agentIds, pendingAgentIds[i]);
+    }
+    let operators = multisig.operators;
+    let pendingOperators = pending.operators;
+    for (let i = 0; i < pendingOperators.length; i++) {
+      operators = dedupPushBytes(operators, pendingOperators[i]);
+    }
+    multisig.agentIds = agentIds;
+    multisig.operators = operators;
+  }
+  multisig.save();
+
+  let index = ServiceIndex.load(serviceIdKey(serviceIdBytes));
+  if (index === null) {
+    index = new ServiceIndex(serviceIdKey(serviceIdBytes));
+  }
+  index.multisig = multisigAddress;
+  index.save();
+}
+
+export function handleTerminateService(event: TerminateServiceEvent): void {
+  let serviceIdBytes = Bytes.fromByteArray(
+    Bytes.fromBigInt(event.params.serviceId),
+  );
+  let index = ServiceIndex.load(serviceIdKey(serviceIdBytes));
+  if (index === null) return;
+  let multisig = Multisig.load(index.multisig);
+  if (multisig === null) return;
+  multisig.terminatedAt = event.block.timestamp;
+  multisig.save();
 }

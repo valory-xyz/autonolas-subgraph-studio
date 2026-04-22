@@ -5,6 +5,7 @@ import {
 import { QuestionIdToConditionId } from "../generated/schema";
 import { log } from "@graphprotocol/graph-ts";
 import { processRedemption } from "./utils";
+import { PAYOUT_SOURCE_CONDITIONAL_TOKENS } from "./constants";
 
 export function handleConditionPreparation(
   event: ConditionPreparationEvent,
@@ -46,5 +47,6 @@ export function handlePayoutRedemption(event: PayoutRedemptionEvent): void {
     event.block.number,
     event.transaction.hash,
     event.logIndex.toI32(),
+    PAYOUT_SOURCE_CONDITIONAL_TOKENS,
   );
 }

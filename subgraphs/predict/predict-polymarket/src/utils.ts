@@ -309,6 +309,7 @@ export function processRedemption(
   blockNumber: BigInt,
   txHash: Bytes,
   logIndex: i32,
+  source: string,
 ): void {
   // 1. Validation: Only process if it's one of our agents
   let agent = TraderAgent.load(redeemer);
@@ -330,6 +331,7 @@ export function processRedemption(
   logEntity.conditionId = conditionId;
   logEntity.question = conditionId;
   logEntity.payoutAmount = payoutAmount;
+  logEntity.source = source;
   logEntity.blockNumber = blockNumber;
   logEntity.blockTimestamp = timestamp;
   logEntity.transactionHash = txHash;

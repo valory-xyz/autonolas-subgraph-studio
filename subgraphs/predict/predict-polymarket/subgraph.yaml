@@ -16,9 +16,9 @@ dataSources:
       apiVersion: 0.0.7
       language: wasm/assemblyscript
       entities:
-        - TraderAgent
-        - TraderService
-        - Global
+        - Multisig
+        - PendingMultisig
+        - ServiceIndex
       abis:
         - name: ServiceRegistryL2
           file: ../../../abis/ServiceRegistryL2.json
@@ -27,6 +27,8 @@ dataSources:
           handler: handleRegisterInstance
         - event: CreateMultisigWithAgents(indexed uint256,indexed address)
           handler: handleCreateMultisigWithAgents
+        - event: TerminateService(indexed uint256)
+          handler: handleTerminateService
       file: ./src/service-registry-l-2.ts
   - kind: ethereum
     name: ConditionalTokens
@@ -47,6 +49,7 @@ dataSources:
         - Bet
         - Global
         - DailyProfitStatistic
+        - PayoutRedemption
       abis:
         - name: ConditionalTokens
           file: ../../../abis/ConditionalTokens.json
@@ -131,6 +134,11 @@ dataSources:
         - Question
         - MarketMetadata
         - QuestionResolution
+        - TraderAgent
+        - MarketParticipant
+        - DailyProfitStatistic
+        - Global
+        - PayoutRedemption
       abis:
         - name: NegRiskAdapter
           file: ../../../abis/NegRiskAdapter.json
@@ -158,6 +166,7 @@ dataSources:
         - Question
         - TokenRegistry
         - TraderAgent
+        - Multisig
         - Global
         - MarketParticipant
         - DailyProfitStatistic
@@ -186,6 +195,7 @@ dataSources:
         - Question
         - TokenRegistry
         - TraderAgent
+        - Multisig
         - Global
         - MarketParticipant
         - DailyProfitStatistic

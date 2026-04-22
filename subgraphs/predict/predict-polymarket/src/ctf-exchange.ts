@@ -3,8 +3,18 @@ import {
   OrderFilled as OrderFilledEvent,
   TokenRegistered as TokenRegisteredEvent,
 } from "../generated/CTFExchange/CTFExchange";
-import { Bet, Question, TokenRegistry, TraderAgent } from "../generated/schema";
-import { getDailyProfitStatistic, processTradeActivity } from "./utils";
+import {
+  Bet,
+  Multisig,
+  Question,
+  TokenRegistry,
+  TraderAgent,
+} from "../generated/schema";
+import {
+  getDailyProfitStatistic,
+  getGlobal,
+  processTradeActivity,
+} from "./utils";
 
 export function handleTokenRegistered(event: TokenRegisteredEvent): void {
   // Register Outcome 0 (Usually "No")
@@ -36,13 +46,36 @@ export function handleTokenRegistered(event: TokenRegisteredEvent): void {
 }
 
 export function handleOrderFilled(event: OrderFilledEvent): void {
-  // 1. Identify if the maker is one of our TraderAgents
-  let agentId = event.params.maker;
-  let agent = TraderAgent.load(agentId);
+  // 1. Filter by Multisig index — only Olas-registered multisigs pass.
+  let maker = event.params.maker;
+  let multisig = Multisig.load(maker);
+  if (multisig === null) return;
 
-  if (agent === null) return;
+  // 2. Lazy-create TraderAgent on first trade.
+  let agent = TraderAgent.load(maker);
+  if (agent === null) {
+    agent = new TraderAgent(maker);
+    agent.multisig = multisig.id;
+    agent.serviceId = multisig.serviceId;
+    agent.totalBets = 0;
+    agent.totalTraded = BigInt.zero();
+    agent.totalTradedSettled = BigInt.zero();
+    agent.totalPayout = BigInt.zero();
+    agent.totalExpectedPayout = BigInt.zero();
+    agent.blockNumber = event.block.number;
+    agent.blockTimestamp = event.block.timestamp;
+    agent.transactionHash = event.transaction.hash;
+    agent.save();
 
-  // 2. Identify the Trade direction and quantities
+    multisig.traderAgent = agent.id;
+    multisig.save();
+
+    let global = getGlobal();
+    global.totalTraderAgents += 1;
+    global.save();
+  }
+
+  // 3. Identify the Trade direction and quantities
   // makerAssetId == 0 means Maker gave USDC and received Tokens (BUYING)
   // takerAssetId == 0 means Taker gave USDC and Maker gave Tokens (SELLING)
   let isBuying = event.params.makerAssetId.isZero();
@@ -63,7 +96,7 @@ export function handleOrderFilled(event: OrderFilledEvent): void {
     ? event.params.takerAssetId
     : event.params.makerAssetId;
 
-  // 3. Lookup the outcome index from our Registry
+  // 4. Lookup the outcome index from our Registry
   let tokenRegistry = TokenRegistry.load(
     Bytes.fromByteArray(Bytes.fromBigInt(outcomeTokenId)),
   );
@@ -75,13 +108,13 @@ export function handleOrderFilled(event: OrderFilledEvent): void {
     return;
   }
 
-  // 4. Update Daily Stats
+  // 5. Update Daily Stats
   let dailyStat = getDailyProfitStatistic(agent.id, event.block.timestamp);
   dailyStat.totalBets += 1;
   dailyStat.totalTraded = dailyStat.totalTraded.plus(usdcAmount);
   dailyStat.save();
 
-  // 5. Initialize Bet
+  // 6. Initialize Bet
   let betId = event.transaction.hash.concat(
     Bytes.fromI32(event.logIndex.toI32()),
   );
@@ -103,7 +136,7 @@ export function handleOrderFilled(event: OrderFilledEvent): void {
   }
   bet.save();
 
-  // 6. Process Agent, Participant, and Global atomically
+  // 7. Process Agent, Participant, and Global atomically
   processTradeActivity(
     agent,
     tokenRegistry.conditionId,

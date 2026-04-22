@@ -17,7 +17,7 @@ subgraphs/
   liquidity/                   # Protocol Owned Liquidity — Ethereum mainnet (OLAS-ETH + bridged L2 LP tokens)
   liquidity-l2/                # Protocol Owned Liquidity — L2 Balancer pools (6 networks, template pattern)
   new-mech-fees/               # Multi-network mech fees (Gnosis, Base, Polygon, Optimism)
-  pearl/                       # Pearl Mini cohort subgraphs (Polygon, planning) — see subgraphs/pearl/SUBGRAPH_PLAN.md
+  pearl/                       # Pearl Mini design docs; code landed in-place on predict/predict-polymarket/ (2026-04-22)
   predict/                     # Prediction markets (Omen on Gnosis, Polymarket)
   service-registry/            # Service registry (7 networks, template pattern)
   staking/                     # Staking contracts (7 networks, template pattern)
@@ -72,5 +72,4 @@ Each subgraph should have its own `CLAUDE.md` with subgraph-specific context (en
 
 Subgraphs still in planning (no code yet) may ship a scoping doc instead of a CLAUDE.md. Current:
 
-- [`subgraphs/pearl/SUBGRAPH_PLAN.md`](subgraphs/pearl/SUBGRAPH_PLAN.md) — Pearl Mini analytics via in-place generalization of `predict-polymarket` (Polygon). `TraderAgent` is created lazily on first trade (not at service registration); cohort filtering is client-side against a new minimal `Multisig` helper entity via the `multisig_:` link. `service-registry` stays the source of truth for full registration records. `ApplicationClassifier` (from `valory-xyz/autonolas-registries`) is a documented future enhancement, not current scope. Funding flows and owner-EOA tracking explicitly out of scope.
-- [`subgraphs/pearl/pearl-trades-schema.md`](subgraphs/pearl/pearl-trades-schema.md) — schema delta for the generalized `predict-polymarket`: adds minimal `Multisig` helper (`serviceId`, `agentIds: [Int!]!`, `operators: [Bytes!]!`, all deduplicated) for cohort filtering, moves `TraderAgent` creation to `handleOrderFilled` (lazy), adds `PayoutSource` enum on `PayoutRedemption` for NegRisk/vanilla distinction. Parallel-deployment cutover, no mutation of the running deployment.
+- [`subgraphs/pearl/SUBGRAPH_PLAN.md`](subgraphs/pearl/SUBGRAPH_PLAN.md) + [`subgraphs/pearl/pearl-trades-schema.md`](subgraphs/pearl/pearl-trades-schema.md) — **Implemented in-place** in [`subgraphs/predict/predict-polymarket/`](subgraphs/predict/predict-polymarket/) on 2026-04-22. Removed the `agentId == 86` gate; `TraderAgent` is now lazy-created on first trade. New `Multisig` entity carries `(agentIds, operators)` for client-side cohort filtering via the `multisig_:` link, `PayoutRedemption` gained a `source: PayoutSource` discriminator (`CONDITIONAL_TOKENS` | `NEG_RISK_ADAPTER`), and `handleTerminateService` records termination. Design docs retained for review history and deferred follow-ups (`ApplicationClassifier`, Tempo, ERC-8004). Operational reference: [`predict-polymarket/claude.md`](subgraphs/predict/predict-polymarket/claude.md).

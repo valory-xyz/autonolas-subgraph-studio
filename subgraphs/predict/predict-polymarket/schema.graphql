@@ -1,12 +1,42 @@
-# Entity is only created if trader agent (with id 86) is registered in a service
-# Allows tracking TraderAgent properly
-type TraderService @entity (immutable: true) {
-  id: ID! # serviceId
+# Minimal service-registration index for every Olas multisig on Polygon.
+# Created on ServiceRegistryL2.CreateMultisigWithAgents and enriched by
+# RegisterInstance(operator, serviceId, agentInstance, agentId). Used as the
+# predicate for lazy TraderAgent creation and the target of cohort-filter
+# queries via the `multisig_:` link on TraderAgent.
+type Multisig @entity(immutable: false) {
+  id: Bytes!                     # multisig address
+  serviceId: BigInt!
+  agentIds: [Int!]!              # deduplicated; appended on RegisterInstance
+  operators: [Bytes!]!           # deduplicated; appended on RegisterInstance
+  traderAgent: TraderAgent       # set at lazy creation; null until first trade
+  createdAt: BigInt!
+  terminatedAt: BigInt           # set by handleTerminateService
+  blockNumber: BigInt!
+  transactionHash: Bytes!
+}
+
+# Internal helper: serviceId -> multisig address lookup, written when
+# CreateMultisigWithAgents fires. Used by handleRegisterInstance to locate the
+# Multisig entity when RegisterInstance fires after CreateMultisigWithAgents
+# (e.g. post-termination re-registration).
+type ServiceIndex @entity(immutable: false) {
+  id: Bytes!        # bytes(serviceId)
+  multisig: Bytes!  # multisig address
+}
+
+# Internal helper: buffer for RegisterInstance events that fire before
+# CreateMultisigWithAgents (the typical initial-deployment order). Drained
+# into the Multisig entity when CreateMultisigWithAgents fires.
+type PendingMultisig @entity(immutable: false) {
+  id: Bytes!             # bytes(serviceId)
+  agentIds: [Int!]!
+  operators: [Bytes!]!
 }
 
 type TraderAgent @entity (immutable: false) {
-  id: Bytes!
-  serviceId: BigInt!
+  id: Bytes!                      # multisig Safe address
+  multisig: Multisig!             # link for cohort-filter queries
+  serviceId: BigInt!              # denormalized from multisig.serviceId
   firstParticipation: BigInt
   lastActive: BigInt
   totalBets: Int! # all bets done regardless of settlement
@@ -118,6 +148,13 @@ type Global @entity (immutable: false) {
   totalMarketsParticipated: Int! # count of unique markets where any agent participated
 }
 
+# Distinguishes vanilla ConditionalTokens redemptions from NegRiskAdapter
+# redemptions in the PayoutRedemption audit trail.
+enum PayoutSource {
+  CONDITIONAL_TOKENS
+  NEG_RISK_ADAPTER
+}
+
 # Immutable log entity for every PayoutRedemption event (debugging/auditing)
 type PayoutRedemption @entity(immutable: true) {
   id: Bytes! # txHash + logIndex
@@ -125,6 +162,7 @@ type PayoutRedemption @entity(immutable: true) {
   conditionId: Bytes!
   question: Question
   payoutAmount: BigInt!
+  source: PayoutSource!
   blockNumber: BigInt!
   blockTimestamp: BigInt!
   transactionHash: Bytes!

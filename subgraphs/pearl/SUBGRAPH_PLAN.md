@@ -1,8 +1,8 @@
 # Pearl Mini Subgraph Plan — Generalized Predict-Polymarket
 
-**Status:** Scoping / pre-implementation
+**Status:** Implemented (2026-04-22) — see [`subgraphs/predict/predict-polymarket/`](../predict/predict-polymarket/) for code and [`predict-polymarket/claude.md`](../predict/predict-polymarket/claude.md) for the operational reference. This document is retained for design intent and review history; scope-level language ("planned", "proposed", "future") refers to decisions made during scoping and preserves the review trail. The follow-ups in §4.2 (`ApplicationClassifier`), §6.4 (Tempo), and §8 (classifier deployment, ERC-8004 metadata) remain deferred.
 **Target network:** Polygon mainnet (first); other chains later
-**Last updated:** 2026-04-21
+**Last updated:** 2026-04-22
 
 This document scopes the subgraph work required to make Pearl Mini cohort
 analytics queryable (bets, outcomes, realised P&L) while also fixing a

@@ -1,5 +1,5 @@
 import { assert, describe, test, clearStore, beforeEach } from "matchstick-as/assembly/index";
-import { BigInt, Bytes } from "@graphprotocol/graph-ts";
+import { Address, BigInt, Bytes } from "@graphprotocol/graph-ts";
 import { handleOrderFilled, handleTokenRegistered } from "../src/ctf-exchange";
 import { handleOOQuestionResolved } from "../src/uma-mapping";
 import { handlePayoutRedemption } from "../src/conditional-tokens";
@@ -10,7 +10,7 @@ import {
   createPayoutRedemptionEvent,
   createTokenRegisteredEvent,
 } from "./profit";
-import { TraderAgent, Question, MarketMetadata } from "../generated/schema";
+import { Multisig, Question, MarketMetadata } from "../generated/schema";
 import { TestAddresses, TestBytes, TestConstants, createAncillaryData, normalizeTimestamp, createBridge } from "./test-helpers";
 
 const AGENT = TestAddresses.TRADER_AGENT_1;
@@ -26,18 +26,20 @@ const DAY = 86400;
 const START_TS = TestConstants.TIMESTAMP_START;
 const NORMALIZED_TS = normalizeTimestamp(START_TS);
 
+function setupMultisigFor(address: Address, serviceId: BigInt): void {
+  let multisig = new Multisig(address);
+  multisig.serviceId = serviceId;
+  multisig.agentIds = [86];
+  let ops: Bytes[] = [];
+  multisig.operators = ops;
+  multisig.createdAt = START_TS;
+  multisig.blockNumber = TestConstants.BLOCK_NUMBER_START;
+  multisig.transactionHash = TestBytes.DUMMY_HASH;
+  multisig.save();
+}
+
 function setupAgent(): void {
-  let agent = new TraderAgent(AGENT);
-  agent.totalBets = 0;
-  agent.serviceId = TestConstants.SERVICE_ID_1;
-  agent.totalTraded = BigInt.zero();
-  agent.totalPayout = BigInt.zero();
-  agent.totalTradedSettled = BigInt.zero();
-  agent.totalExpectedPayout = BigInt.zero();
-  agent.blockNumber = TestConstants.BLOCK_NUMBER_START;
-  agent.blockTimestamp = START_TS;
-  agent.transactionHash = TestBytes.DUMMY_HASH;
-  agent.save();
+  setupMultisigFor(AGENT, TestConstants.SERVICE_ID_1);
 }
 
 function setupMarket(conditionId: Bytes, questionId: Bytes, token0: BigInt, token1: BigInt): void {
@@ -398,18 +400,8 @@ describe("Profit Chart Integration", () => {
   test("Global entity: totalExpectedPayout tracks all agents", () => {
     let AGENT2 = TestAddresses.TRADER_AGENT_2;
 
-    // Setup second agent
-    let agent2 = new TraderAgent(AGENT2);
-    agent2.totalBets = 0;
-    agent2.serviceId = TestConstants.SERVICE_ID_2;
-    agent2.totalTraded = BigInt.zero();
-    agent2.totalPayout = BigInt.zero();
-    agent2.totalTradedSettled = BigInt.zero();
-    agent2.totalExpectedPayout = BigInt.zero();
-    agent2.blockNumber = TestConstants.BLOCK_NUMBER_START;
-    agent2.blockTimestamp = START_TS;
-    agent2.transactionHash = TestBytes.DUMMY_HASH;
-    agent2.save();
+    // Setup second agent via its Multisig; handler will lazy-create TraderAgent.
+    setupMultisigFor(AGENT2, TestConstants.SERVICE_ID_2);
 
     setupMarket(CONDITION_LOST, QUESTION_LOST, TOKEN_0_LOST, TOKEN_1_LOST);
 
@@ -779,18 +771,8 @@ describe("Profit Chart Integration", () => {
     let QUESTION_A = QUESTION_WON;
     let QUESTION_B = QUESTION_LOST;
 
-    // Setup second agent
-    let agent2 = new TraderAgent(AGENT2);
-    agent2.totalBets = 0;
-    agent2.serviceId = TestConstants.SERVICE_ID_2;
-    agent2.totalTraded = BigInt.zero();
-    agent2.totalPayout = BigInt.zero();
-    agent2.totalTradedSettled = BigInt.zero();
-    agent2.totalExpectedPayout = BigInt.zero();
-    agent2.blockNumber = TestConstants.BLOCK_NUMBER_START;
-    agent2.blockTimestamp = START_TS;
-    agent2.transactionHash = TestBytes.DUMMY_HASH;
-    agent2.save();
+    // Setup second agent via Multisig
+    setupMultisigFor(AGENT2, TestConstants.SERVICE_ID_2);
 
     setupMarket(MARKET_A, QUESTION_A, TOKEN_0_WON, TOKEN_1_WON);
     setupMarket(MARKET_B, QUESTION_B, TOKEN_0_LOST, TOKEN_1_LOST);
