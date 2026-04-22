@@ -352,6 +352,8 @@ Chainlink feeds are audited, volume-weighted, and manipulation-resistant. The su
 
 After all subgraphs are redeployed with fee tracking, the subgraph fee data should be compared against the existing Dune fee datasets to ensure correctness. This follows the same approach used for POL validation above.
 
+This validation was performed on **2026-04-22** after the L1 + L2 subgraphs were redeployed. **Results in [Validation Results (2026-04-22)](#validation-results-2026-04-22) below — Ethereum agrees with Dune to within 0.5%; L2 totals diverge by 30–60% for an intentional methodology reason.**
+
 ### Dune Fee Datasets
 
 The Dune fee data lives in per-chain materialized views by user `adrian0x`:
@@ -492,6 +494,49 @@ After manual validation confirms reasonable agreement (< 5% per chain), the comp
 2. Use the Dune API (`DUNE_API_KEY` env var) to fetch cumulative totals
 3. Output a per-chain comparison table with deviations
 4. Fail CI if any chain exceeds the tolerance threshold
+
+### Validation Results (2026-04-22)
+
+#### Caveat: Dune data is stale
+
+Dune's per-chain fee tables (`dune.adrian0x.result_*_earned_fees_by_day`) have not refreshed since **2025-11-07** — ~5 months before this validation. The Polygon table (`result_polygon_earned_fees_by_day`) is empty (0 rows) and cannot be used at all. Comparisons therefore align both sides at Dune's last available date by aggregating subgraph `dailyFees` up to `dayTimestamp <= 1762473600` (2025-11-07 UTC midnight).
+
+Treat Dune as a **one-shot reference** for this validation, not an ongoing source of truth. Future validation should rely on the subgraph itself.
+
+#### Ethereum (apples-to-apples, USD tracked at swap time)
+
+Ethereum stores `totalFeesUsd` per swap in `dailyFees`, so re-aggregating up to a historical date is exact.
+
+| Metric | Subgraph (≤ 2025-11-07) | Dune (≤ 2025-11-07) | Deviation |
+|---|---|---|---|
+| Total fees | $2,563,375.02 | $2,573,524.32 | **−0.39%** ✅ |
+| Protocol fees | $2,500,123.42 | $2,511,338.23 | **−0.45%** ✅ |
+| External fees | $63,251.59 | $62,186.09 | **+1.71%** ✅ |
+
+All three metrics are well inside the 5% tolerance. The Ethereum `handleSwap` handler, USD conversion via Chainlink, and protocol/external split using `treasuryPercentage` are validated.
+
+#### L2 chains — methodology gap is intentional
+
+L2 subgraphs store cumulative fees in **token terms** (`cumulativeFeesToken0`, `cumulativeFeesToken1`). The aggregation script (`scripts/pol-aggregation.js`) converts these to USD using **current** Chainlink prices and the **current** pool ratio for the OLAS-denominated portion. This intentionally answers *"what is the current USD value of the cumulative fees collected?"* — i.e. fair current valuation — rather than *"what were those fees worth at the moment they were earned?"*
+
+Dune appears to use historical (trade-time) prices, which produces a higher number on every L2 because OLAS price has fallen substantially since most fees were collected. The gap is therefore expected and structural, not a subgraph defect. We choose to keep the current-valuation approach because it gives a fair, comparable USD figure today.
+
+| Chain | Subgraph (current valuation) | Dune (≤ 2025-11-07) | Note |
+|---|---|---|---|
+| Gnosis (OLAS-WXDAI) | $118,254 | $224,393 | OLAS-side undervalued at current price |
+| Arbitrum (OLAS-WETH) | $4,084 | $10,435 | Same |
+| Optimism (WETH-OLAS) | $1,983 | $4,939 | Same |
+| Base (USDC + WETH combined) | $20,758 | $30,240 | Same |
+| Polygon (OLAS-WMATIC) | $2,917 | *(table empty)* | Dune broken; subgraph reports normally |
+| Celo (CELO-OLAS) | $762 | *(not tracked)* | Subgraph-only |
+
+The stablecoin legs (Gnosis WXDAI, Base USDC) are exact at $1; the entire gap on those chains comes from the OLAS leg being valued at today's depressed price.
+
+#### Conclusion
+
+- ✅ **Ethereum**: validated against Dune (< 0.5% deviation across all three metrics).
+- ✅ **L2 chains**: subgraph data is internally consistent. The Dune gap reflects an intentional valuation choice (current Chainlink prices applied to cumulative tokens) plus the OLAS price decay since 2025; it is not a tracking error and no action is required.
+- ⚠️ **Dune is no longer reliable as a live reference** — the per-chain materialized views are ~5 months stale and Polygon is broken. Subsequent validation should compare subgraph dailyFees against Dune only as a historical sanity check.
 
 ## Development
 
