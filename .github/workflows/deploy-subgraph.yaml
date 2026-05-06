@@ -23,6 +23,9 @@ on:
         type: string
         default: "subgraph.yaml"
 
+permissions:
+  contents: read
+
 jobs:
   plan:
     runs-on: ubuntu-latest
@@ -40,7 +43,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
 
       - name: Validate deployment branch
         run: |
@@ -59,6 +62,30 @@ jobs:
             exit 1
           fi
           echo "✅ Version format is valid: ${{ inputs.version }}"
+
+      - name: Validate folder format
+        run: |
+          if [[ ! "${{ inputs.folder }}" =~ ^[a-z0-9][a-z0-9_-]*(/[a-z0-9_-]+)?$ ]]; then
+            echo "❌ Error: folder must be alphanumeric with dashes/underscores, optionally one nested level (e.g., 'liquidity', 'predict/predict-omen')"
+            exit 1
+          fi
+          echo "✅ Folder format is valid: ${{ inputs.folder }}"
+
+      - name: Validate subgraph name format
+        run: |
+          if [[ ! "${{ inputs.name }}" =~ ^[a-z0-9][a-z0-9_-]+$ ]]; then
+            echo "❌ Error: name must match The Graph's slug pattern (lowercase alphanumeric, dashes, underscores)"
+            exit 1
+          fi
+          echo "✅ Name format is valid: ${{ inputs.name }}"
+
+      - name: Validate manifest filename
+        run: |
+          if [[ ! "${{ inputs.manifest }}" =~ ^subgraph(\.[a-z0-9_-]+)?\.yaml$ ]]; then
+            echo "❌ Error: manifest must match subgraph[.network].yaml (e.g., subgraph.yaml, subgraph.gnosis.yaml)"
+            exit 1
+          fi
+          echo "✅ Manifest filename is valid: ${{ inputs.manifest }}"
 
       - name: Validate subgraph folder exists
         run: |
@@ -91,10 +118,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.3.1
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020  # v4.4.0
         with:
           node-version: "24"
           cache: "yarn"

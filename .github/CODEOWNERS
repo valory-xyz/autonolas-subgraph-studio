@@ -1,0 +1,34 @@
+# CODEOWNERS for autonolas-subgraph-studio
+#
+# This file routes review of security- and supply-chain-sensitive files to
+# the security reviewer(s). Enforcement requires "Require review from Code
+# Owners" in branch protection settings — until that is enabled this file
+# is advisory and only nudges GitHub's PR review-request UI.
+#
+# Owner is an individual until a security team exists; switch to a team
+# handle (e.g., @valory-xyz/<team>) once one is created. Path scope below
+# covers only files that exist today; the next supply-chain PR will add
+# lines for `.supply-chain/`, scripts/, and governance docs as they land.
+
+# Default owner: any unowned path falls back here.
+*                                @Tanya-atatakai
+
+# Workflows, actions config, repository-level GitHub config.
+/.github/                        @Tanya-atatakai
+
+# Top-level package metadata + lockfile.
+/package.json                    @Tanya-atatakai
+/yarn.lock                       @Tanya-atatakai
+
+# Disclosure policy.
+/SECURITY.md                     @Tanya-atatakai
+
+# AI / contributor onboarding context — changes here shape future agent behavior.
+/CLAUDE.md                       @Tanya-atatakai
+
+# Per-subgraph package metadata + lockfiles. Picks up flat (subgraphs/<name>/)
+# and nested (subgraphs/predict/predict-omen/, subgraphs/babydegen/babydegen-optimism/) layouts.
+/subgraphs/*/package.json        @Tanya-atatakai
+/subgraphs/*/yarn.lock           @Tanya-atatakai
+/subgraphs/*/*/package.json      @Tanya-atatakai
+/subgraphs/*/*/yarn.lock         @Tanya-atatakai
