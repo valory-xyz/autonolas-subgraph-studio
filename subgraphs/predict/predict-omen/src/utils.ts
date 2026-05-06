@@ -63,6 +63,8 @@ export function getDailyProfitStatistic(agentAddress: Bytes, timestamp: BigInt):
     statistic.totalTraded = BigInt.zero();
     statistic.totalFees = BigInt.zero();
     statistic.totalPayout = BigInt.zero();
+    statistic.dailyTradedSettled = BigInt.zero();
+    statistic.dailyFeesSettled = BigInt.zero();
     statistic.dailyProfit = BigInt.zero();
 
     statistic.profitParticipants = [];

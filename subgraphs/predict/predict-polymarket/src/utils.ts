@@ -69,6 +69,7 @@ export function getDailyProfitStatistic(
     statistic.totalBets = 0;
     statistic.totalTraded = BigInt.zero();
     statistic.totalPayout = BigInt.zero();
+    statistic.dailyTradedSettled = BigInt.zero();
     statistic.dailyProfit = BigInt.zero();
     statistic.profitParticipants = [];
   }
@@ -263,6 +264,7 @@ export function processMarketResolution(
       : getDailyProfitStatistic(participant.traderAgent, event.block.timestamp);
 
     dailyStat.dailyProfit = dailyStat.dailyProfit.plus(profit);
+    dailyStat.dailyTradedSettled = dailyStat.dailyTradedSettled.plus(amountToSettle);
     addProfitParticipant(dailyStat, conditionId);
     dailyStatsCache.set(statId, dailyStat);
 

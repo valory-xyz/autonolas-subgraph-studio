@@ -132,6 +132,11 @@ export function handleLogNewAnswer(event: LogNewAnswerEvent): void {
         ? dailyStatsCache.get(oldStatId)!
         : getDailyProfitStatistic(participant.traderAgent, oldTimestamp);
       oldDailyStat.dailyProfit = oldDailyStat.dailyProfit.minus(oldProfit);
+      // Reverse the cost that was attributed to old day at first settlement.
+      // At first settlement, `dailyTradedSettled += totalTraded - 0 = totalTraded_at_first_answer`,
+      // which is exactly `participant.totalTradedSettled` now (set then, untouched until re-answer).
+      oldDailyStat.dailyTradedSettled = oldDailyStat.dailyTradedSettled.minus(participant.totalTradedSettled);
+      oldDailyStat.dailyFeesSettled = oldDailyStat.dailyFeesSettled.minus(participant.totalFeesSettled);
       removeProfitParticipant(oldDailyStat, fpmm.id);
       dailyStatsCache.set(oldStatId, oldDailyStat);
 
@@ -141,6 +146,9 @@ export function handleLogNewAnswer(event: LogNewAnswerEvent): void {
         ? dailyStatsCache.get(newStatId)!
         : getDailyProfitStatistic(participant.traderAgent, event.block.timestamp);
       newDailyStat.dailyProfit = newDailyStat.dailyProfit.plus(newProfit);
+      // Mirror newProfit's full-cost basis: attribute the entire current cost to the new day.
+      newDailyStat.dailyTradedSettled = newDailyStat.dailyTradedSettled.plus(participant.totalTraded);
+      newDailyStat.dailyFeesSettled = newDailyStat.dailyFeesSettled.plus(participant.totalFees);
       addProfitParticipant(newDailyStat, fpmm.id);
       dailyStatsCache.set(newStatId, newDailyStat);
 
@@ -228,6 +236,8 @@ export function handleLogNewAnswer(event: LogNewAnswerEvent): void {
       ? dailyStatsCache.get(statId)!
       : getDailyProfitStatistic(participant.traderAgent, event.block.timestamp);
     dailyStat.dailyProfit = dailyStat.dailyProfit.plus(profit);
+    dailyStat.dailyTradedSettled = dailyStat.dailyTradedSettled.plus(amountToSettle);
+    dailyStat.dailyFeesSettled = dailyStat.dailyFeesSettled.plus(feesToSettle);
     addProfitParticipant(dailyStat, fpmm.id);
     dailyStatsCache.set(statId, dailyStat);
 
