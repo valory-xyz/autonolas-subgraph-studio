@@ -132,9 +132,9 @@ export function handleLogNewAnswer(event: LogNewAnswerEvent): void {
         ? dailyStatsCache.get(oldStatId)!
         : getDailyProfitStatistic(participant.traderAgent, oldTimestamp);
       oldDailyStat.dailyProfit = oldDailyStat.dailyProfit.minus(oldProfit);
-      // Reverse the cost that was attributed to old day at first settlement.
-      // At first settlement, `dailyTradedSettled += totalTraded - 0 = totalTraded_at_first_answer`,
-      // which is exactly `participant.totalTradedSettled` now (set then, untouched until re-answer).
+      // Invariant: after every settlement, `participant.totalTradedSettled`/`totalFeesSettled`
+      // equal the cost basis attributed to a daily stat. Subtracting them here always reverses
+      // the exact amount added on the previous settlement, regardless of chain length.
       oldDailyStat.dailyTradedSettled = oldDailyStat.dailyTradedSettled.minus(participant.totalTradedSettled);
       oldDailyStat.dailyFeesSettled = oldDailyStat.dailyFeesSettled.minus(participant.totalFeesSettled);
       removeProfitParticipant(oldDailyStat, fpmm.id);

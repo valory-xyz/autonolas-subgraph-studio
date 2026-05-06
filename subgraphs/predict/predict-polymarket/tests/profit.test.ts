@@ -112,6 +112,7 @@ describe("Profit Chart Integration", () => {
 
     let day3Id = AGENT.toHexString() + "_" + day3TSNormalized.toString();
     assert.fieldEquals("DailyProfitStatistic", day3Id, "dailyProfit", "-1000");
+    assert.fieldEquals("DailyProfitStatistic", day3Id, "dailyTradedSettled", "1000");
     assert.fieldEquals("DailyProfitStatistic", day3Id, "profitParticipants", "[" + CONDITION_LOST.toHexString() + "]");
   });
 
@@ -138,6 +139,7 @@ describe("Profit Chart Integration", () => {
     // Profit recorded on Day 3: expectedPayout(2000) - totalTraded(1000) = 1000
     let day3Id = AGENT.toHexString() + "_" + day3TSNormalized.toString();
     assert.fieldEquals("DailyProfitStatistic", day3Id, "dailyProfit", "1000");
+    assert.fieldEquals("DailyProfitStatistic", day3Id, "dailyTradedSettled", "1000");
     assert.fieldEquals("DailyProfitStatistic", day3Id, "profitParticipants", "[" + CONDITION_WON.toHexString() + "]");
 
     // Verify expectedPayout on participant
@@ -259,6 +261,8 @@ describe("Profit Chart Integration", () => {
 
     // Both bets lost: -1000 - 2000 = -3000
     assert.fieldEquals("DailyProfitStatistic", day3Id, "dailyProfit", "-3000");
+    // Cost settled across both markets on day 3: 1000 + 2000 = 3000
+    assert.fieldEquals("DailyProfitStatistic", day3Id, "dailyTradedSettled", "3000");
   });
 
   /**
