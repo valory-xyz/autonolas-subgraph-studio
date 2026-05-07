@@ -1,0 +1,116 @@
+name: Supply Chain
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supply-chain-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: Dependency audit (root tree)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444  # v5.0.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Activate pinned Yarn via Corepack
+        run: |
+          corepack enable
+          corepack prepare yarn@1.22.22 --activate
+          [ "$(yarn --version)" = "1.22.22" ] || { echo "::error::corepack activation failed"; exit 1; }
+
+      # `yarn audit` reads yarn.lock directly; no install needed.
+      - name: Run audit
+        run: yarn audit:prod
+
+  install-hooks:
+    name: Install-hook audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444  # v5.0.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Activate pinned Yarn via Corepack
+        run: |
+          corepack enable
+          corepack prepare yarn@1.22.22 --activate
+          [ "$(yarn --version)" = "1.22.22" ] || { echo "::error::corepack activation failed"; exit 1; }
+
+      # `--ignore-scripts` so the hooks don't run while we're enumerating them.
+      - name: Install dependencies (no hooks)
+        run: yarn install --frozen-lockfile --ignore-scripts
+
+      - name: Run install-hook audit
+        run: yarn audit:install-hooks
+
+  lockfile-lint:
+    name: Lockfile validation
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 13 paths: root + 12 subgraphs. Mirrors test.yaml's matrix shape;
+        # every yarn.lock gets linted.
+        path:
+          - "."
+          - "subgraphs/liquidity"
+          - "subgraphs/liquidity-l2"
+          - "subgraphs/tokenomics-eth"
+          - "subgraphs/tokenomics-l2"
+          - "subgraphs/governance"
+          - "subgraphs/staking"
+          - "subgraphs/service-registry"
+          - "subgraphs/legacy-mech-fees"
+          - "subgraphs/new-mech-fees"
+          - "subgraphs/predict/predict-omen"
+          - "subgraphs/predict/predict-polymarket"
+          - "subgraphs/babydegen/babydegen-optimism"
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444  # v5.0.0
+        with:
+          node-version-file: .nvmrc
+
+      # Catches non-registry deps (e.g. codeload.github.com), HTTP-only sources,
+      # and missing integrity hashes. See SUPPLY-CHAIN-SECURITY.md §6.
+      - name: Lint ${{ matrix.path }}/yarn.lock
+        working-directory: ${{ matrix.path }}
+        run: |
+          npx --yes lockfile-lint \
+            --path yarn.lock \
+            --type yarn \
+            --validate-https \
+            --allowed-hosts yarn npm \
+            --empty-hostname false
+
+  # Aggregator that fails iff any of the above fails. Promote this single
+  # check to required-status in branch protection (rather than each job
+  # individually) for a stable interface that survives matrix changes.
+  all-checks-passed:
+    name: All checks passed
+    needs: [audit, install-hooks, lockfile-lint]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" ]] || \
+             [[ "${{ contains(needs.*.result, 'cancelled') }}" == "true" ]] || \
+             [[ "${{ contains(needs.*.result, 'skipped') }}" == "true" ]]; then
+            echo "::error::One or more required jobs did not succeed"
+            exit 1
+          fi
+          echo "All supply-chain checks passed."

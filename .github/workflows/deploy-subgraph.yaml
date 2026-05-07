@@ -123,12 +123,19 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444  # v5.0.0
         with:
-          node-version: "24"
+          node-version-file: .nvmrc
           cache: "yarn"
+
+      - name: Activate pinned Yarn via Corepack
+        run: |
+          corepack enable
+          corepack prepare yarn@1.22.22 --activate
+          actual="$(yarn --version)"
+          [ "$actual" = "1.22.22" ] || { echo "::error::corepack activation failed (got $actual)"; exit 1; }
 
       - name: Install subgraph packages
         working-directory: subgraphs/${{ inputs.folder }}
-        run: yarn install
+        run: yarn install --frozen-lockfile
 
       - name: Authenticate
         working-directory: subgraphs/${{ inputs.folder }}

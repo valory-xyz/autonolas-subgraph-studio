@@ -9,6 +9,11 @@ abis/                          # Shared ABI files (referenced by all subgraphs)
 scripts/
   generate-manifests.js        # Generates network manifests from templates
   pol-aggregation.js           # Cross-chain POL + protocol fees report (queries all liquidity subgraphs + Solana RPC)
+  audit.mjs                    # Wraps `yarn audit --json` with allowlist (.supply-chain/audit-allowlist.json). Run as `yarn audit:prod`.
+  audit-install-hooks.mjs      # Diffs node_modules install-hooks against .supply-chain/install-hooks.allowlist
+.supply-chain/
+  audit-allowlist.json         # Time-bounded suppressions for high/critical advisories
+  install-hooks.allowlist      # Approved packages with non-trivial install hooks
 shared/
   constants.ts                 # Shared constants across subgraphs
 subgraphs/
@@ -28,8 +33,9 @@ subgraphs/
 ## Tech Stack
 
 - **Language**: AssemblyScript (compiled to WASM by Graph CLI)
-- **Framework**: The Graph (graph-cli ^0.97.0, graph-ts ^0.38.0)
-- **Testing**: Matchstick (matchstick-as 0.5.0)
+- **Framework**: The Graph (graph-cli 0.98.1, graph-ts 0.38.2 — exact pins, no carets, all 13 package.json files converged)
+- **Testing**: Matchstick (matchstick-as 0.6.0 — exact pin)
+- **Node**: 22.x via `.nvmrc`; `packageManager: "yarn@1.22.22"` enforced via Corepack in CI.
 - **Deployment**: CI/CD → The Graph Studio / Alchemy
 
 ## Multi-Network Patterns
@@ -53,6 +59,10 @@ yarn test                              # Run Matchstick tests
 
 CI runs on every PR via `.github/workflows/test.yaml` — a matrix over all 12 subgraph targets runs `yarn graph codegen` followed by `yarn graph test` (Matchstick) for each. Template subgraphs run `yarn generate-manifests` first; per-network subgraphs symlink a representative manifest (`subgraph.gnosis.yaml`) before testing. Deployment is handled via `.github/workflows/deploy-subgraph.yaml` (manual dispatch from main).
 
+Two additional CI workflows enforce supply-chain hygiene (advisory-only at first; promote to required-status when the team is ready):
+- `.github/workflows/supply-chain.yml` — matrix audit + install-hook + lockfile-lint over all 13 paths.
+- `.github/workflows/gitleaks.yml` — secret scanning with SHA-256 verified gitleaks binary.
+
 ## Conventions
 
 - Entity IDs: typically address-based (e.g., safe address, `<address>-<tokenId>`, `<address>-<dayTimestamp>`)
@@ -60,6 +70,25 @@ CI runs on every PR via `.github/workflows/test.yaml` — a matrix over all 12 s
 - UTC midnight timestamps for daily entities: `timestamp / 86400 * 86400`
 - Shared ABIs live in root `abis/` directory
 - Each subgraph has its own `schema.graphql`, `subgraph.yaml`, `src/`, and optional `tests/`
+
+## Supply chain & security
+
+This repo's deployments serve indexed on-chain data to **every Olas dashboard, frontend, and analytics consumer**. A compromised subgraph deploy has org-wide blast radius — far beyond what the small dep tree might suggest. Treat the deploy auth secret (`SUBGRAPH_STUDIO_KEY`) and the `@graphprotocol/graph-cli` toolchain as crown-jewel surfaces.
+
+- **Threat model + controls + response playbook**: [`SUPPLY-CHAIN-SECURITY.md`](SUPPLY-CHAIN-SECURITY.md).
+- **Disclosure policy**: [`SECURITY.md`](SECURITY.md).
+- **Audit allowlist**: [`.supply-chain/audit-allowlist.json`](.supply-chain/audit-allowlist.json) — every entry needs `id`, `reason`, `added`, `review` (all required).
+- **Install-hook allowlist**: [`.supply-chain/install-hooks.allowlist`](.supply-chain/install-hooks.allowlist) — drift in either direction (new hook OR removed hook) fails CI.
+
+**Yarn 1 gotcha**: the audit gate is invoked as `yarn audit:prod`, NOT `yarn audit`. Yarn 1.x's built-in `yarn audit` shadows same-named scripts in `package.json`, so naming the script `audit` would silently invoke the built-in instead. Same care with `audit:install-hooks` (the install-hook gate).
+
+After any dep change, refresh the install-hooks allowlist:
+
+```bash
+yarn install
+yarn audit:install-hooks:update
+git add .supply-chain/install-hooks.allowlist
+```
 
 ## CLAUDE.md Maintenance
 
