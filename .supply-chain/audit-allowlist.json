@@ -38,15 +38,6 @@
       "review": "2026-08-05"
     },
     {
-      "id": 1117068,
-      "ghsa": "GHSA-wf6x-7x77-mvgw",
-      "package": "immutable",
-      "severity": "high",
-      "reason": "Baselined at PR3 — transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible.",
-      "added": "2026-05-07",
-      "review": "2026-08-05"
-    },
-    {
       "id": 1115806,
       "ghsa": "GHSA-r5fr-rjxr-66jc",
       "package": "lodash",
@@ -182,15 +173,6 @@
       "review": "2026-08-05"
     },
     {
-      "id": 1112921,
-      "ghsa": "GHSA-c2qf-rxjj-qqgw",
-      "package": "semver",
-      "severity": "high",
-      "reason": "Baselined at PR3 — transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible.",
-      "added": "2026-05-07",
-      "review": "2026-08-05"
-    },
-    {
       "id": 1111034,
       "ghsa": "GHSA-jr5f-v2jv-69x6",
       "package": "axios",
@@ -203,15 +185,6 @@
       "id": 1109843,
       "ghsa": "GHSA-5j98-mcp5-4vw2",
       "package": "glob",
-      "severity": "high",
-      "reason": "Baselined at PR3 — transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible.",
-      "added": "2026-05-07",
-      "review": "2026-08-05"
-    },
-    {
-      "id": 1104664,
-      "ghsa": "GHSA-3xgq-45jj-v275",
-      "package": "cross-spawn",
       "severity": "high",
       "reason": "Baselined at PR3 — transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible.",
       "added": "2026-05-07",
