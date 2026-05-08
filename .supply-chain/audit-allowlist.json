@@ -173,7 +173,7 @@
       "review": "2026-08-05"
     },
     {
-      "id": 1113274,
+      "id": 1117857,
       "ghsa": "GHSA-43fc-jf86-j433",
       "package": "axios",
       "severity": "high",
