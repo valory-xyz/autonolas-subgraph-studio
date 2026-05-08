@@ -1,0 +1,14 @@
+title = "autonolas-subgraph-studio gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Public on-chain EVM token contract addresses (40-hex) in babydegen mappers and example docs are not secrets"
+paths = [
+  '''shared/babydegen/mappers/.+\.ts''',
+  '''subgraphs/babydegen/.+\.ts''',
+  '''subgraphs/liquidity/README\.md''',
+]
+regexes = ['''0x[a-fA-F0-9]{40}''']
+regexTarget = "match"
