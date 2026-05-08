@@ -47,6 +47,7 @@ dataSources:
         - Bet
         - Global
         - DailyProfitStatistic
+        - TokenRegistry
       abis:
         - name: ConditionalTokens
           file: ../../../abis/ConditionalTokens.json
@@ -141,6 +142,10 @@ dataSources:
           handler: handleOutcomeReported
         - event: PayoutRedemption(indexed address,indexed bytes32,uint256[],uint256)
           handler: handleNegRiskPayoutRedemption
+  # v1 CTF Exchange — retired at Polymarket v2 cutover 2026-04-28 11:00 UTC.
+  # endBlock 86750000 ≈ May 12 2026 (cutover + ~2 weeks) as a safety buffer
+  # for any tail trades on v1 post-cutover. If the migration slips or v1
+  # remains active past then, extend this endBlock.
   - kind: ethereum/contract
     name: CTFExchange
     network: matic
@@ -148,6 +153,7 @@ dataSources:
       address: "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982e"
       abi: CTFExchange
       startBlock: 78425180
+      endBlock: 86750000
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -176,6 +182,7 @@ dataSources:
       address: "0xC5d563A36AE78145C45a50134d48A1215220f80a"
       abi: CTFExchange
       startBlock: 78425180
+      endBlock: 86750000
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -197,3 +204,179 @@ dataSources:
           handler: handleOrderFilled
         - event: TokenRegistered(indexed uint256,indexed uint256,indexed bytes32)
           handler: handleTokenRegistered
+  # v2 CTF Exchange (Polymarket CLOB v2, cutover 2026-04-28 ~11:00 UTC).
+  # OrderFilled signature changed: side + tokenId replace makerAssetId/takerAssetId,
+  # and the exchange no longer emits TokenRegistered (handled via eth_call at
+  # ConditionPreparation time instead — see src/conditional-tokens.ts).
+  - kind: ethereum/contract
+    name: CTFExchangeV2
+    network: matic
+    source:
+      address: "0xE111180000d2663C0091e4f400237545B87B996B"
+      abi: CTFExchangeV2
+      startBlock: 85952819 # before v2 cutover (2026-04-28); no events fire until cutover
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      file: ./src/ctf-exchange-v2.ts
+      entities:
+        - Bet
+        - Question
+        - TokenRegistry
+        - TraderAgent
+        - Global
+        - MarketParticipant
+        - DailyProfitStatistic
+      abis:
+        - name: CTFExchangeV2
+          file: ../../../abis/CTFExchangeV2.json
+      eventHandlers:
+        - event: OrderFilled(indexed bytes32,indexed address,indexed address,uint8,uint256,uint256,uint256,uint256,bytes32,bytes32)
+          handler: handleOrderFilledV2
+  - kind: ethereum/contract
+    name: NegRiskCTFExchangeV2
+    network: matic
+    source:
+      address: "0xe2222d279d744050d28e00520010520000310F59"
+      abi: CTFExchangeV2
+      startBlock: 85952819 # before v2 cutover (2026-04-28); no events fire until cutover
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      file: ./src/ctf-exchange-v2.ts
+      entities:
+        - Bet
+        - Question
+        - TokenRegistry
+        - TraderAgent
+        - Global
+        - MarketParticipant
+        - DailyProfitStatistic
+      abis:
+        - name: CTFExchangeV2
+          file: ../../../abis/CTFExchangeV2.json
+      eventHandlers:
+        - event: OrderFilled(indexed bytes32,indexed address,indexed address,uint8,uint256,uint256,uint256,uint256,bytes32,bytes32)
+          handler: handleOrderFilledV2
+  # Polymarket v2 collateral adapters. Post-cutover, redemptions are routed
+  # through these adapters so the Safe receives pUSD directly. The legacy
+  # CTF / NegRiskAdapter PayoutRedemption events still fire but with
+  # `redeemer = adapter` — those fall through TraderAgent.load == null in our
+  # existing handlers, so no double-counting. Actual Safe payout is in the
+  # adapter-side PositionsRedeemed event (`initiator` = Safe, `payout` in pUSD).
+  #
+  # Two address pairs (same ABI, same handler) because Polymarket directed
+  # redemptions through one set of adapter contracts for a short window, then
+  # switched to a different set:
+  #   • Current addresses, live from 2026-05-01 15:00 UTC onward,
+  #     startBlock 86263778.
+  #   • *Old addresses, live ~2026-04-30 → 2026-05-01, pinned to
+  #     [86219367, 86263778] so coverage is contiguous with the current pair.
+  - kind: ethereum/contract
+    name: CtfCollateralAdapter
+    network: matic
+    source:
+      address: "0xAdA100Db00Ca00073811820692005400218FcE1f"
+      abi: CtfCollateralAdapter
+      startBlock: 86263778
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      file: ./src/collateral-adapter.ts
+      entities:
+        - TraderAgent
+        - MarketParticipant
+        - Question
+        - Global
+        - DailyProfitStatistic
+        - PayoutRedemption
+      abis:
+        - name: CtfCollateralAdapter
+          file: ../../../abis/CtfCollateralAdapter.json
+      eventHandlers:
+        - event: PositionsRedeemed(indexed address,indexed bytes32,uint256[],uint256)
+          handler: handlePositionsRedeemed
+  - kind: ethereum/contract
+    name: NegRiskCtfCollateralAdapter
+    network: matic
+    source:
+      address: "0xadA2005600Dec949baf300f4C6120000bDB6eAab"
+      abi: CtfCollateralAdapter
+      startBlock: 86263778
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      file: ./src/collateral-adapter.ts
+      entities:
+        - TraderAgent
+        - MarketParticipant
+        - Question
+        - Global
+        - DailyProfitStatistic
+        - PayoutRedemption
+      abis:
+        - name: CtfCollateralAdapter
+          file: ../../../abis/CtfCollateralAdapter.json
+      eventHandlers:
+        - event: PositionsRedeemed(indexed address,indexed bytes32,uint256[],uint256)
+          handler: handlePositionsRedeemed
+  # *Old adapters: the initial set Polymarket directed redemptions through,
+  # live ~2026-04-30 (block 86219367) → 2026-05-01 15:00 UTC. Pinned to
+  # [86219367, 86263778] so coverage is contiguous with the current adapter
+  # dataSources from 86263778 forward.
+  - kind: ethereum/contract
+    name: CtfCollateralAdapterOld
+    network: matic
+    source:
+      address: "0xADa100874d00e3331d00f2007a9c336a65009718"
+      abi: CtfCollateralAdapter
+      startBlock: 86219367
+      endBlock: 86263778
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      file: ./src/collateral-adapter.ts
+      entities:
+        - TraderAgent
+        - MarketParticipant
+        - Question
+        - Global
+        - DailyProfitStatistic
+        - PayoutRedemption
+      abis:
+        - name: CtfCollateralAdapter
+          file: ../../../abis/CtfCollateralAdapter.json
+      eventHandlers:
+        - event: PositionsRedeemed(indexed address,indexed bytes32,uint256[],uint256)
+          handler: handlePositionsRedeemed
+  - kind: ethereum/contract
+    name: NegRiskCtfCollateralAdapterOld
+    network: matic
+    source:
+      address: "0xAdA200001000ef00D07553cEE7006808F895c6F1"
+      abi: CtfCollateralAdapter
+      startBlock: 86219367
+      endBlock: 86263778
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      file: ./src/collateral-adapter.ts
+      entities:
+        - TraderAgent
+        - MarketParticipant
+        - Question
+        - Global
+        - DailyProfitStatistic
+        - PayoutRedemption
+      abis:
+        - name: CtfCollateralAdapter
+          file: ../../../abis/CtfCollateralAdapter.json
+      eventHandlers:
+        - event: PositionsRedeemed(indexed address,indexed bytes32,uint256[],uint256)
+          handler: handlePositionsRedeemed

@@ -61,6 +61,10 @@ type Bet @entity (immutable: false) {
   countedInProfit: Boolean!
   question: Question
   dailyStatistic: DailyProfitStatistic
+  # v2-only: builder-program attribution + 32-byte metadata slot from OrderFilled.
+  # Null for v1 bets (v1 event does not emit these fields).
+  builder: Bytes
+  metadata: Bytes
   blockTimestamp: BigInt!
   transactionHash: Bytes!
 }
