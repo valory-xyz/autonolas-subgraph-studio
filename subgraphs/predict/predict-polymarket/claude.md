@@ -23,10 +23,12 @@ subgraphs/predict/predict-polymarket/
 ├── subgraph.yaml                    # Subgraph configuration & event mappings
 ├── src/
 │   ├── service-registry-l-2.ts      # Agent registration
-│   ├── conditional-tokens.ts        # Condition preparation and payout handling
-│   ├── ctf-exchange.ts              # Order tracking from CTF Exchange (agents as makers)
+│   ├── conditional-tokens.ts        # Condition preparation and legacy CTF payout handling
+│   ├── ctf-exchange.ts              # Order tracking from CTF Exchange v1 (agents as makers)
+│   ├── ctf-exchange-v2.ts           # Order tracking from CTF Exchange v2 (post-cutover)
 │   ├── uma-mapping.ts               # Market metadata extraction from UMA events
 │   ├── neg-risk-mapping.ts          # NegRisk market handling
+│   ├── collateral-adapter.ts        # Post-cutover payout handling (CtfCollateralAdapter / NegRiskCtfCollateralAdapter)
 │   ├── constants.ts                 # Constants
 │   └── utils.ts                     # Utility functions (settlement, payout, trade activity)
 ├── tests/                           # Test files
@@ -613,13 +615,27 @@ export function handleQuestionResolved(event: QuestionResolvedEvent): void {
 
 ---
 
-### 7. Payout Handling (conditional-tokens.ts)
+### 7. Payout Handling (conditional-tokens.ts, neg-risk-mapping.ts, collateral-adapter.ts)
 
-**Event**: `PayoutRedemption(redeemer, collateralToken, parentCollectionId, conditionId, indexSets, payout)`
+Two redemption paths exist post-v2-cutover:
 
-**Handler**: `handlePayoutRedemption`
+**Path A — Pre-cutover (legacy direct CTF / NegRiskAdapter calls)**
+- Events: `ConditionalTokens.PayoutRedemption(redeemer, collateralToken, parentCollectionId, conditionId, indexSets, payout)` and `NegRiskAdapter.PayoutRedemption(redeemer, conditionId, amounts, payout)`.
+- Handlers: `handlePayoutRedemption` / `handleNegRiskPayoutRedemption`.
+- Pre-cutover, `redeemer = agent Safe`, so `processRedemption` runs normally.
+- Post-cutover the agent no longer calls these contracts directly — calls go via the collateral adapters — so `redeemer = adapter address`. `processRedemption` early-returns at `TraderAgent.load(redeemer) == null` (the adapter isn't a registered TraderAgent), which keeps these handlers harmless and prevents double-counting against Path B.
 
-Delegates to `processRedemption()` in utils.ts:
+**Path B — Post-cutover (CtfCollateralAdapter / NegRiskCtfCollateralAdapter)**
+- Trigger: trader [PR #929](https://github.com/valory-xyz/trader/pull/929) routed redemptions through `CtfCollateralAdapter` (standard) and `NegRiskCtfCollateralAdapter` (neg-risk) so the Safe receives **pUSD directly** (the adapters wrap USDC.e → pUSD inside the redeem tx). [PR #935](https://github.com/valory-xyz/trader/pull/935) bumped both adapter addresses on 2026-05-01.
+- Event (both adapters share this signature): `PositionsRedeemed(indexed address initiator, indexed bytes32 conditionId, uint256[] amounts, uint256 payout)` — `initiator` is the agent Safe, `payout` is the pUSD amount paid out.
+- Handler: `handlePositionsRedeemed` in `src/collateral-adapter.ts` — same `processRedemption` delegation as Path A.
+- Tracked addresses (4 dataSources, all using `abis/CtfCollateralAdapter.json`):
+  - `CtfCollateralAdapter` (current): `0xAdA100Db00Ca00073811820692005400218FcE1f`
+  - `NegRiskCtfCollateralAdapter` (current): `0xadA2005600Dec949baf300f4C6120000bDB6eAab`
+  - `CtfCollateralAdapter` (old, PR #929 deploy → PR #935 swap): `0xADa100874d00e3331d00f2007a9c336a65009718`
+  - `NegRiskCtfCollateralAdapter` (old): `0xAdA200001000ef00D07553cEE7006808F895c6F1`
+
+`processRedemption` (utils.ts), shared by both paths:
 - Validates agent, question, and participant exist
 - Creates immutable `PayoutRedemption` entity (audit trail)
 - Updates payout totals only: `agent.totalPayout`, `participant.totalPayout`, `global.totalPayout`

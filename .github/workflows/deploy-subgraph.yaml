@@ -31,19 +31,26 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Display deployment plan
+        env:
+          INPUT_FOLDER: ${{ inputs.folder }}
+          INPUT_NAME: ${{ inputs.name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_MANIFEST: ${{ inputs.manifest }}
         run: |
-          echo "## 📋 Deployment Plan" >> $GITHUB_STEP_SUMMARY
-          echo "- Subgraph folder: \`${{ inputs.folder }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Subgraph name: \`${{ inputs.name }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Version: \`${{ inputs.version }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Manifest: \`${{ inputs.manifest }}\`" >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## 📋 Deployment Plan"
+            echo "- Subgraph folder: \`$INPUT_FOLDER\`"
+            echo "- Subgraph name: \`$INPUT_NAME\`"
+            echo "- Version: \`$INPUT_VERSION\`"
+            echo "- Manifest: \`$INPUT_MANIFEST\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   validate-inputs:
     needs: plan
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - name: Validate deployment branch
         run: |
@@ -56,40 +63,50 @@ jobs:
           echo "✅ Branch validation passed: deploying from main branch"
 
       - name: Validate version format
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          if [[ ! "${{ inputs.version }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          if [[ ! "$INPUT_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "❌ Error: Version must follow format vX.Y.Z (e.g., v0.1.2)"
             exit 1
           fi
-          echo "✅ Version format is valid: ${{ inputs.version }}"
+          echo "✅ Version format is valid: $INPUT_VERSION"
 
       - name: Validate folder format
+        env:
+          INPUT_FOLDER: ${{ inputs.folder }}
         run: |
-          if [[ ! "${{ inputs.folder }}" =~ ^[a-z0-9][a-z0-9_-]*(/[a-z0-9_-]+)?$ ]]; then
+          if [[ ! "$INPUT_FOLDER" =~ ^[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)?$ ]]; then
             echo "❌ Error: folder must be alphanumeric with dashes/underscores, optionally one nested level (e.g., 'liquidity', 'predict/predict-omen')"
             exit 1
           fi
-          echo "✅ Folder format is valid: ${{ inputs.folder }}"
+          echo "✅ Folder format is valid: $INPUT_FOLDER"
 
       - name: Validate subgraph name format
+        env:
+          INPUT_NAME: ${{ inputs.name }}
         run: |
-          if [[ ! "${{ inputs.name }}" =~ ^[a-z0-9][a-z0-9_-]+$ ]]; then
+          if [[ ! "$INPUT_NAME" =~ ^[a-z0-9][a-z0-9_-]+$ ]]; then
             echo "❌ Error: name must match The Graph's slug pattern (lowercase alphanumeric, dashes, underscores)"
             exit 1
           fi
-          echo "✅ Name format is valid: ${{ inputs.name }}"
+          echo "✅ Name format is valid: $INPUT_NAME"
 
       - name: Validate manifest filename
+        env:
+          INPUT_MANIFEST: ${{ inputs.manifest }}
         run: |
-          if [[ ! "${{ inputs.manifest }}" =~ ^subgraph(\.[a-z0-9_-]+)?\.yaml$ ]]; then
+          if [[ ! "$INPUT_MANIFEST" =~ ^subgraph(\.[a-z0-9_-]+)?\.yaml$ ]]; then
             echo "❌ Error: manifest must match subgraph[.network].yaml (e.g., subgraph.yaml, subgraph.gnosis.yaml)"
             exit 1
           fi
-          echo "✅ Manifest filename is valid: ${{ inputs.manifest }}"
+          echo "✅ Manifest filename is valid: $INPUT_MANIFEST"
 
       - name: Validate subgraph folder exists
+        env:
+          INPUT_FOLDER: ${{ inputs.folder }}
         run: |
-          SUBGRAPH_PATH="subgraphs/${{ inputs.folder }}"
+          SUBGRAPH_PATH="subgraphs/$INPUT_FOLDER"
 
           if [ ! -d "$SUBGRAPH_PATH" ]; then
             echo "❌ Error: Subgraph folder '$SUBGRAPH_PATH' does not exist!"
@@ -101,14 +118,17 @@ jobs:
           echo "✅ Subgraph folder found: $SUBGRAPH_PATH"
 
       - name: Validate manifest file exists
+        env:
+          INPUT_FOLDER: ${{ inputs.folder }}
+          INPUT_MANIFEST: ${{ inputs.manifest }}
         run: |
-          MANIFEST_PATH="subgraphs/${{ inputs.folder }}/${{ inputs.manifest }}"
+          MANIFEST_PATH="subgraphs/$INPUT_FOLDER/$INPUT_MANIFEST"
 
           if [ ! -f "$MANIFEST_PATH" ]; then
             echo "❌ Error: Manifest file '$MANIFEST_PATH' does not exist!"
             echo ""
-            echo "Available files in subgraphs/${{ inputs.folder }}:"
-            ls -1 subgraphs/${{ inputs.folder }}/ | grep subgraph
+            echo "Available files in subgraphs/$INPUT_FOLDER:"
+            ls -1 "subgraphs/$INPUT_FOLDER/" | grep subgraph
             exit 1
           fi
           echo "✅ Manifest file found: $MANIFEST_PATH"
@@ -118,10 +138,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444  # v5.0.0
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
         with:
           node-version: "24"
           cache: "yarn"
@@ -132,29 +152,44 @@ jobs:
 
       - name: Authenticate
         working-directory: subgraphs/${{ inputs.folder }}
-        run: yarn graph auth ${{ secrets.SUBGRAPH_STUDIO_KEY }}
+        env:
+          STUDIO_KEY: ${{ secrets.SUBGRAPH_STUDIO_KEY }}
+        run: yarn graph auth "$STUDIO_KEY"
 
       - name: Generate code
         working-directory: subgraphs/${{ inputs.folder }}
-        run: yarn graph codegen ${{ inputs.manifest }}
+        env:
+          INPUT_MANIFEST: ${{ inputs.manifest }}
+        run: yarn graph codegen "$INPUT_MANIFEST"
 
       - name: Build subgraph
         working-directory: subgraphs/${{ inputs.folder }}
-        run: yarn graph build ${{ inputs.manifest }}
+        env:
+          INPUT_MANIFEST: ${{ inputs.manifest }}
+        run: yarn graph build "$INPUT_MANIFEST"
 
       - name: Deploy subgraph
         working-directory: subgraphs/${{ inputs.folder }}
+        env:
+          INPUT_NAME: ${{ inputs.name }}
+          INPUT_MANIFEST: ${{ inputs.manifest }}
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
           yarn graph deploy \
-            ${{ inputs.name }} \
-            ${{ inputs.manifest }} \
-            -l ${{ inputs.version }}
+            "$INPUT_NAME" \
+            "$INPUT_MANIFEST" \
+            -l "$INPUT_VERSION"
 
       - name: Deployment summary
         if: success()
+        env:
+          INPUT_FOLDER: ${{ inputs.folder }}
+          INPUT_NAME: ${{ inputs.name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_MANIFEST: ${{ inputs.manifest }}
         run: |
           echo "✅ Subgraph deployed successfully"
-          echo "- Subgraph folder: ${{ inputs.folder }}"
-          echo "- Subgraph name: ${{ inputs.name }}"
-          echo "- Version: ${{ inputs.version }}"
-          echo "- Manifest: ${{ inputs.manifest }}"
+          echo "- Subgraph folder: $INPUT_FOLDER"
+          echo "- Subgraph name: $INPUT_NAME"
+          echo "- Version: $INPUT_VERSION"
+          echo "- Manifest: $INPUT_MANIFEST"
