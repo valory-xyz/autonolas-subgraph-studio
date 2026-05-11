@@ -1,7 +1,7 @@
 {
   "name": "autonolas-subgraph-studio",
   "engines": {
-    "node": "22.x"
+    "node": "24.x"
   },
   "packageManager": "yarn@1.22.22",
   "scripts": {
