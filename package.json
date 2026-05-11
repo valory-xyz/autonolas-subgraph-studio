@@ -15,5 +15,11 @@
   },
   "devDependencies": {
     "matchstick-as": "0.6.0"
+  },
+  "resolutions": {
+    "//": "Selective version resolutions to clear allowlisted advisories where the bump is semver-compatible AND the package has only one major version in the tree. Each entry must be paired with removal of the corresponding entry in .supply-chain/audit-allowlist.json. Do NOT add resolutions for packages with multiple majors in the tree (picomatch 2.x+4.x, minimatch 3.x+5.x+9.x+10.x, glob 7.x+11.x) — those would force one major across consumers expecting another and break installs.",
+    "immutable": "^5.1.5",
+    "cross-spawn": "^7.0.6",
+    "semver": "^7.5.2"
   }
 }
