@@ -14,10 +14,10 @@
     "test": "ln -s subgraph.gnosis.yaml subgraph.yaml && graph test; rm -f subgraph.yaml"
   },
   "dependencies": {
-    "@graphprotocol/graph-cli": "^0.98.1",
-    "@graphprotocol/graph-ts": "^0.38.2"
+    "@graphprotocol/graph-cli": "0.98.1",
+    "@graphprotocol/graph-ts": "0.38.2"
   },
   "devDependencies": {
-    "matchstick-as": "^0.6.0"
+    "matchstick-as": "0.6.0"
   }
 }
