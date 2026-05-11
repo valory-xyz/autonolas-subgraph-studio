@@ -1,5 +1,14 @@
 {
   "name": "autonolas-subgraph-studio",
+  "engines": {
+    "node": "24.x"
+  },
+  "packageManager": "yarn@1.22.22",
+  "scripts": {
+    "audit:prod": "node scripts/audit.mjs",
+    "audit:install-hooks": "node scripts/audit-install-hooks.mjs",
+    "audit:install-hooks:update": "node scripts/audit-install-hooks.mjs --update"
+  },
   "dependencies": {
     "@graphprotocol/graph-cli": "0.98.1",
     "@graphprotocol/graph-ts": "0.38.2"
