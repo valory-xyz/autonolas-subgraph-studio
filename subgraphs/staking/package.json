@@ -24,6 +24,12 @@
     "//": "Mirror of root resolutions; see root package.json for rationale and the one-major-only constraint.",
     "immutable": "^5.1.5",
     "cross-spawn": "^7.0.6",
-    "semver": "^7.5.2"
+    "semver": "^7.5.2",
+    "lodash": "^4.18.0",
+    "js-yaml": "^4.1.1",
+    "follow-redirects": "^1.16.0",
+    "ejs": "^3.1.10",
+    "tmp": "^0.2.4",
+    "undici": "^7.24.0"
   }
 }

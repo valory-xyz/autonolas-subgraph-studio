@@ -122,6 +122,7 @@ These dependencies and patterns deserve special attention because of the repo's 
 - **`SUBGRAPH_STUDIO_KEY`** — the only secret with org-wide blast radius. The cmdline-arg residual exposure is tracked in §3.
 - **Service-registry template/manifest setup** — currently brittle (running `yarn generate-manifests` for `service-registry` overwrites hand-crafted mainnet/matic/optimism manifests with broken or lossy template output). Out of scope for a supply-chain PR but tracked here as it intersects with deploy correctness.
 - **AssemblyScript runtime version** carried by `@graphprotocol/graph-ts` — a runtime change can produce subtly-different WASM output. Bumps require a staging deploy + cross-query against prod.
+- **`graph-cli` HTTP transitive bumps (`undici`, `axios`)** — these sit on the `graph deploy` upload path and are NOT exercised by CI (which only runs `codegen` + `test` + `build`). Any PR that resolves or bumps these packages requires a `workflow_dispatch` staging deploy of one subgraph (smallest: `legacy-mech-fees`) from the merge commit BEFORE any production deploy. If the staging deploy succeeds, the bump is operationally validated. Same gate as the AssemblyScript runtime bump above.
 
 ## Contact
 

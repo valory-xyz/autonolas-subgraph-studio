@@ -38,47 +38,11 @@
       "review": "2026-08-05"
     },
     {
-      "id": 1115806,
-      "ghsa": "GHSA-r5fr-rjxr-66jc",
-      "package": "lodash",
-      "severity": "high",
-      "reason": "Baselined at PR3 — transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible.",
-      "added": "2026-05-07",
-      "review": "2026-08-05"
-    },
-    {
       "id": 1115552,
       "ghsa": "GHSA-c2c7-rcm5-vvqj",
       "package": "picomatch",
       "severity": "high",
       "reason": "Baselined at PR3 — transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible. A scoped Yarn `resolutions` would force one major across all consumers and break installs (multi-major in tree).",
-      "added": "2026-05-07",
-      "review": "2026-08-05"
-    },
-    {
-      "id": 1114639,
-      "ghsa": "GHSA-v9p9-hfj2-hcw8",
-      "package": "undici",
-      "severity": "high",
-      "reason": "Baselined at PR3 — transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible.",
-      "added": "2026-05-07",
-      "review": "2026-08-05"
-    },
-    {
-      "id": 1114637,
-      "ghsa": "GHSA-vrm6-8vpv-qv8q",
-      "package": "undici",
-      "severity": "high",
-      "reason": "Baselined at PR3 — transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible.",
-      "added": "2026-05-07",
-      "review": "2026-08-05"
-    },
-    {
-      "id": 1114591,
-      "ghsa": "GHSA-f269-vfmq-vjvj",
-      "package": "undici",
-      "severity": "high",
-      "reason": "Baselined at PR3 — transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible.",
       "added": "2026-05-07",
       "review": "2026-08-05"
     },
