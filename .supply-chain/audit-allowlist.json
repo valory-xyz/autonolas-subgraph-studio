@@ -1,13 +1,13 @@
 {
-  "_doc": "Allowlist for yarn audit high/critical advisories. Every entry needs a reason and a review date. See SUPPLY-CHAIN-SECURITY.md §5.",
+  "_doc": "Allowlist for yarn audit high/critical advisories. Every entry needs a reason and a review date. See SUPPLY-CHAIN-SECURITY.md \u00a75.",
   "_fields": {
-    "id": "npm advisory numeric ID — REQUIRED",
-    "ghsa": "GitHub Security Advisory ID — for humans",
-    "package": "package name — for humans",
-    "severity": "advisory severity — for humans",
-    "reason": "why the advisory is allowlisted — REQUIRED",
-    "added": "YYYY-MM-DD — REQUIRED",
-    "review": "YYYY-MM-DD — REQUIRED, expired prints warning but does not fail"
+    "id": "npm advisory numeric ID \u2014 REQUIRED",
+    "ghsa": "GitHub Security Advisory ID \u2014 for humans",
+    "package": "package name \u2014 for humans",
+    "severity": "advisory severity \u2014 for humans",
+    "reason": "why the advisory is allowlisted \u2014 REQUIRED",
+    "added": "YYYY-MM-DD \u2014 REQUIRED",
+    "review": "YYYY-MM-DD \u2014 REQUIRED, expired prints warning but does not fail"
   },
   "entries": [
     {
@@ -15,7 +15,7 @@
       "ghsa": "GHSA-6chq-wfr3-2hj9",
       "package": "axios",
       "severity": "high",
-      "reason": "Baselined at PR3 — transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible.",
+      "reason": "Baselined at PR3 \u2014 transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible.",
       "added": "2026-05-07",
       "review": "2026-08-05"
     },
@@ -24,7 +24,7 @@
       "ghsa": "GHSA-pf86-5x62-jrwf",
       "package": "axios",
       "severity": "high",
-      "reason": "Baselined at PR3 — transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible.",
+      "reason": "Baselined at PR3 \u2014 transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible.",
       "added": "2026-05-07",
       "review": "2026-08-05"
     },
@@ -33,16 +33,7 @@
       "ghsa": "GHSA-pmwg-cvhr-8vh7",
       "package": "axios",
       "severity": "high",
-      "reason": "Baselined at PR3 — transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible.",
-      "added": "2026-05-07",
-      "review": "2026-08-05"
-    },
-    {
-      "id": 1115806,
-      "ghsa": "GHSA-r5fr-rjxr-66jc",
-      "package": "lodash",
-      "severity": "high",
-      "reason": "Baselined at PR3 — transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible.",
+      "reason": "Baselined at PR3 \u2014 transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible.",
       "added": "2026-05-07",
       "review": "2026-08-05"
     },
@@ -51,34 +42,7 @@
       "ghsa": "GHSA-c2c7-rcm5-vvqj",
       "package": "picomatch",
       "severity": "high",
-      "reason": "Baselined at PR3 — transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible. A scoped Yarn `resolutions` would force one major across all consumers and break installs (multi-major in tree).",
-      "added": "2026-05-07",
-      "review": "2026-08-05"
-    },
-    {
-      "id": 1114639,
-      "ghsa": "GHSA-v9p9-hfj2-hcw8",
-      "package": "undici",
-      "severity": "high",
-      "reason": "Baselined at PR3 — transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible.",
-      "added": "2026-05-07",
-      "review": "2026-08-05"
-    },
-    {
-      "id": 1114637,
-      "ghsa": "GHSA-vrm6-8vpv-qv8q",
-      "package": "undici",
-      "severity": "high",
-      "reason": "Baselined at PR3 — transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible.",
-      "added": "2026-05-07",
-      "review": "2026-08-05"
-    },
-    {
-      "id": 1114591,
-      "ghsa": "GHSA-f269-vfmq-vjvj",
-      "package": "undici",
-      "severity": "high",
-      "reason": "Baselined at PR3 — transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible.",
+      "reason": "Baselined at PR3 \u2014 transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible. A scoped Yarn `resolutions` would force one major across all consumers and break installs (multi-major in tree).",
       "added": "2026-05-07",
       "review": "2026-08-05"
     },
@@ -87,7 +51,7 @@
       "ghsa": "GHSA-23c5-xmqv-rm74",
       "package": "minimatch",
       "severity": "high",
-      "reason": "Baselined at PR3 — transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible. A scoped Yarn `resolutions` would force one major across all consumers and break installs (multi-major in tree).",
+      "reason": "Baselined at PR3 \u2014 transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible. A scoped Yarn `resolutions` would force one major across all consumers and break installs (multi-major in tree).",
       "added": "2026-05-07",
       "review": "2026-08-05"
     },
@@ -96,7 +60,7 @@
       "ghsa": "GHSA-23c5-xmqv-rm74",
       "package": "minimatch",
       "severity": "high",
-      "reason": "Baselined at PR3 — transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible. A scoped Yarn `resolutions` would force one major across all consumers and break installs (multi-major in tree).",
+      "reason": "Baselined at PR3 \u2014 transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible. A scoped Yarn `resolutions` would force one major across all consumers and break installs (multi-major in tree).",
       "added": "2026-05-07",
       "review": "2026-08-05"
     },
@@ -105,7 +69,7 @@
       "ghsa": "GHSA-23c5-xmqv-rm74",
       "package": "minimatch",
       "severity": "high",
-      "reason": "Baselined at PR3 — transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible. A scoped Yarn `resolutions` would force one major across all consumers and break installs (multi-major in tree).",
+      "reason": "Baselined at PR3 \u2014 transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible. A scoped Yarn `resolutions` would force one major across all consumers and break installs (multi-major in tree).",
       "added": "2026-05-07",
       "review": "2026-08-05"
     },
@@ -114,7 +78,7 @@
       "ghsa": "GHSA-7r86-cg39-jmmj",
       "package": "minimatch",
       "severity": "high",
-      "reason": "Baselined at PR3 — transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible. A scoped Yarn `resolutions` would force one major across all consumers and break installs (multi-major in tree).",
+      "reason": "Baselined at PR3 \u2014 transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible. A scoped Yarn `resolutions` would force one major across all consumers and break installs (multi-major in tree).",
       "added": "2026-05-07",
       "review": "2026-08-05"
     },
@@ -123,7 +87,7 @@
       "ghsa": "GHSA-7r86-cg39-jmmj",
       "package": "minimatch",
       "severity": "high",
-      "reason": "Baselined at PR3 — transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible. A scoped Yarn `resolutions` would force one major across all consumers and break installs (multi-major in tree).",
+      "reason": "Baselined at PR3 \u2014 transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible. A scoped Yarn `resolutions` would force one major across all consumers and break installs (multi-major in tree).",
       "added": "2026-05-07",
       "review": "2026-08-05"
     },
@@ -132,7 +96,7 @@
       "ghsa": "GHSA-7r86-cg39-jmmj",
       "package": "minimatch",
       "severity": "high",
-      "reason": "Baselined at PR3 — transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible. A scoped Yarn `resolutions` would force one major across all consumers and break installs (multi-major in tree).",
+      "reason": "Baselined at PR3 \u2014 transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible. A scoped Yarn `resolutions` would force one major across all consumers and break installs (multi-major in tree).",
       "added": "2026-05-07",
       "review": "2026-08-05"
     },
@@ -141,7 +105,7 @@
       "ghsa": "GHSA-3ppc-4f35-3m26",
       "package": "minimatch",
       "severity": "high",
-      "reason": "Baselined at PR3 — transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible. A scoped Yarn `resolutions` would force one major across all consumers and break installs (multi-major in tree).",
+      "reason": "Baselined at PR3 \u2014 transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible. A scoped Yarn `resolutions` would force one major across all consumers and break installs (multi-major in tree).",
       "added": "2026-05-07",
       "review": "2026-08-05"
     },
@@ -150,7 +114,7 @@
       "ghsa": "GHSA-3ppc-4f35-3m26",
       "package": "minimatch",
       "severity": "high",
-      "reason": "Baselined at PR3 — transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible. A scoped Yarn `resolutions` would force one major across all consumers and break installs (multi-major in tree).",
+      "reason": "Baselined at PR3 \u2014 transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible. A scoped Yarn `resolutions` would force one major across all consumers and break installs (multi-major in tree).",
       "added": "2026-05-07",
       "review": "2026-08-05"
     },
@@ -159,7 +123,7 @@
       "ghsa": "GHSA-3ppc-4f35-3m26",
       "package": "minimatch",
       "severity": "high",
-      "reason": "Baselined at PR3 — transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible. A scoped Yarn `resolutions` would force one major across all consumers and break installs (multi-major in tree).",
+      "reason": "Baselined at PR3 \u2014 transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible. A scoped Yarn `resolutions` would force one major across all consumers and break installs (multi-major in tree).",
       "added": "2026-05-07",
       "review": "2026-08-05"
     },
@@ -168,7 +132,7 @@
       "ghsa": "GHSA-43fc-jf86-j433",
       "package": "axios",
       "severity": "high",
-      "reason": "Baselined at PR3 — transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible.",
+      "reason": "Baselined at PR3 \u2014 transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible.",
       "added": "2026-05-07",
       "review": "2026-08-05"
     },
@@ -177,7 +141,7 @@
       "ghsa": "GHSA-jr5f-v2jv-69x6",
       "package": "axios",
       "severity": "high",
-      "reason": "Baselined at PR3 — transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible.",
+      "reason": "Baselined at PR3 \u2014 transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible.",
       "added": "2026-05-07",
       "review": "2026-08-05"
     },
@@ -186,7 +150,7 @@
       "ghsa": "GHSA-5j98-mcp5-4vw2",
       "package": "glob",
       "severity": "high",
-      "reason": "Baselined at PR3 — transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible. A scoped Yarn `resolutions` would force one major across all consumers and break installs (multi-major in tree).",
+      "reason": "Baselined at PR3 \u2014 transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible. A scoped Yarn `resolutions` would force one major across all consumers and break installs (multi-major in tree).",
       "added": "2026-05-07",
       "review": "2026-08-05"
     }
