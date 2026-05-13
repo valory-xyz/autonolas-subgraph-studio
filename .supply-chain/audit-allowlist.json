@@ -11,33 +11,6 @@
   },
   "entries": [
     {
-      "id": 1117592,
-      "ghsa": "GHSA-6chq-wfr3-2hj9",
-      "package": "axios",
-      "severity": "high",
-      "reason": "Baselined at PR3 — transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible.",
-      "added": "2026-05-07",
-      "review": "2026-08-05"
-    },
-    {
-      "id": 1117590,
-      "ghsa": "GHSA-pf86-5x62-jrwf",
-      "package": "axios",
-      "severity": "high",
-      "reason": "Baselined at PR3 — transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible.",
-      "added": "2026-05-07",
-      "review": "2026-08-05"
-    },
-    {
-      "id": 1117575,
-      "ghsa": "GHSA-pmwg-cvhr-8vh7",
-      "package": "axios",
-      "severity": "high",
-      "reason": "Baselined at PR3 — transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible.",
-      "added": "2026-05-07",
-      "review": "2026-08-05"
-    },
-    {
       "id": 1115552,
       "ghsa": "GHSA-c2c7-rcm5-vvqj",
       "package": "picomatch",
@@ -124,24 +97,6 @@
       "package": "minimatch",
       "severity": "high",
       "reason": "Baselined at PR3 — transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible. A scoped Yarn `resolutions` would force one major across all consumers and break installs (multi-major in tree).",
-      "added": "2026-05-07",
-      "review": "2026-08-05"
-    },
-    {
-      "id": 1117857,
-      "ghsa": "GHSA-43fc-jf86-j433",
-      "package": "axios",
-      "severity": "high",
-      "reason": "Baselined at PR3 — transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible.",
-      "added": "2026-05-07",
-      "review": "2026-08-05"
-    },
-    {
-      "id": 1111034,
-      "ghsa": "GHSA-jr5f-v2jv-69x6",
-      "package": "axios",
-      "severity": "high",
-      "reason": "Baselined at PR3 — transitive of @graphprotocol/graph-cli; latest stable graph-cli (0.98.1) does not refresh this advisory. Re-evaluate when graph-cli is bumped or a yarn resolution becomes feasible.",
       "added": "2026-05-07",
       "review": "2026-08-05"
     },
