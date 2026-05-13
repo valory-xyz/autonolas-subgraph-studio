@@ -1,10 +1,25 @@
 {
   "name": "autonolas-subgraph-studio",
+  "engines": {
+    "node": "24.x"
+  },
+  "packageManager": "yarn@1.22.22",
+  "scripts": {
+    "audit:prod": "node scripts/audit.mjs",
+    "audit:install-hooks": "node scripts/audit-install-hooks.mjs",
+    "audit:install-hooks:update": "node scripts/audit-install-hooks.mjs --update"
+  },
   "dependencies": {
-    "@graphprotocol/graph-cli": "^0.97.0",
-    "@graphprotocol/graph-ts": "^0.38.0"
+    "@graphprotocol/graph-cli": "0.98.1",
+    "@graphprotocol/graph-ts": "0.38.2"
   },
   "devDependencies": {
-    "matchstick-as": "0.5.0"
+    "matchstick-as": "0.6.0"
+  },
+  "resolutions": {
+    "//": "Selective version resolutions to clear allowlisted advisories where the bump is semver-compatible AND the package has only one major version in the tree. Each entry must be paired with removal of the corresponding entry in .supply-chain/audit-allowlist.json. Do NOT add resolutions for packages with multiple majors in the tree (picomatch 2.x+4.x, minimatch 3.x+5.x+9.x+10.x, glob 7.x+11.x) — those would force one major across consumers expecting another and break installs.",
+    "immutable": "^5.1.5",
+    "cross-spawn": "^7.0.6",
+    "semver": "^7.5.2"
   }
 }

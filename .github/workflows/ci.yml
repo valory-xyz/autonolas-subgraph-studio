@@ -1,0 +1,259 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Single concurrency group across all CI jobs: a new push to the
+# same ref cancels in-flight runs from older commits.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Standalone manifests (subgraph.yaml exists)
+          - subgraph: liquidity
+            path: subgraphs/liquidity
+          - subgraph: tokenomics-eth
+            path: subgraphs/tokenomics-eth
+          - subgraph: governance
+            path: subgraphs/governance
+          - subgraph: legacy-mech-fees
+            path: subgraphs/legacy-mech-fees
+
+          # Template pattern — need generate-manifests + symlink
+          - subgraph: liquidity-l2
+            path: subgraphs/liquidity-l2
+            manifest: subgraph.gnosis.yaml
+            generate: true
+          - subgraph: staking
+            path: subgraphs/staking
+            manifest: subgraph.gnosis.yaml
+            generate: true
+          - subgraph: tokenomics-l2
+            path: subgraphs/tokenomics-l2
+            manifest: subgraph.gnosis.yaml
+            generate: true
+          - subgraph: service-registry
+            path: subgraphs/service-registry
+            manifest: subgraph.gnosis.yaml
+            generate: true
+
+          # Per-network manifests — need symlink only
+          - subgraph: new-mech-fees
+            path: subgraphs/new-mech-fees
+            manifest: subgraph.gnosis.yaml
+
+          # Nested subgraphs with standalone manifests
+          - subgraph: predict-omen
+            path: subgraphs/predict/predict-omen
+          - subgraph: predict-polymarket
+            path: subgraphs/predict/predict-polymarket
+          - subgraph: babydegen-optimism
+            path: subgraphs/babydegen/babydegen-optimism
+
+    name: test / ${{ matrix.subgraph }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6.4.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Activate pinned Yarn via Corepack
+        run: |
+          corepack enable
+          corepack prepare yarn@1.22.22 --activate
+          actual="$(yarn --version)"
+          [ "$actual" = "1.22.22" ] || { echo "::error::corepack activation failed (got $actual)"; exit 1; }
+
+      - name: Install dependencies
+        working-directory: ${{ matrix.path }}
+        run: yarn install --frozen-lockfile
+
+      - name: Generate manifests
+        if: matrix.generate
+        working-directory: ${{ matrix.path }}
+        run: yarn generate-manifests
+
+      - name: Create subgraph.yaml symlink
+        if: matrix.manifest
+        working-directory: ${{ matrix.path }}
+        run: ln -sf ${{ matrix.manifest }} subgraph.yaml
+
+      - name: Generate types
+        working-directory: ${{ matrix.path }}
+        run: yarn graph codegen
+
+      - name: Run tests
+        working-directory: ${{ matrix.path }}
+        run: yarn graph test
+
+  audit:
+    name: Dependency audit (root tree)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444  # v5.0.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Activate pinned Yarn via Corepack
+        run: |
+          corepack enable
+          corepack prepare yarn@1.22.22 --activate
+          [ "$(yarn --version)" = "1.22.22" ] || { echo "::error::corepack activation failed"; exit 1; }
+
+      # `yarn audit` reads yarn.lock directly; no install needed.
+      - name: Run audit
+        run: yarn audit:prod
+
+  install-hooks:
+    name: Install-hook audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444  # v5.0.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Activate pinned Yarn via Corepack
+        run: |
+          corepack enable
+          corepack prepare yarn@1.22.22 --activate
+          [ "$(yarn --version)" = "1.22.22" ] || { echo "::error::corepack activation failed"; exit 1; }
+
+      # `--ignore-scripts` so the hooks don't run while we're enumerating them.
+      - name: Install dependencies (no hooks)
+        run: yarn install --frozen-lockfile --ignore-scripts
+
+      - name: Run install-hook audit
+        run: yarn audit:install-hooks
+
+  lockfile-lint:
+    name: Lockfile validation
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 13 paths: root + 12 subgraphs. Mirrors the test matrix shape;
+        # every yarn.lock gets linted.
+        path:
+          - "."
+          - "subgraphs/liquidity"
+          - "subgraphs/liquidity-l2"
+          - "subgraphs/tokenomics-eth"
+          - "subgraphs/tokenomics-l2"
+          - "subgraphs/governance"
+          - "subgraphs/staking"
+          - "subgraphs/service-registry"
+          - "subgraphs/legacy-mech-fees"
+          - "subgraphs/new-mech-fees"
+          - "subgraphs/predict/predict-omen"
+          - "subgraphs/predict/predict-polymarket"
+          - "subgraphs/babydegen/babydegen-optimism"
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
+
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444  # v5.0.0
+        with:
+          node-version-file: .nvmrc
+
+      # Catches non-registry deps (e.g. codeload.github.com), HTTP-only sources,
+      # and missing integrity hashes. See SUPPLY-CHAIN-SECURITY.md §6.
+      - name: Lint ${{ matrix.path }}/yarn.lock
+        working-directory: ${{ matrix.path }}
+        run: |
+          npx --yes lockfile-lint \
+            --path yarn.lock \
+            --type yarn \
+            --validate-https \
+            --allowed-hosts yarn npm \
+            --empty-hostname false
+
+  scan:
+    name: Gitleaks scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
+        with:
+          # Full history for `gitleaks detect --log-opts="--all"` on push to main.
+          # PR runs only need the diff range (resolved below).
+          fetch-depth: 0
+
+      - name: Install gitleaks (pinned + checksum-verified)
+        # GITLEAKS_SHA256 is the SHA-256 of gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz
+        # from the upstream gitleaks_${GITLEAKS_VERSION}_checksums.txt file. Without
+        # this, a poisoned GitHub release would silently install a backdoored gitleaks
+        # on every CI run. When bumping GITLEAKS_VERSION, fetch the upstream checksum
+        # in the same commit; reviewers should re-fetch and confirm.
+        env:
+          GITLEAKS_VERSION: '8.30.1'
+          GITLEAKS_SHA256: '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb'
+        run: |
+          set -euo pipefail
+          TARBALL=/tmp/gitleaks.tar.gz
+          curl -sSL -o "$TARBALL" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  ${TARBALL}" | sha256sum -c -
+          tar -xz -C /tmp -f "$TARBALL" gitleaks
+          sudo install -m 0755 /tmp/gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      - name: Detect secrets
+        # --redact masks any matched secret in CI logs.
+        # PR: scan only the diff range to keep PR cycles fast.
+        # push to main: scan full history to catch any rewrites.
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            gitleaks detect \
+              --source=. \
+              --no-banner \
+              --redact \
+              --log-opts="origin/${{ github.base_ref }}..HEAD" \
+              --report-format json \
+              --report-path /tmp/leaks.json \
+              -v
+          else
+            gitleaks detect \
+              --source=. \
+              --no-banner \
+              --redact \
+              --log-opts="--all" \
+              --report-format json \
+              --report-path /tmp/leaks.json \
+              -v
+          fi
+
+  # Single cross-cutting gate. Branch protection on `main` requires
+  # exactly one status context — "All checks passed" — which is
+  # emitted by this job. Adding or removing a mandatory CI job is a
+  # one-line edit to the `needs:` list below; branch-protection
+  # config does not need to be touched.
+  all-checks-passed:
+    name: All checks passed
+    needs: [test, audit, install-hooks, lockfile-lint, scan]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" ]] || \
+             [[ "${{ contains(needs.*.result, 'cancelled') }}" == "true" ]] || \
+             [[ "${{ contains(needs.*.result, 'skipped') }}" == "true" ]]; then
+            echo "::error::One or more required jobs did not succeed"
+            exit 1
+          fi
+          echo "All CI checks passed."

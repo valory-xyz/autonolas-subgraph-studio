@@ -1,5 +1,100 @@
-import { Address, BigInt, Bytes } from "@graphprotocol/graph-ts";
+import { Address, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts";
+import { createMockedFunction } from "matchstick-as/assembly/index";
 import { QuestionIdToConditionId } from "../generated/schema";
+
+// Default contract address used by matchstick's newMockEvent() — handlers bind
+// the ConditionalTokens contract to event.address, so mocks must target this.
+export const DEFAULT_MOCK_CONTRACT = Address.fromString(
+  "0xa16081f360e3847006db660bae1c6d1b2e17ec2a",
+);
+
+export const USDC_E = Address.fromString(
+  "0x2791bca1f2de4661ed88a30c99a7a9449aa84174",
+);
+export const NEG_RISK_ADAPTER = Address.fromString(
+  "0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296",
+);
+const ZERO_BYTES32 = Bytes.fromHexString(
+  "0x0000000000000000000000000000000000000000000000000000000000000000",
+);
+
+/**
+ * Mock the ConditionalTokens.getCollectionId + getPositionId eth_calls that
+ * handleConditionPreparation makes to derive outcome tokenIds for v2 markets.
+ *
+ * Returns the 32-byte `tokenIdBytes` values that the handler will use as the
+ * TokenRegistry entity IDs (outcome 0 at index 0, outcome 1 at index 1). These
+ * are the Bytes.fromBigInt round-trip of the mocked positionId values; tests
+ * should use them directly for `assert.fieldEquals("TokenRegistry", ..)`.
+ */
+export function mockConditionalTokensCalls(
+  conditionId: Bytes,
+  collateral: Address,
+): Bytes[] {
+  // Derive distinct-per-condition bytes32 values for collectionIds so repeated
+  // calls across conditions don't collide in the mock registry. Highest byte
+  // kept at 0x11..0xdd (top bit unset) so fromBigInt round-trips cleanly to
+  // 32 bytes without an unsigned-padding byte.
+  let mockCollection1 = Bytes.fromHexString(
+    "0x01" + conditionId.toHexString().slice(4),
+  ) as Bytes;
+  let mockCollection2 = Bytes.fromHexString(
+    "0x02" + conditionId.toHexString().slice(4),
+  ) as Bytes;
+  let mockTokenId1 = BigInt.fromUnsignedBytes(mockCollection1);
+  let mockTokenId2 = BigInt.fromUnsignedBytes(mockCollection2);
+
+  createMockedFunction(
+    DEFAULT_MOCK_CONTRACT,
+    "getCollectionId",
+    "getCollectionId(bytes32,bytes32,uint256):(bytes32)",
+  )
+    .withArgs([
+      ethereum.Value.fromFixedBytes(ZERO_BYTES32 as Bytes),
+      ethereum.Value.fromFixedBytes(conditionId),
+      ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1)),
+    ])
+    .returns([ethereum.Value.fromFixedBytes(mockCollection1)]);
+
+  createMockedFunction(
+    DEFAULT_MOCK_CONTRACT,
+    "getCollectionId",
+    "getCollectionId(bytes32,bytes32,uint256):(bytes32)",
+  )
+    .withArgs([
+      ethereum.Value.fromFixedBytes(ZERO_BYTES32 as Bytes),
+      ethereum.Value.fromFixedBytes(conditionId),
+      ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(2)),
+    ])
+    .returns([ethereum.Value.fromFixedBytes(mockCollection2)]);
+
+  createMockedFunction(
+    DEFAULT_MOCK_CONTRACT,
+    "getPositionId",
+    "getPositionId(address,bytes32):(uint256)",
+  )
+    .withArgs([
+      ethereum.Value.fromAddress(collateral),
+      ethereum.Value.fromFixedBytes(mockCollection1),
+    ])
+    .returns([ethereum.Value.fromUnsignedBigInt(mockTokenId1)]);
+
+  createMockedFunction(
+    DEFAULT_MOCK_CONTRACT,
+    "getPositionId",
+    "getPositionId(address,bytes32):(uint256)",
+  )
+    .withArgs([
+      ethereum.Value.fromAddress(collateral),
+      ethereum.Value.fromFixedBytes(mockCollection2),
+    ])
+    .returns([ethereum.Value.fromUnsignedBigInt(mockTokenId2)]);
+
+  // Stored TokenRegistry ID = Bytes.fromByteArray(Bytes.fromBigInt(positionId)).
+  // After the Matchstick BigInt round-trip the unsigned-padding byte is dropped,
+  // so the stored 32-byte ID equals the mockCollection bytes (same LE layout).
+  return [mockCollection1, mockCollection2];
+}
 
 /**
  * Common test addresses for consistency across tests

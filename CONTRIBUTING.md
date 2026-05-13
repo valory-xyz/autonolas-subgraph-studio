@@ -25,7 +25,7 @@ For repository structure, development setup, multi-network patterns, and how to 
 
 ## Code of Conduct
 
-This project adheres to the [Contributor Covenant](https://www.contributor-covenant.org/version/2/1/code_of_conduct/) Code of Conduct. By participating, you are expected to uphold this code. Please report unacceptable behavior to **security@valory.xyz**.
+This project adheres to the [Contributor Covenant](https://www.contributor-covenant.org/version/2/1/code_of_conduct/) Code of Conduct. By participating, you are expected to uphold this code. Please report unacceptable behavior to **info@valory.xyz**.
 
 ---
 
@@ -47,7 +47,7 @@ This project adheres to the [Contributor Covenant](https://www.contributor-coven
 
 **Do not** open public GitHub issues for security vulnerabilities. Instead:
 
-- Email **security@valory.xyz** with a detailed report.
+- Email **info@valory.xyz** with a detailed report.
 - Include the affected subgraph, potential impact, and steps to reproduce.
 
 We aim to acknowledge receipt within 72 hours.
@@ -107,6 +107,6 @@ This project is licensed under the **Apache License 2.0**. See `LICENSE`.
 ## Contact
 
 - General questions: **info@valory.xyz**
-- Security: **security@valory.xyz**
+- Security: **info@valory.xyz**
 
 Thank you for contributing!

@@ -1,0 +1,40 @@
+# CODEOWNERS for autonolas-subgraph-studio
+#
+# This file routes review of security- and supply-chain-sensitive files to
+# the security reviewer(s). Enforcement requires "Require review from Code
+# Owners" in branch protection settings — until that is enabled this file
+# is advisory and only nudges GitHub's PR review-request UI.
+#
+# Owner is an individual until a security team exists; switch to a team
+# handle (e.g., @valory-xyz/<team>) once one is created.
+
+# Default owner: any unowned path falls back here.
+*                                @Tanya-atatakai
+
+# Workflows, actions config, repository-level GitHub config.
+/.github/                        @Tanya-atatakai
+
+# Top-level package metadata + lockfile.
+/package.json                    @Tanya-atatakai
+/yarn.lock                       @Tanya-atatakai
+
+# Node-version pin enforced by Corepack in CI.
+/.nvmrc                          @Tanya-atatakai
+
+# Supply-chain controls: scripts that gate CI + allowlists they consult.
+/scripts/                        @Tanya-atatakai
+/.supply-chain/                  @Tanya-atatakai
+
+# Disclosure + threat-model docs.
+/SECURITY.md                     @Tanya-atatakai
+/SUPPLY-CHAIN-SECURITY.md        @Tanya-atatakai
+
+# AI / contributor onboarding context — changes here shape future agent behavior.
+/CLAUDE.md                       @Tanya-atatakai
+
+# Per-subgraph package metadata + lockfiles. Picks up flat (subgraphs/<name>/)
+# and nested (subgraphs/predict/predict-omen/, subgraphs/babydegen/babydegen-optimism/) layouts.
+/subgraphs/*/package.json        @Tanya-atatakai
+/subgraphs/*/yarn.lock           @Tanya-atatakai
+/subgraphs/*/*/package.json      @Tanya-atatakai
+/subgraphs/*/*/yarn.lock         @Tanya-atatakai

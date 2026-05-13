@@ -16,3 +16,13 @@ generated-l2/
 .yarn
 
 .DS_Store
+
+/.plans
+
+# This repo uses yarn classic; reject lockfiles from other package managers
+package-lock.json
+pnpm-lock.yaml
+bun.lockb
+
+# Local supply-chain audit baselines (Tier 0 / pre-PR recon output)
+/audit

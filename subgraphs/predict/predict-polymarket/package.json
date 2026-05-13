@@ -6,10 +6,16 @@
     "test": "graph test"
   },
   "dependencies": {
-    "@graphprotocol/graph-cli": "^0.98.1",
-    "@graphprotocol/graph-ts": "^0.38.2"
+    "@graphprotocol/graph-cli": "0.98.1",
+    "@graphprotocol/graph-ts": "0.38.2"
   },
   "devDependencies": {
-    "matchstick-as": "^0.6.0"
+    "matchstick-as": "0.6.0"
+  },
+  "resolutions": {
+    "//": "Mirror of root resolutions; see root package.json for rationale and the one-major-only constraint.",
+    "immutable": "^5.1.5",
+    "cross-spawn": "^7.0.6",
+    "semver": "^7.5.2"
   }
 }
