@@ -131,6 +131,18 @@ else
 fi
 ```
 
+### 0.7 Pre-create labels (idempotent setup)
+
+`gh issue create --label X` errors with `could not add label: 'X' not found` if the label doesn't already exist in the target repo. Since the skill is run on potentially-clean repos, the labels must be created up-front — **once per skill run, NOT once per alert**. This block belongs in setup; copy-pasting it into the per-alert loop would generate 5 API calls per alert against an endpoint that doesn't dedupe at the wire level.
+
+```bash
+gh label create security             --color B60205 --description "Security vulnerability" --repo "$REPO" 2>/dev/null || true
+gh label create dependabot           --color 0366D6 --description "Dependabot-reported" --repo "$REPO" 2>/dev/null || true
+gh label create triage-security      --color 5319E7 --description "Opened by triage-security skill" --repo "$REPO" 2>/dev/null || true
+gh label create needs-human-review   --color FBCA04 --description "Skill confidence below threshold — maintainer call required" --repo "$REPO" 2>/dev/null || true
+gh label create security-audit       --color C2E0C6 --description "Permanent audit record for a triage-security dismissal (auto-closed)" --repo "$REPO" 2>/dev/null || true
+```
+
 ---
 
 ## Phase 1 — Fetch alerts
@@ -315,32 +327,92 @@ PKG_RE=$(printf '%s' "$PKG" | sed 's/[][\\/.*^$+?{}()|]/\\&/g')
 
 # Match: import x from 'pkg' | import 'pkg' | import x from 'pkg/sub' |
 #        require('pkg') | require('pkg/sub') | import('pkg')
-IMPORT_RE="(import[[:space:]]+([^;'\"]*[[:space:]]+from[[:space:]]+)?['\"]${PKG_RE}(/[^'\"]*)?['\"]|require\\([[:space:]]*['\"]${PKG_RE}(/[^'\"]*)?['\"]|import\\([[:space:]]*['\"]${PKG_RE}(/[^'\"]*)?['\"])"
+#
+# IMPORTANT: this repo's AS sources frequently use multi-line `import {\n  A,\n  B,\n} from '<pkg>'`
+# syntax. Line-by-line grep won't span those, so we use `grep -Pzo` for the
+# `import { ... } from '<pkg>'` form (which can span lines), and a separate
+# `grep -E` for single-line `require(...)` / dynamic `import(...)`. Together
+# they cover every import shape AS code uses.
+#
+# The -P flag is GNU-grep-only (macOS ships BSD grep which lacks -P). The skill
+# already targets Linux + macOS, so on macOS the operator must have GNU grep
+# on PATH as `ggrep` or `grep` (typically via `brew install grep`). The
+# fallback below selects whichever exists.
+if command -v ggrep >/dev/null 2>&1; then
+  GREP=ggrep
+else
+  GREP=grep
+fi
+# Probe that the chosen grep supports -P; abort early if not.
+echo "test" | "$GREP" -Pq "test" 2>/dev/null \
+  || { echo "ERROR: GNU grep with -P support required (macOS: 'brew install grep')"; exit 1; }
+
+# Pattern A — multi-line `import { ... } from 'pkg'` (also matches single-line)
+# `-z` treats the file as one big null-terminated string so `.` spans newlines.
+IMPORT_RE_MULTILINE="import[[:space:]]+(\{[^}]*\}[[:space:]]+from[[:space:]]+)?['\"]${PKG_RE}(/[^'\"]*)?['\"]"
+
+# Pattern B — single-line require() / dynamic import()
+IMPORT_RE_INLINE="(require\\([[:space:]]*['\"]${PKG_RE}(/[^'\"]*)?['\"]|import\\([[:space:]]*['\"]${PKG_RE}(/[^'\"]*)?['\"])"
 ```
 
 Step 2 — grep prod (AS source) vs dev (everything else):
 
 ```bash
+# Helper: grep a set of directories for both patterns, return the union of
+# hit-files. Use `find ... -print0 | xargs -0` to avoid command-line-length
+# limits on large file sets, and to handle filenames with spaces safely.
+grep_imports() {
+  local -a dirs=("$@")
+  [[ ${#dirs[@]} -gt 0 ]] || return 0
+  # Pass 1: multi-line `import { ... } from 'pkg'` via -Pzo
+  # Pass 2: single-line require()/import() via -E
+  # `sort -u` deduplicates files matched by both passes.
+  {
+    find "${dirs[@]}" \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.mjs" -o -name "*.cjs" \) -print0 2>/dev/null \
+      | xargs -0 "$GREP" -Pzlo "$IMPORT_RE_MULTILINE" 2>/dev/null
+    find "${dirs[@]}" \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.mjs" -o -name "*.cjs" \) -print0 2>/dev/null \
+      | xargs -0 "$GREP" -lE "$IMPORT_RE_INLINE" 2>/dev/null
+  } | sort -u | grep -v "/generated/" | grep -v "/build/" | grep -v "/node_modules/" || true
+}
+
 # PROD — subgraphs/*/src/ AS sources. These are what actually ships to WASM.
 PROD_HIT_FILES=""
 if [[ ${#PROD_DIRS[@]} -gt 0 ]]; then
-  PROD_HIT_FILES=$(grep -rlnE "$IMPORT_RE" "${PROD_DIRS[@]}" \
-    --include="*.ts" --include="*.tsx" 2>/dev/null | grep -v "/generated/" | grep -v "/build/" || true)
+  PROD_HIT_FILES=$(grep_imports "${PROD_DIRS[@]}")
 fi
-PROD_HITS=$(printf '%s\n' "$PROD_HIT_FILES" | grep -c . || echo 0)
+# Count using wc -l, guarded against the empty-string case. The naive
+# `grep -c . || echo 0` form produces a literal "0\n0" string when the
+# input is empty (grep prints "0" and exits 1, then `|| echo 0` appends
+# another "0") — which then breaks `[[ $PROD_HITS -gt 0 ]]`.
+if [[ -z "$PROD_HIT_FILES" ]]; then
+  PROD_HITS=0
+else
+  PROD_HITS=$(printf '%s\n' "$PROD_HIT_FILES" | wc -l | tr -d ' ')
+fi
 
 # DEV — root scripts/, shared/, per-subgraph tests/, per-subgraph scripts/, and
-# the root-level tooling files (scripts/audit.mjs etc.). Include .js/.mjs/.cjs/.ts.
+# the root-level tooling files (scripts/audit.mjs etc.).
 DEV_HIT_FILES=""
 ALL_DEV_DIRS=("${DEV_DIRS[@]}" "${PKG_TEST_DIRS[@]}" "${PKG_SCRIPT_DIRS[@]}")
 if [[ ${#ALL_DEV_DIRS[@]} -gt 0 ]]; then
-  DEV_HIT_FILES=$(grep -rlnE "$IMPORT_RE" "${ALL_DEV_DIRS[@]}" \
-    --include="*.ts" --include="*.tsx" --include="*.js" --include="*.mjs" --include="*.cjs" \
-    2>/dev/null | grep -v "/node_modules/" | grep -v "/build/" || true)
+  DEV_HIT_FILES=$(grep_imports "${ALL_DEV_DIRS[@]}")
 fi
-DEV_HITS=$(printf '%s\n' "$DEV_HIT_FILES" | grep -c . || echo 0)
+if [[ -z "$DEV_HIT_FILES" ]]; then
+  DEV_HITS=0
+else
+  DEV_HITS=$(printf '%s\n' "$DEV_HIT_FILES" | wc -l | tr -d ' ')
+fi
 
 echo "Signal C: PROD_HITS=$PROD_HITS DEV_HITS=$DEV_HITS"
+
+# Sanity probe — refuse to auto-dismiss the one package that DOES ship to
+# WASM, even if Signal C scored zero hits (defence against multi-line-import
+# regex evolution bugs).
+if [[ "$PKG" == "@graphprotocol/graph-ts" && "$PROD_HITS" -eq 0 ]]; then
+  echo "WARN: @graphprotocol/graph-ts shows 0 PROD imports — suspect a regex bug. Forcing PROD." >&2
+  PROD_HITS=1
+  PROD_HIT_FILES="(forced: graph-ts always treated as PROD)"
+fi
 ```
 
 Step 3 — classify. **For this repo's `subgraph-indexer` archetype, the import graph is the entire signal**: package.json `scope=runtime` is misleading (alerts come from yarn.lock), and graph-cli being in `dependencies` is a packaging artefact, not a deployment claim.
@@ -409,8 +481,13 @@ For pkgs that appear in yarn.lock but nowhere else, figure out which **direct** 
 ```bash
 # Walk from the manifest's directory (subgraphs/<name>/ or root).
 MANIFEST_DIR=$(dirname "$MANIFEST_PATH")
-(cd "$MANIFEST_DIR" && yarn why "$PKG" 2>/dev/null | head -30) > "$TMP/yarn_why_${PKG}.txt"
-REVERSE_DEP_ROOT=$(grep -E "Found|Reasons|Hoisted from" "$TMP/yarn_why_${PKG}.txt" | head -3 | tr '\n' '; ')
+# Sanitize the slash in scoped package names (e.g. @graphprotocol/graph-ts).
+# Without this, the redirect target $TMP/yarn_why_@graphprotocol/graph-ts.txt
+# has a missing parent directory and bash redirect fails; under `set -e` the
+# skill aborts mid-run.
+PKG_SAFE="${PKG//\//_}"
+(cd "$MANIFEST_DIR" && yarn why "$PKG" 2>/dev/null | head -30) > "$TMP/yarn_why_${PKG_SAFE}.txt"
+REVERSE_DEP_ROOT=$(grep -E "Found|Reasons|Hoisted from" "$TMP/yarn_why_${PKG_SAFE}.txt" | head -3 | tr '\n' '; ')
 ```
 
 If the reverse-dep root is `@graphprotocol/graph-cli` or any of its transitives, it's build-tooling. If it's `@graphprotocol/graph-ts`, it could ship to WASM and Signal C should have caught it as a PROD import; the absence of a PROD import in that case means graph-ts pulls the pkg in only for non-AS-compatible code paths (still safe to dismiss).
@@ -529,6 +606,31 @@ Long-form audit record. Created closed (gh issue create then immediate gh issue 
 create_audit_issue() {
   local audit_title audit_body audit_url body_analysis
 
+  # Safe defaults for variables that §2.5 is supposed to populate before
+  # an `inaccurate` dismissal reaches this function. With `set -u` enabled
+  # in Phase 0.0, an unset var here crashes the heredoc AFTER the dismissal
+  # PATCH has already succeeded in §3.1b — leaving the alert dismissed
+  # with no audit trail (the worst possible failure mode).
+  #
+  # Contract: §2.5.x must populate ADVISORY_SUMMARY, CWE_CHECKLIST_ANSWERS,
+  # SYMBOL_TRACE_RESULT, APPLICABILITY_REASONING before §3.1b runs. These
+  # `:=` defaults are the safety net, not the spec.
+  : "${ADVISORY_SUMMARY:=(not populated — see §2.5.1)}"
+  : "${CWE_CHECKLIST_ANSWERS:=(not populated — see §2.5.2)}"
+  : "${SYMBOL_TRACE_RESULT:=(not populated — see §2.5.4)}"
+  : "${APPLICABILITY_REASONING:=(not populated — see §2.5.7)}"
+  : "${CONFIDENCE:=}"
+  : "${SEVERITY:=}"
+  : "${CVE_ID:=n/a}"
+  : "${CWE_IDS:=}"
+  : "${VULN_RANGE:=}"
+  : "${FIRST_PATCHED:=}"
+  : "${MANIFEST_PATH:=}"
+  : "${DEV_HIT_FILES:=}"
+  : "${PROD_HIT_FILES:=}"
+  : "${PYPROJECT_GROUP:=}"
+  : "${REVERSE_DEP_ROOT:=}"
+
   audit_title="[Security-audit][closed] ${PKG} #${ALERT_NUM} (${GHSA_ID}) — ${DISMISSAL_REASON}"
   [[ ${#audit_title} -gt 70 ]] && audit_title="${audit_title:0:67}..."
 
@@ -627,23 +729,23 @@ The `security-audit` label and the other four labels MUST be pre-created idempot
 ### 3.2 Open a tracking issue for an APPLICABLE alert
 
 ```bash
-# Dedupe by GHSA ID — search both title and body.
-EXISTING=$(gh issue list --repo "$REPO" --state open --search "\"$GHSA_ID\" in:title,body" --json number,url --jq '.[0].url // ""')
+# Dedupe by GHSA ID — search both title and body, across ALL states (open
+# AND closed). A maintainer may have manually closed a prior tracking issue
+# (e.g. after fixing the underlying vuln, or judging the auto-opened issue
+# redundant). If the Dependabot alert is still open on the next skill run,
+# searching only `--state open` would miss the closed match and re-open a
+# duplicate. Searching `--state all` catches both.
+EXISTING=$(gh issue list --repo "$REPO" --state all --search "\"$GHSA_ID\" in:title,body" --json number,url,state --jq '.[0]')
 if [[ -n "$EXISTING" ]]; then
-  echo "skip: existing issue for $GHSA_ID at $EXISTING"
-  SKIPPED+=("$ALERT_NUM:existing-issue:$EXISTING")
+  EXISTING_URL=$(echo "$EXISTING" | jq -r '.url')
+  EXISTING_STATE=$(echo "$EXISTING" | jq -r '.state')
+  echo "skip: existing $EXISTING_STATE issue for $GHSA_ID at $EXISTING_URL"
+  SKIPPED+=("$ALERT_NUM:existing-issue($EXISTING_STATE):$EXISTING_URL")
   continue
 fi
-
-# Pre-create labels idempotently. `gh issue create --label X` errors with
-# "could not add label: 'X' not found" if the label doesn't already exist.
-# Run once before the per-alert loop (NOT per alert):
-gh label create security             --color B60205 --description "Security vulnerability" --repo "$REPO" 2>/dev/null || true
-gh label create dependabot           --color 0366D6 --description "Dependabot-reported" --repo "$REPO" 2>/dev/null || true
-gh label create triage-security      --color 5319E7 --description "Opened by triage-security skill" --repo "$REPO" 2>/dev/null || true
-gh label create needs-human-review   --color FBCA04 --description "Skill confidence below threshold — maintainer call required" --repo "$REPO" 2>/dev/null || true
-gh label create security-audit       --color C2E0C6 --description "Permanent audit record for a triage-security dismissal (auto-closed)" --repo "$REPO" 2>/dev/null || true
 ```
+
+(Label pre-creation lives in §0.7 — Phase 0 setup. Do NOT inline it here.)
 
 Build the title accounting for three real-world wrinkles in advisory summaries — case mismatch between advisory pkg capitalisation and `.package.name`, summaries without a colon, trailing periods:
 
@@ -731,7 +833,7 @@ After any resolution change, **delete every yarn.lock** (root + all subgraphs) a
 
 \`\`\`bash
 # Apply the resolution edits to all 13 package.json (root + 12 subgraphs), then:
-rm yarn.lock subgraphs/*/yarn.lock subgraphs/*/*/yarn.lock
+rm -f yarn.lock subgraphs/*/yarn.lock subgraphs/*/*/yarn.lock
 yarn install
 for d in subgraphs/*/ subgraphs/*/*/; do
   [ -f "$d/package.json" ] && (cd "$d" && yarn install)
@@ -968,7 +1070,7 @@ The dismissal model — closed audit-trail issue + 280-char comment + uniform `s
 The skill was originally built on the assumption that Yarn 1 selective resolutions can't safely target multi-major trees — that's what the existing `.supply-chain/audit-allowlist.json` entries documented as their blocker. **PR #126 verified that assumption was wrong:**
 
 - **`**/parent/child` path-scoped resolutions DO work** for multi-major trees, IF the `**/` prefix is included. Without it, Yarn 1 silently ignores the resolution for transitively-nested instances (adds the requested version to yarn.lock as an orphan entry, but doesn't rewire consumers).
-- **Lockfile must be wiped** before reinstall. Yarn 1's lockfile is sticky — it won't re-resolve a previously-pinned version even when the resolution is correct. Recipe: `rm yarn.lock subgraphs/*/yarn.lock subgraphs/*/*/yarn.lock` then run `yarn install` in root + each subgraph.
+- **Lockfile must be wiped** before reinstall. Yarn 1's lockfile is sticky — it won't re-resolve a previously-pinned version even when the resolution is correct. Recipe: `rm -f yarn.lock subgraphs/*/yarn.lock subgraphs/*/*/yarn.lock` then run `yarn install` in root + each subgraph.
 - **Fresh-lockfile cascade clears more than you'd think.** A clean reinstall with both the path-scoped resolution AND yarn.lock removal will additionally bump every other transitive to its latest semver-compatible patch — minimatch, brace-expansion, yaml, even lodash.trim 4.5.1 → 4.18.0. One PR cleared 11 unique GHSAs (192 alerts) this way.
 
 Operationally this means: **most "structurally unreachable but unfixable" allowlist entries are actually fixable**. Default to attempting a fix-PR before adding to the allowlist. The lookahead-cost (5 minutes of `yarn install` + `yarn audit:prod`) is much cheaper than the deferred-review cost.
