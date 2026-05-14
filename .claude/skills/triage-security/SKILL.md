@@ -69,8 +69,27 @@ test -d subgraphs \
   || { echo "ERROR: no subgraphs/ directory — wrong repo or wrong working dir"; exit 1; }
 
 # 0.4 Confirm Dependabot alerts API is reachable.
-gh api "repos/$REPO/dependabot/alerts?per_page=1" --jq 'length' > /dev/null 2>&1 \
+# Query with state=open explicitly so the check exercises the same code path
+# Phase 1 will use. Returns 0 entries on a repo with no open alerts, which
+# is fine — the call succeeding is what matters.
+gh api "repos/$REPO/dependabot/alerts?state=open&per_page=1" --jq 'length' > /dev/null 2>&1 \
   || { echo "ERROR: Dependabot alerts API unreachable on $REPO (token scope? repo permissions?)"; exit 1; }
+
+# 0.4b Node engine version. The repo's package.json declares engine "node": "24.x".
+# yarn run / yarn audit:* enforce this. If your local node is older, every yarn-
+# wrapped command in this skill (yarn why, yarn audit:install-hooks:update,
+# yarn audit:prod) fails with "incompatible engine". Fallbacks:
+#   - yarn why $PKG               →  npm ls $PKG  (or yarn install --ignore-engines)
+#   - yarn audit:install-hooks    →  node scripts/audit-install-hooks.mjs [--update]
+#   - yarn audit:prod             →  node scripts/audit.mjs
+# Direct node-script invocation bypasses yarn's engine gate. The scripts
+# themselves only need node ≥ 18 (they use stdlib + node: builtins).
+NODE_VER=$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)
+if [[ "$NODE_VER" -lt 24 ]]; then
+  echo "WARN: node $NODE_VER detected; repo declares engine 24.x." >&2
+  echo "      yarn-wrapped commands will fail; use direct node-script invocations." >&2
+  echo "      See §0.4b in this skill for the per-command fallback map." >&2
+fi
 ```
 
 ### 0.5 Archetype (fixed for this repo)
@@ -274,13 +293,19 @@ For this repo the only direct deps in any package.json are `@graphprotocol/graph
 #
 # The one structural variation: `@types/X` is a TypeScript types-only package
 # (no runtime), so a CVE in @types/X is a non-issue — short-circuit to DEV.
+# OPERATOR: when this branch fires, skip the rest of Signal C and jump
+# directly to Phase 3.1 (dismiss as not_used). The PROD_HIT_FILES /
+# DEV_HIT_FILES vars are set to empty so §3.1's comment-template
+# branches handle the "pure transitive of build-tooling" case cleanly.
 if [[ "$PKG" == @types/* ]]; then
   VERDICT="DEV"
   CLASSIFICATION_REASON="@types/* is TypeScript-types-only — no runtime code ships"
-  # Skip Signal C; go straight to Phase 3.1 dismissal as not_used.
-  # (set TEST_HIT_FILES="" so the comment template handles it cleanly)
-  TEST_HIT_FILES=""
-  ...continue to Phase 3.1...
+  PROD_HIT_FILES=""
+  DEV_HIT_FILES=""
+  # In the reference loop, this corresponds to: continue after invoking
+  # the §3.1 not_used path. The pseudo-marker below is a docstring, not
+  # executable bash — the operator routes to Phase 3.1 here.
+  : "→ Phase 3.1 (not_used) — @types/* short-circuit"
 fi
 
 # Build a regex that matches both single- and double-quoted imports of the
@@ -351,6 +376,15 @@ The §2.5 mechanics are imported verbatim from upstream PR 2505 (§2.5.1 → §2
   | CWE-918 | SSRF | Does the AS code fetch URLs with external hosts? (No — no network IO from WASM.) |
 
   Most CVE classes have at least one precondition that is structurally impossible in a subgraph-indexer (no network, no fs, no shell). Spell out which precondition fails for each Q.
+
+  **Caveat: "usually absent" is the EXPLOITABILITY answer, not the recommended ACTION.** Even when a CVE is structurally unreachable in the subgraph runtime, prefer to **fix via yarn resolution** over dismissing it, when all of the following hold:
+  - Upstream has published a patched version
+  - The fix is a one-line resolution (single or path-scoped — see §3.2)
+  - No major-version conflicts in the tree (verify with `yarn why $PKG`)
+
+  The cost of carrying a "structurally unreachable but still on the alert list" advisory grows over time: dashboard noise, audit-allowlist creep, the burden of re-justifying the dismissal at every review date. A one-line yarn resolution + lockfile-wipe is cheaper. The lodash.trim ReDoS (GHSA-29mw-wpgm-hmr9, cleared by PR #126 via the fresh-lockfile cascade to `lodash.trim@4.18.0`) is a worked example — the CVE was structurally unreachable in subgraph-indexer (no attacker-controlled strings ever reach `trim`), but the fix-cost was zero so we patched rather than allowlisted.
+
+  Dismissal as `inaccurate` is reserved for cases where there's no patch available, OR the upstream patch breaks something, OR the resolution would force unacceptable cross-major churn.
 
 - **§2.5.3** Mark each Q `reachable` / `absent` / `unknown` against the calling AS code (read the actual `.ts` files in `PROD_HIT_FILES`).
 - **§2.5.4** Vulnerable-symbol grep: extract code-like tokens from the GHSA description (functions, class.method, kwargs / option keys, CLI flags); grep `PROD_DIRS` for each. Note that AS code uses different idioms than JS — kwargs become object literals (`{ option: value }`), and "CLI flags" rarely apply at all.
@@ -501,7 +535,7 @@ create_audit_issue() {
   case "$DISMISSAL_REASON" in
     not_used)
       body_analysis=$(cat <<EOF
-## Classification: DEV-only (Signal C)
+## Classification: not reachable from deployed WASM (Signal C)
 
 The package is not reachable from \`subgraphs/*/src/**/*.ts\` (the AssemblyScript code that compiles to the deployed WASM artifact). Phase 2.5 (exploit-surface analysis) was NOT run — the verdict is mechanical: zero PROD imports means the package's code never executes inside The Graph Studio's Graph Node runtime.
 
@@ -682,15 +716,29 @@ If this issue carries the \`needs-human-review\` label, the skill's confidence w
 
 ## Suggested fix
 
-For transitive deps: add a \`resolutions\` entry to root \`package.json\` pinning to \`>= $FIRST_PATCHED\`. **Mirror the resolution into every \`subgraphs/*/package.json\`** (the repo enforces parity — see CLAUDE.md "Yarn 1 gotcha" + root package.json's resolutions comment). Only safe when the package has one major in the tree; multi-major packages (picomatch 2.x+4.x, minimatch 3.x+5.x+9.x+10.x, glob 7.x+11.x) require a different approach — usually allowlisting in \`.supply-chain/audit-allowlist.json\` with rationale.
+Two resolution-scoping forms in Yarn 1, **both verified working** in this repo:
 
-For direct deps (only \`@graphprotocol/graph-cli\`, \`@graphprotocol/graph-ts\`, \`matchstick-as\` qualify): bump in every package.json that pins it (root + each \`subgraphs/*/package.json\`).
+1. **Unscoped** \`"pkg": "^X"\` — forces a single version of pkg across every instance in the tree. Safe ONLY when pkg is single-major in the tree.
+2. **Path-scoped** \`"**/parent/pkg": "^X"\` — forces pkg ONLY when it's nested under parent. Required for multi-major cases. **The \`**/\` prefix is mandatory** — Yarn 1 silently ignores bare \`"parent/pkg"\` for transitively-nested instances.
 
-After any dep change, refresh the install-hooks allowlist:
+For multi-major packages in this tree (picomatch 2.x+4.x, minimatch 3.x+5.x+9.x+10.x, glob 7.x+11.x), use form 2.
+
+**Apply across every package.json** (root + 12 subgraphs — the repo enforces resolution parity per CLAUDE.md "Yarn 1 gotcha").
+
+For direct deps (only \`@graphprotocol/graph-cli\`, \`@graphprotocol/graph-ts\`, \`matchstick-as\` qualify): bump the dependency pin in every package.json that declares it.
+
+After any resolution change, **delete every yarn.lock** (root + all subgraphs) and run \`yarn install\` fresh. The lockfile is sticky; without wiping it, yarn won't re-resolve even when the resolution is correct. A fresh install also auto-bumps every transitive to its latest semver-compatible patch — often clearing several other CVEs in the same PR without explicit resolutions for them.
+
 \`\`\`bash
+# Apply the resolution edits to all 13 package.json (root + 12 subgraphs), then:
+rm yarn.lock subgraphs/*/yarn.lock subgraphs/*/*/yarn.lock
 yarn install
+for d in subgraphs/*/ subgraphs/*/*/; do
+  [ -f "$d/package.json" ] && (cd "$d" && yarn install)
+done
 yarn audit:install-hooks:update
-git add .supply-chain/install-hooks.allowlist
+yarn audit:prod   # any "no longer in the production tree" warnings indicate audit-allowlist entries that can now be removed
+git add .supply-chain/install-hooks.allowlist .supply-chain/audit-allowlist.json
 \`\`\`
 
 ## Why this issue exists
@@ -915,5 +963,15 @@ This skill is an adaptation of valory-xyz/open-autonomy PR 2505's `/triage-secur
 | Fix recipe in opened issues | `pyproject.toml` pin bump | yarn `resolutions` entry, **mirrored across every `subgraphs/*/package.json`** per repo convention, with multi-major caveat |
 
 The dismissal model (audit-trail issue + 280-char comment + uniform `security-audit` label) is preserved verbatim — it's source-language-agnostic and the design is sound.
+
+### What this skill learned (vs. its starting assumptions)
+
+The skill was originally built on the assumption that Yarn 1 selective resolutions can't safely target multi-major trees — that's what the existing `.supply-chain/audit-allowlist.json` entries documented as their blocker, and what upstream PR 2505 implicitly assumed. **PR #126 verified that assumption was wrong:**
+
+- **`**/parent/child` path-scoped resolutions DO work** for multi-major trees, IF the `**/` prefix is included. Without it, Yarn 1 silently ignores the resolution for transitively-nested instances (adds the requested version to yarn.lock as an orphan entry, but doesn't rewire consumers).
+- **Lockfile must be wiped** before reinstall. Yarn 1's lockfile is sticky — it won't re-resolve a previously-pinned version even when the resolution is correct. Recipe: `rm yarn.lock subgraphs/*/yarn.lock subgraphs/*/*/yarn.lock` then run `yarn install` in root + each subgraph.
+- **Fresh-lockfile cascade clears more than you'd think.** A clean reinstall with both the path-scoped resolution AND yarn.lock removal will additionally bump every other transitive to its latest semver-compatible patch — minimatch, brace-expansion, yaml, even lodash.trim 4.5.1 → 4.18.0. One PR cleared 11 unique GHSAs (192 alerts) this way.
+
+Operationally this means: **most "structurally unreachable but unfixable" allowlist entries are actually fixable**. Default to attempting a fix-PR before adding to the allowlist. The lookahead-cost (5 minutes of `yarn install` + `yarn audit:prod`) is much cheaper than the deferred-review cost.
 
 ---
