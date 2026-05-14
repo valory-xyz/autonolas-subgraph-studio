@@ -1,6 +1,6 @@
 ---
 name: triage-security
-description: Triage open Dependabot security alerts on this repo (npm ecosystem). For each alert, decide whether the vulnerable package is actually reachable from the deployed WASM artifact (`subgraphs/*/src/**/*.ts`) given AssemblyScript's narrow runtime surface, then act — applicable findings get a tracking issue, not-applicable findings get dismissed with the appropriate reason, allowlisted advisories are skipped (already accepted by the maintainer). Repo-specific to autonolas-subgraph-studio; design follows valory-xyz/open-autonomy PR 2505's exploit-surface analysis model, adapted for npm + AssemblyScript.
+description: Triage open Dependabot security alerts on this repo (npm ecosystem). For each alert, decide whether the vulnerable package is actually reachable from the deployed WASM artifact (`subgraphs/*/src/**/*.ts`) given AssemblyScript's narrow runtime surface, then act — applicable findings get a tracking issue, not-applicable findings get dismissed with the appropriate reason, allowlisted advisories are skipped (already accepted by the maintainer). Repo-specific to autonolas-subgraph-studio.
 argument-hint: "[--limit N] [--rerun-dismissed]  # --limit caps alerts processed; --rerun-dismissed walks already-dismissed alerts and reports verdict drift (no mutations)"
 disable-model-invocation: true
 ---
@@ -9,11 +9,11 @@ disable-model-invocation: true
 
 Walk every open Dependabot alert (`/repos/{owner}/{repo}/dependabot/alerts?state=open`). For each alert, classify by whether the vulnerable package is **reachable from the deployed WASM artifact** (`subgraphs/*/src/**/*.ts`) and, if so, whether the CVE's threat-model preconditions are satisfied by this codebase's actual usage. Then act in one pass.
 
-This skill is the autonolas-subgraph-studio counterpart of the `/triage-security` skill in valory-xyz/open-autonomy PR 2505. The exploit-surface analysis model (per-advisory precondition checklist, vulnerable-symbol grep, confidence-tier gating, audit-trail issues) is the same. What differs:
+Key facts that shape this skill:
 
-- **Ecosystem**: npm (not pip). Skip non-npm Dependabot alerts.
+- **Ecosystem**: npm only. Skip non-npm Dependabot alerts.
 - **Deployed runtime**: a `.wasm` produced by `graph build` from `subgraphs/*/src/**/*.ts`. The AssemblyScript compiler accepts only a strict subset of JS/TS — in practice the only npm package whose code reaches WASM is `@graphprotocol/graph-ts`. Everything else (graph-cli, axios, lodash, semver, …) is build-tooling that runs on developer/CI machines and **never ships**.
-- **Archetype**: fixed at `subgraph-indexer` — analogous to upstream's `cli-tool` posture (narrow exploit surface; CVEs requiring browser sessions, untrusted-remote HTTP inputs, long-lived listeners, fs races, shell injection do NOT apply). The §2.5.6b structural-impossibility carve-out is therefore not needed.
+- **Archetype**: fixed at `subgraph-indexer` — narrow exploit-surface posture. CVEs requiring browser sessions, untrusted-remote HTTP inputs, long-lived listeners, fs races, shell injection do NOT apply by default. The CVE must show a concrete chain that fits the AS / event-handler call shape to count as applicable.
 - **Audit-allowlist integration**: `.supply-chain/audit-allowlist.json` already documents maintainer-accepted advisories. If an alert's GHSA appears there, the skill skips it (no dismiss, no issue) — the maintainer has the call.
 
 ## Decision matrix
@@ -100,7 +100,7 @@ The whole monorepo has a single archetype: **`subgraph-indexer`**. Rationale:
 - The WASM runs inside Graph Node, which sandboxes it: no fs, no shell, no network egress, no HTTP listener. Inputs are blockchain events validated on-chain.
 - No session state, no auth tokens, no cookies, no user-controlled URLs, no untrusted deserialization.
 
-**Exploit-surface posture: narrow** (equivalent to upstream's `cli-tool`). CVEs requiring any of the following do NOT apply by default:
+**Exploit-surface posture: narrow.** CVEs requiring any of the following do NOT apply by default:
 
 - Browser sessions / cookies / CSRF
 - Long-lived HTTP listener / server-side state
@@ -242,7 +242,7 @@ echo "PKG_TEST_DIRS:         ${#PKG_TEST_DIRS[@]} per-subgraph tests/ dirs"
 echo "PKG_SCRIPT_DIRS:       ${#PKG_SCRIPT_DIRS[@]} per-subgraph scripts/ dirs"
 ```
 
-**Critical**: every grep call that uses these sets MUST expand the array with `"${arr[@]}"` (quoted-each-element). The unquoted `$ARR` form collapses on subshell boundaries and silently returns zero hits. This is the same bug class the upstream skill calls out — a 12-alert miscount against open-aea was traced to exactly this.
+**Critical**: every grep call that uses these sets MUST expand the array with `"${arr[@]}"` (quoted-each-element). The unquoted `$ARR` form collapses on subshell boundaries and silently returns zero hits — the kind of bug that produces a false "no production imports anywhere" verdict for a dep that's clearly imported.
 
 ### 2.2 Signal A — `dependency.scope` (note: unreliable in this repo)
 
@@ -351,7 +351,7 @@ Step 3 — classify. **For this repo's `subgraph-indexer` archetype, the import 
 | `0` | `> 0` | **DEV** — pkg lives only in build/dev/test tooling; dismiss `not_used` |
 | `0` | `0` | **DEV** — pure transitive in yarn.lock, never directly imported anywhere; dismiss `not_used` (the build chain pulls it in but nothing in this repo invokes it) |
 
-The third row is the key divergence from upstream. The upstream skill falls back to `scope=runtime → PROD` when both hit-counts are zero. **For this repo that fallback is wrong** — `scope=runtime` is the yarn.lock default for every transitive of graph-cli, and graph-cli itself doesn't ship. So we override: zero imports anywhere means it's transitive-of-build-tooling, mark DEV.
+The third row is critical: a naive classifier might fall back to `scope=runtime → PROD` when both hit-counts are zero. **For this repo that fallback is wrong** — `scope=runtime` is the yarn.lock default for every transitive of graph-cli, and graph-cli itself doesn't ship. The rule: zero imports anywhere means it's transitive-of-build-tooling, mark DEV.
 
 If you ever start importing more npm packages from `subgraphs/*/src/*.ts`, revisit this rule. (You can't import most of them anyway — AssemblyScript will reject them at compile time.)
 
@@ -359,7 +359,7 @@ If you ever start importing more npm packages from `subgraphs/*/src/*.ts`, revis
 
 Only runs when Signal C returned `PROD_HITS > 0`. For this repo that's the rare case where an npm package's CVE applies to code that actually compiles into WASM — currently only `@graphprotocol/graph-ts` qualifies.
 
-The §2.5 mechanics are imported verbatim from upstream PR 2505 (§2.5.1 → §2.5.7). Summary:
+The §2.5 mechanics, in summary:
 
 - **§2.5.1** Fetch GHSA description: `gh api "/advisories/$GHSA_ID" --jq '{summary, description, severity, cwe_ids: [.cwe_ids[]?.cwe_id]}'`.
 - **§2.5.1b** Optional MITRE CWE supplementation (`curl https://cwe.mitre.org/data/definitions/${N}.json`) for sparse advisories.
@@ -645,7 +645,7 @@ gh label create needs-human-review   --color FBCA04 --description "Skill confide
 gh label create security-audit       --color C2E0C6 --description "Permanent audit record for a triage-security dismissal (auto-closed)" --repo "$REPO" 2>/dev/null || true
 ```
 
-Build the title with the same three real-world wrinkles upstream documents — case mismatch between advisory pkg capitalisation and `.package.name`, summaries without a colon, trailing periods:
+Build the title accounting for three real-world wrinkles in advisory summaries — case mismatch between advisory pkg capitalisation and `.package.name`, summaries without a colon, trailing periods:
 
 ```bash
 PKG_LOWER=$(tr '[:upper:]' '[:lower:]' <<<"$PKG")
@@ -942,31 +942,30 @@ done
 - A dependency bump PR is in flight — the Signal C + Signal B logic reads the current working tree; mid-bump state could misclassify. Land the bump first, then triage.
 - You're about to refresh `.supply-chain/audit-allowlist.json` — do that first so the skill sees the new allowlist entries and skips them. Order is: edit allowlist → run skill → review summary.
 - Token doesn't have `security_events` (or admin) scope on the repo — Dependabot dismissals require it. `gh auth status` should show the right scope; otherwise the PATCH calls 403.
-- You want non-npm alerts triaged — current scope is npm-only. (If this repo ever adds Python / Docker workflows producing Dependabot alerts, extend Phase 2 with parallel signal sets the way upstream PR 2505 does for pip.)
+- You want non-npm alerts triaged — current scope is npm-only. If this repo ever adds Python / Docker workflows producing Dependabot alerts, Phase 2 would need parallel signal sets per ecosystem.
 
 ---
 
 ## Design notes
 
-This skill is an adaptation of valory-xyz/open-autonomy PR 2505's `/triage-security` skill, tailored for autonolas-subgraph-studio's deployment model. The substantive differences:
+Key design decisions for this skill, with rationale:
 
-| Aspect | Upstream (PR 2505) | This skill |
+| Decision | Choice | Why |
 | --- | --- | --- |
-| Ecosystem | pip (Python) | npm |
-| Sources | Dependabot + Code Scanning | Dependabot only (code scanning not enabled on this repo; can be re-added when it is) |
-| Archetype detection | Heuristic across cli-tool / framework / service / scaffold / unknown | Fixed: `subgraph-indexer` (cli-tool-like exploit posture, narrow surface) |
-| PROD vs DEV | `autonomy/ packages/ plugins/ …` from heuristics | Fixed: only `subgraphs/*/src/**/*.ts` (AS sources that compile to WASM) |
-| Signal A reliability | High (pyproject `dependencies` vs dependency-groups) | Low (yarn.lock always reports `scope=runtime`); Signal C is decisive |
-| Module resolution | `importlib.metadata` to handle PyYAML→yaml etc. | Distribution name ≈ import name; scoped packages preserved as-is; `@types/*` short-circuited to DEV |
-| §2.5.6b structural-impossibility | For framework/scaffold | N/A — `subgraph-indexer` is cli-tool-like; direct dismissal allowed at high-conf |
-| Audit-allowlist integration | None (Python repos don't have this convention) | Cross-references `.supply-chain/audit-allowlist.json`; allowlisted GHSAs are skipped |
-| Fix recipe in opened issues | `pyproject.toml` pin bump | yarn `resolutions` entry, **mirrored across every `subgraphs/*/package.json`** per repo convention, with multi-major caveat |
+| Sources | Dependabot only | Code Scanning is not enabled on this repo. The skill can be extended later if it is. |
+| Archetype | Fixed at `subgraph-indexer` — narrow exploit-surface posture | The whole repo has one deployment model (WASM in Graph Node sandbox). No heuristic detection needed. |
+| PROD path definition | Only `subgraphs/*/src/**/*.ts` (AssemblyScript sources) | These are the only files that compile into the deployed WASM. The AS compiler enforces this — most npm packages cannot even compile. Everything else is build-tooling that never ships. |
+| Signal A weight | Low (treat as weak prior) | yarn.lock universally reports `scope=runtime` for transitives. Signal C (import-graph) is the decisive signal here. |
+| Module resolution | Distribution name ≈ import name; scoped packages preserved as-is; `@types/*` short-circuited to DEV | npm naming is uniform enough that no special resolution is needed. `@types/*` is types-only — never reaches runtime. |
+| `§2.5.6b` structural-impossibility check | Not used (N/A for this archetype) | The `subgraph-indexer` archetype is itself the deployed code, not a framework with unknowable consumers. Direct dismissal at high-conf is the right rule. |
+| Audit-allowlist integration | Skip GHSAs already in `.supply-chain/audit-allowlist.json` | The maintainer's risk-accept calls are authoritative. The skill must not override them. |
+| Fix recipe in opened issues | yarn `resolutions` (path-scoped if multi-major), mirrored across every `subgraphs/*/package.json` | Matches the repo's existing resolution-mirroring convention (CLAUDE.md "Yarn 1 gotcha"). |
 
-The dismissal model (audit-trail issue + 280-char comment + uniform `security-audit` label) is preserved verbatim — it's source-language-agnostic and the design is sound.
+The dismissal model — closed audit-trail issue + 280-char comment + uniform `security-audit` label — is source-language-agnostic and the same audit trail works for both `not_used` and `inaccurate` paths.
 
 ### What this skill learned (vs. its starting assumptions)
 
-The skill was originally built on the assumption that Yarn 1 selective resolutions can't safely target multi-major trees — that's what the existing `.supply-chain/audit-allowlist.json` entries documented as their blocker, and what upstream PR 2505 implicitly assumed. **PR #126 verified that assumption was wrong:**
+The skill was originally built on the assumption that Yarn 1 selective resolutions can't safely target multi-major trees — that's what the existing `.supply-chain/audit-allowlist.json` entries documented as their blocker. **PR #126 verified that assumption was wrong:**
 
 - **`**/parent/child` path-scoped resolutions DO work** for multi-major trees, IF the `**/` prefix is included. Without it, Yarn 1 silently ignores the resolution for transitively-nested instances (adds the requested version to yarn.lock as an orphan entry, but doesn't rewire consumers).
 - **Lockfile must be wiped** before reinstall. Yarn 1's lockfile is sticky — it won't re-resolve a previously-pinned version even when the resolution is correct. Recipe: `rm yarn.lock subgraphs/*/yarn.lock subgraphs/*/*/yarn.lock` then run `yarn install` in root + each subgraph.
