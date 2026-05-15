@@ -21,7 +21,7 @@
     "matchstick-as": "0.6.0"
   },
   "resolutions": {
-    "//": "Mirror of root resolutions; see root package.json for rationale and the one-major-only constraint.",
+    "//": "Selective version resolutions. Two scoping forms in Yarn 1: (1) unscoped \"pkg\": \"^X\" forces ONE version everywhere — safe only for single-major packages. (2) Path-scoped \"**/parent/pkg\": \"^X\" forces pkg only when nested under parent — required for multi-major (e.g. picomatch 2.x+4.x, glob 7.x+11.x). The **/ prefix is mandatory; bare \"parent/pkg\" is silently ignored by Yarn 1 for transitively-nested instances. Each allowlist removal must be paired with a resolution (or a fresh-lockfile cascade). Workflow: edit package.json, rm yarn.lock + subgraphs/*/yarn.lock, yarn install in root + each subgraph, node scripts/audit-install-hooks.mjs --update, node scripts/audit.mjs — any \"no longer in production tree\" warnings name audit-allowlist entries that can now be removed.",
     "immutable": "^5.1.5",
     "cross-spawn": "^7.0.6",
     "semver": "^7.5.2",
@@ -31,6 +31,9 @@
     "ejs": "^3.1.10",
     "tmp": "^0.2.4",
     "undici": "^7.24.0",
-    "apisauce": "^3.2.2"
+    "apisauce": "^3.2.2",
+    "**/micromatch/picomatch": "2.3.2",
+    "**/@graphprotocol/graph-cli/glob": "^11.1.0",
+    "**/@graphprotocol/graph-cli/yaml": "^2.8.3"
   }
 }
