@@ -3,7 +3,7 @@
 **Status:** Proposed — for verification before implementation. No code yet.
 **Proposed subgraph:** `subgraphs/pearl-funds/` (final name TBD — see §11 #5)
 **Target networks (v1):** Gnosis, Polygon, Optimism, Base
-**Last updated:** 2026-05-26 (Rev. 2 incorporates additional maintainer asks on SRTU bond-event indexing, agent-ID anti-hardcoding confirmation, and Master EOA pre-creation tracking; Rev. 1 addressed PR #129 review feedback from @Tanya-atatakai and @rajat2502)
+**Last updated:** 2026-05-26 (Rev. 3 adds §4.5 per-network asset inventory and §4.6 Mermaid funds-flow diagrams; Rev. 2 added SRTU bond-event indexing, agent-ID anti-hardcoding confirmation, and Master EOA pre-creation tracking; Rev. 1 addressed PR #129 review feedback from @Tanya-atatakai and @rajat2502)
 
 This document scopes a new subgraph that indexes **funds movement for the
 Master Safe and Agent Safe of Pearl predict services**. It covers Phase 1
@@ -309,6 +309,190 @@ same ordering issue the prior plan hit
 its pattern: a tiny internal `ServiceIndex` (`serviceId → multisig`) plus a
 `PendingRegistration` buffer for `RegisterInstance` data that arrives
 first, drained when `CreateMultisigWithAgents` creates the `Service`.
+
+### 4.5 Asset inventory (per network)
+
+Added in Rev. 3 to formalize **every asset a Pearl predict service
+touches** per chain. Distinct from §4.3 (which is the *indexing* view —
+data sources, ABIs, start blocks). This section is the *wallet UI* view:
+what does the Pearl wallet need balances and history for, where, and
+which phase indexes it.
+
+| Asset | Type | Gnosis (`gnosis`) | Polygon (`matic`) | Optimism | Base | Tracked via | Phase |
+|---|---|---|---|---|---|---|---|
+| **Native gas coin** | native | xDAI | POL *(ex-MATIC, [renamed 2024-09](https://polygon.technology/blog/save-the-date-pol-saga-token-migration-coming-september-4th))* | ETH | ETH | per-Safe `Safe` template (`SafeReceived` in; `ExecutionSuccess`/`ExecutionFromModuleSuccess` out, approximate) | 2a |
+| **OLAS** | ERC-20 | `0xcE11e14225575945b8E6Dc0D4F2dD4C570f79d9f` | `0xFEF5d947472e72Efbb2E388c730B7428406F2F95` | `0xFC2E6e6BCbd49ccf3A5f029c79984372DcBFE527` | `0x54330d28ca3357F294334BDC454a032e7f353416` | dedicated `Transfer` data source with `TrackedAddress` in-handler filter; reconciled vs. Phase 1 semantic rows | 2a |
+| **Wrapped native** | ERC-20 | WXDAI `0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d` | WPOL/WMATIC `0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270` | WETH `0x4200000000000000000000000000000000000006` | WETH `0x4200000000000000000000000000000000000006` | metadata-only in v1 (used for `Token` symbol/decimals); wrapped-native transfers are out of scope unless a Pearl strategy needs them | — |
+| **USDC (canonical)** | ERC-20 | — | `0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359` | `0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85` | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` | dedicated `Transfer` data source w/ `TrackedAddress` filter | 2b (benchmark-gated per §6.3) |
+| **USDC.e (a.k.a. pUSD in Pearl UI)** | ERC-20 | — | `0x2791bca1f2de4661ed88a30c99a7a9449aa84174` | — | — | dedicated `Transfer` data source w/ `TrackedAddress` filter | 2b (**Polygon cost hotspot — primary §6.3 benchmark target**) |
+
+Notes:
+
+- **pUSD = USDC.e on Polygon.** Pearl's UI labels the bridged USDC token
+  (`0x2791…4174`) as "pUSD". The on-chain asset is unchanged — it's still
+  the [PoS-bridged USDC from Ethereum](https://wallet.polygon.technology/polygon/bridge/deposit).
+  No separate token contract exists. polystrat funding flows in USDC.e
+  historically; Polymarket has begun migrating to canonical USDC
+  (`0x3c49…3359`), which is why both are listed.
+- **Native coin tracking is half-precise.** Inbound native is reliable
+  (`SafeReceived` event). Outbound native via Safe execution is
+  approximate — a Safe executing via a relayer carries `value = 0` on the
+  outer tx, so we cannot read the moved amount from `ExecutionSuccess`.
+  Precise native-out requires call/trace handlers (§6.2). Babydegen has
+  the same trade-off. The wallet UI either shows native running balance
+  with an asterisk or computes balance via `Token` snapshots — both
+  acceptable for v1.
+- **WXDAI / WPOL / WETH wrapping/unwrapping** on the Pearl Safes happens
+  rarely (Pearl predict trades against Omen FPMM in WXDAI and Polymarket
+  CTFExchange in USDC.e directly; no wrapping step at the Safe layer).
+  Listed for completeness but **not** an active data source. In-market
+  WXDAI bet flows are covered by `predict-omen`; in-market USDC.e bet
+  flows by `predict-polymarket`. Consumers join on Agent Safe address.
+- **Other Pearl agent types (out of v1 scope) have different asset sets.**
+  Optimus/babydegen on Optimism trades sDAI / MORPHO / DAI / USDC / WETH
+  and is covered by `babydegen-optimism`. agents.fun and Modius have
+  their own asset sets, not enumerated here. Adding them to pearl-funds
+  in a later revision is a per-asset addition of a `Transfer` data source
+  + `TrackedAddress` seeding, not a re-architecture.
+- **The service NFT (ERC-721)** is not an "asset" in the wallet-balance
+  sense, but its custody trail is the master/staking provenance signal
+  (§5.2 `handleServiceNftTransfer`). Not double-counted as a `Token`.
+
+### 4.6 Funds-flow diagrams
+
+Three diagrams scoped to v1 (Pearl predict). All entities shown here are
+either indexed by `pearl-funds` (the boxed ones) or referenced by it
+(the dashed ones).
+
+#### A. Wallet hierarchy + ownership
+
+The four wallet types and the service NFT. Solid arrows are signing /
+ownership relationships; dashed arrows are derived references.
+
+```mermaid
+flowchart TD
+    MEOA["Master EOA<br/>(Pearl-held key)<br/>discovered via getOwners()"]
+    BACKUP["Non-signing backup EOA<br/>(2nd Safe owner)"]
+    MSAFE["Master Safe<br/>1-of-2 Gnosis Safe<br/>(one per chain)"]
+    NFT["Service NFT<br/>ERC-721, tokenId = serviceId"]
+    SVC["Service<br/>(indexed)"]
+    ASAFE["Agent Safe<br/>(service multisig)"]
+    AEOA1["Agent EOA #1"]
+    AEOA2["Agent EOA #N"]
+
+    MEOA -->|"owner #1 (signer)"| MSAFE
+    BACKUP -->|"owner #2 (no-sign)"| MSAFE
+    MSAFE -->|"holds when un-staked"| NFT
+    NFT -.->|"tokenId = serviceId"| SVC
+    SVC -.->|"multisig field"| ASAFE
+    AEOA1 -->|"signer"| ASAFE
+    AEOA2 -->|"signer"| ASAFE
+
+    classDef tracked fill:#dbeafe,stroke:#2563eb,stroke-width:2px
+    classDef external fill:#f3f4f6,stroke:#9ca3af,stroke-width:1px,stroke-dasharray:3
+    class MEOA,MSAFE,ASAFE,SVC,NFT,AEOA1,AEOA2 tracked
+    class BACKUP external
+```
+
+#### B. Stake-cycle and unstake-cycle (single multicalls)
+
+What happens when Pearl stakes / unstakes a service. Each yellow / green
+block is a single user-facing tx (the Olas middleware sends a multicall
+that calls several functions in order). Events emitted are noted; those
+in **bold** become a `FundsMovement` row in this subgraph.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant MEOA as Master EOA
+    participant MSAFE as Master Safe
+    participant SR as ServiceRegistryL2
+    participant SRTU as SRTU<br/>(TokenUtility)
+    participant SF as StakingFactory
+    participant SP as StakingProxy
+    participant ASAFE as Agent Safe
+
+    Note over MEOA,MSAFE: Onboarding (Safe deployed off-chain by Pearl middleware)
+    MEOA->>MSAFE: native + OLAS funding (SAFE_SETUP_TRANSFER)
+
+    rect rgba(255,235,205,0.4)
+    Note over MSAFE,SP: Stake-cycle multicall (single tx)
+    MSAFE->>SR: create(...) → mints NFT to MSAFE
+    SR-->>MSAFE: ERC-721 Transfer (NFT)
+    MSAFE->>SRTU: activateRegistrationTokenDeposit(serviceId)
+    Note right of SRTU: emit ActivateRegistration (SR) +<br/>**TokenDeposit(MSAFE, OLAS, securityDeposit)**<br/>→ SERVICE_BOND_DEPOSIT [bondType=SECURITY_DEPOSIT]
+    MSAFE->>SR: registerAgents(serviceId, [...agentInstances])
+    Note right of SR: emit RegisterInstance (per agent)
+    MSAFE->>SRTU: registerAgentsTokenDeposit(operator, serviceId)
+    Note right of SRTU: **TokenDeposit(MSAFE, OLAS, totalBond)**<br/>→ SERVICE_BOND_DEPOSIT [bondType=AGENT_BOND]
+    MSAFE->>SR: deploy(serviceId, multisigFactory)
+    SR-->>ASAFE: emit CreateMultisigWithAgents (multisig=ASAFE)
+    MSAFE->>SP: stake(serviceId)
+    SR-->>SP: NFT transferred to StakingProxy
+    SP-->>SP: **emit ServiceStaked(owner=MSAFE, multisig=ASAFE)**<br/>→ records masterSafe + agentSafe + state
+    end
+
+    Note over SP,ASAFE: Operation (one or many epochs)
+    SP->>ASAFE: **RewardClaimed(OLAS reward)**<br/>→ STAKING_REWARD_CLAIM
+    ASAFE-->>MSAFE: optional OLAS sweep<br/>→ AGENT_TO_MASTER (Phase 2a raw)
+
+    rect rgba(220,255,220,0.4)
+    Note over MSAFE,SP: Unstake-cycle multicall (single tx)
+    MSAFE->>SP: unstake(serviceId)
+    SP->>ASAFE: **UnstakeReward (OLAS)** → UNSTAKE_REWARD
+    SP-->>MSAFE: return NFT (ERC-721 Transfer)
+    MSAFE->>SR: terminate(serviceId)
+    Note right of SR: emit TerminateService
+    MSAFE->>SRTU: terminateTokenRefund(serviceId)
+    SRTU-->>MSAFE: refund OLAS (security deposit)
+    Note right of SRTU: **TokenRefund(MSAFE, OLAS, securityRefund)**<br/>→ SERVICE_BOND_REFUND [bondType=SECURITY_DEPOSIT]
+    MSAFE->>SRTU: unbondTokenRefund(serviceId)
+    SRTU-->>MSAFE: refund OLAS (agent bond)
+    Note right of SRTU: **TokenRefund(MSAFE, OLAS, refund)**<br/>→ SERVICE_BOND_REFUND [bondType=AGENT_BOND]
+    end
+```
+
+Bond-type attribution is best-effort per §5.2 — the
+`PendingBondAttribution` queue is populated by `ActivateRegistration` /
+`RegisterInstance` / `TerminateService` ServiceRegistryL2 events and
+consumed by the SRTU handlers in the same tx. The diagram above shows
+the canonical Pearl multicall ordering; deviations leave `bondType`
+null but preserve amounts.
+
+#### C. Predict-app funding flow (polystrat on Polygon)
+
+Where Pearl predict's *stablecoin* (USDC.e / pUSD; or canonical USDC
+post-migration) moves. Same shape applies to omenstrat on Gnosis with
+xDAI / WXDAI substituted; the predict subgraphs cover the in-market
+side, this subgraph covers the funding side.
+
+```mermaid
+flowchart LR
+    MEOA["Master EOA"]
+    MSAFE["Master Safe"]
+    ASAFE["Agent Safe"]
+    AEOA["Agent EOA<br/>(gas wallet)"]
+    POLY["Polymarket<br/>CTFExchange + ConditionalTokens"]
+
+    MEOA -->|"USDC.e funding<br/>(SAFE_SETUP_TRANSFER, then MASTER_FUNDING_IN)"| MSAFE
+    MSAFE -->|"polystrat capital (USDC.e)<br/>MASTER_TO_AGENT"| ASAFE
+    MSAFE -->|"gas top-up (POL or USDC.e)<br/>grouped under AgentFundingEvent"| AEOA
+    ASAFE -->|"place bet (USDC.e collateral)"| POLY
+    POLY -->|"payout / refund"| ASAFE
+    ASAFE -->|"optional profit sweep<br/>AGENT_TO_MASTER"| MSAFE
+    MSAFE -->|"user withdrawal (rare)<br/>MASTER_WITHDRAWAL"| MEOA
+
+    classDef tracked fill:#dbeafe,stroke:#2563eb,stroke-width:2px
+    classDef predictSubgraph fill:#fef3c7,stroke:#d97706,stroke-width:2px,stroke-dasharray:6
+    class MEOA,MSAFE,ASAFE,AEOA tracked
+    class POLY predictSubgraph
+```
+
+The yellow/dashed `POLY` node is covered by `predict-polymarket`
+(joined on Agent Safe address); arrows entering/leaving it represent
+the boundary where pearl-funds' raw `Transfer` ledger ends and the
+in-market bet ledger begins. The same pattern holds for omenstrat on
+Gnosis (substitute Polymarket → Omen FPMM, USDC.e → WXDAI).
 
 ---
 
