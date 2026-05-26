@@ -1,0 +1,26 @@
+specVersion: 1.0.0
+indexerHints:
+  prune: auto
+schema:
+  file: ./schema.graphql
+dataSources:
+  - kind: ethereum
+    name: ServiceRegistryL2
+    network: matic
+    source:
+      address: "0xE3607b00E75f6405248323A9417ff6b39B244b50"
+      abi: ServiceRegistryL2
+      startBlock: 41783952
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Service
+      abis:
+        - name: ServiceRegistryL2
+          file: ../../abis/ServiceRegistryL2.json
+      eventHandlers:
+        - event: RegisterInstance(indexed address,indexed uint256,indexed address,uint256)
+          handler: handleRegisterInstance
+      file: ./src/service-registry.ts

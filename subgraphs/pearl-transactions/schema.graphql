@@ -1,0 +1,18 @@
+# pearl-transactions schema — scaffold stub.
+#
+# Phase 1a will replace this with the full schema from
+# `IMPLEMENTATION-PLAN.md` §5.1 (MasterSafe, AgentSafe, Service,
+# StakingContract, FundsMovement, ServiceNftCustodyChange,
+# DailyServiceFunds, ServiceIndex, PendingRegistration,
+# PendingBondAttribution, ServiceBondType enum, FundsCategory enum,
+# FundsSource enum).
+#
+# The single Service entity below is the minimum to keep `graph codegen`
+# happy and CI green; it will be expanded — not replaced — in Phase 1a.
+
+type Service @entity(immutable: false) {
+  id: ID!
+  serviceId: BigInt!
+  registeredTimestamp: BigInt!
+  registeredBlock: BigInt!
+}
