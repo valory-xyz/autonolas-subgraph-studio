@@ -3,7 +3,7 @@
 **Status:** Proposed — for verification before implementation. No code yet.
 **Proposed subgraph:** `subgraphs/pearl-funds/` (final name TBD — see §11 #5)
 **Target networks (v1):** Gnosis, Polygon, Optimism, Base
-**Last updated:** 2026-05-27 (Rev. 4 addresses both @Tanya-atatakai's and @rajat2502's PR #130 design-review comments: wrapped-native ERC-20 data sources promoted from metadata-only to Phase 2a, OPENING_BALANCE + historyFloor anchor concept for pre-discovery UX, USDC.e §6.3 framing tightened with the consumer-side merge-cost trade-off, multi-token tx aggregation flagged as Rev. 5 open question, native EOA pre-creation reframed as explicit product-decision Open Q; Rev. 3 added §4.5 per-network asset inventory and §4.6 Mermaid funds-flow diagrams; Rev. 2 added SRTU bond-event indexing, agent-ID anti-hardcoding confirmation, and Master EOA pre-creation tracking; Rev. 1 addressed PR #129 review feedback from @Tanya-atatakai and @rajat2502)
+**Last updated:** 2026-05-27 (Rev. 4 addresses both @Tanya-atatakai's and @rajat2502's PR #130 design-review comments, plus their second-round follow-ups: wrapped-native ERC-20 data sources promoted from metadata-only to Phase 2a, OPENING_BALANCE + historyFloor anchor concept for pre-discovery UX, §6.2 now explicitly distinguishes Path A "relax AC #3" vs Path B "Option 1 backdated startBlock", §11 #6 upgraded from "polish" to "critical path for VLOP-73 AC #3", USDC.e §6.3 framing tightened with consumer-side merge-cost trade-off, multi-token tx aggregation flagged as Rev. 5 open question, native EOA pre-creation reframed as explicit product-decision Open Q; Rev. 3 added §4.5 per-network asset inventory and §4.6 Mermaid funds-flow diagrams; Rev. 2 added SRTU bond-event indexing, agent-ID anti-hardcoding confirmation, and Master EOA pre-creation tracking; Rev. 1 addressed PR #129 review feedback from @Tanya-atatakai and @rajat2502)
 
 This document scopes a new subgraph that indexes **funds movement for the
 Master Safe and Agent Safe of Pearl predict services**. It covers Phase 1
@@ -888,6 +888,30 @@ inbound* on the Master Safe — `Safe.SafeReceived` events between
 the ServiceRegistryL2 start block and first-sighting would become
 visible. It would not narrow the EOA-history gap.
 
+**VLOP-73 AC #3 implication** (Rev. 4 follow-up, per @rajat2502's
+self-correction on PR #130). AC #3 is verbatim:
+
+> *"First history entry after Safe creation is the 'Setup complete'
+> event."*
+
+and the transactions list names it:
+
+> *"Funds moved from MasterEOA (Safe Setup)"*
+
+This asks for a **literal transfer row** with the actual MasterEOA →
+Master Safe funding amount + token, labelled "Setup complete".
+`OPENING_BALANCE` (the post-funding *snapshot* at first sighting) does
+not satisfy AC #3 as written. So:
+
+| Path | What it requires | Subgraph change | Risk |
+|---|---|---|---|
+| **A — Relax AC #3** (@Tanya-atatakai's proposal on PR #130) | Pearl product accepts that "Setup complete" is rendered FE-side from the `historyFloorBlock` divider + `OPENING_BALANCE` rows, without a literal transfer row. | None — Rev. 4 is the contract. | Wallet UX deviates from the original spec wording; needs FE + PM sign-off. |
+| **B — Implement Option 1** | Use `Template.createWithContext` with a backdated `startBlock` so the `Safe` template back-fills events from `ServiceRegistryL2.startBlock` forward. Recovers native + ERC-20 inbounds prior to first-sighting as literal transfer rows. | Phase 2a swap-in: change `getOrCreateMasterSafe` to pass `startBlock` context to the `Safe` template spawn. | Contingent on graph-node + Studio supporting the feature — see §11 #6, which is now on the **critical path** for AC #3 (not polish). |
+
+If §11 #6 is verified as supported, Path B is the recommended way to
+satisfy AC #3 as written. If unsupported, Path A becomes the only
+honest option — which moves the AC change to product / FE.
+
 ### 6.3 Phase 2b — USDC / USDC.e — benchmark-gated *and* product-gated
 
 This is **two decisions, not one** (per @Tanya-atatakai's PR #129
@@ -1210,16 +1234,29 @@ CI runs `yarn graph codegen` + `yarn graph test` via the `ci.yml` matrix.
    `agent-funds` / `funds-movement` from earlier (for a future
    generalization to all Olas services) reads better than `pearl-funds`
    either way, but `pearl-transactions` matches the consumer best.
-6. **Graph-node support for backdated template `startBlock`** (per
-   @rajat2502 PR #129 review). §6.2 documents two paths for capturing
-   pre-stake transfers to the Master Safe; the preferred path
-   (`Template.createWithContext` with `startBlock` set earlier than the
-   spawning block) requires verifying that our Studio infra's graph-node
-   version actually honors it. If not supported, the eth_call baseline
-   fallback applies and the "Setup complete" row will carry only the
-   pre-existing OLAS balance (not native) at first sighting. Verify
-   before Phase 2a code starts; if option 1 is unavailable, decide
-   between option 2 and a documented limitation.
+6. **Graph-node support for backdated template `startBlock` — now on
+   the critical path for VLOP-73 AC #3** (Rev. 4 upgrade, per
+   @rajat2502's self-correction on PR #130). §6.2 documents two paths
+   for what the wallet UI shows as the "Setup complete" entry:
+   - **Path A — Relax AC #3** (@Tanya-atatakai's proposal): keep
+     Rev. 4 (`OPENING_BALANCE` snapshot + `historyFloorBlock`
+     divider) as the contract, render the "Setup complete" entry
+     FE-side from those primitives. No subgraph change needed; needs
+     FE + PM sign-off that the AC's literal-transfer wording can be
+     relaxed.
+   - **Path B — Satisfy AC #3 as written**: use
+     `Template.createWithContext` with `startBlock` set earlier than
+     the spawning block, so the `Safe` template back-fills events
+     from `ServiceRegistryL2.startBlock` forward and produces a real
+     transfer row for the MasterEOA → Master Safe funding hop.
+     Contingent on graph-node + Studio actually supporting backdated
+     template start blocks. This Open Q is the verification.
+
+   If verification confirms Path B is supported, we recommend taking
+   it (satisfies the AC as written). If unsupported, Path A is the
+   only option — kicks the decision to product / FE for the AC
+   relaxation. Either way: the question must be resolved **before
+   Phase 2a code is finalized**.
 7. **`ServiceRegistryTokenUtility` start blocks** (Rev. 2). Addresses
    are sourced from `autonolas-registries`
    [`docs/configuration.json`](https://github.com/valory-xyz/autonolas-registries/blob/main/docs/configuration.json),
