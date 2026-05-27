@@ -1,19 +1,8 @@
-# pearl-transactions schema — Phase 1a.
+# pearl-transactions schema — Phase 1a + 1b.
 #
-# Matches IMPLEMENTATION-PLAN.md §5.1 (semantic ledger). Entities and
-# fields that only become populated in later phases are noted in inline
-# comments and added with placeholder cardinality so the schema does not
-# need to be rewritten for Phase 1b / 2 (additive evolution).
-#
-# Phase 1a deliberately omits the following from §5.1 / §6.5; they
-# arrive in their own PRs:
-#   - StakingContract entity + Service.currentStakingContract field
-#     (Phase 1b — StakingFactory + StakingProxy)
-#   - Service.totalOlasRewardsClaimed (Phase 1b)
-#   - DailyServiceFunds (Phase 1b)
-#   - AgentFundingEvent + FundsMovement.agentFundingEvent backref
-#     (Phase 2a)
-#   - Token / TrackedSafe / TrackedEOA / TokenBalance (Phase 2)
+# Matches IMPLEMENTATION-PLAN.md §5.1 (semantic ledger). Phase 2
+# entities (AgentFundingEvent, Token, TrackedSafe, TrackedEOA,
+# TokenBalance) arrive in their own PRs.
 
 # --- Structural -------------------------------------------------------
 
@@ -47,10 +36,25 @@ type Service @entity(immutable: false) {
   operators: [Bytes!]!                # deduplicated; sub-cohort filter
   masterSafe: MasterSafe
   agentSafe: AgentSafe
-  state: String!                      # REGISTERED|DEPLOYED|TERMINATED (STAKED|UNSTAKED added in Phase 1b)
+  state: String!                      # REGISTERED|DEPLOYED|STAKED|UNSTAKED|TERMINATED
   nftCustodian: Bytes                 # current ERC-721 owner
+  currentStakingContract: StakingContract  # set on stake, cleared on unstake
+  totalOlasRewardsClaimed: BigInt!    # cumulative across stake-cycles
   registeredTimestamp: BigInt!
   updatedTimestamp: BigInt!
+}
+
+# Staking proxy / "staking contract" — created on
+# StakingFactory.InstanceCreated for any allowed implementation. Config
+# snapshot is captured via contract calls at creation time; nothing
+# updates afterward.
+type StakingContract @entity(immutable: false) {
+  id: Bytes!                          # staking proxy address
+  implementation: Bytes!
+  minStakingDeposit: BigInt!
+  numAgentInstances: BigInt!
+  createdBlock: BigInt!
+  createdTimestamp: BigInt!
 }
 
 # --- Ledger -----------------------------------------------------------
@@ -61,9 +65,9 @@ enum FundsCategory {
   SERVICE_BOND_DEPOSIT                # SRTU.TokenDeposit; fires twice per stake-cycle (activate + register)
   SERVICE_BOND_REFUND                 # SRTU.TokenRefund; fires twice per unstake-cycle (terminate + unbond)
   # Phase 1b — staking
-  STAKING_REWARD_CLAIM                # RewardClaimed → Agent Safe
-  UNSTAKE_REWARD                      # (Force)Unstaked reward → Agent Safe
-  SERVICE_EVICTED                     # ServicesEvicted (informational)
+  STAKING_REWARD_CLAIM                # StakingProxy.RewardClaimed → Agent Safe
+  UNSTAKE_REWARD                      # StakingProxy.ServiceUnstaked / ServiceForceUnstaked → Agent Safe
+  SERVICE_EVICTED                     # StakingProxy.ServicesEvicted (informational; amount=0)
   # Phase 2 adds: SAFE_SETUP_TRANSFER, MASTER_FUNDING_IN, MASTER_TO_AGENT,
   # AGENT_TO_MASTER, MASTER_WITHDRAWAL, AGENT_TO_APP, APP_TO_AGENT, OTHER.
 }
@@ -94,16 +98,30 @@ type FundsMovement @entity(immutable: false) {
   service: Service
   masterSafe: MasterSafe
   agentSafe: AgentSafe
+  stakingContract: StakingContract    # set for STAKING_REWARD_CLAIM / UNSTAKE_REWARD / SERVICE_EVICTED rows
+  epoch: BigInt                       # staking-side row only; from the StakingProxy event
   category: FundsCategory!
   source: FundsSource!
   bondType: ServiceBondType           # nullable; populated for SERVICE_BOND_DEPOSIT/REFUND when attribution succeeds
-  token: Bytes                        # token address (null for SAFE_DEPLOYED)
-  amount: BigInt!                     # 0 for SAFE_DEPLOYED informational rows
+  token: Bytes                        # token address (null for SAFE_DEPLOYED / SERVICE_EVICTED)
+  amount: BigInt!                     # 0 for SAFE_DEPLOYED / SERVICE_EVICTED informational rows
   from: Bytes!
   to: Bytes!
   blockNumber: BigInt!
   blockTimestamp: BigInt!
   transactionHash: Bytes!
+}
+
+# Daily roll-up of OLAS rewards per service (UTC midnight bucket).
+# Updated on each StakingProxy.RewardClaimed and the
+# unstake-reward path. Phase 2 adds per-token / per-safe daily
+# roll-ups under a separate entity if needed.
+type DailyServiceFunds @entity(immutable: false) {
+  id: ID!                             # serviceId-dayTimestamp
+  service: Service!
+  dayTimestamp: BigInt!               # UTC midnight (timestamp / 86400 * 86400)
+  olasRewardsClaimed: BigInt!         # that day
+  cumulativeOlasRewardsClaimed: BigInt!
 }
 
 # --- Service-NFT custody trail ---------------------------------------
