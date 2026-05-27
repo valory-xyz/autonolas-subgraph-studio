@@ -3,7 +3,7 @@
 **Status:** Proposed — for verification before implementation. No code yet.
 **Proposed subgraph:** `subgraphs/pearl-funds/` (final name TBD — see §11 #5)
 **Target networks (v1):** Gnosis, Polygon, Optimism, Base
-**Last updated:** 2026-05-26 (Rev. 3 adds §4.5 per-network asset inventory and §4.6 Mermaid funds-flow diagrams; Rev. 2 added SRTU bond-event indexing, agent-ID anti-hardcoding confirmation, and Master EOA pre-creation tracking; Rev. 1 addressed PR #129 review feedback from @Tanya-atatakai and @rajat2502)
+**Last updated:** 2026-05-27 (Rev. 4 addresses @Tanya-atatakai's PR #130 design-review comment: wrapped-native ERC-20 data sources promoted from metadata-only to Phase 2a, OPENING_BALANCE + historyFloor anchor concept for pre-discovery UX, native EOA pre-creation reframed as explicit product-decision Open Q; Rev. 3 added §4.5 per-network asset inventory and §4.6 Mermaid funds-flow diagrams; Rev. 2 added SRTU bond-event indexing, agent-ID anti-hardcoding confirmation, and Master EOA pre-creation tracking; Rev. 1 addressed PR #129 review feedback from @Tanya-atatakai and @rajat2502)
 
 This document scopes a new subgraph that indexes **funds movement for the
 Master Safe and Agent Safe of Pearl predict services**. It covers Phase 1
@@ -231,18 +231,19 @@ deployments. All four networks have all four core data sources (Phase 1
 | `StakingFactory` | `InstanceCreated` | 1 |
 | `StakingProxy` (dynamic template) | `ServiceStaked`, `ServiceUnstaked`, `ServiceForceUnstaked`, `RewardClaimed`, `ServicesEvicted` | 1 |
 | `OLAS` (ERC-20) | `Transfer` | 2a |
+| `WrappedNative` (ERC-20, per-chain: WXDAI on Gnosis, WPOL on Polygon, WETH on Optimism + Base) | `Transfer` | 2a *(Rev. 4)* |
 | `Safe` (dynamic template, per Master/Agent Safe) | `SafeReceived`, `ExecutionSuccess`, `ExecutionFromModuleSuccess`, `AddedOwner`, `RemovedOwner`, `ChangedThreshold` | 2a |
 | `USDC` (ERC-20) | `Transfer` | 2b |
 | `USDC.e` (ERC-20, Polygon-only — bridged USDC, aka pUSD) | `Transfer` | 2b |
 
 Per-network addresses:
 
-| Network (graph-node id) | `ServiceRegistryL2` | `ServiceRegistryTokenUtility` | `StakingFactory` | OLAS | USDC (Phase 2b) |
-|---|---|---|---|---|---|
-| `gnosis` | `0x9338b5153AE39BB89f50468E608eD9d764B755fD` @ 27,871,084 | `0xa45E64d13A30a51b91ae0eb182e88a40e9b18eD8` @ TBD (verify; see §11 #7) | `0xb0228CA253A88Bc8eb4ca70BCAC8f87b381f4700` @ 35,206,806 | `0xcE11e14225575945b8E6Dc0D4F2dD4C570f79d9f` | (none — xDAI is native) |
-| `matic` (Polygon) | `0xE3607b00E75f6405248323A9417ff6b39B244b50` @ 41,783,952 | `0xa45E64d13A30a51b91ae0eb182e88a40e9b18eD8` @ TBD (verify) | `0x46C0D07F55d4F9B5Eed2Fc9680B5953e5fd7b461` @ 62,213,142 | `0xFEF5d947472e72Efbb2E388c730B7428406F2F95` | USDC `0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359`; USDC.e `0x2791bca1f2de4661ed88a30c99a7a9449aa84174` |
-| `optimism` | `0x3d77596beb0f130a4415df3D2D8232B3d3D31e44` @ 116,423,039 | `0xBb7e1D6Cb6F243D6bdE81CE92a9f2aFF7Fbe7eac` @ TBD (verify) | `0xa45E64d13A30a51b91ae0eb182e88a40e9b18eD8` @ 124,618,633 | `0xFC2E6e6BCbd49ccf3A5f029c79984372DcBFE527` | USDC `0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85` |
-| `base` | `0x3C1fF68f5aa342D296d4DEe4Bb1cACCA912D95fE` @ 10,827,380 | `0x34C895f302D0b5cf52ec0Edd3945321EB0f83dd5` @ TBD (verify) | `0x1cEe30D08943EB58EFF84DD1AB44a6ee6FEff63a` @ 17,310,019 | `0x54330d28ca3357F294334BDC454a032e7f353416` | USDC `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` |
+| Network (graph-node id) | `ServiceRegistryL2` | `ServiceRegistryTokenUtility` | `StakingFactory` | OLAS | WrappedNative *(2a)* | USDC (Phase 2b) |
+|---|---|---|---|---|---|---|
+| `gnosis` | `0x9338b5153AE39BB89f50468E608eD9d764B755fD` @ 27,871,084 | `0xa45E64d13A30a51b91ae0eb182e88a40e9b18eD8` @ 30,095,874 | `0xb0228CA253A88Bc8eb4ca70BCAC8f87b381f4700` @ 35,206,806 | `0xcE11e14225575945b8E6Dc0D4F2dD4C570f79d9f` | WXDAI `0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d` | (none — xDAI is native) |
+| `matic` (Polygon) | `0xE3607b00E75f6405248323A9417ff6b39B244b50` @ 41,783,952 | `0xa45E64d13A30a51b91ae0eb182e88a40e9b18eD8` @ 52,737,296 | `0x46C0D07F55d4F9B5Eed2Fc9680B5953e5fd7b461` @ 62,213,142 | `0xFEF5d947472e72Efbb2E388c730B7428406F2F95` | WPOL/WMATIC `0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270` | USDC `0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359`; USDC.e `0x2791bca1f2de4661ed88a30c99a7a9449aa84174` |
+| `optimism` | `0x3d77596beb0f130a4415df3D2D8232B3d3D31e44` @ 116,423,039 | `0xBb7e1D6Cb6F243D6bdE81CE92a9f2aFF7Fbe7eac` @ 116,423,237 | `0xa45E64d13A30a51b91ae0eb182e88a40e9b18eD8` @ 124,618,633 | `0xFC2E6e6BCbd49ccf3A5f029c79984372DcBFE527` | WETH `0x4200000000000000000000000000000000000006` | USDC `0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85` |
+| `base` | `0x3C1fF68f5aa342D296d4DEe4Bb1cACCA912D95fE` @ 10,827,380 | `0x34C895f302D0b5cf52ec0Edd3945321EB0f83dd5` @ 10,827,475 | `0x1cEe30D08943EB58EFF84DD1AB44a6ee6FEff63a` @ 17,310,019 | `0x54330d28ca3357F294334BDC454a032e7f353416` | WETH `0x4200000000000000000000000000000000000006` | USDC `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` |
 
 `ServiceRegistryTokenUtility` addresses come from
 `valory-xyz/autonolas-registries`
@@ -253,12 +254,16 @@ Gnosis and Polygon addresses share a string but should still be
 re-verified independently against the explorer (deterministic-deploy
 collisions or doc errors are both possible).
 
-Native token references (used only for `Token` symbol/decimals metadata —
-native coin itself is tracked via the `Safe` template, not an ERC-20 data
-source): WXDAI `0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d` (Gnosis),
-WMATIC `0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270` (Polygon), WETH
-`0x4200000000000000000000000000000000000006` (Optimism), WETH
-`0x4200000000000000000000000000000000000006` (Base).
+Native gas coin (xDAI / POL / ETH) is tracked via the `Safe` template
+(`SafeReceived` in, `ExecutionSuccess` out — see §6.2 for the approximation
+limit). **Wrapped-native tokens (WXDAI / WPOL / WETH) are tracked as
+their own ERC-20 data sources** per the `WrappedNative` slot above —
+this was upgraded from metadata-only in Rev. 4 after @Tanya-atatakai
+pointed out that `SafeReceived` only fires for native value transfers,
+not for transfers of the wrapped tokens themselves; on Gnosis where
+Omen FPMM bets settle in WXDAI those movements would otherwise drop
+out entirely. Wrapped-native volume is much lower than USDC.e on
+Polygon, so the §6.3 benchmark gate is not needed for them.
 
 `ServiceRegistryL2` start blocks match `service-registry` (provably safe
 — predates any Pearl service on each chain). The earlier Polygon start
@@ -322,7 +327,7 @@ which phase indexes it.
 |---|---|---|---|---|---|---|---|
 | **Native gas coin** | native | xDAI | POL *(ex-MATIC, [renamed 2024-09](https://polygon.technology/blog/save-the-date-pol-saga-token-migration-coming-september-4th))* | ETH | ETH | per-Safe `Safe` template (`SafeReceived` in; `ExecutionSuccess`/`ExecutionFromModuleSuccess` out, approximate) | 2a |
 | **OLAS** | ERC-20 | `0xcE11e14225575945b8E6Dc0D4F2dD4C570f79d9f` | `0xFEF5d947472e72Efbb2E388c730B7428406F2F95` | `0xFC2E6e6BCbd49ccf3A5f029c79984372DcBFE527` | `0x54330d28ca3357F294334BDC454a032e7f353416` | dedicated `Transfer` data source with `TrackedAddress` in-handler filter; reconciled vs. Phase 1 semantic rows | 2a |
-| **Wrapped native** | ERC-20 | WXDAI `0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d` | WPOL/WMATIC `0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270` | WETH `0x4200000000000000000000000000000000000006` | WETH `0x4200000000000000000000000000000000000006` | metadata-only in v1 (used for `Token` symbol/decimals); wrapped-native transfers are out of scope unless a Pearl strategy needs them | — |
+| **Wrapped native** | ERC-20 | WXDAI `0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d` | WPOL/WMATIC `0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270` | WETH `0x4200000000000000000000000000000000000006` | WETH `0x4200000000000000000000000000000000000006` | dedicated `Transfer` data source w/ `TrackedAddress` filter (the `WrappedNative` slot in §4.3) | 2a *(Rev. 4)* |
 | **USDC (canonical)** | ERC-20 | — | `0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359` | `0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85` | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` | dedicated `Transfer` data source w/ `TrackedAddress` filter | 2b (benchmark-gated per §6.3) |
 | **USDC.e (a.k.a. pUSD in Pearl UI)** | ERC-20 | — | `0x2791bca1f2de4661ed88a30c99a7a9449aa84174` | — | — | dedicated `Transfer` data source w/ `TrackedAddress` filter | 2b (**Polygon cost hotspot — primary §6.3 benchmark target**) |
 
@@ -342,12 +347,18 @@ Notes:
   the same trade-off. The wallet UI either shows native running balance
   with an asterisk or computes balance via `Token` snapshots — both
   acceptable for v1.
-- **WXDAI / WPOL / WETH wrapping/unwrapping** on the Pearl Safes happens
-  rarely (Pearl predict trades against Omen FPMM in WXDAI and Polymarket
-  CTFExchange in USDC.e directly; no wrapping step at the Safe layer).
-  Listed for completeness but **not** an active data source. In-market
-  WXDAI bet flows are covered by `predict-omen`; in-market USDC.e bet
-  flows by `predict-polymarket`. Consumers join on Agent Safe address.
+- **WXDAI / WPOL / WETH transfers are tracked as their own ERC-20
+  data sources** (Rev. 4, in response to @Tanya-atatakai's PR #130
+  comment). The Rev. 3 assumption — "native via `Safe` template
+  suffices, wrapped is metadata-only" — was wrong: `SafeReceived`
+  fires for native value transfers only, never for transfers of the
+  wrapped token itself. Omen FPMM bets settle in WXDAI on Gnosis, so
+  any Agent-Safe ↔ FPMM hop in WXDAI would otherwise be invisible to
+  this subgraph. Wrapped-native volume is much lower than USDC.e on
+  Polygon, so the §6.3 benchmark gate isn't needed for them.
+  In-market bet *outcome accounting* still belongs to `predict-omen` /
+  `predict-polymarket` (consumers join on Agent Safe); this subgraph
+  captures the *raw token movement* to/from the Safe.
 - **Other Pearl agent types (out of v1 scope) have different asset sets.**
   Optimus/babydegen on Optimism trades sDAI / MORPHO / DAI / USDC / WETH
   and is covered by `babydegen-optimism`. agents.fun and Modius have
@@ -516,6 +527,13 @@ type MasterSafe @entity(immutable: false) {
   totalOlasRewardsClaimed: BigInt!    # cumulative across all its services
   firstSeenTimestamp: BigInt!
   firstSeenBlock: BigInt!             # for consumer "Setup complete" anchoring
+  # Rev. 4: historyFloor* fields are the anchor the wallet UI uses to
+  # render "History starts here" above the OPENING_BALANCE rows. Equal
+  # to firstSeen* in practice; named distinctly because firstSeen* is
+  # an internal provenance field while historyFloor* is a consumer
+  # contract for the UI cut-line.
+  historyFloorBlock: BigInt!
+  historyFloorTimestamp: BigInt!
   lastActivityTimestamp: BigInt!
 }
 
@@ -552,13 +570,16 @@ type StakingContract @entity(immutable: false) {
 
 enum FundsCategory {
   # Phase 1 — semantic (registry / SRTU / staking)
-  SAFE_DEPLOYED                       # First sighting of a Master Safe — "Setup complete" anchor row (amount=0)
+  SAFE_DEPLOYED                       # First sighting of a Master Safe — anchor row (amount=0)
   SERVICE_BOND_DEPOSIT                # SRTU.TokenDeposit — fires twice per stake-cycle: activateRegistration + registerAgents. See §5.2.
   STAKING_REWARD_CLAIM                # RewardClaimed → Agent Safe
   UNSTAKE_REWARD                      # (Force)Unstaked reward → Agent Safe
   SERVICE_BOND_REFUND                 # SRTU.TokenRefund — fires twice per unstake-cycle: terminate + unbond
   SERVICE_EVICTED                     # ServicesEvicted (informational)
-  # Phase 2 adds: SAFE_SETUP_TRANSFER, MASTER_FUNDING_IN, MASTER_TO_AGENT,
+  # Phase 2a:
+  OPENING_BALANCE                     # Rev. 4 — synthetic baseline at Master Safe first-sighting; one row per tracked ERC-20 (eth_call balanceOf) + one zero-amount native marker. See §6.2.
+  SAFE_SETUP_TRANSFER                 # First live Master EOA → Master Safe inbound hop after the OPENING_BALANCE baseline. Fires once per Master Safe.
+  # Phase 2 also adds: MASTER_FUNDING_IN, MASTER_TO_AGENT,
   # AGENT_TO_MASTER, MASTER_WITHDRAWAL, AGENT_TO_APP, APP_TO_AGENT, OTHER
 }
 
@@ -817,35 +838,55 @@ babydegen pattern, `babydegen/src/safe.ts`):
   §4.4. Owner changes are rare; the handler is cheap.
 
 **Pre-template-spawn transfers (the "Setup complete" cold-start
-problem).** Per @rajat2502's PR #129 review, Pearl's onboarding flow has
-the user funding their Master Safe **before the first stake**, but the
-Safe template is spawned only at first sighting (which is at-or-after
-stake). The very transfer `SAFE_SETUP_TRANSFER` should anchor is
-invisible to the template that is supposed to capture it.
+problem).** Per @rajat2502's PR #129 review and revisited under
+@Tanya-atatakai's PR #130 review (Rev. 4), Pearl's onboarding has
+funds moving into the Master Safe **before** the Safe template can
+observe anything (template not retroactive; native-to-EOA emits no
+log; `eth_getBalance` not exposed to AS mappings). Three concepts
+work together to make this honest for the consumer wallet UI:
 
-Two paths to a resolution; choice depends on a graph-node capability
-check that lands in §11 as an open question:
+1. **`OPENING_BALANCE` row** (Rev. 4 — replaces the Rev. 1
+   "`SAFE_SETUP_TRANSFER` as baseline" overload). At first sighting
+   of a Master Safe, emit one synthetic `FundsMovement` per tracked
+   ERC-20 token with `category = OPENING_BALANCE`, `source =
+   SEMANTIC`, `amount = eth_call balanceOf(masterSafe)`. Also emit
+   one zero-amount native marker row (`token = null`, `amount = 0`,
+   `category = OPENING_BALANCE`) so the UI has a deterministic
+   anchor it can label "Pre-discovery balance: native unknown".
+2. **`MasterSafe.historyFloorBlock` / `historyFloorTimestamp`**
+   (Rev. 4). The block and timestamp at which the Master Safe was
+   first sighted. The consumer wallet UI uses this to render a
+   literal "History starts here" divider above the `OPENING_BALANCE`
+   rows, so users do not read the baseline as a literal first
+   transaction — exactly the Gap 2 ask in @Tanya-atatakai's review.
+3. **`SAFE_SETUP_TRANSFER` row** (preserved, narrowed). Fires once,
+   for the first live Master-EOA → Master-Safe ERC-20 / native hop
+   **after** the `OPENING_BALANCE` baseline. `OPENING_BALANCE` does
+   not flip `setupTransferSeen` (so the first live hop still
+   classifies as `SAFE_SETUP_TRANSFER`); subsequent hops are
+   `MASTER_FUNDING_IN`.
 
-1. **Backdated template start block (preferred if supported).** Recent
-   graph-node versions expose `DataSourceContext.setBigInt("startBlock",
-   …)` such that `Template.createWithContext(addr, ctx)` starts indexing
-   from the given block rather than the current one. If this works on
-   our Studio infra, spawn the Master-Safe `Safe` template with
-   `startBlock = ServiceRegistryL2 start block` so pre-stake transfers
-   are captured retroactively. Requires verification — see §11 #6.
-2. **Eth_call baseline (fallback).** At first sighting, call
-   `OLAS.balanceOf(masterSafe)` (and any other tracked ERC-20s) and
-   emit a synthetic `FundsMovement(SAFE_SETUP_TRANSFER, source=SEMANTIC,
-   amount=balanceAt(firstSightingBlock), from=zero, to=masterSafe)` per
-   token. Native baseline is not directly addressable from mappings
-   (no view function on Safe; `eth_getBalance` isn't exposed to
-   AssemblyScript handlers); the native "Setup complete" amount is then
-   approximated as `0` and the UI either omits it or shows
-   "pre-existing balance" with no amount.
+Per-token coverage: `OPENING_BALANCE` is emitted for OLAS (always)
++ each chain's wrapped native (WXDAI / WPOL / WETH — Rev. 4) +
+each Phase 2b stablecoin once those data sources are added. The
+zero-amount native marker is always emitted regardless of token
+coverage.
 
-Option 1 is what gets the "first history entry = Setup complete with the
-exact funding amount" acceptance criterion to hold cleanly for real
-Pearl users. Option 2 is a degraded-but-deterministic fallback.
+**What `OPENING_BALANCE` does NOT recover:**
+
+- Individual pre-discovery hops (e.g. "user moved 30 USDC to the
+  Safe in tx A, kept 5 USDC dust on the EOA"). Only the *resting
+  balance* at the first-sighting block is recoverable.
+- Native gas pre-discovery (no view function; only a marker row).
+- Anything that happened on the Master EOA itself before the Master
+  Safe was sighted (the EOA isn't in `TrackedEOA` until Master Safe
+  derivation runs). See §5.4 + §11 #8.
+
+If the backdated-startBlock option for the `Safe` template becomes
+available (§11 #6), it would narrow the gap further for *native
+inbound* on the Master Safe — `Safe.SafeReceived` events between
+the ServiceRegistryL2 start block and first-sighting would become
+visible. It would not narrow the EOA-history gap.
 
 ### 6.3 Phase 2b — USDC / USDC.e — benchmark-gated *and* product-gated
 
@@ -1160,26 +1201,42 @@ CI runs `yarn graph codegen` + `yarn graph test` via the `ci.yml` matrix.
    because SRTU is wired in `ServiceRegistryL2.changeServiceManager`
    post-deploy) — wastes some indexing but is provably safe. Also
    verify the deduped Gnosis/Polygon address is not a doc error.
-8. **Pre-Master-Safe Master EOA history** (Rev. 2, per the third
-   maintainer ask). Three options for the wallet UI's "before Pearl"
-   history rows, listed by ascending effort / completeness:
-   (a) **Document the limit** — wallet UI shows Master EOA history
-   only from first-sighting-block forward via the `TrackedEOA`
-   extension (§6.1); pre-creation history is "not indexed, see
-   Etherscan for that EOA". Cheapest, on-chain-only.
-   (b) **eth_call baseline** — at Master Safe first sighting, call
-   `OLAS.balanceOf(masterEoa)` (and any other relevant ERC-20s) and
-   emit one `MASTER_EOA_BASELINE` semantic row per token. Captures the
-   *current balance* but not the history of how it arrived. Native
-   baseline degrades to "unknown" because `eth_getBalance` isn't
-   exposed to AS mappings.
-   (c) **Off-chain integration** — Pearl wallet UI joins on-chain
-   subgraph data with an off-chain ERC-20 indexer (Dune / Etherscan
-   API) for the pre-Pearl rows. Most complete, but requires an
-   off-chain integration owned outside this subgraph. Doesn't change
-   on-chain scope.
-   Recommend (a) for v1 with (b) as a low-cost upgrade; (c) is a
-   product decision belonging to Pearl Wallet, not to this subgraph.
+8. **Pre-Master-Safe Master EOA history — explicit product decision
+   required** (Rev. 4 reframe, after @Tanya-atatakai's PR #130 Gap 2:
+   "If full account-setup history (incl. native EOA funding) is a
+   hard product requirement, that needs trace/call-level indexing or
+   an off-chain source — it cannot come from event-based subgraph
+   indexing."). The §6.2 `OPENING_BALANCE` + `historyFloorBlock`
+   pattern gives the UI an honest floor; Pearl product needs to
+   decide whether anything pre-floor is in scope.
+
+   Three options, listed by ascending effort / completeness:
+   (a) **Document the floor as the contract.** Wallet UI renders
+   "History starts here" using `MasterSafe.historyFloorBlock`; rows
+   before that point are simply not available. Pre-floor activity
+   for that EOA is "not indexed by pearl-transactions; see
+   Etherscan/Dune". Cheapest, fully on-chain-only, matches §2.1.
+   ✓ Implemented as-of Rev. 4.
+   (b) **eth_call baseline on Master EOA.** At Master Safe first
+   sighting, call `OLAS.balanceOf(masterEoa)` + wrapped-native
+   `balanceOf(masterEoa)` and emit one extra `OPENING_BALANCE` row
+   per (masterEoa, token). Captures *current EOA value* but not the
+   history; native EOA value remains unobservable. Trivial code
+   addition once (a) is in place.
+   (c) **Off-chain pre-floor join** — Pearl wallet UI fetches
+   pre-`historyFloorBlock` ERC-20 + native history for the Master
+   EOA from Dune / Etherscan / archive RPC and renders it above the
+   on-chain floor. Owned outside this subgraph; preserves on-chain
+   constraint (§2.1) because the join happens in the consumer, not
+   the subgraph. Most complete.
+   (d) **Call/trace handlers for native EOA transfers** — would
+   require chain-wide call indexing on every Pearl chain, in direct
+   conflict with §2.2 indexing-cost discipline. Recommend NOT
+   pursuing.
+
+   Recommend (a) shipped (current Rev. 4 state) + Pearl product to
+   pick between (b), (c), or "(a) is enough" before the Phase 9 docs
+   PR closes the UX loop. (d) is documented as not viable.
 
 ---
 
