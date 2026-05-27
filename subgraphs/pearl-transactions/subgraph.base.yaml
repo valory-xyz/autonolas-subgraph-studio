@@ -17,10 +17,55 @@ dataSources:
       language: wasm/assemblyscript
       entities:
         - Service
+        - AgentSafe
+        - MasterSafe
+        - ServiceIndex
+        - PendingRegistration
+        - PendingBondCounter
+        - PendingBondAttribution
+        - ServiceNftCustodyChange
+        - FundsMovement
       abis:
         - name: ServiceRegistryL2
           file: ../../abis/ServiceRegistryL2.json
+        - name: GnosisSafe
+          file: ../../abis/GnosisSafe.json
       eventHandlers:
         - event: RegisterInstance(indexed address,indexed uint256,indexed address,uint256)
           handler: handleRegisterInstance
+        - event: ActivateRegistration(indexed uint256)
+          handler: handleActivateRegistration
+        - event: CreateMultisigWithAgents(indexed uint256,indexed address)
+          handler: handleCreateMultisigWithAgents
+        - event: Transfer(indexed address,indexed address,indexed uint256)
+          handler: handleServiceNftTransfer
+        - event: TerminateService(indexed uint256)
+          handler: handleTerminateService
+        - event: OperatorUnbond(indexed address,indexed uint256)
+          handler: handleOperatorUnbond
       file: ./src/service-registry.ts
+  - kind: ethereum
+    name: ServiceRegistryTokenUtility
+    network: base
+    source:
+      address: "0x34C895f302D0b5cf52ec0Edd3945321EB0f83dd5"
+      abi: ServiceRegistryTokenUtility
+      startBlock: 10827475
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - FundsMovement
+        - PendingBondCounter
+        - PendingBondAttribution
+        - MasterSafe
+      abis:
+        - name: ServiceRegistryTokenUtility
+          file: ../../abis/ServiceRegistryTokenUtility.json
+      eventHandlers:
+        - event: TokenDeposit(indexed address,indexed address,uint256)
+          handler: handleTokenDeposit
+        - event: TokenRefund(indexed address,indexed address,uint256)
+          handler: handleTokenRefund
+      file: ./src/service-registry-token-utility.ts

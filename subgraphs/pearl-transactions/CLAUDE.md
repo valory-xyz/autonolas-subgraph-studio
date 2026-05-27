@@ -10,34 +10,65 @@ but was renamed to `pearl-transactions` per PR #129 review §11 #5 to
 match the downstream consumer (Pearl wallet transaction-history UI,
 VLOP-73).
 
-## Current state — scaffold
+## Current state — Phase 1a (registry + SRTU bonds + Master EOA)
 
-This PR (step 2 of `IMPLEMENTATION-PLAN.md` §8) lands an
-empty-but-valid subgraph so CI is green and follow-up phase PRs only
-need to add code. Specifically:
+Following the scaffold PR, Phase 1a (step 3 of
+[`IMPLEMENTATION-PLAN.md`](../pearl-funds/IMPLEMENTATION-PLAN.md) §8)
+adds the full semantic ledger for the registry + SRTU side. Implemented:
 
-- `package.json` with the converged pinned tooling
-  (`graph-cli` 0.98.1, `graph-ts` 0.38.2, `matchstick-as` 0.6.0).
-- Template-pattern manifest (`subgraph.template.yaml` +
-  `networks.json` + `scripts/generate-manifests.js`) covering all four
-  v1 target networks.
-- `schema.graphql` with a single `Service` placeholder entity (will be
-  expanded — not replaced — in Phase 1a per
-  [`IMPLEMENTATION-PLAN.md`](../pearl-funds/IMPLEMENTATION-PLAN.md)
-  §5.1).
-- One `ServiceRegistryL2.RegisterInstance` handler in
-  `src/service-registry.ts` that writes the placeholder `Service` row.
-  Phase 1a will replace it with the full handler set (`handleRegisterInstance`
-  with `PendingRegistration` + `PendingBondAttribution` buffering,
-  `handleActivateRegistration`, `handleCreateMultisigWithAgents`,
-  `handleServiceNftTransfer`, `handleTerminateService`).
-- One Matchstick smoke test in `tests/service-registry.test.ts`.
+- **Schema** (`schema.graphql`) — `MasterSafe` (with `masterEoa` /
+  `owners` / `threshold` from `getOwners()` eth_call), `AgentSafe`,
+  `Service` (with `agentIds` + `operators` consumer-filter lists, NFT
+  custodian, state), `FundsMovement` (immutable, with `bondType` enum),
+  `ServiceNftCustodyChange`, plus internal helpers (`ServiceIndex`,
+  `PendingRegistration`, `PendingBondCounter`, `PendingBondAttribution`,
+  `AgentBondStashGuard`).
+- **Handlers** (`src/service-registry.ts`):
+  `handleRegisterInstance` (with `PendingRegistration` buffering +
+  `AGENT_BOND` attribution dedupe via `AgentBondStashGuard`);
+  `handleActivateRegistration` (`SECURITY_DEPOSIT` attribution);
+  `handleCreateMultisigWithAgents` (create `Service` + `AgentSafe`,
+  drain buffer, write `ServiceIndex`); `handleServiceNftTransfer`
+  (NFT custody + `getOrCreateMasterSafe` for the un-staked path);
+  `handleTerminateService` (state + refund attribution);
+  `handleOperatorUnbond` (`AGENT_BOND` refund attribution).
+- **Handlers** (`src/service-registry-token-utility.ts`):
+  `handleTokenDeposit` → `SERVICE_BOND_DEPOSIT` row with best-effort
+  `bondType` consumed from the per-tx queue; `handleTokenRefund`
+  mirror.
+- **Master EOA derivation** (`src/utils.ts` `getOrCreateMasterSafe`) —
+  one-shot `GnosisSafe.getOwners()` + `getThreshold()` eth_call at
+  first sighting of each Master Safe. Emits a `SAFE_DEPLOYED`
+  semantic row anchoring the consumer wallet UI's "Setup complete"
+  entry. Idempotent on subsequent calls (only bumps
+  `lastActivityTimestamp`).
+- **Bond-type attribution queue** (`src/utils.ts`
+  `stashBondAttribution` / `consumeBondAttribution`) — per-tx FIFO
+  matching ServiceRegistryL2 events to SRTU events that fire later
+  in the same tx; `bondType` is null when attribution fails.
+- **8 Matchstick tests** covering ordering, dedupe, NFT custody,
+  stake/unstake cycles with bondType attribution, null-attribution
+  fallback, per-tx isolation.
+
+Honest limits documented in
+[`IMPLEMENTATION-PLAN.md`](../pearl-funds/IMPLEMENTATION-PLAN.md) §5.4
+that apply to Phase 1a as-shipped:
+- `bondType` attribution is best-effort; unmodeled call orderings
+  leave it null but preserve the amount.
+- Master Safe is *also* identified when the NFT transfers to a
+  staking proxy address — `getOrCreateMasterSafe` will try
+  `getOwners()` on the proxy, get a revert, log a warning, and set
+  `masterEoa = zero / threshold = 0`. Phase 1b will narrow the NFT
+  handler to skip recipients in the `StakingContract` entity set.
+- Master EOA owner-list staleness between first sighting and Phase 2a
+  `Safe` template spawn (no `AddedOwner` / `RemovedOwner` handling
+  yet).
 
 ## Coming in subsequent PRs (per `IMPLEMENTATION-PLAN.md` §8)
 
 | Step | Adds | Plan §§ |
 |---|---|---|
-| 3 — Phase 1a | `ServiceRegistryTokenUtility` data source + `Master Safe` / `MasterEOA` derivation via `getOwners()` + `SAFE_DEPLOYED` row + `SERVICE_BOND_DEPOSIT` / `_REFUND` rows with best-effort `bondType` attribution | §4.4, §5.1, §5.2 |
+| 3 — Phase 1a | ✅ landed in this PR — `ServiceRegistryTokenUtility` data source + `Master Safe` / `MasterEOA` derivation via `getOwners()` + `SAFE_DEPLOYED` row + `SERVICE_BOND_DEPOSIT` / `_REFUND` rows with best-effort `bondType` attribution | §4.4, §5.1, §5.2 |
 | 4 — Phase 1b | `StakingFactory` + `StakingProxy` (dynamic template); `STAKING_REWARD_CLAIM` / `UNSTAKE_REWARD` / `SERVICE_EVICTED` rows; `DailyServiceFunds` | §5.2 |
 | 5 — Verify on Studio | Spot-check stake/claim/unstake against block explorer for a known Pearl service | — |
 | 6 — Verify graph-node `startBlock`-in-context | Open Q #6: determines option for §6.2 pre-stake-transfer recovery | §6.2 |
@@ -67,13 +98,15 @@ yarn deploy-base
 
 ## Multi-network deployment
 
-| Network | `ServiceRegistryL2` | Start block |
+| Network | `ServiceRegistryL2` | `ServiceRegistryTokenUtility` |
 |---|---|---|
-| `gnosis` | `0x9338b5153AE39BB89f50468E608eD9d764B755fD` | 27,871,084 |
-| `matic` (Polygon) | `0xE3607b00E75f6405248323A9417ff6b39B244b50` | 41,783,952 |
-| `optimism` | `0x3d77596beb0f130a4415df3D2D8232B3d3D31e44` | 116,423,039 |
-| `base` | `0x3C1fF68f5aa342D296d4DEe4Bb1cACCA912D95fE` | 10,827,380 |
+| `gnosis` | `0x9338…755fD` @ 27,871,084 | `0xa45E…7eD8` @ 30,095,874 |
+| `matic` (Polygon) | `0xE360…4b50` @ 41,783,952 | `0xa45E…7eD8` @ 52,737,296 |
+| `optimism` | `0x3d77…1e44` @ 116,423,039 | `0xBb7e…7eac` @ 116,423,237 |
+| `base` | `0x3C1f…95fE` @ 10,827,380 | `0x34C8…3dd5` @ 10,827,475 |
 
-Addresses converge with `subgraphs/service-registry/networks.json`.
-Other data sources (StakingFactory, ServiceRegistryTokenUtility, OLAS,
-USDC, USDC.e, Safe template) come online in later PRs per the plan.
+SRTU addresses from
+[`valory-xyz/autonolas-registries`](https://github.com/valory-xyz/autonolas-registries/blob/main/docs/configuration.json);
+start blocks verified per chain via explorer creation-tx lookup.
+StakingFactory and the rest of the Phase 2 data sources (OLAS, USDC,
+USDC.e, Safe template) come online in subsequent PRs per the plan.
