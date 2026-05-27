@@ -3,7 +3,7 @@
 **Status:** Proposed — for verification before implementation. No code yet.
 **Proposed subgraph:** `subgraphs/pearl-funds/` (final name TBD — see §11 #5)
 **Target networks (v1):** Gnosis, Polygon, Optimism, Base
-**Last updated:** 2026-05-27 (Rev. 4 addresses @Tanya-atatakai's PR #130 design-review comment: wrapped-native ERC-20 data sources promoted from metadata-only to Phase 2a, OPENING_BALANCE + historyFloor anchor concept for pre-discovery UX, native EOA pre-creation reframed as explicit product-decision Open Q; Rev. 3 added §4.5 per-network asset inventory and §4.6 Mermaid funds-flow diagrams; Rev. 2 added SRTU bond-event indexing, agent-ID anti-hardcoding confirmation, and Master EOA pre-creation tracking; Rev. 1 addressed PR #129 review feedback from @Tanya-atatakai and @rajat2502)
+**Last updated:** 2026-05-27 (Rev. 4 addresses both @Tanya-atatakai's and @rajat2502's PR #130 design-review comments: wrapped-native ERC-20 data sources promoted from metadata-only to Phase 2a, OPENING_BALANCE + historyFloor anchor concept for pre-discovery UX, USDC.e §6.3 framing tightened with the consumer-side merge-cost trade-off, multi-token tx aggregation flagged as Rev. 5 open question, native EOA pre-creation reframed as explicit product-decision Open Q; Rev. 3 added §4.5 per-network asset inventory and §4.6 Mermaid funds-flow diagrams; Rev. 2 added SRTU bond-event indexing, agent-ID anti-hardcoding confirmation, and Master EOA pre-creation tracking; Rev. 1 addressed PR #129 review feedback from @Tanya-atatakai and @rajat2502)
 
 This document scopes a new subgraph that indexes **funds movement for the
 Master Safe and Agent Safe of Pearl predict services**. It covers Phase 1
@@ -919,8 +919,20 @@ benchmarking, so the decision tree on the "off-chain fallback" branch
 is owned (do we ship an off-chain integration as part of the wallet
 work, or do we accept that Polygon stablecoin rows won't appear in v1?).
 
+**Consumer-side merge cost** (Rev. 4, per @rajat2502's PR #130
+review). The off-chain fallback isn't free for the wallet client
+either: the Pearl Wallet would merge on-chain `pearl-transactions`
+rows with an off-chain stablecoin ERC-20 source per-Safe, deduping
+and time-aligning two paginated APIs. Concretely doubles Polygon-side
+wiring complexity in the consumer and means the wallet's offline-cache
+story is different per-chain. Worth weighing against the on-chain
+indexing-cost concern when picking the path.
+
 Together: 2a ships unconditionally; 2b's go/no-go is a measured infra
-decision *and* an explicit product decision.
+decision *and* an explicit product decision *and* a consumer-cost
+decision. **Decide before Phase 2 code lands** — by the time the
+benchmark runs the wallet UI is being wired, so the answer determines
+which client path consumers prepare for.
 
 ### 6.4 Classification engine
 
@@ -998,6 +1010,24 @@ in §5.1) — Phase 2 rows carry `source = RAW_TRANSFER` and the additional
 tx all link to the same `AgentFundingEvent`. Consumers may render either
 one row per `AgentFundingEvent` (the wallet UI's default) or per
 `FundsMovement` (forensic view) — both work without consumer-side dedup.
+
+**Symmetric direction — open question for Rev. 5** (Rev. 4 note from
+@rajat2502's PR #130 review). The Figma's multi-token rows like
+"Withdraw to external wallet" (-USDC.e/-XDAI/-OLAS/-WXDAI in one tx) and
+"Omenstrat withdrawal" (+OLAS/+XDAI/+WXDAI in one tx) need the same
+per-tx grouping for the `MASTER_WITHDRAWAL`, `AGENT_TO_MASTER`, and
+`MASTER_TO_AGENT` (already handled) directions. `AgentFundingEvent`
+only covers `MASTER_TO_AGENT`. Two options for the other directions:
+(a) consumers `GROUP BY txHash` on the indexed `FundsMovement` rows
+client-side — feasible, no schema change.
+(b) Add a generic `TxBundle` entity per `(txHash, masterSafe)` that
+groups every Phase 2 row in the tx that touches the Master Safe;
+consumers render one bundle row per tx without the GROUP BY. Cleaner
+consumer API, modest indexing cost.
+Recommend (a) for v1 (let the wallet team decide whether the consumer
+complexity is worth a schema addition); revisit as Rev. 5 if VLOP-73
+acceptance specifically requires server-side grouping for these
+directions.
 
 ### 6.6 What Phase 2 answers
 
