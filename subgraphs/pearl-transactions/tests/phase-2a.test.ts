@@ -17,7 +17,12 @@ import {
   RemovedOwner,
   SafeReceived,
 } from "../generated/templates/Safe/GnosisSafe";
-import { MasterSafe, TrackedEOA, TrackedSafe } from "../generated/schema";
+import {
+  MasterSafe,
+  StakingContract,
+  TrackedEOA,
+  TrackedSafe,
+} from "../generated/schema";
 import { handleOlasTransfer } from "../src/erc20";
 import {
   handleSafeAddedOwner,
@@ -428,6 +433,161 @@ describe("pearl-transactions / Phase 2a — raw OLAS + Safe template", () => {
       MASTER_SAFE.toHexString(),
       "owners",
       "[" + MASTER_EOA.toHexString() + ", " + NEW_OWNER.toHexString() + "]"
+    );
+  });
+
+  // --- Plan §10 gap tests added in response to coverage audit -------
+
+  test("Master EOA → unrelated EOA classifies as OTHER (not dropped)", () => {
+    seedMasterSafe(true);
+    const tx = mockTx(20);
+    handleOlasTransfer(newOlasTransfer(MASTER_EOA, RANDOM_EOA, AMOUNT, tx, 0));
+
+    // Per plan §10: "Master EOA → unrelated EOA classified OTHER,
+    // not silently dropped."
+    assert.entityCount("FundsMovement", 1);
+    const id = tx.concatI32(0);
+    assert.fieldEquals(
+      "FundsMovement",
+      id.toHexString(),
+      "category",
+      "OTHER"
+    );
+  });
+
+  test("Master Safe → SRTU → SERVICE_BOND_DEPOSIT raw reconciliation row", () => {
+    seedMasterSafe(true);
+    const SRTU_GNOSIS = Address.fromString(
+      "0xa45E64d13A30a51b91ae0eb182e88a40e9b18eD8"
+    );
+    const tx = mockTx(21);
+    handleOlasTransfer(newOlasTransfer(MASTER_SAFE, SRTU_GNOSIS, AMOUNT, tx, 0));
+
+    const id = tx.concatI32(0);
+    assert.fieldEquals(
+      "FundsMovement",
+      id.toHexString(),
+      "category",
+      "SERVICE_BOND_DEPOSIT"
+    );
+    assert.fieldEquals(
+      "FundsMovement",
+      id.toHexString(),
+      "source",
+      "RAW_TRANSFER"
+    );
+  });
+
+  test("SRTU → Master Safe → SERVICE_BOND_REFUND raw reconciliation row", () => {
+    seedMasterSafe(true);
+    const SRTU_GNOSIS = Address.fromString(
+      "0xa45E64d13A30a51b91ae0eb182e88a40e9b18eD8"
+    );
+    const tx = mockTx(22);
+    handleOlasTransfer(newOlasTransfer(SRTU_GNOSIS, MASTER_SAFE, AMOUNT, tx, 0));
+
+    const id = tx.concatI32(0);
+    assert.fieldEquals(
+      "FundsMovement",
+      id.toHexString(),
+      "category",
+      "SERVICE_BOND_REFUND"
+    );
+    assert.fieldEquals(
+      "FundsMovement",
+      id.toHexString(),
+      "source",
+      "RAW_TRANSFER"
+    );
+  });
+
+  test("StakingProxy → Agent Safe OLAS Transfer = STAKING_REWARD_CLAIM raw reconciliation", () => {
+    seedMasterSafe(true);
+    seedAgentSafe("42");
+    // Seed a StakingContract entity at STAKING_PROXY (any Bytes works
+    // for the classify lookup).
+    const STAKING_PROXY = Address.fromString(
+      "0x9999999999999999999999999999999999999999"
+    );
+    const sc = new StakingContract(STAKING_PROXY);
+    sc.implementation = Address.fromString(
+      "0xEa00be6690a871827fAfD705440D20dd75e67AB1"
+    );
+    sc.minStakingDeposit = BigInt.fromI32(10);
+    sc.numAgentInstances = BigInt.fromI32(1);
+    sc.createdBlock = BigInt.fromI32(1);
+    sc.createdTimestamp = BigInt.fromI32(1);
+    sc.save();
+
+    const tx = mockTx(23);
+    handleOlasTransfer(newOlasTransfer(STAKING_PROXY, AGENT_SAFE, AMOUNT, tx, 0));
+
+    const id = tx.concatI32(0);
+    assert.fieldEquals(
+      "FundsMovement",
+      id.toHexString(),
+      "category",
+      "STAKING_REWARD_CLAIM"
+    );
+    assert.fieldEquals(
+      "FundsMovement",
+      id.toHexString(),
+      "source",
+      "RAW_TRANSFER"
+    );
+  });
+
+  test("Agent Safe → unknown app contract = AGENT_TO_APP", () => {
+    seedMasterSafe(true);
+    seedAgentSafe("42");
+    const APP = Address.fromString(
+      "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    );
+    const tx = mockTx(24);
+    handleOlasTransfer(newOlasTransfer(AGENT_SAFE, APP, AMOUNT, tx, 0));
+
+    const id = tx.concatI32(0);
+    assert.fieldEquals(
+      "FundsMovement",
+      id.toHexString(),
+      "category",
+      "AGENT_TO_APP"
+    );
+  });
+
+  test("Unknown app contract → Agent Safe = APP_TO_AGENT", () => {
+    seedMasterSafe(true);
+    seedAgentSafe("42");
+    const APP = Address.fromString(
+      "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    );
+    const tx = mockTx(25);
+    handleOlasTransfer(newOlasTransfer(APP, AGENT_SAFE, AMOUNT, tx, 0));
+
+    const id = tx.concatI32(0);
+    assert.fieldEquals(
+      "FundsMovement",
+      id.toHexString(),
+      "category",
+      "APP_TO_AGENT"
+    );
+  });
+
+  test("TokenBalance running total accumulates across MASTER_FUNDING_IN hops", () => {
+    seedMasterSafe(true);
+    const tx1 = mockTx(26);
+    handleOlasTransfer(newOlasTransfer(MASTER_EOA, MASTER_SAFE, AMOUNT, tx1, 0));
+    const tx2 = mockTx(27);
+    handleOlasTransfer(newOlasTransfer(MASTER_EOA, MASTER_SAFE, AMOUNT, tx2, 0));
+
+    // TokenBalance id = safe.concat(token).
+    const id = MASTER_SAFE.concat(OLAS_GNOSIS);
+    // Two inflows of AMOUNT each → 2 × AMOUNT.
+    assert.fieldEquals(
+      "TokenBalance",
+      id.toHexString(),
+      "balance",
+      AMOUNT.plus(AMOUNT).toString()
     );
   });
 });

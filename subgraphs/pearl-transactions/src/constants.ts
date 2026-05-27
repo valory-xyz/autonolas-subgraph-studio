@@ -61,6 +61,33 @@ export function getOlasAddress(network: string): Address {
   return Address.zero();
 }
 
+// SRTU address resolver (mirrors networks.json). Used by classifyTransfer
+// in Phase 2a to mark Master Safe ↔ SRTU OLAS transfers as
+// SERVICE_BOND_DEPOSIT / SERVICE_BOND_REFUND raw reconciliation rows.
+// Gnosis + Polygon happen to share the same deployer-deterministic
+// address; Optimism and Base are distinct.
+const SRTU_GNOSIS = "0xa45E64d13A30a51b91ae0eb182e88a40e9b18eD8";
+const SRTU_POLYGON = "0xa45E64d13A30a51b91ae0eb182e88a40e9b18eD8";
+const SRTU_OPTIMISM = "0xBb7e1D6Cb6F243D6bdE81CE92a9f2aFF7Fbe7eac";
+const SRTU_BASE = "0x34C895f302D0b5cf52ec0Edd3945321EB0f83dd5";
+
+export function getSrtuAddress(network: string): Address {
+  if (network == "gnosis" || network == "xdai") {
+    return Address.fromString(SRTU_GNOSIS);
+  }
+  if (network == "matic" || network == "polygon") {
+    return Address.fromString(SRTU_POLYGON);
+  }
+  if (network == "optimism") {
+    return Address.fromString(SRTU_OPTIMISM);
+  }
+  if (network == "base") {
+    return Address.fromString(SRTU_BASE);
+  }
+  log.critical("Unsupported network in getSrtuAddress: {}", [network]);
+  return Address.zero();
+}
+
 // isAllowedImplementation — the Olas staking ecosystem allows multiple
 // StakingProxy implementations but pearl-transactions only indexes
 // proxies whose implementation appears on this per-network allow-list.

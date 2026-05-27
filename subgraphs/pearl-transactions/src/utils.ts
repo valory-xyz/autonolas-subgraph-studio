@@ -29,11 +29,15 @@ import { GnosisSafe } from "../generated/ServiceRegistryL2/GnosisSafe";
 import { Safe as SafeTemplate } from "../generated/templates";
 import {
   BOND_TYPE_AGENT_BOND,
+  CATEGORY_OTHER,
   CATEGORY_SAFE_DEPLOYED,
   CATEGORY_SAFE_SETUP_TRANSFER,
+  CATEGORY_SERVICE_BOND_DEPOSIT,
+  CATEGORY_SERVICE_BOND_REFUND,
   SERVICE_STATE_REGISTERED,
   SOURCE_SEMANTIC,
   getOlasAddress,
+  getSrtuAddress,
 } from "./constants";
 
 // --- ID helpers ------------------------------------------------------
@@ -705,10 +709,13 @@ export class ClassifyResult {
   }
 }
 
-// classifyTransfer — route an ERC-20 Transfer's (from, to) to a
-// FundsCategory. Returns null if neither side is a TrackedSafe /
-// TrackedEOA / StakingContract / SRTU — those transfers are not
-// recorded.
+// classifyTransfer — route an ERC-20 / native Transfer's (from, to) to
+// a FundsCategory. Returns null only if NEITHER side is a tracked
+// address (TrackedSafe / TrackedEOA / StakingContract / SRTU). If one
+// side is tracked but no specific pattern matches, returns OTHER so
+// the row is recorded for forensic view (plan §10 explicit
+// requirement: "Master EOA → unrelated EOA classified OTHER, not
+// silently dropped").
 export function classifyTransfer(
   from: Address,
   to: Address,
@@ -720,8 +727,41 @@ export function classifyTransfer(
   const toEOA = TrackedEOA.load(to);
   const fromIsStaking = StakingContract.load(from) != null;
   const toIsStaking = StakingContract.load(to) != null;
+  const srtuAddr = getSrtuAddress(currentNetwork());
+  const fromIsSrtu = from.equals(srtuAddr);
+  const toIsSrtu = to.equals(srtuAddr);
 
   // Most-specific patterns first.
+
+  // Master Safe → SRTU → SERVICE_BOND_DEPOSIT raw reconciliation
+  // (Phase 1a's SRTU handler already booked the canonical SEMANTIC
+  // rows; consumer filters by source=SEMANTIC).
+  if (
+    fromMaster != null &&
+    fromMaster.role == "MASTER" &&
+    toIsSrtu
+  ) {
+    return new ClassifyResult(
+      CATEGORY_SERVICE_BOND_DEPOSIT,
+      null,
+      fromMaster.masterSafe,
+      null
+    );
+  }
+
+  // SRTU → Master Safe → SERVICE_BOND_REFUND raw reconciliation.
+  if (
+    fromIsSrtu &&
+    toMaster != null &&
+    toMaster.role == "MASTER"
+  ) {
+    return new ClassifyResult(
+      CATEGORY_SERVICE_BOND_REFUND,
+      null,
+      toMaster.masterSafe,
+      null
+    );
+  }
 
   // Master Safe → Agent Safe / Agent EOA → MASTER_TO_AGENT (grouped).
   if (
@@ -756,19 +796,9 @@ export function classifyTransfer(
     );
   }
 
-  // Master Safe ↔ SRTU. Phase 1a's SRTU TokenDeposit/Refund handler
-  // already booked the canonical SEMANTIC row; here we emit the raw
-  // OLAS Transfer as RAW_TRANSFER reconciliation.
-  // The SRTU address is per-network — see constants.ts.
-  // Note: we don't know SRTU address here without a network switch;
-  // instead, the OLAS handler classifies on TrackedSafe membership +
-  // StakingContract — SRTU lookups happen separately if needed.
-
-  // Staking proxy ↔ Agent Safe: already booked semantically in 1b.
-  // Mark as AGENT_TO_MASTER if both sides match; otherwise it's the
-  // RewardClaimed raw transfer which we tag as STAKING_REWARD_CLAIM
-  // (raw reconciliation). For simplicity treat as the matching
-  // staking variant.
+  // Staking proxy → Agent Safe — already booked semantically in
+  // Phase 1b (STAKING_REWARD_CLAIM). The raw OLAS Transfer is
+  // reconciled with source=RAW_TRANSFER.
   if (
     fromIsStaking &&
     toMaster != null &&
@@ -828,6 +858,25 @@ export function classifyTransfer(
       toMaster.masterSafe,
       toMaster.id
     );
+  }
+
+  // Fallback: if ANY side is a tracked address (EOA or staking
+  // proxy that didn't match a more-specific pattern), tag as OTHER.
+  // The classifier returns null only when neither side is tracked
+  // at all (chain-wide OLAS noise).
+  const fromIsTracked =
+    fromMaster != null || fromEOA != null || fromIsStaking || fromIsSrtu;
+  const toIsTracked =
+    toMaster != null || toEOA != null || toIsStaking || toIsSrtu;
+  if (fromIsTracked || toIsTracked) {
+    // Pick whichever tracked-side EOA can carry the masterSafe ref.
+    let masterRef: Bytes | null = null;
+    if (fromEOA != null && fromEOA.masterSafe !== null) {
+      masterRef = fromEOA.masterSafe;
+    } else if (toEOA != null && toEOA.masterSafe !== null) {
+      masterRef = toEOA.masterSafe;
+    }
+    return new ClassifyResult(CATEGORY_OTHER, null, masterRef, null);
   }
 
   return null;
