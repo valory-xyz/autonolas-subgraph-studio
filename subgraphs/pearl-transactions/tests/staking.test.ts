@@ -106,6 +106,19 @@ function mockProxyConfig(
   ).returns([ethereum.Value.fromUnsignedBigInt(numAgentInstances)]);
 }
 
+const OLAS_GNOSIS_ADDR = Address.fromString(
+  "0xcE11e14225575945b8E6Dc0D4F2dD4C570f79d9f"
+);
+function mockOlasBalanceOf(holder: Address, balance: BigInt): void {
+  createMockedFunction(
+    OLAS_GNOSIS_ADDR,
+    "balanceOf",
+    "balanceOf(address):(uint256)"
+  )
+    .withArgs([ethereum.Value.fromAddress(holder)])
+    .returns([ethereum.Value.fromUnsignedBigInt(balance)]);
+}
+
 function setMockEventBoilerplate<T extends ethereum.Event>(
   event: T,
   txHash: Bytes,
@@ -415,6 +428,9 @@ describe("pearl-transactions / Phase 1b — staking", () => {
     mockGetOwners(MASTER_SAFE, [MASTER_EOA, BACKUP_EOA]);
     mockGetThreshold(MASTER_SAFE, 1);
     mockProxyConfig(STAKING_PROXY, MIN_STAKING_DEPOSIT, NUM_AGENT_INSTANCES);
+    // Phase 2a's emitMasterSafeOlasBaseline calls OLAS.balanceOf at
+    // first sighting; mock returns 0 for tests not covering baseline.
+    mockOlasBalanceOf(MASTER_SAFE, BigInt.zero());
   });
 
   afterEach(() => {

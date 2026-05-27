@@ -8,6 +8,7 @@ import {
 } from "@graphprotocol/graph-ts";
 import {
   AgentBondAttributionGuard,
+  AgentFundingEvent,
   AgentSafe,
   DailyServiceFunds,
   FundsMovement,
@@ -18,12 +19,21 @@ import {
   Service,
   ServiceIndex,
   StakingContract,
+  Token,
+  TokenBalance,
+  TrackedEOA,
+  TrackedSafe,
 } from "../generated/schema";
+import { ERC20 } from "../generated/ServiceRegistryL2/ERC20";
 import { GnosisSafe } from "../generated/ServiceRegistryL2/GnosisSafe";
+import { Safe as SafeTemplate } from "../generated/templates";
 import {
+  BOND_TYPE_AGENT_BOND,
   CATEGORY_SAFE_DEPLOYED,
+  CATEGORY_SAFE_SETUP_TRANSFER,
   SERVICE_STATE_REGISTERED,
   SOURCE_SEMANTIC,
+  getOlasAddress,
 } from "./constants";
 
 // --- ID helpers ------------------------------------------------------
@@ -112,6 +122,7 @@ export function getOrCreateMasterSafe(
   masterSafe.firstSeenTimestamp = event.block.timestamp;
   masterSafe.firstSeenBlock = event.block.number;
   masterSafe.lastActivityTimestamp = event.block.timestamp;
+  masterSafe.setupTransferSeen = false;
 
   // Pearl's flow guarantees owners[0] == Master EOA (1-of-2 with a
   // non-signing backup).
@@ -132,7 +143,85 @@ export function getOrCreateMasterSafe(
   // Emit SAFE_DEPLOYED anchor row.
   emitSafeDeployedRow(masterSafe, event);
 
+  // Phase 2a: track Master Safe as a TrackedSafe (role=MASTER),
+  // track Master EOA as a TrackedEOA (role=MASTER_EOA), spawn the
+  // Safe template so we capture native receipts + owner-list updates,
+  // and emit the eth_call OLAS-baseline SAFE_SETUP_TRANSFER row per
+  // §6.2 option 2.
+  upsertTrackedSafe(address, "MASTER", masterSafe.id, null);
+  if (masterSafe.masterEoa.length > 0 && !masterSafe.masterEoa.equals(Address.zero())) {
+    upsertTrackedEOA(
+      Address.fromBytes(masterSafe.masterEoa),
+      "MASTER_EOA",
+      masterSafe.id,
+      null,
+      event.block.number
+    );
+  }
+  SafeTemplate.create(address);
+  emitMasterSafeOlasBaseline(masterSafe, event);
+
   return masterSafe;
+}
+
+// emitMasterSafeOlasBaseline — §6.2 option 2 (eth_call baseline).
+// At first sighting of a Master Safe, query OLAS.balanceOf(masterSafe)
+// and emit a SAFE_SETUP_TRANSFER synthetic row with the current
+// balance. Captures the pre-stake funding amount that the live
+// `Safe` template can't back-fill. Native baseline is unobservable
+// from mappings (no view function; eth_getBalance not exposed).
+function emitMasterSafeOlasBaseline(
+  masterSafe: MasterSafe,
+  event: ethereum.Event
+): void {
+  const olasAddr = getOlasAddress(currentNetwork());
+  const erc20 = ERC20.bind(olasAddr);
+  const balanceResult = erc20.try_balanceOf(Address.fromBytes(masterSafe.id));
+
+  let baseline: BigInt = BigInt.zero();
+  if (!balanceResult.reverted) {
+    baseline = balanceResult.value;
+  } else {
+    log.warning(
+      "OLAS.balanceOf eth_call reverted for Master Safe {} (tx {}); SAFE_SETUP_TRANSFER baseline = 0",
+      [
+        masterSafe.id.toHexString(),
+        event.transaction.hash.toHexString(),
+      ]
+    );
+  }
+
+  // Emit baseline row regardless of amount (0 = "no OLAS in Master
+  // Safe at first sighting"; non-zero = the actual pre-stake balance).
+  const row = new FundsMovement(
+    Bytes.fromUTF8("safe-setup-baseline:").concat(masterSafe.id)
+  );
+  row.masterSafe = masterSafe.id;
+  row.category = CATEGORY_SAFE_SETUP_TRANSFER;
+  row.source = SOURCE_SEMANTIC;
+  row.token = olasAddr;
+  row.amount = baseline;
+  row.from = Address.zero();
+  row.to = masterSafe.id;
+  row.blockNumber = event.block.number;
+  row.blockTimestamp = event.block.timestamp;
+  row.transactionHash = event.transaction.hash;
+  row.save();
+
+  // Mark setupTransferSeen so the first live Master EOA → Master
+  // Safe ERC-20 hop is classified as MASTER_FUNDING_IN rather than
+  // a second SAFE_SETUP_TRANSFER.
+  masterSafe.setupTransferSeen = true;
+  masterSafe.save();
+
+  // Initialize TokenBalance for OLAS at the baseline value.
+  upsertTokenBalance(
+    Address.fromBytes(masterSafe.id),
+    olasAddr,
+    baseline,
+    event,
+    /* isDelta = */ false
+  );
 }
 
 function emitSafeDeployedRow(
@@ -178,6 +267,30 @@ export function getOrCreateAgentSafe(
   }
   agentSafe.createdTimestamp = event.block.timestamp;
   agentSafe.save();
+
+  // Phase 2a: track as TrackedSafe (role=AGENT), spawn Safe template,
+  // and add any operators recorded on the Service so far as
+  // TrackedEOAs (role=AGENT_EOA). Additional operators registered
+  // later are picked up incrementally in handleRegisterInstance.
+  if (service.masterSafe !== null) {
+    upsertTrackedSafe(
+      address,
+      "AGENT",
+      service.masterSafe!,
+      service.id
+    );
+  }
+  SafeTemplate.create(address);
+  const operators = service.operators;
+  for (let i = 0; i < operators.length; i++) {
+    upsertTrackedEOA(
+      Address.fromBytes(operators[i]),
+      "AGENT_EOA",
+      service.masterSafe,
+      service.id,
+      event.block.number
+    );
+  }
   return agentSafe;
 }
 
@@ -489,4 +602,294 @@ export function getOrCreateStakingContract(
   sc.createdTimestamp = event.block.timestamp;
   sc.save();
   return sc;
+}
+
+// --- Phase 2a — TrackedSafe / TrackedEOA / Token / TokenBalance ------
+
+// upsertTrackedSafe — idempotent. Called when a Master Safe or Agent
+// Safe is first created. `service` is null for Master Safes (one
+// Master Safe owns many services).
+export function upsertTrackedSafe(
+  address: Address,
+  role: string,
+  masterSafeId: Bytes,
+  serviceId: string | null
+): void {
+  let tracked = TrackedSafe.load(address);
+  if (tracked != null) return;
+  tracked = new TrackedSafe(address);
+  tracked.role = role;
+  tracked.masterSafe = masterSafeId;
+  if (serviceId !== null) tracked.service = serviceId;
+  tracked.save();
+}
+
+// upsertTrackedEOA — idempotent. Called for Master EOAs (via
+// getOrCreateMasterSafe) and agent EOAs (via RegisterInstance /
+// agent-safe creation).
+export function upsertTrackedEOA(
+  address: Address,
+  role: string,
+  masterSafeId: Bytes | null,
+  serviceId: string | null,
+  blockNumber: BigInt
+): void {
+  let tracked = TrackedEOA.load(address);
+  if (tracked != null) return;
+  tracked = new TrackedEOA(address);
+  tracked.role = role;
+  if (masterSafeId !== null) tracked.masterSafe = masterSafeId;
+  if (serviceId !== null) tracked.service = serviceId;
+  tracked.firstTrackedBlock = blockNumber;
+  tracked.save();
+}
+
+// getOrCreateToken — Phase 2a's only token is OLAS, so we hardcode
+// the symbol + decimals. Phase 2b will extend with USDC / USDC.e.
+export function getOrCreateToken(tokenAddress: Address): Token {
+  let token = Token.load(tokenAddress);
+  if (token != null) return token;
+  token = new Token(tokenAddress);
+  // OLAS is 18 decimals on every chain it's deployed to.
+  token.symbol = "OLAS";
+  token.decimals = 18;
+  token.save();
+  return token;
+}
+
+// upsertTokenBalance — maintain per-(safe, token) running balance.
+// isDelta = true → balance += amount (signed); false → balance = amount
+// (absolute, e.g. baseline initialization).
+export function upsertTokenBalance(
+  safe: Address,
+  tokenAddress: Address,
+  amount: BigInt,
+  event: ethereum.Event,
+  isDelta: boolean
+): void {
+  const id = safe.concat(tokenAddress);
+  let bal = TokenBalance.load(id);
+  if (bal == null) {
+    bal = new TokenBalance(id);
+    bal.safe = safe;
+    bal.token = getOrCreateToken(tokenAddress).id;
+    bal.balance = isDelta ? amount : amount;
+  } else {
+    bal.balance = isDelta ? bal.balance.plus(amount) : amount;
+  }
+  bal.lastUpdatedTimestamp = event.block.timestamp;
+  bal.lastUpdatedBlock = event.block.number;
+  bal.save();
+}
+
+// --- Phase 2a — classifyTransfer + AgentFundingEvent -----------------
+
+// ClassifyResult — output of classifyTransfer. Carries category +
+// resolved service/masterSafe/agentSafe IDs so the OLAS handler
+// doesn't repeat the lookup.
+export class ClassifyResult {
+  category: string;
+  service: string | null;
+  masterSafeId: Bytes | null;
+  agentSafeId: Bytes | null;
+  constructor(
+    category: string,
+    service: string | null,
+    masterSafeId: Bytes | null,
+    agentSafeId: Bytes | null
+  ) {
+    this.category = category;
+    this.service = service;
+    this.masterSafeId = masterSafeId;
+    this.agentSafeId = agentSafeId;
+  }
+}
+
+// classifyTransfer — route an ERC-20 Transfer's (from, to) to a
+// FundsCategory. Returns null if neither side is a TrackedSafe /
+// TrackedEOA / StakingContract / SRTU — those transfers are not
+// recorded.
+export function classifyTransfer(
+  from: Address,
+  to: Address,
+  masterSafePtr: MasterSafe | null
+): ClassifyResult | null {
+  const fromMaster = TrackedSafe.load(from);
+  const toMaster = TrackedSafe.load(to);
+  const fromEOA = TrackedEOA.load(from);
+  const toEOA = TrackedEOA.load(to);
+  const fromIsStaking = StakingContract.load(from) != null;
+  const toIsStaking = StakingContract.load(to) != null;
+
+  // Most-specific patterns first.
+
+  // Master Safe → Agent Safe / Agent EOA → MASTER_TO_AGENT (grouped).
+  if (
+    fromMaster != null &&
+    fromMaster.role == "MASTER" &&
+    ((toMaster != null && toMaster.role == "AGENT") ||
+      (toEOA != null && toEOA.role == "AGENT_EOA"))
+  ) {
+    let serviceId: string | null = null;
+    if (toMaster != null) serviceId = toMaster.service;
+    else if (toEOA != null) serviceId = toEOA.service;
+    return new ClassifyResult(
+      "MASTER_TO_AGENT",
+      serviceId,
+      fromMaster.masterSafe,
+      toMaster != null ? toMaster.id : null
+    );
+  }
+
+  // Agent Safe → Master Safe → AGENT_TO_MASTER (OLAS reward sweep).
+  if (
+    fromMaster != null &&
+    fromMaster.role == "AGENT" &&
+    toMaster != null &&
+    toMaster.role == "MASTER"
+  ) {
+    return new ClassifyResult(
+      "AGENT_TO_MASTER",
+      fromMaster.service,
+      toMaster.id,
+      fromMaster.id
+    );
+  }
+
+  // Master Safe ↔ SRTU. Phase 1a's SRTU TokenDeposit/Refund handler
+  // already booked the canonical SEMANTIC row; here we emit the raw
+  // OLAS Transfer as RAW_TRANSFER reconciliation.
+  // The SRTU address is per-network — see constants.ts.
+  // Note: we don't know SRTU address here without a network switch;
+  // instead, the OLAS handler classifies on TrackedSafe membership +
+  // StakingContract — SRTU lookups happen separately if needed.
+
+  // Staking proxy ↔ Agent Safe: already booked semantically in 1b.
+  // Mark as AGENT_TO_MASTER if both sides match; otherwise it's the
+  // RewardClaimed raw transfer which we tag as STAKING_REWARD_CLAIM
+  // (raw reconciliation). For simplicity treat as the matching
+  // staking variant.
+  if (
+    fromIsStaking &&
+    toMaster != null &&
+    toMaster.role == "AGENT"
+  ) {
+    return new ClassifyResult(
+      "STAKING_REWARD_CLAIM",
+      toMaster.service,
+      toMaster.masterSafe,
+      toMaster.id
+    );
+  }
+
+  // EOA (Master EOA / other) → Master Safe.
+  if (toMaster != null && toMaster.role == "MASTER") {
+    const ms = MasterSafe.load(toMaster.masterSafe);
+    if (ms != null && !ms.setupTransferSeen && fromEOA != null && fromEOA.role == "MASTER_EOA") {
+      // First Master EOA → Master Safe hop after creation.
+      return new ClassifyResult(
+        "SAFE_SETUP_TRANSFER",
+        null,
+        toMaster.masterSafe,
+        null
+      );
+    }
+    return new ClassifyResult(
+      "MASTER_FUNDING_IN",
+      null,
+      toMaster.masterSafe,
+      null
+    );
+  }
+
+  // Master Safe → EOA.
+  if (fromMaster != null && fromMaster.role == "MASTER") {
+    return new ClassifyResult(
+      "MASTER_WITHDRAWAL",
+      null,
+      fromMaster.masterSafe,
+      null
+    );
+  }
+
+  // Agent Safe ↔ unknown (treated as app-contract interactions).
+  if (fromMaster != null && fromMaster.role == "AGENT") {
+    return new ClassifyResult(
+      "AGENT_TO_APP",
+      fromMaster.service,
+      fromMaster.masterSafe,
+      fromMaster.id
+    );
+  }
+  if (toMaster != null && toMaster.role == "AGENT") {
+    return new ClassifyResult(
+      "APP_TO_AGENT",
+      toMaster.service,
+      toMaster.masterSafe,
+      toMaster.id
+    );
+  }
+
+  return null;
+}
+
+// markSetupTransferSeen — flip the MasterSafe flag after the first
+// SAFE_SETUP_TRANSFER ERC-20 hop is observed (live, not the
+// eth_call baseline which already flips it in
+// emitMasterSafeOlasBaseline).
+export function markSetupTransferSeen(masterSafeId: Bytes): void {
+  const ms = MasterSafe.load(masterSafeId);
+  if (ms == null || ms.setupTransferSeen) return;
+  ms.setupTransferSeen = true;
+  ms.save();
+}
+
+// --- AgentFundingEvent aggregation -----------------------------------
+
+export function agentFundingEventId(
+  txHash: Bytes,
+  masterSafeId: Bytes,
+  serviceId: string
+): Bytes {
+  return txHash
+    .concat(masterSafeId)
+    .concat(Bytes.fromUTF8(serviceId));
+}
+
+// getOrCreateAgentFundingEvent — one per (txHash, masterSafe,
+// service). Initial totals are zero; `addToAgentFundingEvent` bumps.
+export function getOrCreateAgentFundingEvent(
+  txHash: Bytes,
+  masterSafeId: Bytes,
+  serviceId: string,
+  event: ethereum.Event
+): AgentFundingEvent {
+  const id = agentFundingEventId(txHash, masterSafeId, serviceId);
+  let afe = AgentFundingEvent.load(id);
+  if (afe != null) return afe;
+  afe = new AgentFundingEvent(id);
+  afe.service = serviceId;
+  afe.masterSafe = masterSafeId;
+  afe.txHash = txHash;
+  afe.blockTimestamp = event.block.timestamp;
+  afe.totalNativeAmount = BigInt.zero();
+  afe.totalOlasAmount = BigInt.zero();
+  afe.save();
+  return afe;
+}
+
+// addToAgentFundingEvent — bump the OLAS or native total. The OLAS
+// handler passes isNative=false; the Safe-template native handler
+// passes isNative=true.
+export function addToAgentFundingEvent(
+  afe: AgentFundingEvent,
+  amount: BigInt,
+  isNative: boolean
+): void {
+  if (isNative) {
+    afe.totalNativeAmount = afe.totalNativeAmount.plus(amount);
+  } else {
+    afe.totalOlasAmount = afe.totalOlasAmount.plus(amount);
+  }
+  afe.save();
 }

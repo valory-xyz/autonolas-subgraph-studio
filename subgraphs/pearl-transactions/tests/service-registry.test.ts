@@ -4,6 +4,7 @@ import {
   beforeEach,
   clearStore,
   createMockedFunction,
+  dataSourceMock,
   describe,
   newMockEvent,
   test,
@@ -101,6 +102,16 @@ function mockGetThreshold(safe: Address, threshold: i32): void {
     "getThreshold",
     "getThreshold():(uint256)"
   ).returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(threshold))]);
+}
+
+function mockOlasBalanceOf(holder: Address, balance: BigInt): void {
+  createMockedFunction(
+    OLAS_GNOSIS,
+    "balanceOf",
+    "balanceOf(address):(uint256)"
+  )
+    .withArgs([ethereum.Value.fromAddress(holder)])
+    .returns([ethereum.Value.fromUnsignedBigInt(balance)]);
 }
 
 // ----------------- Event constructors -----------------
@@ -380,8 +391,14 @@ function newTokenRefund(
 describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds", () => {
   beforeEach(() => {
     clearStore();
+    // Pearl-transactions only supports gnosis/matic/optimism/base
+    // (matchstick defaults to mainnet).
+    dataSourceMock.setNetwork("gnosis");
     mockGetOwners(MASTER_SAFE, [MASTER_EOA, BACKUP_EOA]);
     mockGetThreshold(MASTER_SAFE, 1);
+    // Phase 2a's eth_call OLAS baseline at first sighting needs a
+    // mocked balanceOf for the Master Safe under test.
+    mockOlasBalanceOf(MASTER_SAFE, BigInt.zero());
   });
 
   afterEach(() => {
@@ -531,15 +548,26 @@ describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds",
         "amount",
         "0"
       );
-      // Exactly one FundsMovement row so far (the SAFE_DEPLOYED).
-      assert.entityCount("FundsMovement", 1);
+      // Phase 2a adds an eth_call OLAS-baseline SAFE_SETUP_TRANSFER
+      // row at first-sighting (in addition to SAFE_DEPLOYED). Two
+      // synthetic rows total.
+      assert.entityCount("FundsMovement", 2);
+      const baselineId = Bytes.fromUTF8("safe-setup-baseline:").concat(
+        MASTER_SAFE
+      );
+      assert.fieldEquals(
+        "FundsMovement",
+        baselineId.toHexString(),
+        "category",
+        "SAFE_SETUP_TRANSFER"
+      );
 
       // Second NFT movement involving the same Master Safe must NOT
-      // emit another SAFE_DEPLOYED row.
+      // emit another SAFE_DEPLOYED or baseline row.
       handleServiceNftTransfer(
         newNftTransfer(MASTER_SAFE, MASTER_SAFE, SERVICE_ID, tx, 1)
       );
-      assert.entityCount("FundsMovement", 1);
+      assert.entityCount("FundsMovement", 2);
       assert.entityCount("ServiceNftCustodyChange", 2);
     }
   );

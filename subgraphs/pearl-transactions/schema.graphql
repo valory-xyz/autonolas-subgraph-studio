@@ -1,8 +1,9 @@
-# pearl-transactions schema — Phase 1a + 1b.
+# pearl-transactions schema — Phase 1a + 1b + 2a.
 #
-# Matches IMPLEMENTATION-PLAN.md §5.1 (semantic ledger). Phase 2
-# entities (AgentFundingEvent, Token, TrackedSafe, TrackedEOA,
-# TokenBalance) arrive in their own PRs.
+# Matches IMPLEMENTATION-PLAN.md §5.1 (semantic ledger) + §6.5 (raw
+# ledger). Phase 2b additions (USDC/USDC.e Transfer data sources) reuse
+# Token / TrackedSafe / TokenBalance and add no new schema; they
+# arrive in their own PR (benchmark + product-gated per §6.3).
 
 # --- Structural -------------------------------------------------------
 
@@ -20,6 +21,11 @@ type MasterSafe @entity(immutable: false) {
   firstSeenTimestamp: BigInt!
   firstSeenBlock: BigInt!             # for consumer "Setup complete" anchoring
   lastActivityTimestamp: BigInt!
+  # Phase 2a: flips true the first time an ERC-20 inbound from
+  # masterEoa is observed post-creation. Used by classifyTransfer to
+  # tag the first hop as SAFE_SETUP_TRANSFER (later hops are
+  # MASTER_FUNDING_IN). See §6.1.
+  setupTransferSeen: Boolean!
 }
 
 type AgentSafe @entity(immutable: false) {
@@ -68,8 +74,15 @@ enum FundsCategory {
   STAKING_REWARD_CLAIM                # StakingProxy.RewardClaimed → Agent Safe
   UNSTAKE_REWARD                      # StakingProxy.ServiceUnstaked / ServiceForceUnstaked → Agent Safe
   SERVICE_EVICTED                     # StakingProxy.ServicesEvicted (informational; amount=0)
-  # Phase 2 adds: SAFE_SETUP_TRANSFER, MASTER_FUNDING_IN, MASTER_TO_AGENT,
-  # AGENT_TO_MASTER, MASTER_WITHDRAWAL, AGENT_TO_APP, APP_TO_AGENT, OTHER.
+  # Phase 2a — raw token / native ledger (source=RAW_TRANSFER unless noted)
+  SAFE_SETUP_TRANSFER                 # First Master EOA → Master Safe inbound after SAFE_DEPLOYED; or eth_call baseline (source=SEMANTIC) per §6.2
+  MASTER_FUNDING_IN                   # subsequent EOA → Master Safe (after SAFE_SETUP_TRANSFER consumed)
+  MASTER_WITHDRAWAL                   # Master Safe → EOA
+  MASTER_TO_AGENT                     # Master Safe → Agent Safe / Agent EOA (grouped via AgentFundingEvent)
+  AGENT_TO_MASTER                     # Agent Safe → Master Safe (OLAS reward sweep)
+  AGENT_TO_APP                        # Agent Safe → known app contract (FPMM, Polymarket CTFExchange, etc.)
+  APP_TO_AGENT                        # known app contract → Agent Safe (payout)
+  OTHER                               # tracked address ↔ unmatched counterparty
 }
 
 # Best-effort disambiguator for SERVICE_BOND_DEPOSIT / SERVICE_BOND_REFUND
@@ -103,7 +116,8 @@ type FundsMovement @entity(immutable: false) {
   category: FundsCategory!
   source: FundsSource!
   bondType: ServiceBondType           # nullable; populated for SERVICE_BOND_DEPOSIT/REFUND when attribution succeeds
-  token: Bytes                        # token address (null for SAFE_DEPLOYED / SERVICE_EVICTED)
+  agentFundingEvent: AgentFundingEvent # Phase 2a backref — set for MASTER_TO_AGENT rows grouped by same-tx funding action
+  token: Bytes                        # token address (null for SAFE_DEPLOYED / SERVICE_EVICTED / native rows where Token entity is implicit)
   amount: BigInt!                     # 0 for SAFE_DEPLOYED / SERVICE_EVICTED informational rows
   from: Bytes!
   to: Bytes!
@@ -187,4 +201,60 @@ type PendingBondRow @entity(immutable: false) {
 # row, regardless of how many RegisterInstance events fire.
 type AgentBondAttributionGuard @entity(immutable: true) {
   id: Bytes!                          # tx.hash.concat(serviceId.toBytes())
+}
+
+# --- Phase 2a — raw token / native ledger ----------------------------
+
+# Token metadata snapshot. Populated lazily on first encounter.
+type Token @entity(immutable: false) {
+  id: Bytes!                          # token address
+  symbol: String!
+  decimals: Int!
+}
+
+# A Master Safe or Agent Safe we actively watch. Populated when the
+# entity becomes known via the registry / staking path. Lookup of
+# from/to in the OLAS Transfer handler routes through this table.
+type TrackedSafe @entity(immutable: false) {
+  id: Bytes!                          # Safe address
+  role: String!                       # MASTER | AGENT
+  service: Service                    # null for MASTER (a Master Safe owns multiple services)
+  masterSafe: MasterSafe!
+}
+
+# A Master EOA or Agent EOA we actively watch. Master EOAs are added
+# in Phase 1a via getOrCreateMasterSafe's getOwners(); agent EOAs come
+# from RegisterInstance.agentInstance.
+type TrackedEOA @entity(immutable: false) {
+  id: Bytes!                          # EOA address
+  role: String!                       # MASTER_EOA | AGENT_EOA
+  masterSafe: MasterSafe              # null for AGENT_EOA shared across services
+  service: Service                    # null for MASTER_EOA
+  firstTrackedBlock: BigInt!
+}
+
+# Running balance per (safe, token). Updated by the OLAS Transfer
+# handler on each from/to hit. Phase 2b will add USDC/USDC.e.
+type TokenBalance @entity(immutable: false) {
+  id: Bytes!                          # safe.concat(token)
+  safe: Bytes!
+  token: Token!
+  balance: BigInt!
+  lastUpdatedTimestamp: BigInt!
+  lastUpdatedBlock: BigInt!
+}
+
+# Per-tx grouping of all Master → Agent constituent transfers for a
+# service. Wallet UI renders one row per AgentFundingEvent; consumers
+# can read raw FundsMovement rows via the agentFundingEvent backref
+# if they want the breakdown. See §6.5.
+type AgentFundingEvent @entity(immutable: false) {
+  id: Bytes!                          # txHash.concat(masterSafe).concat(serviceId.toBytes())
+  service: Service!
+  masterSafe: MasterSafe!
+  txHash: Bytes!
+  blockTimestamp: BigInt!
+  totalNativeAmount: BigInt!          # sum across constituent native rows
+  totalOlasAmount: BigInt!            # sum across constituent OLAS rows
+  transfers: [FundsMovement!]! @derivedFrom(field: "agentFundingEvent")
 }
