@@ -69,6 +69,7 @@ export function getDailyProfitStatistic(
     statistic.totalBets = 0;
     statistic.totalTraded = BigInt.zero();
     statistic.totalPayout = BigInt.zero();
+    statistic.dailyTradedSettled = BigInt.zero();
     statistic.dailyProfit = BigInt.zero();
     statistic.profitParticipants = [];
   }
@@ -181,7 +182,10 @@ export function processMarketResolution(
   payouts: BigInt[],
   event: ethereum.Event
 ): void {
-  // 1. Create the Resolution entity
+  // 1. Create the Resolution entity (skip if already resolved)
+  let existingResolution = QuestionResolution.load(conditionId);
+  if (existingResolution !== null) return;
+
   let resolution = new QuestionResolution(conditionId);
   resolution.question = conditionId;
   resolution.winningIndex = winningOutcome;
@@ -263,6 +267,7 @@ export function processMarketResolution(
       : getDailyProfitStatistic(participant.traderAgent, event.block.timestamp);
 
     dailyStat.dailyProfit = dailyStat.dailyProfit.plus(profit);
+    dailyStat.dailyTradedSettled = dailyStat.dailyTradedSettled.plus(amountToSettle);
     addProfitParticipant(dailyStat, conditionId);
     dailyStatsCache.set(statId, dailyStat);
 
@@ -286,14 +291,12 @@ export function processMarketResolution(
   saveMapValues(agentCache);
   saveMapValues(dailyStatsCache);
 
-  // 6. Apply global deltas
-  if (!globalTradedSettledDelta.equals(BigInt.zero())) {
+  // 6. Apply global deltas (only save if at least one participant was processed)
+  if (!globalTradedSettledDelta.equals(BigInt.zero()) || !globalExpectedPayoutDelta.equals(BigInt.zero())) {
     global.totalTradedSettled = global.totalTradedSettled.plus(globalTradedSettledDelta);
-  }
-  if (!globalExpectedPayoutDelta.equals(BigInt.zero())) {
     global.totalExpectedPayout = global.totalExpectedPayout.plus(globalExpectedPayoutDelta);
+    global.save();
   }
-  global.save();
 }
 
 /**
