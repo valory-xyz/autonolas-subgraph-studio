@@ -3,7 +3,7 @@
 **Status:** Proposed — for verification before implementation. No code yet.
 **Proposed subgraph:** `subgraphs/pearl-funds/` (final name TBD — see §11 #5)
 **Target networks (v1):** Gnosis, Polygon, Optimism, Base
-**Last updated:** 2026-05-27 (Rev. 4 addresses both @Tanya-atatakai's and @rajat2502's PR #130 design-review comments, plus their second-round follow-ups: wrapped-native ERC-20 data sources promoted from metadata-only to Phase 2a, OPENING_BALANCE + historyFloor anchor concept for pre-discovery UX, §6.2 now explicitly distinguishes Path A "relax AC #3" vs Path B "Option 1 backdated startBlock", §11 #6 upgraded from "polish" to "critical path for VLOP-73 AC #3", USDC.e §6.3 framing tightened with consumer-side merge-cost trade-off, multi-token tx aggregation flagged as Rev. 5 open question, native EOA pre-creation reframed as explicit product-decision Open Q; Rev. 3 added §4.5 per-network asset inventory and §4.6 Mermaid funds-flow diagrams; Rev. 2 added SRTU bond-event indexing, agent-ID anti-hardcoding confirmation, and Master EOA pre-creation tracking; Rev. 1 addressed PR #129 review feedback from @Tanya-atatakai and @rajat2502)
+**Last updated:** 2026-05-27 (Rev. 4 addresses both @Tanya-atatakai's and @rajat2502's PR #130 design-review comments + their second-round follow-ups + §11 #6 verification: wrapped-native ERC-20 data sources promoted to Phase 2a, OPENING_BALANCE + historyFloor anchor for pre-discovery UX, §11 #6 RESOLVED as not-supported upstream so §6.2 Path B is dead and Path A "relax AC #3" is the recommended answer with Path C workarounds documented for completeness, USDC.e §6.3 tightened with consumer-side merge-cost, multi-token tx aggregation flagged as Rev. 5 open question, native EOA pre-creation reframed as explicit product-decision Open Q; Rev. 3 added §4.5 asset inventory and §4.6 Mermaid diagrams; Rev. 2 added SRTU bond-event indexing, agent-ID anti-hardcoding, Master EOA pre-creation tracking; Rev. 1 addressed PR #129 review feedback from @Tanya-atatakai and @rajat2502)
 
 This document scopes a new subgraph that indexes **funds movement for the
 Master Safe and Agent Safe of Pearl predict services**. It covers Phase 1
@@ -903,14 +903,57 @@ Master Safe funding amount + token, labelled "Setup complete".
 `OPENING_BALANCE` (the post-funding *snapshot* at first sighting) does
 not satisfy AC #3 as written. So:
 
-| Path | What it requires | Subgraph change | Risk |
+| Path | Status | What it requires | Subgraph change |
 |---|---|---|---|
-| **A — Relax AC #3** (@Tanya-atatakai's proposal on PR #130) | Pearl product accepts that "Setup complete" is rendered FE-side from the `historyFloorBlock` divider + `OPENING_BALANCE` rows, without a literal transfer row. | None — Rev. 4 is the contract. | Wallet UX deviates from the original spec wording; needs FE + PM sign-off. |
-| **B — Implement Option 1** | Use `Template.createWithContext` with a backdated `startBlock` so the `Safe` template back-fills events from `ServiceRegistryL2.startBlock` forward. Recovers native + ERC-20 inbounds prior to first-sighting as literal transfer rows. | Phase 2a swap-in: change `getOrCreateMasterSafe` to pass `startBlock` context to the `Safe` template spawn. | Contingent on graph-node + Studio supporting the feature — see §11 #6, which is now on the **critical path** for AC #3 (not polish). |
+| **A — Relax AC #3** (@Tanya-atatakai's proposal) | Available | Pearl product accepts that "Setup complete" is rendered FE-side from the `historyFloorBlock` divider + `OPENING_BALANCE` rows, without a literal transfer row. | None — Rev. 4 is the contract. |
+| **B — `Template.createWithContext` backdated `startBlock`** | **❌ Not viable** — verified upstream-not-supported. See §11 #6 resolution. | — | — |
+| **C — Workarounds for an on-chain literal transfer row** | Available but expensive | Several options exist (see below), none cheap | Substantial Phase 2 re-architecture in every case. |
 
-If §11 #6 is verified as supported, Path B is the recommended way to
-satisfy AC #3 as written. If unsupported, Path A becomes the only
-honest option — which moves the AC change to product / FE.
+**§11 #6 verification result** (2026-05-27): graph-node hardcodes
+`start_block: creation_block` for spawned templates in
+[`chain/ethereum/src/data_source.rs#L132`](https://github.com/graphprotocol/graph-node/blob/master/chain/ethereum/src/data_source.rs);
+`runtime/wasm/src/host_exports.rs` (`data_source_create`) takes
+`creation_block` from the host directly and never inspects the WASM
+`context` for a `startBlock` key. The `DataSourceContext.setBigInt("startBlock", …)`
+trick that has circulated in community threads is a myth. Tracking
+issue [`graph-node#902`](https://github.com/graphprotocol/graph-node/issues/902)
+("Historical Block Scanning For Dynamic Data Sources") was opened in
+April 2019 and stale-bot closed in July 2025 without an implementing
+PR. Latest graph-node is v0.43.0 (2025-04-23); no release notes from
+v0.36-v0.43 mention backdated template start blocks. Studio runs Edge
+& Node's hosted graph-node, so Studio cannot have a feature that
+doesn't exist upstream.
+
+**Path C workarounds for satisfying AC #3 as written**, listed by
+ascending re-architecture cost:
+
+1. *Discovery + graft + static dataSources.* Run a discovery
+   deployment that records every Master Safe + its first-stake
+   block. Regenerate `subgraph.yaml` with each known Safe as a static
+   `dataSource` carrying its own historical `startBlock`. Graft the
+   re-deployment from the discovery checkpoint. Cost: manifest
+   regen + redeploy every time the Safe set grows; graft makes
+   re-sync cheap, but operational overhead is real.
+2. *Chain-wide ERC-20 indexer with deferred classification.* Drop
+   the `TrackedAddress` in-handler filter on OLAS / wrapped-native
+   data sources; store every Transfer in a temporary entity keyed by
+   (to, token); resolve them into `FundsMovement` rows when a Master
+   Safe is first sighted. Cost: large storage footprint
+   (chain-wide OLAS / WXDAI / etc.), even though the OLAS volume is
+   bounded. Native still unrecoverable.
+3. *Substreams-powered data source.* The canonical "global filter"
+   solution; pre-filters chain logs in a substreams package and
+   emits only Pearl-relevant transfers to the subgraph. Cost:
+   substreams package authoring + Studio tier capable of consuming
+   substreams.
+
+**Recommendation:** Path A is the realistic answer. Path B is dead
+(verified upstream); Path C options are all heavier re-architectures
+than Rev. 4. Needs Pearl product + FE sign-off that the AC #3 wording
+can be relaxed to "Setup complete = `historyFloorBlock` + the
+`OPENING_BALANCE` row set, rendered FE-side". If product holds AC #3
+as written, Path C-1 (discovery + graft + static dataSources) is the
+lowest-pain on-chain workaround.
 
 ### 6.3 Phase 2b — USDC / USDC.e — benchmark-gated *and* product-gated
 
@@ -1234,29 +1277,26 @@ CI runs `yarn graph codegen` + `yarn graph test` via the `ci.yml` matrix.
    `agent-funds` / `funds-movement` from earlier (for a future
    generalization to all Olas services) reads better than `pearl-funds`
    either way, but `pearl-transactions` matches the consumer best.
-6. **Graph-node support for backdated template `startBlock` — now on
-   the critical path for VLOP-73 AC #3** (Rev. 4 upgrade, per
-   @rajat2502's self-correction on PR #130). §6.2 documents two paths
-   for what the wallet UI shows as the "Setup complete" entry:
-   - **Path A — Relax AC #3** (@Tanya-atatakai's proposal): keep
-     Rev. 4 (`OPENING_BALANCE` snapshot + `historyFloorBlock`
-     divider) as the contract, render the "Setup complete" entry
-     FE-side from those primitives. No subgraph change needed; needs
-     FE + PM sign-off that the AC's literal-transfer wording can be
-     relaxed.
-   - **Path B — Satisfy AC #3 as written**: use
-     `Template.createWithContext` with `startBlock` set earlier than
-     the spawning block, so the `Safe` template back-fills events
-     from `ServiceRegistryL2.startBlock` forward and produces a real
-     transfer row for the MasterEOA → Master Safe funding hop.
-     Contingent on graph-node + Studio actually supporting backdated
-     template start blocks. This Open Q is the verification.
+6. ~~**Graph-node support for backdated template `startBlock`**~~
+   **Resolved 2026-05-27: NOT SUPPORTED.** Verification (via
+   reading graph-node master at v0.43.0) confirms the
+   `Template.createWithContext` startBlock-via-context trick is a
+   myth. graph-node hardcodes `start_block: creation_block` for
+   spawned templates in
+   [`chain/ethereum/src/data_source.rs#L132`](https://github.com/graphprotocol/graph-node/blob/master/chain/ethereum/src/data_source.rs);
+   [issue #902](https://github.com/graphprotocol/graph-node/issues/902)
+   tracking this feature was stale-bot closed in July 2025 without an
+   implementing PR. Studio runs hosted graph-node and so cannot offer
+   a feature that doesn't exist upstream.
 
-   If verification confirms Path B is supported, we recommend taking
-   it (satisfies the AC as written). If unsupported, Path A is the
-   only option — kicks the decision to product / FE for the AC
-   relaxation. Either way: the question must be resolved **before
-   Phase 2a code is finalized**.
+   **Consequence:** Path B from §6.2 (use a backdated `startBlock` to
+   recover the literal "Funds moved from MasterEOA (Safe Setup)"
+   transfer row) is dead. The remaining options for VLOP-73 AC #3
+   are Path A (relax the AC to render "Setup complete" FE-side from
+   `historyFloorBlock` + `OPENING_BALANCE` — recommended; needs
+   PM + FE sign-off) or Path C (heavier on-chain workarounds:
+   discovery+graft+static-dataSources, chain-wide deferred
+   classification, or Substreams). See §6.2 for the cost shapes.
 7. **`ServiceRegistryTokenUtility` start blocks** (Rev. 2). Addresses
    are sourced from `autonolas-registries`
    [`docs/configuration.json`](https://github.com/valory-xyz/autonolas-registries/blob/main/docs/configuration.json),
