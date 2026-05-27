@@ -19,6 +19,7 @@ export const CATEGORY_UNSTAKE_REWARD = "UNSTAKE_REWARD";
 export const CATEGORY_SERVICE_EVICTED = "SERVICE_EVICTED";
 
 // Phase 2a categories.
+export const CATEGORY_OPENING_BALANCE = "OPENING_BALANCE";
 export const CATEGORY_SAFE_SETUP_TRANSFER = "SAFE_SETUP_TRANSFER";
 export const CATEGORY_MASTER_FUNDING_IN = "MASTER_FUNDING_IN";
 export const CATEGORY_MASTER_WITHDRAWAL = "MASTER_WITHDRAWAL";
@@ -86,6 +87,44 @@ export function getSrtuAddress(network: string): Address {
   }
   log.critical("Unsupported network in getSrtuAddress: {}", [network]);
   return Address.zero();
+}
+
+// Wrapped-native resolvers (Rev. 4 — added per @Tanya-atatakai's PR #130
+// review). Each chain has exactly one wrapped native asset that Pearl
+// services may touch (DEX swaps, Omen settlements on Gnosis). Indexed
+// as a `WrappedNative` ERC-20 Transfer data source in the manifest,
+// not via the Safe template.
+const WXDAI_GNOSIS = "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d";
+const WPOL_POLYGON = "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270";
+const WETH_OPTIMISM = "0x4200000000000000000000000000000000000006";
+const WETH_BASE = "0x4200000000000000000000000000000000000006";
+
+export function getWrappedNativeAddress(network: string): Address {
+  if (network == "gnosis" || network == "xdai") {
+    return Address.fromString(WXDAI_GNOSIS);
+  }
+  if (network == "matic" || network == "polygon") {
+    return Address.fromString(WPOL_POLYGON);
+  }
+  if (network == "optimism") {
+    return Address.fromString(WETH_OPTIMISM);
+  }
+  if (network == "base") {
+    return Address.fromString(WETH_BASE);
+  }
+  log.critical("Unsupported network in getWrappedNativeAddress: {}", [
+    network,
+  ]);
+  return Address.zero();
+}
+
+// Token symbol/decimals for the wrapped native per chain. Used by
+// getOrCreateToken when first encountering the wrapped-native address.
+export function getWrappedNativeSymbol(network: string): string {
+  if (network == "gnosis" || network == "xdai") return "WXDAI";
+  if (network == "matic" || network == "polygon") return "WPOL";
+  if (network == "optimism" || network == "base") return "WETH";
+  return "WNATIVE";
 }
 
 // isAllowedImplementation — the Olas staking ecosystem allows multiple

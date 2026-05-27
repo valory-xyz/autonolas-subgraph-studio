@@ -114,6 +114,22 @@ function mockOlasBalanceOf(holder: Address, balance: BigInt): void {
     .returns([ethereum.Value.fromUnsignedBigInt(balance)]);
 }
 
+const WXDAI_GNOSIS = Address.fromString(
+  "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d"
+);
+function mockWrappedNativeBalanceOf(
+  holder: Address,
+  balance: BigInt
+): void {
+  createMockedFunction(
+    WXDAI_GNOSIS,
+    "balanceOf",
+    "balanceOf(address):(uint256)"
+  )
+    .withArgs([ethereum.Value.fromAddress(holder)])
+    .returns([ethereum.Value.fromUnsignedBigInt(balance)]);
+}
+
 // ----------------- Event constructors -----------------
 
 function setMockEventBoilerplate<T extends ethereum.Event>(
@@ -399,6 +415,7 @@ describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds",
     // Phase 2a's eth_call OLAS baseline at first sighting needs a
     // mocked balanceOf for the Master Safe under test.
     mockOlasBalanceOf(MASTER_SAFE, BigInt.zero());
+    mockWrappedNativeBalanceOf(MASTER_SAFE, BigInt.zero());
   });
 
   afterEach(() => {
@@ -548,18 +565,43 @@ describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds",
         "amount",
         "0"
       );
-      // Phase 2a adds an eth_call OLAS-baseline SAFE_SETUP_TRANSFER
-      // row at first-sighting (in addition to SAFE_DEPLOYED). Two
-      // synthetic rows total.
-      assert.entityCount("FundsMovement", 2);
-      const baselineId = Bytes.fromUTF8("safe-setup-baseline:").concat(
-        MASTER_SAFE
+      // Phase 2a (Rev. 4) emits the OPENING_BALANCE anchor set at
+      // first-sighting in addition to SAFE_DEPLOYED:
+      //   - OLAS opening-balance row (slot 0)
+      //   - WrappedNative opening-balance row (slot 1)
+      //   - Native marker row (token=null, amount=0)
+      // Total: 1 SAFE_DEPLOYED + 3 OPENING_BALANCE = 4 rows.
+      assert.entityCount("FundsMovement", 4);
+      const olasBaselineId = Bytes.fromUTF8("opening-balance:")
+        .concat(MASTER_SAFE)
+        .concatI32(0);
+      assert.fieldEquals(
+        "FundsMovement",
+        olasBaselineId.toHexString(),
+        "category",
+        "OPENING_BALANCE"
+      );
+      const nativeMarkerId = Bytes.fromUTF8(
+        "opening-balance:native:"
+      ).concat(MASTER_SAFE);
+      assert.fieldEquals(
+        "FundsMovement",
+        nativeMarkerId.toHexString(),
+        "category",
+        "OPENING_BALANCE"
       );
       assert.fieldEquals(
         "FundsMovement",
-        baselineId.toHexString(),
-        "category",
-        "SAFE_SETUP_TRANSFER"
+        nativeMarkerId.toHexString(),
+        "amount",
+        "0"
+      );
+      // historyFloor* set on the MasterSafe at first-sighting.
+      assert.fieldEquals(
+        "MasterSafe",
+        MASTER_SAFE.toHexString(),
+        "historyFloorBlock",
+        "1" // matchstick default block.number = 1
       );
 
       // Second NFT movement involving the same Master Safe must NOT
@@ -567,7 +609,7 @@ describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds",
       handleServiceNftTransfer(
         newNftTransfer(MASTER_SAFE, MASTER_SAFE, SERVICE_ID, tx, 1)
       );
-      assert.entityCount("FundsMovement", 2);
+      assert.entityCount("FundsMovement", 4);
       assert.entityCount("ServiceNftCustodyChange", 2);
     }
   );

@@ -109,9 +109,24 @@ function mockProxyConfig(
 const OLAS_GNOSIS_ADDR = Address.fromString(
   "0xcE11e14225575945b8E6Dc0D4F2dD4C570f79d9f"
 );
+const WXDAI_GNOSIS_ADDR = Address.fromString(
+  "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d"
+);
 function mockOlasBalanceOf(holder: Address, balance: BigInt): void {
   createMockedFunction(
     OLAS_GNOSIS_ADDR,
+    "balanceOf",
+    "balanceOf(address):(uint256)"
+  )
+    .withArgs([ethereum.Value.fromAddress(holder)])
+    .returns([ethereum.Value.fromUnsignedBigInt(balance)]);
+}
+function mockWrappedNativeBalanceOf(
+  holder: Address,
+  balance: BigInt
+): void {
+  createMockedFunction(
+    WXDAI_GNOSIS_ADDR,
     "balanceOf",
     "balanceOf(address):(uint256)"
   )
@@ -431,6 +446,7 @@ describe("pearl-transactions / Phase 1b — staking", () => {
     // Phase 2a's emitMasterSafeOlasBaseline calls OLAS.balanceOf at
     // first sighting; mock returns 0 for tests not covering baseline.
     mockOlasBalanceOf(MASTER_SAFE, BigInt.zero());
+    mockWrappedNativeBalanceOf(MASTER_SAFE, BigInt.zero());
   });
 
   afterEach(() => {
@@ -761,9 +777,12 @@ describe("pearl-transactions / Phase 1b — staking", () => {
     );
 
     // 3 claims + 1 unstake = 4 reward-bearing FundsMovement rows.
-    // Plus SAFE_DEPLOYED + SAFE_SETUP_TRANSFER baseline emitted at
-    // first sighting of MASTER_SAFE in handleServiceStaked.
-    assert.entityCount("FundsMovement", 6);
+    // Plus the anchor set at first sighting of MASTER_SAFE in
+    // handleServiceStaked (Phase 2a Rev. 4):
+    //   1 SAFE_DEPLOYED
+    // + 3 OPENING_BALANCE (OLAS, WrappedNative, native marker)
+    // = 4 anchor + 4 reward = 8 total.
+    assert.entityCount("FundsMovement", 8);
 
     // Cumulative: 4 × REWARD.
     assert.fieldEquals(

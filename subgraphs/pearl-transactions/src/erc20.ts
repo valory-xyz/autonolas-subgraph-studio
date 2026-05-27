@@ -11,16 +11,22 @@ import {
   upsertTokenBalance,
 } from "./utils";
 
-// handleOlasTransfer — chain-wide OLAS Transfer handler. Filters to
-// transfers where at least one side is a tracked address (Master /
-// Agent Safe or Master / Agent EOA), classifies the hop, and emits
-// a FundsMovement(source=RAW_TRANSFER) row.
+// handleErc20Transfer — generic ERC-20 Transfer handler shared by
+// every ERC-20 data source (OLAS + WrappedNative in Phase 2a, plus
+// USDC / USDC.e in Phase 2b once those ship). The `token` field on
+// the resulting row comes from `event.address`, so the same handler
+// works regardless of which token contract fired the event.
 //
-// Same-tx Master → Agent constituent transfers (across multiple
-// tokens or to Agent Safe + Agent EOA) group under a shared
-// AgentFundingEvent per (txHash, masterSafe, service); the OLAS row
-// links via FundsMovement.agentFundingEvent.
-export function handleOlasTransfer(event: TransferEvent): void {
+// Filters to transfers where at least one side is a tracked address
+// (Master / Agent Safe / EOA / staking proxy / SRTU), classifies the
+// hop via classifyTransfer, and emits a FundsMovement(source=RAW_TRANSFER)
+// row.
+//
+// Same-tx Master → Agent constituent transfers across multiple tokens
+// (or Agent Safe + Agent EOA together) group under a shared
+// AgentFundingEvent per (txHash, masterSafe, service); each row links
+// via FundsMovement.agentFundingEvent.
+export function handleErc20Transfer(event: TransferEvent): void {
   const from = event.params.from;
   const to = event.params.to;
   const amount = event.params.value;

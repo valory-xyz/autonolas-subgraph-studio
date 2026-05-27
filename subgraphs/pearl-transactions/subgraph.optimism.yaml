@@ -114,7 +114,30 @@ dataSources:
           file: ../../abis/ERC20Detailed.json
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
-          handler: handleOlasTransfer
+          handler: handleErc20Transfer
+      file: ./src/erc20.ts
+  - kind: ethereum
+    name: WrappedNative
+    network: optimism
+    source:
+      address: "0x4200000000000000000000000000000000000006"
+      abi: ERC20
+      startBlock: 116423039
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - FundsMovement
+        - TokenBalance
+        - Token
+        - AgentFundingEvent
+      abis:
+        - name: ERC20
+          file: ../../abis/ERC20Detailed.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleErc20Transfer
       file: ./src/erc20.ts
 templates:
   - name: StakingProxy

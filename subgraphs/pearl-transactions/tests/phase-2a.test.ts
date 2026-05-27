@@ -23,7 +23,7 @@ import {
   TrackedEOA,
   TrackedSafe,
 } from "../generated/schema";
-import { handleOlasTransfer } from "../src/erc20";
+import { handleErc20Transfer } from "../src/erc20";
 import {
   handleSafeAddedOwner,
   handleSafeChangedThreshold,
@@ -228,6 +228,8 @@ function seedMasterSafe(setupTransferSeen: boolean): void {
   ms.threshold = BigInt.fromI32(1);
   ms.firstSeenTimestamp = BigInt.fromI32(1);
   ms.firstSeenBlock = BigInt.fromI32(1);
+  ms.historyFloorBlock = BigInt.fromI32(1);
+  ms.historyFloorTimestamp = BigInt.fromI32(1);
   ms.lastActivityTimestamp = BigInt.fromI32(1);
   ms.setupTransferSeen = setupTransferSeen;
   ms.save();
@@ -274,7 +276,7 @@ describe("pearl-transactions / Phase 2a — raw OLAS + Safe template", () => {
   test("Master EOA → Master Safe (first hop) classifies as SAFE_SETUP_TRANSFER", () => {
     seedMasterSafe(/* setupTransferSeen = */ false);
     const tx = mockTx(1);
-    handleOlasTransfer(newOlasTransfer(MASTER_EOA, MASTER_SAFE, AMOUNT, tx, 0));
+    handleErc20Transfer(newOlasTransfer(MASTER_EOA, MASTER_SAFE, AMOUNT, tx, 0));
 
     const id = tx.concatI32(0);
     assert.fieldEquals(
@@ -301,7 +303,7 @@ describe("pearl-transactions / Phase 2a — raw OLAS + Safe template", () => {
   test("Master EOA → Master Safe (subsequent hops) classify as MASTER_FUNDING_IN", () => {
     seedMasterSafe(/* setupTransferSeen = */ true);
     const tx = mockTx(2);
-    handleOlasTransfer(newOlasTransfer(MASTER_EOA, MASTER_SAFE, AMOUNT, tx, 0));
+    handleErc20Transfer(newOlasTransfer(MASTER_EOA, MASTER_SAFE, AMOUNT, tx, 0));
 
     const id = tx.concatI32(0);
     assert.fieldEquals(
@@ -317,8 +319,8 @@ describe("pearl-transactions / Phase 2a — raw OLAS + Safe template", () => {
     seedAgentSafe(SERVICE_ID);
 
     const tx = mockTx(3);
-    handleOlasTransfer(newOlasTransfer(MASTER_SAFE, AGENT_SAFE, AMOUNT, tx, 0));
-    handleOlasTransfer(
+    handleErc20Transfer(newOlasTransfer(MASTER_SAFE, AGENT_SAFE, AMOUNT, tx, 0));
+    handleErc20Transfer(
       newOlasTransfer(MASTER_SAFE, AGENT_EOA, AMOUNT, tx, 1)
     );
 
@@ -347,7 +349,7 @@ describe("pearl-transactions / Phase 2a — raw OLAS + Safe template", () => {
     seedAgentSafe(SERVICE_ID);
 
     const tx = mockTx(4);
-    handleOlasTransfer(newOlasTransfer(AGENT_SAFE, MASTER_SAFE, AMOUNT, tx, 0));
+    handleErc20Transfer(newOlasTransfer(AGENT_SAFE, MASTER_SAFE, AMOUNT, tx, 0));
 
     const id = tx.concatI32(0);
     assert.fieldEquals(
@@ -361,7 +363,7 @@ describe("pearl-transactions / Phase 2a — raw OLAS + Safe template", () => {
   test("Master Safe → random EOA classifies as MASTER_WITHDRAWAL", () => {
     seedMasterSafe(true);
     const tx = mockTx(5);
-    handleOlasTransfer(newOlasTransfer(MASTER_SAFE, RANDOM_EOA, AMOUNT, tx, 0));
+    handleErc20Transfer(newOlasTransfer(MASTER_SAFE, RANDOM_EOA, AMOUNT, tx, 0));
 
     const id = tx.concatI32(0);
     assert.fieldEquals(
@@ -375,7 +377,7 @@ describe("pearl-transactions / Phase 2a — raw OLAS + Safe template", () => {
   test("Untracked → untracked Transfer is dropped", () => {
     seedMasterSafe(true);
     const tx = mockTx(6);
-    handleOlasTransfer(newOlasTransfer(RANDOM_EOA, RANDOM_EOA, AMOUNT, tx, 0));
+    handleErc20Transfer(newOlasTransfer(RANDOM_EOA, RANDOM_EOA, AMOUNT, tx, 0));
     assert.entityCount("FundsMovement", 0);
   });
 
@@ -441,7 +443,7 @@ describe("pearl-transactions / Phase 2a — raw OLAS + Safe template", () => {
   test("Master EOA → unrelated EOA classifies as OTHER (not dropped)", () => {
     seedMasterSafe(true);
     const tx = mockTx(20);
-    handleOlasTransfer(newOlasTransfer(MASTER_EOA, RANDOM_EOA, AMOUNT, tx, 0));
+    handleErc20Transfer(newOlasTransfer(MASTER_EOA, RANDOM_EOA, AMOUNT, tx, 0));
 
     // Per plan §10: "Master EOA → unrelated EOA classified OTHER,
     // not silently dropped."
@@ -461,7 +463,7 @@ describe("pearl-transactions / Phase 2a — raw OLAS + Safe template", () => {
       "0xa45E64d13A30a51b91ae0eb182e88a40e9b18eD8"
     );
     const tx = mockTx(21);
-    handleOlasTransfer(newOlasTransfer(MASTER_SAFE, SRTU_GNOSIS, AMOUNT, tx, 0));
+    handleErc20Transfer(newOlasTransfer(MASTER_SAFE, SRTU_GNOSIS, AMOUNT, tx, 0));
 
     const id = tx.concatI32(0);
     assert.fieldEquals(
@@ -484,7 +486,7 @@ describe("pearl-transactions / Phase 2a — raw OLAS + Safe template", () => {
       "0xa45E64d13A30a51b91ae0eb182e88a40e9b18eD8"
     );
     const tx = mockTx(22);
-    handleOlasTransfer(newOlasTransfer(SRTU_GNOSIS, MASTER_SAFE, AMOUNT, tx, 0));
+    handleErc20Transfer(newOlasTransfer(SRTU_GNOSIS, MASTER_SAFE, AMOUNT, tx, 0));
 
     const id = tx.concatI32(0);
     assert.fieldEquals(
@@ -520,7 +522,7 @@ describe("pearl-transactions / Phase 2a — raw OLAS + Safe template", () => {
     sc.save();
 
     const tx = mockTx(23);
-    handleOlasTransfer(newOlasTransfer(STAKING_PROXY, AGENT_SAFE, AMOUNT, tx, 0));
+    handleErc20Transfer(newOlasTransfer(STAKING_PROXY, AGENT_SAFE, AMOUNT, tx, 0));
 
     const id = tx.concatI32(0);
     assert.fieldEquals(
@@ -544,7 +546,7 @@ describe("pearl-transactions / Phase 2a — raw OLAS + Safe template", () => {
       "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
     );
     const tx = mockTx(24);
-    handleOlasTransfer(newOlasTransfer(AGENT_SAFE, APP, AMOUNT, tx, 0));
+    handleErc20Transfer(newOlasTransfer(AGENT_SAFE, APP, AMOUNT, tx, 0));
 
     const id = tx.concatI32(0);
     assert.fieldEquals(
@@ -562,7 +564,7 @@ describe("pearl-transactions / Phase 2a — raw OLAS + Safe template", () => {
       "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
     );
     const tx = mockTx(25);
-    handleOlasTransfer(newOlasTransfer(APP, AGENT_SAFE, AMOUNT, tx, 0));
+    handleErc20Transfer(newOlasTransfer(APP, AGENT_SAFE, AMOUNT, tx, 0));
 
     const id = tx.concatI32(0);
     assert.fieldEquals(
@@ -576,9 +578,9 @@ describe("pearl-transactions / Phase 2a — raw OLAS + Safe template", () => {
   test("TokenBalance running total accumulates across MASTER_FUNDING_IN hops", () => {
     seedMasterSafe(true);
     const tx1 = mockTx(26);
-    handleOlasTransfer(newOlasTransfer(MASTER_EOA, MASTER_SAFE, AMOUNT, tx1, 0));
+    handleErc20Transfer(newOlasTransfer(MASTER_EOA, MASTER_SAFE, AMOUNT, tx1, 0));
     const tx2 = mockTx(27);
-    handleOlasTransfer(newOlasTransfer(MASTER_EOA, MASTER_SAFE, AMOUNT, tx2, 0));
+    handleErc20Transfer(newOlasTransfer(MASTER_EOA, MASTER_SAFE, AMOUNT, tx2, 0));
 
     // TokenBalance id = safe.concat(token).
     const id = MASTER_SAFE.concat(OLAS_GNOSIS);
@@ -588,6 +590,108 @@ describe("pearl-transactions / Phase 2a — raw OLAS + Safe template", () => {
       id.toHexString(),
       "balance",
       AMOUNT.plus(AMOUNT).toString()
+    );
+  });
+
+  // --- Rev. 4 (PR #130 review) new behaviors ---------------------------
+
+  test("WrappedNative Transfer routed via the same generic handler as OLAS", () => {
+    seedMasterSafe(true);
+    seedAgentSafe("42");
+    const WXDAI_GNOSIS = Address.fromString(
+      "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d"
+    );
+    // Build a Transfer event whose event.address is WXDAI (the
+    // WrappedNative data source). handleErc20Transfer reads
+    // event.address for the row's `token` field, so the same handler
+    // works regardless of which token contract fired.
+    const tx = mockTx(28);
+    const mock = newMockEvent();
+    const e = new OlasTransfer(
+      mock.address,
+      mock.logIndex,
+      mock.transactionLogIndex,
+      mock.logType,
+      mock.block,
+      mock.transaction,
+      mock.parameters,
+      mock.receipt
+    );
+    e.parameters = new Array();
+    e.parameters.push(
+      new ethereum.EventParam("from", ethereum.Value.fromAddress(MASTER_SAFE))
+    );
+    e.parameters.push(
+      new ethereum.EventParam("to", ethereum.Value.fromAddress(AGENT_SAFE))
+    );
+    e.parameters.push(
+      new ethereum.EventParam(
+        "value",
+        ethereum.Value.fromUnsignedBigInt(AMOUNT)
+      )
+    );
+    e.address = WXDAI_GNOSIS;
+    e.transaction.hash = tx;
+    e.logIndex = BigInt.fromI32(0);
+
+    handleErc20Transfer(e);
+
+    const id = tx.concatI32(0);
+    assert.fieldEquals(
+      "FundsMovement",
+      id.toHexString(),
+      "category",
+      "MASTER_TO_AGENT"
+    );
+    assert.fieldEquals(
+      "FundsMovement",
+      id.toHexString(),
+      "token",
+      WXDAI_GNOSIS.toHexString()
+    );
+    // Token entity carries the correct per-chain symbol (WXDAI on
+    // Gnosis; getOrCreateToken resolves via getWrappedNativeSymbol).
+    assert.fieldEquals(
+      "Token",
+      WXDAI_GNOSIS.toHexString(),
+      "symbol",
+      "WXDAI"
+    );
+  });
+
+  test("OPENING_BALANCE does NOT pre-empt SAFE_SETUP_TRANSFER on first live inbound", () => {
+    // Seed the MasterSafe with setupTransferSeen=false to simulate
+    // the post-baseline state (the baseline emission does NOT flip
+    // the flag in Rev. 4). The first live Master EOA → Master Safe
+    // hop should still classify as SAFE_SETUP_TRANSFER.
+    seedMasterSafe(/* setupTransferSeen = */ false);
+
+    const tx = mockTx(29);
+    handleErc20Transfer(newOlasTransfer(MASTER_EOA, MASTER_SAFE, AMOUNT, tx, 0));
+
+    const id = tx.concatI32(0);
+    assert.fieldEquals(
+      "FundsMovement",
+      id.toHexString(),
+      "category",
+      "SAFE_SETUP_TRANSFER"
+    );
+    assert.fieldEquals(
+      "MasterSafe",
+      MASTER_SAFE.toHexString(),
+      "setupTransferSeen",
+      "true"
+    );
+
+    // Second live hop falls through to MASTER_FUNDING_IN.
+    const tx2 = mockTx(30);
+    handleErc20Transfer(newOlasTransfer(MASTER_EOA, MASTER_SAFE, AMOUNT, tx2, 0));
+    const id2 = tx2.concatI32(0);
+    assert.fieldEquals(
+      "FundsMovement",
+      id2.toHexString(),
+      "category",
+      "MASTER_FUNDING_IN"
     );
   });
 });

@@ -19,12 +19,20 @@ type MasterSafe @entity(immutable: false) {
   services: [Service!]! @derivedFrom(field: "masterSafe")
   agentSafes: [AgentSafe!]! @derivedFrom(field: "masterSafe")
   firstSeenTimestamp: BigInt!
-  firstSeenBlock: BigInt!             # for consumer "Setup complete" anchoring
+  firstSeenBlock: BigInt!             # internal provenance: when we first saw this Safe
+  # Rev. 4 (per PR #130 review) — explicit anchor fields the wallet UI
+  # uses to render a literal "History starts here" divider above the
+  # OPENING_BALANCE rows (§6.2). Equal to firstSeen* in practice;
+  # named distinctly because historyFloor* is a consumer-facing UI
+  # contract while firstSeen* is internal provenance.
+  historyFloorBlock: BigInt!
+  historyFloorTimestamp: BigInt!
   lastActivityTimestamp: BigInt!
-  # Phase 2a: flips true the first time an ERC-20 inbound from
-  # masterEoa is observed post-creation. Used by classifyTransfer to
-  # tag the first hop as SAFE_SETUP_TRANSFER (later hops are
-  # MASTER_FUNDING_IN). See §6.1.
+  # Phase 2a: flips true the first time a live ERC-20 / native inbound
+  # from masterEoa is observed AFTER the OPENING_BALANCE baseline.
+  # classifyTransfer tags the first qualifying hop as
+  # SAFE_SETUP_TRANSFER (subsequent are MASTER_FUNDING_IN). OPENING_BALANCE
+  # does NOT flip this — it's a separate, synthetic snapshot row.
   setupTransferSeen: Boolean!
 }
 
@@ -75,7 +83,8 @@ enum FundsCategory {
   UNSTAKE_REWARD                      # StakingProxy.ServiceUnstaked / ServiceForceUnstaked → Agent Safe
   SERVICE_EVICTED                     # StakingProxy.ServicesEvicted (informational; amount=0)
   # Phase 2a — raw token / native ledger (source=RAW_TRANSFER unless noted)
-  SAFE_SETUP_TRANSFER                 # First Master EOA → Master Safe inbound after SAFE_DEPLOYED; or eth_call baseline (source=SEMANTIC) per §6.2
+  OPENING_BALANCE                     # Rev. 4 — synthetic at first-sighting; one per tracked ERC-20 (eth_call balanceOf) + a zero-amount native marker. source=SEMANTIC. See §6.2.
+  SAFE_SETUP_TRANSFER                 # First LIVE Master EOA → Master Safe inbound hop AFTER the OPENING_BALANCE baseline. Fires once per Master Safe.
   MASTER_FUNDING_IN                   # subsequent EOA → Master Safe (after SAFE_SETUP_TRANSFER consumed)
   MASTER_WITHDRAWAL                   # Master Safe → EOA
   MASTER_TO_AGENT                     # Master Safe → Agent Safe / Agent EOA (grouped via AgentFundingEvent)

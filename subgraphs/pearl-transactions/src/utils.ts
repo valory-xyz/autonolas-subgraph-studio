@@ -29,6 +29,7 @@ import { GnosisSafe } from "../generated/ServiceRegistryL2/GnosisSafe";
 import { Safe as SafeTemplate } from "../generated/templates";
 import {
   BOND_TYPE_AGENT_BOND,
+  CATEGORY_OPENING_BALANCE,
   CATEGORY_OTHER,
   CATEGORY_SAFE_DEPLOYED,
   CATEGORY_SAFE_SETUP_TRANSFER,
@@ -38,6 +39,8 @@ import {
   SOURCE_SEMANTIC,
   getOlasAddress,
   getSrtuAddress,
+  getWrappedNativeAddress,
+  getWrappedNativeSymbol,
 } from "./constants";
 
 // --- ID helpers ------------------------------------------------------
@@ -125,6 +128,11 @@ export function getOrCreateMasterSafe(
   masterSafe.network = currentNetwork();
   masterSafe.firstSeenTimestamp = event.block.timestamp;
   masterSafe.firstSeenBlock = event.block.number;
+  // Rev. 4 — historyFloor* mirror firstSeen* but are the consumer
+  // UI's anchor for "History starts here" (§6.2). Separate fields so
+  // the contract is explicit.
+  masterSafe.historyFloorTimestamp = event.block.timestamp;
+  masterSafe.historyFloorBlock = event.block.number;
   masterSafe.lastActivityTimestamp = event.block.timestamp;
   masterSafe.setupTransferSeen = false;
 
@@ -163,47 +171,109 @@ export function getOrCreateMasterSafe(
     );
   }
   SafeTemplate.create(address);
-  emitMasterSafeOlasBaseline(masterSafe, event);
+  emitOpeningBalanceRows(masterSafe, event);
 
   return masterSafe;
 }
 
-// emitMasterSafeOlasBaseline — §6.2 option 2 (eth_call baseline).
-// At first sighting of a Master Safe, query OLAS.balanceOf(masterSafe)
-// and emit a SAFE_SETUP_TRANSFER synthetic row with the current
-// balance. Captures the pre-stake funding amount that the live
-// `Safe` template can't back-fill. Native baseline is unobservable
-// from mappings (no view function; eth_getBalance not exposed).
-function emitMasterSafeOlasBaseline(
+// emitOpeningBalanceRows — §6.2 (Rev. 4 — replaces the prior
+// emitMasterSafeOlasBaseline). At first sighting of a Master Safe,
+// emit a deterministic anchor set:
+//
+//   - One OPENING_BALANCE row per tracked ERC-20 (OLAS + the chain's
+//     wrapped native, currently). `amount` = eth_call balanceOf at
+//     first-sighting block. Initializes TokenBalance at the same value.
+//   - One zero-amount native marker row (token = null, amount = 0).
+//     Native balance pre-first-sighting is unobservable from mappings;
+//     the marker exists so the wallet UI has a row to attach the
+//     "native pre-discovery balance unknown" caption to.
+//
+// The MasterSafe.historyFloorBlock / historyFloorTimestamp fields are
+// the consumer's UI anchor ("History starts here"); they're set in
+// getOrCreateMasterSafe at first sighting.
+//
+// Critical: this function does NOT flip setupTransferSeen. That flag
+// is reserved for the first LIVE Master EOA → Master Safe hop captured
+// by classifyTransfer. Baseline + SAFE_SETUP_TRANSFER are distinct
+// concepts: baseline = what was there; setup-transfer = the first
+// hop we actually saw.
+function emitOpeningBalanceRows(
   masterSafe: MasterSafe,
   event: ethereum.Event
 ): void {
-  const olasAddr = getOlasAddress(currentNetwork());
-  const erc20 = ERC20.bind(olasAddr);
-  const balanceResult = erc20.try_balanceOf(Address.fromBytes(masterSafe.id));
+  const network = currentNetwork();
+  const safeAddr = Address.fromBytes(masterSafe.id);
 
+  // OLAS opening balance.
+  emitOpeningBalanceForToken(
+    masterSafe,
+    safeAddr,
+    getOlasAddress(network),
+    /* slot = */ 0,
+    event
+  );
+
+  // Wrapped-native opening balance (Rev. 4).
+  emitOpeningBalanceForToken(
+    masterSafe,
+    safeAddr,
+    getWrappedNativeAddress(network),
+    /* slot = */ 1,
+    event
+  );
+
+  // Native marker row (token = null, amount = 0). Used by the UI to
+  // surface "native pre-discovery balance unknown".
+  const nativeMarker = new FundsMovement(
+    Bytes.fromUTF8("opening-balance:native:").concat(masterSafe.id)
+  );
+  nativeMarker.masterSafe = masterSafe.id;
+  nativeMarker.category = CATEGORY_OPENING_BALANCE;
+  nativeMarker.source = SOURCE_SEMANTIC;
+  // token left null (the schema permits null token; consumers detect
+  // native by token == null + category == OPENING_BALANCE).
+  nativeMarker.amount = BigInt.zero();
+  nativeMarker.from = Address.zero();
+  nativeMarker.to = masterSafe.id;
+  nativeMarker.blockNumber = event.block.number;
+  nativeMarker.blockTimestamp = event.block.timestamp;
+  nativeMarker.transactionHash = event.transaction.hash;
+  nativeMarker.save();
+}
+
+function emitOpeningBalanceForToken(
+  masterSafe: MasterSafe,
+  safeAddr: Address,
+  tokenAddr: Address,
+  slot: i32,
+  event: ethereum.Event
+): void {
+  const erc20 = ERC20.bind(tokenAddr);
+  const balanceResult = erc20.try_balanceOf(safeAddr);
   let baseline: BigInt = BigInt.zero();
   if (!balanceResult.reverted) {
     baseline = balanceResult.value;
   } else {
     log.warning(
-      "OLAS.balanceOf eth_call reverted for Master Safe {} (tx {}); SAFE_SETUP_TRANSFER baseline = 0",
+      "balanceOf eth_call reverted for Master Safe {} on token {} (tx {}); OPENING_BALANCE = 0",
       [
         masterSafe.id.toHexString(),
+        tokenAddr.toHexString(),
         event.transaction.hash.toHexString(),
       ]
     );
   }
 
-  // Emit baseline row regardless of amount (0 = "no OLAS in Master
-  // Safe at first sighting"; non-zero = the actual pre-stake balance).
-  const row = new FundsMovement(
-    Bytes.fromUTF8("safe-setup-baseline:").concat(masterSafe.id)
-  );
+  // Deterministic id: prefix + safe + slot byte. The slot keeps the
+  // OLAS and wrapped-native rows distinct without collision risk.
+  const id = Bytes.fromUTF8("opening-balance:")
+    .concat(masterSafe.id)
+    .concatI32(slot);
+  const row = new FundsMovement(id);
   row.masterSafe = masterSafe.id;
-  row.category = CATEGORY_SAFE_SETUP_TRANSFER;
+  row.category = CATEGORY_OPENING_BALANCE;
   row.source = SOURCE_SEMANTIC;
-  row.token = olasAddr;
+  row.token = tokenAddr;
   row.amount = baseline;
   row.from = Address.zero();
   row.to = masterSafe.id;
@@ -212,20 +282,8 @@ function emitMasterSafeOlasBaseline(
   row.transactionHash = event.transaction.hash;
   row.save();
 
-  // Mark setupTransferSeen so the first live Master EOA → Master
-  // Safe ERC-20 hop is classified as MASTER_FUNDING_IN rather than
-  // a second SAFE_SETUP_TRANSFER.
-  masterSafe.setupTransferSeen = true;
-  masterSafe.save();
-
-  // Initialize TokenBalance for OLAS at the baseline value.
-  upsertTokenBalance(
-    Address.fromBytes(masterSafe.id),
-    olasAddr,
-    baseline,
-    event,
-    /* isDelta = */ false
-  );
+  // Initialize TokenBalance for this (safe, token) at the baseline.
+  upsertTokenBalance(safeAddr, tokenAddr, baseline, event, /* isDelta = */ false);
 }
 
 function emitSafeDeployedRow(
@@ -648,15 +706,29 @@ export function upsertTrackedEOA(
   tracked.save();
 }
 
-// getOrCreateToken — Phase 2a's only token is OLAS, so we hardcode
-// the symbol + decimals. Phase 2b will extend with USDC / USDC.e.
+// getOrCreateToken — Phase 2a tokens are OLAS (always 18 decimals,
+// symbol "OLAS") and the per-chain wrapped native (always 18 decimals;
+// symbol per getWrappedNativeSymbol). Phase 2b will extend with USDC
+// (6 decimals) and USDC.e (6 decimals). Token metadata is hardcoded
+// rather than queried because the ERC20Detailed ABI in this repo
+// doesn't include symbol() and Pearl's token set is small + known.
 export function getOrCreateToken(tokenAddress: Address): Token {
   let token = Token.load(tokenAddress);
   if (token != null) return token;
   token = new Token(tokenAddress);
-  // OLAS is 18 decimals on every chain it's deployed to.
-  token.symbol = "OLAS";
-  token.decimals = 18;
+  const network = currentNetwork();
+  if (tokenAddress.equals(getOlasAddress(network))) {
+    token.symbol = "OLAS";
+    token.decimals = 18;
+  } else if (tokenAddress.equals(getWrappedNativeAddress(network))) {
+    token.symbol = getWrappedNativeSymbol(network);
+    token.decimals = 18;
+  } else {
+    // Fallback for any unknown token that shows up via classifyTransfer
+    // (shouldn't happen given our data-source set, but defensive).
+    token.symbol = "UNKNOWN";
+    token.decimals = 18;
+  }
   token.save();
   return token;
 }
