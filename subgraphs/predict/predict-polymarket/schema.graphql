@@ -145,6 +145,12 @@ type DailyProfitStatistic @entity(immutable: false) {
   totalTraded: BigInt! # total traded today, regardless of market settlement
   totalPayout: BigInt! # Payouts received today
 
+  # Cost basis of bets that became settled on this day. Written by processMarketResolution.
+  # Lets ROI for arbitrary windows be computed as profit / dailyTradedSettled without
+  # having to derive `cost = payout - profit`, which is wrong here because totalTraded
+  # lands on bet day, dailyProfit on resolution day, and totalPayout on redemption day.
+  dailyTradedSettled: BigInt!
+
   # Profit realized on this day (from settlements/payouts)
   dailyProfit: BigInt!
 
