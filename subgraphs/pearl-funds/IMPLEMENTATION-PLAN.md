@@ -3,7 +3,7 @@
 **Status:** Proposed — for verification before implementation. No code yet.
 **Proposed subgraph:** `subgraphs/pearl-funds/` (final name TBD — see §11 #5)
 **Target networks (v1):** Gnosis, Polygon, Optimism, Base
-**Last updated:** 2026-05-27 (Rev. 4 addresses both @Tanya-atatakai's and @rajat2502's PR #130 design-review comments + their second-round follow-ups + §11 #6 verification: wrapped-native ERC-20 data sources promoted to Phase 2a, OPENING_BALANCE + historyFloor anchor for pre-discovery UX, §11 #6 RESOLVED as not-supported upstream so §6.2 Path B is dead and Path A "relax AC #3" is the recommended answer with Path C workarounds documented for completeness, USDC.e §6.3 tightened with consumer-side merge-cost, multi-token tx aggregation flagged as Rev. 5 open question, native EOA pre-creation reframed as explicit product-decision Open Q; Rev. 3 added §4.5 asset inventory and §4.6 Mermaid diagrams; Rev. 2 added SRTU bond-event indexing, agent-ID anti-hardcoding, Master EOA pre-creation tracking; Rev. 1 addressed PR #129 review feedback from @Tanya-atatakai and @rajat2502)
+**Last updated:** 2026-05-29 (Rev. 5 — product decisions finalised: OPENING_BALANCE rows removed from subgraph, opening balance handling delegated to frontend via historyFloorBlock; native → Agent EOA transfers confirmed as accepted known gap; AC #3 confirmed as Path A. Rev. 4 addressed PR #130 design-review comments + §11 #6 verification. Rev. 3 added §4.5 asset inventory and §4.6 Mermaid diagrams. Rev. 2 added SRTU bond-event indexing, agent-ID anti-hardcoding, Master EOA pre-creation tracking. Rev. 1 addressed PR #129 review feedback.)
 
 This document scopes a new subgraph that indexes **funds movement for the
 Master Safe and Agent Safe of Pearl predict services**. It covers Phase 1
@@ -527,11 +527,11 @@ type MasterSafe @entity(immutable: false) {
   totalOlasRewardsClaimed: BigInt!    # cumulative across all its services
   firstSeenTimestamp: BigInt!
   firstSeenBlock: BigInt!             # for consumer "Setup complete" anchoring
-  # Rev. 4: historyFloor* fields are the anchor the wallet UI uses to
-  # render "History starts here" above the OPENING_BALANCE rows. Equal
-  # to firstSeen* in practice; named distinctly because firstSeen* is
-  # an internal provenance field while historyFloor* is a consumer
-  # contract for the UI cut-line.
+  # Rev. 5: historyFloor* is the block at which the Master Safe was first
+  # sighted. The frontend uses this to call eth_getBalance / token.balanceOf
+  # at that block to derive opening balances — the subgraph no longer emits
+  # OPENING_BALANCE rows. Named distinctly from firstSeen* because it is
+  # a consumer-facing contract, not internal provenance.
   historyFloorBlock: BigInt!
   historyFloorTimestamp: BigInt!
   lastActivityTimestamp: BigInt!
@@ -577,8 +577,9 @@ enum FundsCategory {
   SERVICE_BOND_REFUND                 # SRTU.TokenRefund — fires twice per unstake-cycle: terminate + unbond
   SERVICE_EVICTED                     # ServicesEvicted (informational)
   # Phase 2a:
-  OPENING_BALANCE                     # Rev. 4 — synthetic baseline at Master Safe first-sighting; one row per tracked ERC-20 (eth_call balanceOf) + one zero-amount native marker. See §6.2.
-  SAFE_SETUP_TRANSFER                 # First live Master EOA → Master Safe inbound hop after the OPENING_BALANCE baseline. Fires once per Master Safe.
+  # OPENING_BALANCE removed in Rev. 5 — opening balances are derived by the
+  # frontend via eth_getBalance / token.balanceOf at historyFloorBlock.
+  SAFE_SETUP_TRANSFER                 # First live Master EOA → Master Safe inbound hop. Fires once per Master Safe.
   # Phase 2 also adds: MASTER_FUNDING_IN, MASTER_TO_AGENT,
   # AGENT_TO_MASTER, MASTER_WITHDRAWAL, AGENT_TO_APP, APP_TO_AGENT, OTHER
 }
@@ -838,55 +839,31 @@ babydegen pattern, `babydegen/src/safe.ts`):
   §4.4. Owner changes are rare; the handler is cheap.
 
 **Pre-template-spawn transfers (the "Setup complete" cold-start
-problem).** Per @rajat2502's PR #129 review and revisited under
-@Tanya-atatakai's PR #130 review (Rev. 4), Pearl's onboarding has
-funds moving into the Master Safe **before** the Safe template can
-observe anything (template not retroactive; native-to-EOA emits no
-log; `eth_getBalance` not exposed to AS mappings). Three concepts
-work together to make this honest for the consumer wallet UI:
+problem).** The Safe template is not retroactive — it only sees events
+from its spawn block onward. The MasterEOA → MasterSafe funding transfer
+happens before the template exists and cannot be recovered by the subgraph.
 
-1. **`OPENING_BALANCE` row** (Rev. 4 — replaces the Rev. 1
-   "`SAFE_SETUP_TRANSFER` as baseline" overload). At first sighting
-   of a Master Safe, emit one synthetic `FundsMovement` per tracked
-   ERC-20 token with `category = OPENING_BALANCE`, `source =
-   SEMANTIC`, `amount = eth_call balanceOf(masterSafe)`. Also emit
-   one zero-amount native marker row (`token = null`, `amount = 0`,
-   `category = OPENING_BALANCE`) so the UI has a deterministic
-   anchor it can label "Pre-discovery balance: native unknown".
-2. **`MasterSafe.historyFloorBlock` / `historyFloorTimestamp`**
-   (Rev. 4). The block and timestamp at which the Master Safe was
-   first sighted. The consumer wallet UI uses this to render a
-   literal "History starts here" divider above the `OPENING_BALANCE`
-   rows, so users do not read the baseline as a literal first
-   transaction — exactly the Gap 2 ask in @Tanya-atatakai's review.
-3. **`SAFE_SETUP_TRANSFER` row** (preserved, narrowed). Fires once,
-   for the first live Master-EOA → Master-Safe ERC-20 / native hop
-   **after** the `OPENING_BALANCE` baseline. `OPENING_BALANCE` does
-   not flip `setupTransferSeen` (so the first live hop still
-   classifies as `SAFE_SETUP_TRANSFER`); subsequent hops are
+**Rev. 5 decision:** Opening balances are delegated to the frontend.
+
+1. **`MasterSafe.historyFloorBlock` / `historyFloorTimestamp`** — the
+   block at which the Master Safe was first sighted. The frontend uses
+   this as the "History starts here" cut-line and calls
+   `token.balanceOf(masterSafe, historyFloorBlock)` (for OLAS /
+   WrappedNative) and `eth_getBalance(masterSafe, historyFloorBlock)`
+   (for native coin) via an archive RPC to derive opening balances.
+   Native opening balance is available via this RPC call — the subgraph
+   does not need to emit it.
+2. **`SAFE_SETUP_TRANSFER` row** — fires once for the first live
+   Master-EOA → Master-Safe inbound ERC-20 or native hop the subgraph
+   observes after first sighting. Subsequent inbound hops are
    `MASTER_FUNDING_IN`.
 
-Per-token coverage: `OPENING_BALANCE` is emitted for OLAS (always)
-+ each chain's wrapped native (WXDAI / WPOL / WETH — Rev. 4) +
-each Phase 2b stablecoin once those data sources are added. The
-zero-amount native marker is always emitted regardless of token
-coverage.
-
-**What `OPENING_BALANCE` does NOT recover:**
-
-- Individual pre-discovery hops (e.g. "user moved 30 USDC to the
-  Safe in tx A, kept 5 USDC dust on the EOA"). Only the *resting
-  balance* at the first-sighting block is recoverable.
-- Native gas pre-discovery (no view function; only a marker row).
-- Anything that happened on the Master EOA itself before the Master
-  Safe was sighted (the EOA isn't in `TrackedEOA` until Master Safe
-  derivation runs). See §5.4 + §11 #8.
-
-If the backdated-startBlock option for the `Safe` template becomes
-available (§11 #6), it would narrow the gap further for *native
-inbound* on the Master Safe — `Safe.SafeReceived` events between
-the ServiceRegistryL2 start block and first-sighting would become
-visible. It would not narrow the EOA-history gap.
+**Known accepted gap — native → Agent EOA:** Native coin transfers
+to a plain EOA emit no on-chain log. The Agent EOA gas-funding leg
+(e.g. 2 xDAI sent directly to the Agent EOA) is permanently
+unobservable from event-based subgraph indexing on
+Gnosis/Polygon/Optimism/Base, where call handlers are not supported.
+This gap is accepted for v1 and documented here.
 
 **VLOP-73 AC #3 implication** (Rev. 4 follow-up, per @rajat2502's
 self-correction on PR #130). AC #3 is verbatim:
@@ -903,57 +880,13 @@ Master Safe funding amount + token, labelled "Setup complete".
 `OPENING_BALANCE` (the post-funding *snapshot* at first sighting) does
 not satisfy AC #3 as written. So:
 
-| Path | Status | What it requires | Subgraph change |
-|---|---|---|---|
-| **A — Relax AC #3** (@Tanya-atatakai's proposal) | Available | Pearl product accepts that "Setup complete" is rendered FE-side from the `historyFloorBlock` divider + `OPENING_BALANCE` rows, without a literal transfer row. | None — Rev. 4 is the contract. |
-| **B — `Template.createWithContext` backdated `startBlock`** | **❌ Not viable** — verified upstream-not-supported. See §11 #6 resolution. | — | — |
-| **C — Workarounds for an on-chain literal transfer row** | Available but expensive | Several options exist (see below), none cheap | Substantial Phase 2 re-architecture in every case. |
-
-**§11 #6 verification result** (2026-05-27): graph-node hardcodes
-`start_block: creation_block` for spawned templates in
-[`chain/ethereum/src/data_source.rs#L132`](https://github.com/graphprotocol/graph-node/blob/master/chain/ethereum/src/data_source.rs);
-`runtime/wasm/src/host_exports.rs` (`data_source_create`) takes
-`creation_block` from the host directly and never inspects the WASM
-`context` for a `startBlock` key. The `DataSourceContext.setBigInt("startBlock", …)`
-trick that has circulated in community threads is a myth. Tracking
-issue [`graph-node#902`](https://github.com/graphprotocol/graph-node/issues/902)
-("Historical Block Scanning For Dynamic Data Sources") was opened in
-April 2019 and stale-bot closed in July 2025 without an implementing
-PR. Latest graph-node is v0.43.0 (2025-04-23); no release notes from
-v0.36-v0.43 mention backdated template start blocks. Studio runs Edge
-& Node's hosted graph-node, so Studio cannot have a feature that
-doesn't exist upstream.
-
-**Path C workarounds for satisfying AC #3 as written**, listed by
-ascending re-architecture cost:
-
-1. *Discovery + graft + static dataSources.* Run a discovery
-   deployment that records every Master Safe + its first-stake
-   block. Regenerate `subgraph.yaml` with each known Safe as a static
-   `dataSource` carrying its own historical `startBlock`. Graft the
-   re-deployment from the discovery checkpoint. Cost: manifest
-   regen + redeploy every time the Safe set grows; graft makes
-   re-sync cheap, but operational overhead is real.
-2. *Chain-wide ERC-20 indexer with deferred classification.* Drop
-   the `TrackedAddress` in-handler filter on OLAS / wrapped-native
-   data sources; store every Transfer in a temporary entity keyed by
-   (to, token); resolve them into `FundsMovement` rows when a Master
-   Safe is first sighted. Cost: large storage footprint
-   (chain-wide OLAS / WXDAI / etc.), even though the OLAS volume is
-   bounded. Native still unrecoverable.
-3. *Substreams-powered data source.* The canonical "global filter"
-   solution; pre-filters chain logs in a substreams package and
-   emits only Pearl-relevant transfers to the subgraph. Cost:
-   substreams package authoring + Studio tier capable of consuming
-   substreams.
-
-**Recommendation:** Path A is the realistic answer. Path B is dead
-(verified upstream); Path C options are all heavier re-architectures
-than Rev. 4. Needs Pearl product + FE sign-off that the AC #3 wording
-can be relaxed to "Setup complete = `historyFloorBlock` + the
-`OPENING_BALANCE` row set, rendered FE-side". If product holds AC #3
-as written, Path C-1 (discovery + graft + static dataSources) is the
-lowest-pain on-chain workaround.
+**AC #3 — resolved (Rev. 5, 2026-05-29):** Path A confirmed by product.
+"Setup complete" is rendered frontend-side: the UI shows a "History starts
+here" divider at `historyFloorBlock`, then displays opening balances fetched
+via archive RPC (`balanceOf` for ERC-20, `eth_getBalance` for native).
+No subgraph change needed. Path B (backdated template startBlock) was
+verified as not supported upstream (§11 #6). Path C options were
+evaluated and rejected as unnecessary given the Path A product decision.
 
 ### 6.3 Phase 2b — USDC / USDC.e — benchmark-gated *and* product-gated
 
