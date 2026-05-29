@@ -22,7 +22,8 @@ dataSources:
         - ServiceIndex
         - PendingRegistration
         - PendingBondCounter
-        - PendingBondAttribution
+        - PendingBondRow
+        - AgentBondAttributionGuard
         - ServiceNftCustodyChange
         - FundsMovement
       abis:
@@ -58,8 +59,7 @@ dataSources:
       entities:
         - FundsMovement
         - PendingBondCounter
-        - PendingBondAttribution
-        - MasterSafe
+        - PendingBondRow
       abis:
         - name: ServiceRegistryTokenUtility
           file: ../../abis/ServiceRegistryTokenUtility.json

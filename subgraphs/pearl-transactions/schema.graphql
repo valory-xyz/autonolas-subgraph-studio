@@ -85,7 +85,11 @@ enum FundsSource {
   RAW_TRANSFER                        # Direct ERC-20 / native Transfer (Phase 2)
 }
 
-type FundsMovement @entity(immutable: true) {
+type FundsMovement @entity(immutable: false) {
+  # Mutable: SRTU TokenDeposit/TokenRefund rows are created bondType/
+  # service-less and backfilled by the matching ServiceRegistryL2 handler
+  # later in the same tx (see PendingBondRow). All other rows are
+  # write-once in practice.
   id: Bytes!                          # see §5.1; tx.hash.concatI32(logIndex) or a stable sub-index for synthetic rows
   service: Service
   masterSafe: MasterSafe
@@ -132,34 +136,37 @@ type PendingRegistration @entity(immutable: false) {
   operators: [Bytes!]!
 }
 
-# Per-tx cursor for the bond-attribution queue. ServiceRegistryL2
-# handlers append attributions; SRTU handlers consume them head-first.
-# The queue is per-tx (not per-service) because the SRTU TokenDeposit /
-# TokenRefund events carry no serviceId — the only way to associate a
-# token movement with a service is via same-tx event order.
+# Per-tx cursor for the bond-attribution queue. The SRTU TokenDeposit /
+# TokenRefund events carry no serviceId, so a token movement can only be
+# tied to a service via same-tx event order. On-chain the SRTU event
+# always fires *before* its ServiceRegistryL2 counterpart (ServiceManager
+# calls *TokenDeposit / *TokenRefund before the registry call in every
+# path), so the SRTU handler is the PRODUCER: it creates the FundsMovement
+# row and ENQUEUES its id here. The ServiceRegistryL2 handler is the
+# CONSUMER: it DEQUEUES the oldest pending row and backfills serviceId +
+# bondType.
 type PendingBondCounter @entity(immutable: false) {
   id: Bytes!                          # tx.hash
-  nextStashSlot: Int!
-  nextConsumeSlot: Int!
+  nextEnqueueSlot: Int!
+  nextDequeueSlot: Int!
 }
 
-# Per-slot attribution entry. SRTU handlers look up by
-# (txHash.concatI32(slot)) when a TokenDeposit / TokenRefund fires.
-# Holds the serviceId resolved from the corresponding ServiceRegistryL2
-# event (ActivateRegistration / RegisterInstance / TerminateService /
-# OperatorUnbond).
-type PendingBondAttribution @entity(immutable: false) {
+# Per-slot queue entry pointing at the FundsMovement row awaiting
+# attribution. Enqueued by the SRTU handler (TokenDeposit / TokenRefund);
+# `attributed` is flipped when a ServiceRegistryL2 handler
+# (ActivateRegistration / RegisterInstance / TerminateService /
+# OperatorUnbond) backfills the row's serviceId + bondType.
+type PendingBondRow @entity(immutable: false) {
   id: Bytes!                          # tx.hash.concatI32(slot)
-  serviceId: BigInt!
-  bondType: ServiceBondType!
-  consumed: Boolean!
+  fundsMovement: Bytes!               # FundsMovement id awaiting serviceId + bondType
+  attributed: Boolean!
 }
 
 # Dedupe guard: RegisterInstance fires once per agent instance, but
 # registerAgentsTokenDeposit emits only one TokenDeposit for the
-# combined agent bond. The guard ensures we stash exactly one
-# AGENT_BOND attribution per (txHash, serviceId), regardless of how
-# many RegisterInstance events fire.
-type AgentBondStashGuard @entity(immutable: true) {
+# combined agent bond. The guard ensures exactly one RegisterInstance
+# per (txHash, serviceId) dequeues + attributes that single AGENT_BOND
+# row, regardless of how many RegisterInstance events fire.
+type AgentBondAttributionGuard @entity(immutable: true) {
   id: Bytes!                          # tx.hash.concat(serviceId.toBytes())
 }

@@ -43,9 +43,16 @@ adds the full semantic ledger for the registry + SRTU side. Implemented:
   entry. Idempotent on subsequent calls (only bumps
   `lastActivityTimestamp`).
 - **Bond-type attribution queue** (`src/utils.ts`
-  `stashBondAttribution` / `consumeBondAttribution`) — per-tx FIFO
-  matching ServiceRegistryL2 events to SRTU events that fire later
-  in the same tx; `bondType` is null when attribution fails.
+  `enqueuePendingBondRow` / `dequeueAndAttribute`) — per-tx FIFO.
+  On-chain the SRTU event (`TokenDeposit`/`TokenRefund`) always fires
+  *before* its `ServiceRegistryL2` counterpart (`ServiceManager` calls
+  the `*TokenDeposit`/`*TokenRefund` function before the registry
+  function in every path), so the SRTU handler is the **producer** — it
+  creates the `FundsMovement` row and enqueues its id — and the
+  `ServiceRegistryL2` handler is the **consumer**, dequeuing the oldest
+  pending row and backfilling `serviceId` + `bondType` (hence
+  `FundsMovement` is `immutable: false`). `bondType` stays null when no
+  SR event follows the deposit/refund.
 - **8 Matchstick tests** covering ordering, dedupe, NFT custody,
   stake/unstake cycles with bondType attribution, null-attribution
   fallback, per-tx isolation.
@@ -55,11 +62,12 @@ Honest limits documented in
 that apply to Phase 1a as-shipped:
 - `bondType` attribution is best-effort; unmodeled call orderings
   leave it null but preserve the amount.
-- Master Safe is *also* identified when the NFT transfers to a
-  staking proxy address — `getOrCreateMasterSafe` will try
-  `getOwners()` on the proxy, get a revert, log a warning, and set
-  `masterEoa = zero / threshold = 0`. Phase 1b will narrow the NFT
-  handler to skip recipients in the `StakingContract` entity set.
+- Non-Safe NFT recipients (staking proxy when a service is staked,
+  EOAs, etc.) are skipped: `getOrCreateMasterSafe` probes `getOwners()`
+  and returns `null` on revert/empty, so no phantom `MasterSafe` /
+  `SAFE_DEPLOYED` row is created and the service keeps its real Master
+  Safe link from mint. Phase 1b replaces this probe with an explicit
+  `StakingContract` allowlist.
 - Master EOA owner-list staleness between first sighting and Phase 2a
   `Safe` template spawn (no `AddedOwner` / `RemovedOwner` handling
   yet).

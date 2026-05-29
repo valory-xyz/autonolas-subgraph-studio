@@ -16,15 +16,15 @@ import {
 } from "./constants";
 import {
   appendServiceRegistration,
+  attributeAgentBondOncePerService,
   bufferPendingRegistration,
+  dequeueAndAttribute,
   drainPendingRegistration,
   fundsMovementId,
   getOrCreateAgentSafe,
   getOrCreateMasterSafe,
   getOrCreateService,
   setServiceIndex,
-  stashAgentBondOncePerService,
-  stashBondAttribution,
 } from "./utils";
 
 // handleRegisterInstance —
@@ -32,8 +32,10 @@ import {
 //     earlier in this tx), record agentId + operator directly on it.
 //   * Otherwise buffer into PendingRegistration; drained at
 //     CreateMultisigWithAgents time.
-//   * Always stash AGENT_BOND attribution for the per-tx queue
-//     (idempotent via the dedupe guard).
+//   * Attribute the AGENT_BOND row enqueued by the preceding
+//     registerAgentsTokenDeposit TokenDeposit (idempotent via the dedupe
+//     guard, since RegisterInstance fires once per agent instance but
+//     only one agent-bond row exists).
 export function handleRegisterInstance(event: RegisterInstanceEvent): void {
   const serviceId = event.params.serviceId;
   const agentId = event.params.agentId.toI32();
@@ -48,7 +50,7 @@ export function handleRegisterInstance(event: RegisterInstanceEvent): void {
     bufferPendingRegistration(serviceId, agentId, operator);
   }
 
-  stashAgentBondOncePerService(
+  attributeAgentBondOncePerService(
     event.transaction.hash,
     serviceId,
     BOND_TYPE_AGENT_BOND
@@ -56,9 +58,9 @@ export function handleRegisterInstance(event: RegisterInstanceEvent): void {
 }
 
 // handleActivateRegistration —
-//   * Stash SECURITY_DEPOSIT attribution for the per-tx queue so the
-//     immediately-following TokenDeposit gets bondType =
-//     SECURITY_DEPOSIT.
+//   * Attribute the SECURITY_DEPOSIT row enqueued by the immediately-
+//     preceding activateRegistrationTokenDeposit TokenDeposit (the SRTU
+//     call runs before this registry call in ServiceManager).
 //   * Service state transitions are handled at the SR contract level;
 //     we don't mutate Service.state here (the canonical lifecycle
 //     state machine isn't tracked in v1 — we record only the
@@ -66,7 +68,7 @@ export function handleRegisterInstance(event: RegisterInstanceEvent): void {
 export function handleActivateRegistration(
   event: ActivateRegistrationEvent
 ): void {
-  stashBondAttribution(
+  dequeueAndAttribute(
     event.transaction.hash,
     event.params.serviceId,
     BOND_TYPE_SECURITY_DEPOSIT
@@ -97,18 +99,17 @@ export function handleCreateMultisigWithAgents(
 }
 
 // handleServiceNftTransfer — ERC-721 Transfer on the ServiceRegistryL2
-// contract (the service NFT). Records every custody change. If the
-// recipient is not the zero address and not a known staking proxy, the
-// recipient is (or becomes) the Master Safe — call getOrCreateMasterSafe
-// which derives Master EOA via getOwners() and emits SAFE_DEPLOYED.
+// contract (the service NFT). Records every custody change, then tries
+// to resolve the recipient to a Master Safe.
 //
-// In Phase 1a we have no StakingContract entity yet (Phase 1b), so
-// "known staking proxy" check is deferred. For now: skip Master Safe
-// derivation only for the zero address (mint/burn). For staked
-// services, the recipient is the staking proxy contract — getOwners()
-// will revert on a non-Safe contract and Master EOA will be set to
-// zero; we log it and move on. Phase 1b will narrow this by checking
-// against the StakingContract entity set.
+// Master Safe discovery is gated on getOrCreateMasterSafe succeeding
+// (i.e. the recipient answers getOwners() — a real Safe). The recipient
+// is NOT always a Master Safe: at mint it's the creator's Safe (the
+// Master Safe), but when a service is staked the NFT moves to a staking
+// proxy, and on burn it goes to the zero address. Only the Safe case
+// links service.masterSafe; non-Safe recipients are skipped so the real
+// Master Safe link (established at mint) is preserved. Phase 1b replaces
+// the getOwners() probe with an explicit StakingContract allowlist.
 export function handleServiceNftTransfer(event: TransferEvent): void {
   const serviceId = event.params.id;
   const from = event.params.from;
@@ -128,21 +129,22 @@ export function handleServiceNftTransfer(event: TransferEvent): void {
   change.transactionHash = event.transaction.hash;
   change.save();
 
-  // Master Safe discovery via the NFT path. Skip the mint case
-  // (from == zero address: NFT minted to recipient — recipient is the
-  // sender of createService, which is the Master Safe for Pearl). We
-  // also call getOrCreateMasterSafe on the mint recipient so the
-  // SAFE_DEPLOYED row fires immediately.
+  // Resolve the recipient to a Master Safe. Skip the zero address
+  // (burn). getOrCreateMasterSafe returns null when `to` isn't a Safe
+  // (staking proxy, EOA, …); only link when it resolves, so a stake hop
+  // (Master Safe → staking proxy) doesn't clobber the real link.
   if (!to.equals(Address.zero())) {
-    // Phase 1b will filter out the staking proxy recipient here.
     const masterSafe = getOrCreateMasterSafe(to, event);
-    service.masterSafe = masterSafe.id;
-    service.save();
+    if (masterSafe != null) {
+      service.masterSafe = masterSafe.id;
+      service.save();
+    }
   }
 }
 
 // handleTerminateService — state transition + SECURITY_DEPOSIT refund
-// attribution for the immediately-following TokenRefund.
+// attribution for the immediately-preceding TokenRefund
+// (terminateTokenRefund runs before terminate in ServiceManager).
 export function handleTerminateService(event: TerminateServiceEvent): void {
   const serviceId = event.params.serviceId;
   const service = getOrCreateService(serviceId, event);
@@ -150,7 +152,7 @@ export function handleTerminateService(event: TerminateServiceEvent): void {
   service.updatedTimestamp = event.block.timestamp;
   service.save();
 
-  stashBondAttribution(
+  dequeueAndAttribute(
     event.transaction.hash,
     serviceId,
     BOND_TYPE_SECURITY_DEPOSIT
@@ -158,9 +160,10 @@ export function handleTerminateService(event: TerminateServiceEvent): void {
 }
 
 // handleOperatorUnbond — AGENT_BOND refund attribution for the
-// immediately-following TokenRefund (unbondTokenRefund call).
+// immediately-preceding TokenRefund (unbondTokenRefund runs before
+// unbond in ServiceManager).
 export function handleOperatorUnbond(event: OperatorUnbondEvent): void {
-  stashBondAttribution(
+  dequeueAndAttribute(
     event.transaction.hash,
     event.params.serviceId,
     BOND_TYPE_AGENT_BOND

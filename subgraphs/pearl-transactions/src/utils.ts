@@ -7,12 +7,12 @@ import {
   log,
 } from "@graphprotocol/graph-ts";
 import {
-  AgentBondStashGuard,
+  AgentBondAttributionGuard,
   AgentSafe,
   FundsMovement,
   MasterSafe,
-  PendingBondAttribution,
   PendingBondCounter,
+  PendingBondRow,
   PendingRegistration,
   Service,
   ServiceIndex,
@@ -48,17 +48,14 @@ export function pendingRegistrationId(serviceId: BigInt): Bytes {
   return Bytes.fromByteArray(Bytes.fromBigInt(serviceId));
 }
 
-export function agentBondStashGuardId(
+export function agentBondAttributionGuardId(
   txHash: Bytes,
   serviceId: BigInt
 ): Bytes {
   return txHash.concat(Bytes.fromByteArray(Bytes.fromBigInt(serviceId)));
 }
 
-export function pendingBondAttributionId(
-  txHash: Bytes,
-  slot: i32
-): Bytes {
+export function pendingBondRowId(txHash: Bytes, slot: i32): Bytes {
   return txHash.concatI32(slot);
 }
 
@@ -82,12 +79,30 @@ export function currentNetwork(): string {
 export function getOrCreateMasterSafe(
   address: Address,
   event: ethereum.Event
-): MasterSafe {
+): MasterSafe | null {
   let masterSafe = MasterSafe.load(address);
   if (masterSafe != null) {
     masterSafe.lastActivityTimestamp = event.block.timestamp;
     masterSafe.save();
     return masterSafe;
+  }
+
+  // Confirm `address` is actually a Gnosis Safe before treating it as a
+  // Master Safe. The service NFT also lands on non-Safe recipients — a
+  // staking proxy (when a service is staked), an EOA, etc. — none of
+  // which are Master Safes. A real Safe always answers getOwners();
+  // everything else reverts. On revert (or empty owners) we skip
+  // entirely: no MasterSafe entity, no SAFE_DEPLOYED row, and the caller
+  // leaves any existing service.masterSafe link untouched. (Phase 1b
+  // replaces this probe with an explicit StakingContract allowlist.)
+  const safeContract = GnosisSafe.bind(address);
+  const ownersResult = safeContract.try_getOwners();
+  if (ownersResult.reverted || ownersResult.value.length == 0) {
+    log.info(
+      "Skipping non-Safe NFT recipient {} (getOwners reverted/empty) (tx {})",
+      [address.toHexString(), event.transaction.hash.toHexString()]
+    );
+    return null;
   }
 
   masterSafe = new MasterSafe(address);
@@ -96,35 +111,16 @@ export function getOrCreateMasterSafe(
   masterSafe.firstSeenBlock = event.block.number;
   masterSafe.lastActivityTimestamp = event.block.timestamp;
 
-  // getOwners() + getThreshold() eth_calls. Pearl's flow guarantees
-  // owners[0] == Master EOA (1-of-2 with non-signing backup). If the
-  // call reverts (e.g. the address is not a GnosisSafe), fall back to
-  // empty owners + threshold = 0 + masterEoa = zero address — better
-  // than crashing the indexer; the consumer can detect the fallback
-  // (threshold == 0).
-  const safeContract = GnosisSafe.bind(address);
-  const ownersResult = safeContract.try_getOwners();
-  const thresholdResult = safeContract.try_getThreshold();
-
-  if (!ownersResult.reverted && ownersResult.value.length > 0) {
-    const ownersAsBytes: Bytes[] = [];
-    for (let i = 0; i < ownersResult.value.length; i++) {
-      ownersAsBytes.push(ownersResult.value[i]);
-    }
-    masterSafe.owners = ownersAsBytes;
-    masterSafe.masterEoa = ownersResult.value[0];
-  } else {
-    log.warning(
-      "getOwners() reverted or empty for putative Master Safe {} (tx {})",
-      [
-        address.toHexString(),
-        event.transaction.hash.toHexString(),
-      ]
-    );
-    masterSafe.owners = [];
-    masterSafe.masterEoa = Address.zero();
+  // Pearl's flow guarantees owners[0] == Master EOA (1-of-2 with a
+  // non-signing backup).
+  const ownersAsBytes: Bytes[] = [];
+  for (let i = 0; i < ownersResult.value.length; i++) {
+    ownersAsBytes.push(ownersResult.value[i]);
   }
+  masterSafe.owners = ownersAsBytes;
+  masterSafe.masterEoa = ownersResult.value[0];
 
+  const thresholdResult = safeContract.try_getThreshold();
   masterSafe.threshold = thresholdResult.reverted
     ? BigInt.zero()
     : thresholdResult.value;
@@ -330,97 +326,95 @@ export function setServiceIndex(serviceId: BigInt, multisig: Bytes): void {
 }
 
 // --- Bond attribution queue (per-tx) ---------------------------------
+//
+// On-chain the SRTU event (TokenDeposit / TokenRefund) always fires
+// *before* its ServiceRegistryL2 counterpart (ServiceManager calls the
+// *TokenDeposit / *TokenRefund function before the registry function in
+// every path: activateRegistration, registerAgents, terminate, unbond).
+// So the SRTU handler is the PRODUCER — it creates the FundsMovement row
+// and enqueues its id — and the ServiceRegistryL2 handler is the
+// CONSUMER, dequeuing the oldest pending row and backfilling serviceId +
+// bondType.
 
 function getOrCreatePendingBondCounter(txHash: Bytes): PendingBondCounter {
   let counter = PendingBondCounter.load(txHash);
   if (counter == null) {
     counter = new PendingBondCounter(txHash);
-    counter.nextStashSlot = 0;
-    counter.nextConsumeSlot = 0;
+    counter.nextEnqueueSlot = 0;
+    counter.nextDequeueSlot = 0;
     counter.save();
   }
   return counter;
 }
 
-// stashBondAttribution — append (serviceId, bondType) to the per-tx
-// queue. Called by ServiceRegistryL2 handlers (ActivateRegistration,
-// RegisterInstance via the dedupe guard, TerminateService,
-// OperatorUnbond).
-export function stashBondAttribution(
+// enqueuePendingBondRow — append a FundsMovement row id to the per-tx
+// queue. Called by SRTU handlers (handleTokenDeposit / handleTokenRefund)
+// right after they create the (as-yet unattributed) row.
+export function enqueuePendingBondRow(
   txHash: Bytes,
-  serviceId: BigInt,
-  bondType: string
+  fundsMovementId: Bytes
 ): void {
   const counter = getOrCreatePendingBondCounter(txHash);
-  const slot = counter.nextStashSlot;
+  const slot = counter.nextEnqueueSlot;
 
-  const attribution = new PendingBondAttribution(
-    pendingBondAttributionId(txHash, slot)
-  );
-  attribution.serviceId = serviceId;
-  attribution.bondType = bondType;
-  attribution.consumed = false;
-  attribution.save();
+  const ptr = new PendingBondRow(pendingBondRowId(txHash, slot));
+  ptr.fundsMovement = fundsMovementId;
+  ptr.attributed = false;
+  ptr.save();
 
-  counter.nextStashSlot = slot + 1;
+  counter.nextEnqueueSlot = slot + 1;
   counter.save();
 }
 
-// stashAgentBondOncePerService — same as stashBondAttribution but
-// dedupes via AgentBondStashGuard so multiple RegisterInstance events
-// (one per agent instance) only produce one AGENT_BOND attribution per
-// (txHash, serviceId).
-export function stashAgentBondOncePerService(
+// dequeueAndAttribute — pop the oldest not-yet-attributed row from the
+// per-tx queue and backfill its serviceId + bondType. No-op if the queue
+// is empty (a ServiceRegistryL2 event fired without a matching prior
+// TokenDeposit / TokenRefund — e.g. a native-secured service that never
+// touches SRTU; the row simply doesn't exist, nothing to attribute).
+export function dequeueAndAttribute(
   txHash: Bytes,
   serviceId: BigInt,
   bondType: string
 ): void {
-  const guardId = agentBondStashGuardId(txHash, serviceId);
-  if (AgentBondStashGuard.load(guardId) != null) {
-    return;
-  }
-  const guard = new AgentBondStashGuard(guardId);
-  guard.save();
-  stashBondAttribution(txHash, serviceId, bondType);
-}
-
-// consumeBondAttribution — pop the next unconsumed attribution from
-// the per-tx queue. Returns null if the queue is empty (i.e. a
-// TokenDeposit / TokenRefund fired without a matching prior
-// ServiceRegistryL2 event — leaves bondType null on the resulting row).
-export class ConsumedAttribution {
-  serviceId: BigInt;
-  bondType: string;
-  constructor(serviceId: BigInt, bondType: string) {
-    this.serviceId = serviceId;
-    this.bondType = bondType;
-  }
-}
-
-export function consumeBondAttribution(
-  txHash: Bytes
-): ConsumedAttribution | null {
   const counter = PendingBondCounter.load(txHash);
-  if (counter == null) return null;
+  if (counter == null) return;
 
-  // Advance past any already-consumed slots (defensive; in normal
-  // operation we always consume the head, so consumeSlot == the first
-  // non-consumed slot).
-  let slot = counter.nextConsumeSlot;
-  while (slot < counter.nextStashSlot) {
-    const id = pendingBondAttributionId(txHash, slot);
-    const attribution = PendingBondAttribution.load(id);
-    if (attribution != null && !attribution.consumed) {
-      attribution.consumed = true;
-      attribution.save();
-      counter.nextConsumeSlot = slot + 1;
+  let slot = counter.nextDequeueSlot;
+  while (slot < counter.nextEnqueueSlot) {
+    const ptr = PendingBondRow.load(pendingBondRowId(txHash, slot));
+    if (ptr != null && !ptr.attributed) {
+      ptr.attributed = true;
+      ptr.save();
+      counter.nextDequeueSlot = slot + 1;
       counter.save();
-      return new ConsumedAttribution(
-        attribution.serviceId,
-        attribution.bondType
-      );
+
+      const movement = FundsMovement.load(ptr.fundsMovement);
+      if (movement != null) {
+        movement.service = serviceId.toString();
+        movement.bondType = bondType;
+        movement.save();
+      }
+      return;
     }
     slot += 1;
   }
-  return null;
+}
+
+// attributeAgentBondOncePerService — same as dequeueAndAttribute but
+// dedupes via AgentBondAttributionGuard so multiple RegisterInstance
+// events (one per agent instance) only attribute the single AGENT_BOND
+// row once per (txHash, serviceId). registerAgentsTokenDeposit emits one
+// TokenDeposit for the combined agent bond, so only one row is enqueued.
+export function attributeAgentBondOncePerService(
+  txHash: Bytes,
+  serviceId: BigInt,
+  bondType: string
+): void {
+  const guardId = agentBondAttributionGuardId(txHash, serviceId);
+  if (AgentBondAttributionGuard.load(guardId) != null) {
+    return;
+  }
+  const guard = new AgentBondAttributionGuard(guardId);
+  guard.save();
+  dequeueAndAttribute(txHash, serviceId, bondType);
 }

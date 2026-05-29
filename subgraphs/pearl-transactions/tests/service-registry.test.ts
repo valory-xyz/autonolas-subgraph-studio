@@ -55,6 +55,9 @@ const AGENT_INSTANCE_1 = Address.fromString(
 const AGENT_INSTANCE_2 = Address.fromString(
   "0xdddddddddddddddddddddddddddddddddddddddd"
 );
+const STAKING_PROXY = Address.fromString(
+  "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+);
 const OPERATOR = MASTER_SAFE; // Pearl bonds itself as operator
 const OLAS_GNOSIS = Address.fromString(
   "0xcE11e14225575945b8E6Dc0D4F2dD4C570f79d9f"
@@ -542,19 +545,74 @@ describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds",
   );
 
   test(
+    "NFT Transfer to a non-Safe (staking proxy) is skipped — no phantom Master Safe, real link preserved",
+    () => {
+      const tx = mockTx(10);
+      // The staking proxy is not a Safe: getOwners() reverts.
+      createMockedFunction(
+        STAKING_PROXY,
+        "getOwners",
+        "getOwners():(address[])"
+      ).reverts();
+
+      // Mint to the real Master Safe → service.masterSafe = MASTER_SAFE,
+      // one SAFE_DEPLOYED row.
+      handleServiceNftTransfer(
+        newNftTransfer(ZERO, MASTER_SAFE, SERVICE_ID, tx, 0)
+      );
+      assert.entityCount("MasterSafe", 1);
+      assert.entityCount("FundsMovement", 1);
+      assert.fieldEquals(
+        "Service",
+        "42",
+        "masterSafe",
+        MASTER_SAFE.toHexString()
+      );
+
+      // Stake: NFT moves Master Safe → staking proxy. The proxy must NOT
+      // become a phantom Master Safe, must NOT emit a SAFE_DEPLOYED row,
+      // and must NOT overwrite the real service.masterSafe link.
+      handleServiceNftTransfer(
+        newNftTransfer(MASTER_SAFE, STAKING_PROXY, SERVICE_ID, tx, 1)
+      );
+      assert.entityCount("MasterSafe", 1);
+      assert.entityCount("FundsMovement", 1);
+      assert.fieldEquals(
+        "Service",
+        "42",
+        "masterSafe",
+        MASTER_SAFE.toHexString()
+      );
+      // The custody hop is still recorded, and nftCustodian follows the NFT.
+      assert.entityCount("ServiceNftCustodyChange", 2);
+      assert.fieldEquals(
+        "Service",
+        "42",
+        "nftCustodian",
+        STAKING_PROXY.toHexString()
+      );
+    }
+  );
+
+  test(
     "Stake-cycle multicall: 2 SERVICE_BOND_DEPOSIT rows w/ bondType attribution",
     () => {
       const tx = mockTx(5);
 
-      // Event-ordered as per the plan §4.6 diagram:
-      // 1. ActivateRegistration  → stash SECURITY_DEPOSIT
-      // 2. TokenDeposit          → consume → SECURITY_DEPOSIT row
-      // 3. RegisterInstance      → stash AGENT_BOND
-      // 4. TokenDeposit          → consume → AGENT_BOND row
+      // Real on-chain event order (ServiceManager calls the SRTU
+      // *TokenDeposit function BEFORE the registry function in every
+      // path), so the TokenDeposit precedes its SR counterpart:
+      // 1. TokenDeposit          → create + enqueue (security) row
+      // 2. ActivateRegistration  → dequeue → attribute SECURITY_DEPOSIT
+      // 3. TokenDeposit          → create + enqueue (agent bond) row
+      // 4. RegisterInstance      → dequeue → attribute AGENT_BOND
       // 5. CreateMultisigWithAgents
-      handleActivateRegistration(newActivateRegistration(SERVICE_ID, tx, 0));
       handleTokenDeposit(
         newTokenDeposit(MASTER_SAFE, OLAS_GNOSIS, SECURITY_DEPOSIT, tx, 1)
+      );
+      handleActivateRegistration(newActivateRegistration(SERVICE_ID, tx, 2));
+      handleTokenDeposit(
+        newTokenDeposit(MASTER_SAFE, OLAS_GNOSIS, AGENT_BOND, tx, 3)
       );
       handleRegisterInstance(
         newRegisterInstance(
@@ -563,14 +621,11 @@ describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds",
           AGENT_INSTANCE_1,
           PEARL_AGENT_ID,
           tx,
-          2
+          4
         )
       );
-      handleTokenDeposit(
-        newTokenDeposit(MASTER_SAFE, OLAS_GNOSIS, AGENT_BOND, tx, 3)
-      );
       handleCreateMultisigWithAgents(
-        newCreateMultisig(SERVICE_ID, AGENT_SAFE, tx, 4)
+        newCreateMultisig(SERVICE_ID, AGENT_SAFE, tx, 5)
       );
 
       // Exactly the two SRTU deposit rows (no SAFE_DEPLOYED here —
@@ -596,27 +651,76 @@ describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds",
   );
 
   test(
+    "Two RegisterInstance + one agent-bond TokenDeposit → AGENT_BOND attributed exactly once",
+    () => {
+      const tx = mockTx(11);
+
+      // registerAgentsTokenDeposit emits ONE TokenDeposit for the combined
+      // agent bond, but registerAgents emits RegisterInstance once per
+      // agent instance. Only the first RegisterInstance (per tx+service)
+      // attributes the row; the dedupe guard makes the rest no-ops so they
+      // don't dequeue (and mis-attribute) any other pending row.
+      handleTokenDeposit(
+        newTokenDeposit(MASTER_SAFE, OLAS_GNOSIS, AGENT_BOND, tx, 0)
+      );
+      handleRegisterInstance(
+        newRegisterInstance(
+          OPERATOR,
+          SERVICE_ID,
+          AGENT_INSTANCE_1,
+          PEARL_AGENT_ID,
+          tx,
+          1
+        )
+      );
+      handleRegisterInstance(
+        newRegisterInstance(
+          OPERATOR,
+          SERVICE_ID,
+          AGENT_INSTANCE_2,
+          PEARL_AGENT_ID,
+          tx,
+          2
+        )
+      );
+
+      assert.entityCount("FundsMovement", 1);
+      assertBondRow(
+        tx,
+        0,
+        "SERVICE_BOND_DEPOSIT",
+        "AGENT_BOND",
+        "42",
+        AGENT_BOND.toString()
+      );
+    }
+  );
+
+  test(
     "Unstake-cycle multicall: 2 SERVICE_BOND_REFUND rows w/ bondType attribution",
     () => {
       const tx = mockTx(6);
 
-      // Event order: TerminateService → TokenRefund (security)
-      //              OperatorUnbond  → TokenRefund (agent bond)
-      handleTerminateService(newTerminate(SERVICE_ID, tx, 0));
+      // Real on-chain event order (terminateTokenRefund / unbondTokenRefund
+      // run before terminate / unbond in ServiceManager), so each
+      // TokenRefund precedes its SR counterpart:
+      //   TokenRefund (security) → TerminateService → attribute SECURITY
+      //   TokenRefund (agent)    → OperatorUnbond   → attribute AGENT
       handleTokenRefund(
-        newTokenRefund(MASTER_SAFE, OLAS_GNOSIS, SECURITY_DEPOSIT, tx, 1)
+        newTokenRefund(MASTER_SAFE, OLAS_GNOSIS, SECURITY_DEPOSIT, tx, 0)
+      );
+      handleTerminateService(newTerminate(SERVICE_ID, tx, 1));
+      handleTokenRefund(
+        newTokenRefund(MASTER_SAFE, OLAS_GNOSIS, AGENT_BOND, tx, 2)
       );
       handleOperatorUnbond(
-        newOperatorUnbond(OPERATOR, SERVICE_ID, tx, 2)
-      );
-      handleTokenRefund(
-        newTokenRefund(MASTER_SAFE, OLAS_GNOSIS, AGENT_BOND, tx, 3)
+        newOperatorUnbond(OPERATOR, SERVICE_ID, tx, 3)
       );
 
       assert.entityCount("FundsMovement", 2);
       assertBondRow(
         tx,
-        1,
+        0,
         "SERVICE_BOND_REFUND",
         "SECURITY_DEPOSIT",
         "42",
@@ -624,7 +728,7 @@ describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds",
       );
       assertBondRow(
         tx,
-        3,
+        2,
         "SERVICE_BOND_REFUND",
         "AGENT_BOND",
         "42",
@@ -637,10 +741,10 @@ describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds",
     "TokenDeposit with no prior attribution → row recorded; service + bondType unset",
     () => {
       const tx = mockTx(7);
-      // No ActivateRegistration / RegisterInstance fired in this tx —
-      // attribution queue is empty. The row should still be recorded
-      // with the correct amount and category; service + bondType are
-      // left unset (null in the store).
+      // No ActivateRegistration / RegisterInstance follows in this tx, so
+      // the enqueued row is never dequeued. The row should still be
+      // recorded with the correct amount and category; service + bondType
+      // are left unset (null in the store).
       handleTokenDeposit(
         newTokenDeposit(MASTER_SAFE, OLAS_GNOSIS, SECURITY_DEPOSIT, tx, 0)
       );
@@ -672,30 +776,31 @@ describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds",
       const txA = mockTx(8);
       const txB = mockTx(9);
 
-      // Tx A: stash SECURITY_DEPOSIT, don't consume.
-      handleActivateRegistration(
-        newActivateRegistration(SERVICE_ID, txA, 0)
-      );
-
-      // Tx B: TokenDeposit must NOT pick up Tx A's attribution.
+      // Tx A: TokenDeposit enqueues a pending row (no SR event yet).
       handleTokenDeposit(
-        newTokenDeposit(MASTER_SAFE, OLAS_GNOSIS, SECURITY_DEPOSIT, txB, 0)
+        newTokenDeposit(MASTER_SAFE, OLAS_GNOSIS, SECURITY_DEPOSIT, txA, 0)
       );
 
-      // Tx B's row exists with the correct category + amount but no
-      // service field (i.e., attribution did not bleed from txA).
-      assert.entityCount("FundsMovement", 1);
-      const id = txB.concatI32(0);
-      assert.fieldEquals(
-        "FundsMovement",
-        id.toHexString(),
-        "category",
-        "SERVICE_BOND_DEPOSIT"
+      // Tx B: an ActivateRegistration in a *different* tx must NOT
+      // attribute txA's pending row.
+      handleActivateRegistration(
+        newActivateRegistration(SERVICE_ID, txB, 0)
       );
-      assert.fieldEquals(
-        "FundsMovement",
-        id.toHexString(),
-        "amount",
+
+      // Proof txB did not consume txA's row: txA's own ActivateRegistration
+      // can still attribute it. (If txB had bled across, this dequeue
+      // would find an empty queue and the row would stay unattributed.)
+      handleActivateRegistration(
+        newActivateRegistration(SERVICE_ID, txA, 1)
+      );
+
+      assert.entityCount("FundsMovement", 1);
+      assertBondRow(
+        txA,
+        0,
+        "SERVICE_BOND_DEPOSIT",
+        "SECURITY_DEPOSIT",
+        "42",
         SECURITY_DEPOSIT.toString()
       );
     }
