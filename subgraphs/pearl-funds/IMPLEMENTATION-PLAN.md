@@ -1200,16 +1200,9 @@ CI runs `yarn graph codegen` + `yarn graph test` via the `ci.yml` matrix.
    independently. (Note: per §2.3, this `pearl-funds` subgraph
    deliberately does **not** gate on agent ID — so this open question
    is orthogonal to pearl-funds and only affects the trade subgraph.)
-5. **Subgraph name** — **recommend renaming to `pearl-transactions`** or
-   `pearl-transactions-history` (per @Tanya-atatakai PR #129 review).
-   The downstream consumer is the Pearl wallet transaction-history UI
-   (VLOP-73), so the consumer-facing intent is "wallet transaction
-   history", not "funds/treasury accounting". `pearl-funds` was the
-   working title and reads as accounting. Decide before scaffolding —
-   directory name + Studio slug both flow from this. The fallback
-   `agent-funds` / `funds-movement` from earlier (for a future
-   generalization to all Olas services) reads better than `pearl-funds`
-   either way, but `pearl-transactions` matches the consumer best.
+5. ~~**Subgraph name**~~ **Resolved:** renamed to `pearl-transactions`
+   (PR #130 scaffold). Directory, CI matrix entry, and Studio slug all
+   use `pearl-transactions`.
 6. ~~**Graph-node support for backdated template `startBlock`**~~
    **Resolved 2026-05-27: NOT SUPPORTED.** Verification (via
    reading graph-node master at v0.43.0) confirms the
@@ -1222,14 +1215,9 @@ CI runs `yarn graph codegen` + `yarn graph test` via the `ci.yml` matrix.
    implementing PR. Studio runs hosted graph-node and so cannot offer
    a feature that doesn't exist upstream.
 
-   **Consequence:** Path B from §6.2 (use a backdated `startBlock` to
-   recover the literal "Funds moved from MasterEOA (Safe Setup)"
-   transfer row) is dead. The remaining options for VLOP-73 AC #3
-   are Path A (relax the AC to render "Setup complete" FE-side from
-   `historyFloorBlock` + `OPENING_BALANCE` — recommended; needs
-   PM + FE sign-off) or Path C (heavier on-chain workarounds:
-   discovery+graft+static-dataSources, chain-wide deferred
-   classification, or Substreams). See §6.2 for the cost shapes.
+   **Consequence:** Path B from §6.2 is dead. AC #3 resolved via
+   Path A (Rev. 5, 2026-05-29) — "Setup complete" is rendered
+   frontend-side from `historyFloorBlock`. See §6.2.
 7. **`ServiceRegistryTokenUtility` start blocks** (Rev. 2). Addresses
    are sourced from `autonolas-registries`
    [`docs/configuration.json`](https://github.com/valory-xyz/autonolas-registries/blob/main/docs/configuration.json),
@@ -1241,42 +1229,12 @@ CI runs `yarn graph codegen` + `yarn graph test` via the `ci.yml` matrix.
    because SRTU is wired in `ServiceRegistryL2.changeServiceManager`
    post-deploy) — wastes some indexing but is provably safe. Also
    verify the deduped Gnosis/Polygon address is not a doc error.
-8. **Pre-Master-Safe Master EOA history — explicit product decision
-   required** (Rev. 4 reframe, after @Tanya-atatakai's PR #130 Gap 2:
-   "If full account-setup history (incl. native EOA funding) is a
-   hard product requirement, that needs trace/call-level indexing or
-   an off-chain source — it cannot come from event-based subgraph
-   indexing."). The §6.2 `OPENING_BALANCE` + `historyFloorBlock`
-   pattern gives the UI an honest floor; Pearl product needs to
-   decide whether anything pre-floor is in scope.
-
-   Three options, listed by ascending effort / completeness:
-   (a) **Document the floor as the contract.** Wallet UI renders
-   "History starts here" using `MasterSafe.historyFloorBlock`; rows
-   before that point are simply not available. Pre-floor activity
-   for that EOA is "not indexed by pearl-transactions; see
-   Etherscan/Dune". Cheapest, fully on-chain-only, matches §2.1.
-   ✓ Implemented as-of Rev. 4.
-   (b) **eth_call baseline on Master EOA.** At Master Safe first
-   sighting, call `OLAS.balanceOf(masterEoa)` + wrapped-native
-   `balanceOf(masterEoa)` and emit one extra `OPENING_BALANCE` row
-   per (masterEoa, token). Captures *current EOA value* but not the
-   history; native EOA value remains unobservable. Trivial code
-   addition once (a) is in place.
-   (c) **Off-chain pre-floor join** — Pearl wallet UI fetches
-   pre-`historyFloorBlock` ERC-20 + native history for the Master
-   EOA from Dune / Etherscan / archive RPC and renders it above the
-   on-chain floor. Owned outside this subgraph; preserves on-chain
-   constraint (§2.1) because the join happens in the consumer, not
-   the subgraph. Most complete.
-   (d) **Call/trace handlers for native EOA transfers** — would
-   require chain-wide call indexing on every Pearl chain, in direct
-   conflict with §2.2 indexing-cost discipline. Recommend NOT
-   pursuing.
-
-   Recommend (a) shipped (current Rev. 4 state) + Pearl product to
-   pick between (b), (c), or "(a) is enough" before the Phase 9 docs
-   PR closes the UX loop. (d) is documented as not viable.
+8. ~~**Pre-Master-Safe Master EOA history**~~ **Resolved (Rev. 5,
+   2026-05-29):** Option (a) confirmed by product — `historyFloorBlock`
+   is the contract. The wallet UI renders "History starts here" at that
+   block; opening balances are fetched by the frontend via archive RPC
+   (`eth_getBalance` / `token.balanceOf` at `historyFloorBlock`).
+   Native → Agent EOA transfers are a confirmed accepted gap for v1.
 
 ---
 
