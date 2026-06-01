@@ -3,24 +3,40 @@
     "ServiceRegistryL2": {
       "address": "0x9338b5153AE39BB89f50468E608eD9d764B755fD",
       "startBlock": 27871084
+    },
+    "ServiceRegistryTokenUtility": {
+      "address": "0xa45E64d13A30a51b91ae0eb182e88a40e9b18eD8",
+      "startBlock": 30095874
     }
   },
   "matic": {
     "ServiceRegistryL2": {
       "address": "0xE3607b00E75f6405248323A9417ff6b39B244b50",
       "startBlock": 41783952
+    },
+    "ServiceRegistryTokenUtility": {
+      "address": "0xa45E64d13A30a51b91ae0eb182e88a40e9b18eD8",
+      "startBlock": 52737296
     }
   },
   "optimism": {
     "ServiceRegistryL2": {
       "address": "0x3d77596beb0f130a4415df3D2D8232B3d3D31e44",
       "startBlock": 116423039
+    },
+    "ServiceRegistryTokenUtility": {
+      "address": "0xBb7e1D6Cb6F243D6bdE81CE92a9f2aFF7Fbe7eac",
+      "startBlock": 116423237
     }
   },
   "base": {
     "ServiceRegistryL2": {
       "address": "0x3C1fF68f5aa342D296d4DEe4Bb1cACCA912D95fE",
       "startBlock": 10827380
+    },
+    "ServiceRegistryTokenUtility": {
+      "address": "0x34C895f302D0b5cf52ec0Edd3945321EB0f83dd5",
+      "startBlock": 10827475
     }
   }
 }
