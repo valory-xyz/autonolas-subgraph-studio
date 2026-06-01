@@ -136,7 +136,9 @@ export function getStablecoinSymbol(
   network: string,
   address: Address
 ): string | null {
-  const a = address.toHexString();
+  // Lowercase explicitly: the address literals below are lowercase, and
+  // this drops a hidden dependency on graph-ts toHexString() casing.
+  const a = address.toHexString().toLowerCase();
   if (network == "gnosis" || network == "xdai") {
     if (a == "0xddafbb505ad214d7b80b1f830fccc89b60fb7a83") return "USDC";
     if (a == "0x2a22f9c3b484c3629090feed35f17ff8f88f76f0") return "USDC.e";

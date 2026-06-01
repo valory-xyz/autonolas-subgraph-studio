@@ -131,6 +131,48 @@ function newErc20TransferAt(
   return e;
 }
 
+// assertStablecoinResolves — seed a Master Safe (setupTransferSeen=true so
+// the inbound classifies as MASTER_FUNDING_IN), fire a Master EOA → Master
+// Safe stablecoin Transfer on `network`, and assert the Token resolves to
+// the expected 6-decimal symbol. File-scoped (not nested in a describe) to
+// avoid the AssemblyScript closure-capture WASM-validator error.
+function assertStablecoinResolves(
+  network: string,
+  tokenStr: string,
+  expectedSymbol: string,
+  salt: i32
+): void {
+  dataSourceMock.setNetwork(network);
+  seedMasterSafe(true);
+  const token = Address.fromString(tokenStr);
+  const tx = mockTx(salt);
+  handleErc20Transfer(
+    newErc20TransferAt(
+      token,
+      MASTER_EOA,
+      MASTER_SAFE,
+      BigInt.fromString("1000000"),
+      tx,
+      0
+    )
+  );
+  const id = tx.concatI32(0);
+  assert.fieldEquals(
+    "FundsMovement",
+    id.toHexString(),
+    "category",
+    "MASTER_FUNDING_IN"
+  );
+  assert.fieldEquals(
+    "FundsMovement",
+    id.toHexString(),
+    "token",
+    token.toHexString()
+  );
+  assert.fieldEquals("Token", token.toHexString(), "symbol", expectedSymbol);
+  assert.fieldEquals("Token", token.toHexString(), "decimals", "6");
+}
+
 function newSafeReceived(
   sender: Address,
   value: BigInt,
@@ -711,51 +753,95 @@ describe("pearl-transactions / Phase 2a — raw OLAS + Safe template", () => {
     );
   });
 
-  // ---- Phase 2b — stablecoins (USDC / USDC.e / pUSD, all 6 decimals) ----
+});
 
-  test("Gnosis USDC.e Transfer routes via the generic handler; Token = USDC.e @ 6 decimals", () => {
-    seedMasterSafe(true);
-    const USDCE_GNOSIS = Address.fromString(
-      "0x2a22f9c3b484c3629090FeED35F17Ff8F88f76F0"
-    );
-    const amount = BigInt.fromString("1000000"); // 1 USDC.e (6 decimals)
-    const tx = mockTx(31);
-    handleErc20Transfer(
-      newErc20TransferAt(USDCE_GNOSIS, MASTER_EOA, MASTER_SAFE, amount, tx, 0)
-    );
-
-    const id = tx.concatI32(0);
-    assert.fieldEquals("FundsMovement", id.toHexString(), "category", "MASTER_FUNDING_IN");
-    assert.fieldEquals(
-      "FundsMovement",
-      id.toHexString(),
-      "token",
-      USDCE_GNOSIS.toHexString()
-    );
-    assert.fieldEquals("Token", USDCE_GNOSIS.toHexString(), "symbol", "USDC.e");
-    assert.fieldEquals("Token", USDCE_GNOSIS.toHexString(), "decimals", "6");
+// ---- Phase 2b — stablecoins (USDC / USDC.e / pUSD; all 6 decimals) ----
+//
+// Covers every (chain, token) tuple in getStablecoinSymbol so a typo in
+// any address literal (or a missing resolver branch) fails loudly here
+// instead of silently mapping to UNKNOWN/18 in production. Each case sets
+// its own network so there's no cross-test ordering dependency.
+describe("pearl-transactions / Phase 2b — stablecoins", () => {
+  beforeEach(() => {
+    clearStore();
+    dataSourceMock.setNetwork("gnosis");
   });
 
-  test("Polygon pUSD Transfer resolves to pUSD @ 6 decimals", () => {
-    dataSourceMock.setNetwork("matic");
-    seedMasterSafe(true);
-    const PUSD_POLYGON = Address.fromString(
-      "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB"
-    );
-    const amount = BigInt.fromString("2500000"); // 2.5 pUSD (6 decimals)
-    const tx = mockTx(32);
-    handleErc20Transfer(
-      newErc20TransferAt(PUSD_POLYGON, MASTER_EOA, MASTER_SAFE, amount, tx, 0)
-    );
+  afterEach(() => {
+    clearStore();
+    // Reset so a stray network doesn't leak into any later suite.
+    dataSourceMock.setNetwork("gnosis");
+  });
 
-    const id = tx.concatI32(0);
-    assert.fieldEquals(
-      "FundsMovement",
-      id.toHexString(),
-      "token",
-      PUSD_POLYGON.toHexString()
+  test("gnosis USDC resolves @ 6 decimals", () => {
+    assertStablecoinResolves(
+      "gnosis",
+      "0xDDAfbb505ad214D7b80b1f830fcCc89B60fb7A83",
+      "USDC",
+      31
     );
-    assert.fieldEquals("Token", PUSD_POLYGON.toHexString(), "symbol", "pUSD");
-    assert.fieldEquals("Token", PUSD_POLYGON.toHexString(), "decimals", "6");
+  });
+
+  test("gnosis USDC.e resolves @ 6 decimals", () => {
+    assertStablecoinResolves(
+      "gnosis",
+      "0x2a22f9c3b484c3629090FeED35F17Ff8F88f76F0",
+      "USDC.e",
+      32
+    );
+  });
+
+  test("matic USDC resolves @ 6 decimals", () => {
+    assertStablecoinResolves(
+      "matic",
+      "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
+      "USDC",
+      33
+    );
+  });
+
+  test("matic USDC.e resolves @ 6 decimals", () => {
+    assertStablecoinResolves(
+      "matic",
+      "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174",
+      "USDC.e",
+      34
+    );
+  });
+
+  test("matic pUSD resolves @ 6 decimals", () => {
+    assertStablecoinResolves(
+      "matic",
+      "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB",
+      "pUSD",
+      35
+    );
+  });
+
+  test("optimism USDC resolves @ 6 decimals", () => {
+    assertStablecoinResolves(
+      "optimism",
+      "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",
+      "USDC",
+      36
+    );
+  });
+
+  test("optimism USDC.e resolves @ 6 decimals", () => {
+    assertStablecoinResolves(
+      "optimism",
+      "0x7F5c764cBc14f9669B88837ca1490cCa17c31607",
+      "USDC.e",
+      37
+    );
+  });
+
+  test("base USDC resolves @ 6 decimals", () => {
+    assertStablecoinResolves(
+      "base",
+      "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "USDC",
+      38
+    );
   });
 });
