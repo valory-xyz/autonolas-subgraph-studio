@@ -1,9 +1,9 @@
 # Pearl Funds-Movement Subgraph — Implementation Plan
 
-**Status:** Proposed — for verification before implementation. No code yet.
-**Proposed subgraph:** `subgraphs/pearl-funds/` (final name TBD — see §11 #5)
+**Status:** Implemented through Phase 2a (PRs #131/#132/#133 merged to `main`); Phase 2b (#138) in review. This plan is the design-of-record.
+**Subgraph:** `subgraphs/pearl-transactions/` (renamed from `pearl-funds` per §11 #5)
 **Target networks (v1):** Gnosis, Polygon, Optimism, Base
-**Last updated:** 2026-05-29 (Rev. 5 — product decisions finalised: OPENING_BALANCE rows removed from subgraph, opening balance handling delegated to frontend via historyFloorBlock; native → Agent EOA transfers confirmed as accepted known gap; AC #3 confirmed as Path A. Rev. 4 addressed PR #130 design-review comments + §11 #6 verification. Rev. 3 added §4.5 asset inventory and §4.6 Mermaid diagrams. Rev. 2 added SRTU bond-event indexing, agent-ID anti-hardcoding, Master EOA pre-creation tracking. Rev. 1 addressed PR #129 review feedback.)
+**Last updated:** 2026-06-01 (Rev. 6 — back-propagated the PR #131/#132 producer/consumer fixes so the plan matches shipped code: §3.3 SRTU is indexed, §4.6 SRTU-before-SR event order, §5.1/§5.2 inverted bond-attribution entities + handlers, §5.1 FundsMovement/Token mutability, §5.2 dual NFT guard + handleServiceStaked null-check, §5.4/§7/§8 staleness, pearl-transactions path. Rev. 5 — product decisions finalised: OPENING_BALANCE rows removed, opening balances delegated to the frontend via historyFloorBlock; native → Agent EOA confirmed accepted gap; AC #3 = Path A. Rev. 4 addressed PR #130 review + §11 #6. Rev. 3 added §4.5/§4.6. Rev. 2 added SRTU bond indexing, agent-ID anti-hardcoding, Master EOA tracking. Rev. 1 addressed PR #129 feedback.)
 
 This document scopes a new subgraph that indexes **funds movement for the
 Master Safe and Agent Safe of Pearl predict services**. It covers Phase 1
@@ -175,12 +175,6 @@ visibility) and must clear both gates before commitment.
 - **Mode network** — deprecated.
 - **USD valuation** — raw token amounts only (per scoping decision).
   Consumers value downstream.
-- **ServiceRegistryTokenUtility bonds** — the literal OLAS security
-  deposit / agent bond posted at *service registration* is held by
-  `ServiceRegistryTokenUtility`, which is not indexed in this repo. See
-  §5.4 for the Phase 1 treatment (`STAKING_DEPOSIT` synthetic semantic
-  row computed from `minStakingDeposit × numAgentInstances`). Indexing
-  the literal bond transfer remains a Phase 2b+ option.
 - **In-market bet P&L** — owned by the predict subgraphs.
 
 ### 3.4 Cross-deployment note
@@ -430,12 +424,15 @@ sequenceDiagram
     Note over MSAFE,SP: Stake-cycle multicall (single tx)
     MSAFE->>SR: create(...) → mints NFT to MSAFE
     SR-->>MSAFE: ERC-721 Transfer (NFT)
+    Note over MSAFE,SR: ServiceManager wraps each call SRTU-first, registry-second — so the SRTU event ALWAYS fires before its SR counterpart
     MSAFE->>SRTU: activateRegistrationTokenDeposit(serviceId)
-    Note right of SRTU: emit ActivateRegistration (SR) +<br/>**TokenDeposit(MSAFE, OLAS, securityDeposit)**<br/>→ SERVICE_BOND_DEPOSIT [bondType=SECURITY_DEPOSIT]
-    MSAFE->>SR: registerAgents(serviceId, [...agentInstances])
-    Note right of SR: emit RegisterInstance (per agent)
+    Note right of SRTU: **TokenDeposit(MSAFE, OLAS, securityDeposit)** [FIRST]<br/>→ SERVICE_BOND_DEPOSIT row created here (amount only) + enqueued
+    MSAFE->>SR: activateRegistration(serviceId)
+    Note right of SR: emit ActivateRegistration [SECOND]<br/>→ dequeues the row + tags bondType=SECURITY_DEPOSIT
     MSAFE->>SRTU: registerAgentsTokenDeposit(operator, serviceId)
-    Note right of SRTU: **TokenDeposit(MSAFE, OLAS, totalBond)**<br/>→ SERVICE_BOND_DEPOSIT [bondType=AGENT_BOND]
+    Note right of SRTU: **TokenDeposit(MSAFE, OLAS, totalBond)** [FIRST]<br/>→ SERVICE_BOND_DEPOSIT row created + enqueued
+    MSAFE->>SR: registerAgents(serviceId, [...agentInstances])
+    Note right of SR: emit RegisterInstance (per agent) [SECOND]<br/>→ dequeues the row + tags bondType=AGENT_BOND (once-per-service guard)
     MSAFE->>SR: deploy(serviceId, multisigFactory)
     SR-->>ASAFE: emit CreateMultisigWithAgents (multisig=ASAFE)
     MSAFE->>SP: stake(serviceId)
@@ -452,23 +449,27 @@ sequenceDiagram
     MSAFE->>SP: unstake(serviceId)
     SP->>ASAFE: **UnstakeReward (OLAS)** → UNSTAKE_REWARD
     SP-->>MSAFE: return NFT (ERC-721 Transfer)
-    MSAFE->>SR: terminate(serviceId)
-    Note right of SR: emit TerminateService
     MSAFE->>SRTU: terminateTokenRefund(serviceId)
     SRTU-->>MSAFE: refund OLAS (security deposit)
-    Note right of SRTU: **TokenRefund(MSAFE, OLAS, securityRefund)**<br/>→ SERVICE_BOND_REFUND [bondType=SECURITY_DEPOSIT]
+    Note right of SRTU: **TokenRefund(MSAFE, OLAS, securityRefund)** [FIRST]<br/>→ SERVICE_BOND_REFUND row created + enqueued
+    MSAFE->>SR: terminate(serviceId)
+    Note right of SR: emit TerminateService [SECOND]<br/>→ dequeues the row + tags bondType=SECURITY_DEPOSIT
     MSAFE->>SRTU: unbondTokenRefund(serviceId)
     SRTU-->>MSAFE: refund OLAS (agent bond)
-    Note right of SRTU: **TokenRefund(MSAFE, OLAS, refund)**<br/>→ SERVICE_BOND_REFUND [bondType=AGENT_BOND]
+    Note right of SRTU: **TokenRefund(MSAFE, OLAS, refund)** [FIRST]<br/>→ SERVICE_BOND_REFUND row created + enqueued
+    MSAFE->>SR: unbond(serviceId)
+    Note right of SR: emit OperatorUnbond [SECOND]<br/>→ dequeues the row + tags bondType=AGENT_BOND
     end
 ```
 
-Bond-type attribution is best-effort per §5.2 — the
-`PendingBondAttribution` queue is populated by `ActivateRegistration` /
-`RegisterInstance` / `TerminateService` ServiceRegistryL2 events and
-consumed by the SRTU handlers in the same tx. The diagram above shows
-the canonical Pearl multicall ordering; deviations leave `bondType`
-null but preserve amounts.
+Bond-type attribution is best-effort per §5.2. Because the SRTU event
+fires *before* its ServiceRegistryL2 counterpart in every path, the SRTU
+handler is the **producer** (creates the `FundsMovement` row + enqueues
+it) and the ServiceRegistryL2 handler is the **consumer** (`ActivateRegistration`
+/ `RegisterInstance` / `TerminateService` / `OperatorUnbond` dequeue the
+row and backfill `serviceId` + `bondType`). The diagram shows the
+canonical Pearl multicall ordering; deviations leave `bondType` null but
+preserve amounts.
 
 #### C. Predict-app funding flow (polystrat on Polygon)
 
@@ -602,7 +603,11 @@ enum FundsSource {
   RAW_TRANSFER                        # Direct ERC-20/native Transfer observed on chain
 }
 
-type FundsMovement @entity(immutable: true) {
+type FundsMovement @entity(immutable: false) {
+  # Mutable: SRTU TokenDeposit/TokenRefund rows are created amount-only by
+  # the SRTU producer and backfilled with serviceId + bondType by the
+  # ServiceRegistryL2 consumer later in the same tx (see §5.2). All other
+  # rows are write-once in practice.
   id: Bytes!                          # txHash.concatI32(logIndex) — for semantic rows lacking a logIndex, use a stable sub-index
   service: Service
   masterSafe: MasterSafe
@@ -653,16 +658,26 @@ type PendingRegistration @entity(immutable: false) {
   id: Bytes! agentIds: [Int!]! operators: [Bytes!]!
 }
 
-# Same-tx attribution queue for SRTU TokenDeposit/TokenRefund disambiguation.
-# Written by ServiceRegistryL2 handlers; consumed by SRTU handlers in the
-# same tx. id = txHash.concat(serviceId.toBytes()) + a slot index because a
-# single tx can contain both SECURITY_DEPOSIT and AGENT_BOND attributions.
-type PendingBondAttribution @entity(immutable: false) {
-  id: Bytes!
-  txHash: Bytes!
-  serviceId: BigInt!
-  bondType: ServiceBondType!
-  consumed: Boolean!
+# Same-tx bond-attribution queue for SRTU TokenDeposit/TokenRefund
+# disambiguation. The SRTU event fires BEFORE its ServiceRegistryL2
+# counterpart in every path (§4.6), so the SRTU handler is the PRODUCER
+# (creates the FundsMovement row + enqueues its id) and the SR handler is
+# the CONSUMER (dequeues + backfills serviceId + bondType). Three entities:
+type PendingBondCounter @entity(immutable: false) {
+  id: Bytes!                          # tx.hash
+  nextEnqueueSlot: Int!
+  nextDequeueSlot: Int!
+}
+type PendingBondRow @entity(immutable: false) {
+  id: Bytes!                          # tx.hash.concatI32(slot)
+  fundsMovement: Bytes!               # FundsMovement id awaiting serviceId + bondType
+  attributed: Boolean!
+}
+# Dedupe guard: registerAgents emits one TokenDeposit but RegisterInstance
+# fires once per agent instance — ensures the single AGENT_BOND row is
+# attributed exactly once per (txHash, serviceId).
+type AgentBondAttributionGuard @entity(immutable: true) {
+  id: Bytes!                          # tx.hash.concat(serviceId.toBytes())
 }
 ```
 
@@ -680,15 +695,15 @@ idempotent — subsequent calls just update `lastActivityTimestamp`.
 
 | Handler | Data source / event | Action |
 |---|---|---|
-| `handleRegisterInstance` | `ServiceRegistryL2.RegisterInstance` | Record on `Service` (or buffer in `PendingRegistration` if the `Service` isn't created yet). Append `agentId` / `operator`, deduplicated. No agent-ID gate (§2.3). Also stash a `PendingBondAttribution(txHash, serviceId, type=AGENT_BOND)` marker that a same-tx `TokenDeposit` handler will consume for the `bondType` field. |
-| `handleActivateRegistration` | `ServiceRegistryL2.ActivateRegistration` | Stash `PendingBondAttribution(txHash, serviceId, type=SECURITY_DEPOSIT)`. |
+| `handleRegisterInstance` | `ServiceRegistryL2.RegisterInstance` | Record on `Service` (or buffer in `PendingRegistration` if the `Service` isn't created yet). Append `agentId` / `operator`, deduplicated. No agent-ID gate (§2.3). **Consumer:** dequeue the pending bond row enqueued by the preceding `registerAgentsTokenDeposit` and tag it `bondType=AGENT_BOND` — `attributeAgentBondOncePerService` guards against the once-per-agent-instance firing. |
+| `handleActivateRegistration` | `ServiceRegistryL2.ActivateRegistration` | **Consumer:** dequeue the pending bond row enqueued by the preceding `activateRegistrationTokenDeposit` and tag it `bondType=SECURITY_DEPOSIT`. |
 | `handleCreateMultisigWithAgents` | `ServiceRegistryL2.CreateMultisigWithAgents` | Create `Service` + `AgentSafe`, drain `PendingRegistration`, write `ServiceIndex`. |
-| `handleServiceNftTransfer` | `ServiceRegistryL2.Transfer` (ERC-721) | Update `Service.nftCustodian`; emit `ServiceNftCustodyChange`. If `to` is not the staking proxy or the zero address, call `getOrCreateMasterSafe(to, …)` — this discovers Master Safes that hold the NFT without ever staking (covers the un-staked path). |
-| `handleTerminateService` | `ServiceRegistryL2.TerminateService` | `Service.state = TERMINATED`. Stash `PendingBondAttribution(txHash, serviceId, type=SECURITY_DEPOSIT)` so a same-tx `TokenRefund` is attributed to terminate. |
-| `handleTokenDeposit` | `ServiceRegistryTokenUtility.TokenDeposit` | Resolve `serviceId` from the call context (the SRTU function signatures all carry `serviceId`; use the matching `PendingBondAttribution` for the tx). Emit `FundsMovement(SERVICE_BOND_DEPOSIT, source=SEMANTIC, token, amount, from=account, to=SRTU, bondType?=attribution)`. Fires twice per stake-side multicall; both rows persisted. |
-| `handleTokenRefund` | `ServiceRegistryTokenUtility.TokenRefund` | Mirror of `handleTokenDeposit`: `FundsMovement(SERVICE_BOND_REFUND, source=SEMANTIC, token, amount, from=SRTU, to=account, bondType?=attribution)`. Fires twice per unstake-side multicall. |
+| `handleServiceNftTransfer` | `ServiceRegistryL2.Transfer` (ERC-721) | Update `Service.nftCustodian`; emit `ServiceNftCustodyChange`. **Dual guard** before treating `to` as a Master Safe: (1) `isStakingContract(to)` early-return (fast path, no eth_call — the NFT moves to the staking proxy on stake); (2) `getOrCreateMasterSafe(to, …)` returns `null` when `getOwners()` reverts (defence-in-depth for proxies created before `StakingFactory.startBlock` or by an older factory). Only the resolved-Safe case links `service.masterSafe`, so a stake hop never clobbers the real link. |
+| `handleTerminateService` | `ServiceRegistryL2.TerminateService` | `Service.state = TERMINATED`. **Consumer:** dequeue the pending bond row enqueued by the preceding `terminateTokenRefund` and tag it `bondType=SECURITY_DEPOSIT`. |
+| `handleTokenDeposit` | `ServiceRegistryTokenUtility.TokenDeposit` | **Producer:** create `FundsMovement(SERVICE_BOND_DEPOSIT, source=SEMANTIC, token, amount, from=account, to=SRTU)` (amount only — `serviceId`/`bondType` left null) and enqueue its id in the per-tx queue. The following ServiceRegistryL2 event (`ActivateRegistration` / `RegisterInstance`) backfills them. Fires twice per stake-side multicall; both rows persisted. |
+| `handleTokenRefund` | `ServiceRegistryTokenUtility.TokenRefund` | Mirror of `handleTokenDeposit`: producer of `FundsMovement(SERVICE_BOND_REFUND, source=SEMANTIC, token, amount, from=SRTU, to=account)`; backfilled by the following `TerminateService` / `OperatorUnbond`. Fires twice per unstake-side multicall. |
 | `handleInstanceCreated` | `StakingFactory.InstanceCreated` | Spawn the `StakingProxy` template; snapshot `StakingContract` config (`minStakingDeposit`, `numAgentInstances`, `implementation`) via contract calls — copy `staking/src/staking-factory.ts`. |
-| `handleServiceStaked` | `StakingProxy.ServiceStaked` | `getOrCreateMasterSafe(owner, …)` (this fires `SAFE_DEPLOYED` on first sighting via the staking path); set `service.masterSafe`, `agentSafe = multisig`, `state = STAKED`, `currentStakingContract`. **No synthetic `STAKING_DEPOSIT` row** — the bond movement is now captured by two real `SERVICE_BOND_DEPOSIT` rows from the SRTU handlers above. |
+| `handleServiceStaked` | `StakingProxy.ServiceStaked` | `getOrCreateMasterSafe(owner, …)` (fires `SAFE_DEPLOYED` on first sighting via the staking path — the canonical discovery path, since `owner`/`multisig` are event params); **link only when it resolves** (`if (masterSafe != null) service.masterSafe = masterSafe.id` — null for a non-Safe/EOA owner rather than crashing). Set `agentSafe = multisig`, `state = STAKED`, `currentStakingContract`. **No synthetic `STAKING_DEPOSIT` row** — the bond movement is captured by two real `SERVICE_BOND_DEPOSIT` rows from the SRTU handlers above. |
 | `handleRewardClaimed` | `StakingProxy.RewardClaimed` | `FundsMovement(STAKING_REWARD_CLAIM, source=SEMANTIC, token=OLAS, amount=reward, from=stakingContract, to=agentSafe)`; bump cumulative counters on `Service` / `MasterSafe`; update `DailyServiceFunds`. |
 | `handleServiceUnstaked` / `handleServiceForceUnstaked` | `StakingProxy.ServiceUnstaked` / `ServiceForceUnstaked` | `FundsMovement(UNSTAKE_REWARD, …)`; `state = UNSTAKED`; clear `currentStakingContract`. |
 | `handleServicesEvicted` | `StakingProxy.ServicesEvicted` | `FundsMovement(SERVICE_EVICTED, amount=0)` per affected service (informational; eviction does not move funds). |
@@ -699,14 +714,19 @@ the same `TokenDeposit(account, token, amount)` signature, and for Pearl
 both have `account = MasterSafe` (Master Safe is both serviceOwner AND
 operator). The same applies to the two refund functions
 (see [autonolas-registries `ServiceRegistryTokenUtility.sol:391/465/498/541`](https://github.com/valory-xyz/autonolas-registries/blob/main/contracts/ServiceRegistryTokenUtility.sol)).
-Disambiguation uses an internal `PendingBondAttribution(txHash,
-serviceId, type)` buffer written by the `ServiceRegistryL2` handlers
-(`ActivateRegistration` → SECURITY_DEPOSIT; `RegisterInstance` →
-AGENT_BOND; `TerminateService` → SECURITY_DEPOSIT). When a `TokenDeposit`
-or `TokenRefund` fires, the handler consumes the matching buffer entry.
-If no buffer entry is present (e.g. an out-of-order tx or an unmodeled
-call path), `bondType` is left null — the row is still recorded with the
-correct amount, just without the bond-type label.
+Disambiguation uses a per-tx queue (`PendingBondCounter` +
+`PendingBondRow`). Because the SRTU function is called *before* the
+registry function in every path (§4.6), the SRTU handler is the
+**producer**: `handleTokenDeposit` / `handleTokenRefund` create the
+`FundsMovement` row (amount only) and enqueue its id. The following
+`ServiceRegistryL2` handler is the **consumer**: `ActivateRegistration`
+→ SECURITY_DEPOSIT, `RegisterInstance` → AGENT_BOND (guarded once per
+service by `AgentBondAttributionGuard`), `TerminateService` →
+SECURITY_DEPOSIT, `OperatorUnbond` → AGENT_BOND — each dequeues the
+oldest pending row and backfills `serviceId` + `bondType`. If no SR
+event follows (e.g. an ETH-secured service that emits no SRTU event, or
+an unmodeled call path), the row keeps its correct amount and a null
+`bondType`.
 
 `StakingProxy` handlers do not gate on Pearl agent ID — they fire for
 every allowed-implementation proxy on the network, and the resulting
@@ -739,12 +759,13 @@ incompatible event ABIs.
 - **SRTU bond-type disambiguation is best-effort.** Both `TokenDeposit`
   emissions in a stake-cycle multicall (and both `TokenRefund` emissions
   in an unstake-cycle) share an event signature and, for Pearl,
-  `account = MasterSafe`. The `PendingBondAttribution` queue (§5.2)
+  `account = MasterSafe`. The per-tx producer/consumer queue (§5.2)
   disambiguates them via same-tx `ServiceRegistryL2` event correlation,
-  but unmodeled call orderings can leave the queue empty when SRTU
-  fires — in that case the row carries the correct amount and a null
-  `bondType`. Consumers should not assume `bondType` is always
-  populated.
+  but if no SR event follows the SRTU row (unmodeled call path, or an
+  ETH/native-secured service that emits no SRTU event at all), the row
+  carries the correct amount and a null `bondType`. Consumers should not
+  assume `bondType` is always populated, nor that every service produces
+  `SERVICE_BOND_*` rows (token-secured services only).
 - **Master EOA owner-list staleness between first sighting and Phase 2a
   template spawn.** Phase 1 captures `owners` via one-shot eth_call;
   `AddedOwner` / `RemovedOwner` only start firing once the Phase 2a Safe
@@ -752,25 +773,19 @@ incompatible event ABIs.
   so this is a documented edge case, not a known failure mode.
 - Native / USDC / USDC.e funding top-ups and Agent→Master OLAS sweeps —
   Phase 2.
-- **Pre-first-sighting transfers to the Master Safe** (e.g. the user
-  funding their Master Safe before the first stake) — Phase 2a's Safe
-  template cannot back-fill events before it spawns; see §6.1 for the
-  options (baseline eth_call vs. template-startBlock backdating
-  contingent on graph-node support; Open Q in §11).
-- **Pre-Master-Safe-creation Master EOA history** — fundamentally
-  out-of-reach from on-chain events. Until a Master Safe is sighted on
-  chain, no on-chain signal identifies an EOA as a Pearl Master EOA, so
-  there is no way to selectively index its prior transfers. After
-  sighting, Phase 2a captures Master EOA OLAS transfers via the extended
-  tracked-address filter (§6.1); native Master EOA transfers remain
-  unobservable in all phases (EOAs emit no events; only call traces
-  expose them, which graph-node `callHandlers` can read but at a cost
-  that defeats the §2.2 discipline). Mitigation options for the wallet
-  history's "before Pearl" rows: (a) eth_call `OLAS.balanceOf(masterEoa)`
-  at first sighting and emit a `MASTER_EOA_BASELINE` synthetic row, or
-  (b) document the limit and direct consumers to off-chain data
-  (Etherscan / Dune / archive RPC) for pre-creation EOA history. Choice
-  is the new Open Q in §11 #8.
+- **Pre-first-sighting transfers and pre-Master-Safe Master EOA
+  history** — unobservable from on-chain events: Phase 2a's Safe template
+  can't back-fill events before it spawns, and until a Master Safe is
+  sighted on chain no signal identifies an EOA as a Pearl Master EOA.
+  Resolved per AC #3 / Path A (Rev. 5, §6.2 / §11 #8): the subgraph emits
+  **no opening-balance row**; it records `MasterSafe.historyFloorBlock`
+  and the wallet UI renders a "History starts here" divider there and
+  fetches opening balances itself via archive RPC (`balanceOf` for
+  ERC-20, `eth_getBalance` for native). After first sighting, Phase 2a
+  captures Master EOA OLAS transfers via the tracked-address filter
+  (§6.1). **Native → Agent EOA transfers remain a confirmed accepted v1
+  gap** (EOAs emit no events; only call traces expose them, which defeats
+  the §2.2 discipline).
 - In-market bet flows — the predict subgraphs; join on Agent Safe address.
 
 ---
@@ -885,8 +900,10 @@ not satisfy AC #3 as written. So:
 here" divider at `historyFloorBlock`, then displays opening balances fetched
 via archive RPC (`balanceOf` for ERC-20, `eth_getBalance` for native).
 No subgraph change needed. Path B (backdated template startBlock) was
-verified as not supported upstream (§11 #6). Path C options were
-evaluated and rejected as unnecessary given the Path A product decision.
+verified as not supported upstream (§11 #6). Path C (on-chain workarounds
+— discovery+graft+static dataSources, chain-wide deferred classification,
+substreams; see PR #129 history) was evaluated and rejected as
+unnecessary given the Path A product decision.
 
 ### 6.3 Phase 2b — USDC / USDC.e — benchmark-gated *and* product-gated
 
@@ -955,7 +972,7 @@ Unmatched ⇒ `OTHER`.
 ### 6.5 Schema additions (Phase 2)
 
 ```graphql
-type Token @entity(immutable: true) {
+type Token @entity(immutable: false) {
   id: Bytes!                          # token address
   symbol: String!
   decimals: Int!
@@ -1011,21 +1028,16 @@ tx all link to the same `AgentFundingEvent`. Consumers may render either
 one row per `AgentFundingEvent` (the wallet UI's default) or per
 `FundsMovement` (forensic view) — both work without consumer-side dedup.
 
-**Symmetric direction — open question for Rev. 5** (Rev. 4 note from
-@rajat2502's PR #130 review). The Figma's multi-token rows like
-"Withdraw to external wallet" (-USDC.e/-XDAI/-OLAS/-WXDAI in one tx) and
-"Omenstrat withdrawal" (+OLAS/+XDAI/+WXDAI in one tx) need the same
-per-tx grouping for the `MASTER_WITHDRAWAL`, `AGENT_TO_MASTER`, and
-`MASTER_TO_AGENT` (already handled) directions. `AgentFundingEvent`
-only covers `MASTER_TO_AGENT`. Two options for the other directions:
-(a) consumers `GROUP BY txHash` on the indexed `FundsMovement` rows
-client-side — feasible, no schema change.
-(b) Add a generic `TxBundle` entity per `(txHash, masterSafe)` that
-groups every Phase 2 row in the tx that touches the Master Safe;
-consumers render one bundle row per tx without the GROUP BY. Cleaner
-consumer API, modest indexing cost.
-Recommend (a) for v1 (let the wallet team decide whether the consumer
-complexity is worth a schema addition); revisit as Rev. 5 if VLOP-73
+**Symmetric direction — resolved (v1): consumer-side `GROUP BY txHash`.**
+The Figma's multi-token rows like "Withdraw to external wallet"
+(-USDC.e/-XDAI/-OLAS/-WXDAI in one tx) and "Omenstrat withdrawal"
+(+OLAS/+XDAI/+WXDAI in one tx) need per-tx grouping for the
+`MASTER_WITHDRAWAL`, `AGENT_TO_MASTER`, and `MASTER_TO_AGENT` (already
+handled by `AgentFundingEvent`) directions. For v1, `AgentFundingEvent`
+covers only `MASTER_TO_AGENT`; consumers group the other directions by
+`txHash` on the indexed `FundsMovement` rows client-side — feasible, no
+schema change. A server-side generic `TxBundle` entity per
+`(txHash, masterSafe)` is deferred to a future rev only if VLOP-73
 acceptance specifically requires server-side grouping for these
 directions.
 
@@ -1044,10 +1056,10 @@ pre-first-sighting native baseline.
 
 ## 7. Asset / File Inventory
 
-Everything implementation will create or touch. **This PR adds only this
-plan document** — the table is the build contract for the follow-up PRs.
+Everything the implementation created. This was the build contract for
+the follow-up PRs (#130–#133, all merged; #138 in review).
 
-### 7.1 New — `subgraphs/pearl-funds/`
+### 7.1 `subgraphs/pearl-transactions/`
 
 | File | Phase | Notes |
 |---|---|---|
@@ -1058,11 +1070,11 @@ plan document** — the table is the build contract for the follow-up PRs.
 | `networks.json` | 1 / 2 | Gnosis + Polygon + Optimism + Base addresses / start blocks (per-network table in §4.3). |
 | `src/constants.ts` | 1 | Per-network OLAS / USDC / USDC.e selectors (extends `shared/constants.ts` patterns); `isAllowedImplementation` list. **No agent-ID gate** (§2.3); the published agent IDs 25 / 86 are documentation only, not WASM constants. |
 | `src/utils.ts` | 1 | `getOrCreateService` / `AgentSafe`; `getOrCreateMasterSafe` (with one-shot `GnosisSafe.getOwners()` + `getThreshold()` eth_call and `SAFE_DEPLOYED` row emission, §5.2); `ServiceIndex` + `PendingRegistration` drain; daily-snapshot helper. |
-| `src/service-registry.ts` | 1 | Registry handlers (§5.2), incl. NFT-transfer-based Master Safe discovery and `PendingBondAttribution` write for SRTU disambiguation. |
-| `src/service-registry-token-utility.ts` | 1 | `handleTokenDeposit` / `handleTokenRefund` — emit `SERVICE_BOND_DEPOSIT` / `SERVICE_BOND_REFUND` rows with best-effort `bondType` from `PendingBondAttribution` queue. |
+| `src/service-registry.ts` | 1 | Registry handlers (§5.2), incl. dual-guard NFT-transfer Master Safe discovery and the **consumer** side of the bond queue (dequeue + backfill `serviceId`/`bondType` on `ActivateRegistration` / `RegisterInstance` / `TerminateService` / `OperatorUnbond`). |
+| `src/service-registry-token-utility.ts` | 1 | `handleTokenDeposit` / `handleTokenRefund` — **producer** side: create the `SERVICE_BOND_DEPOSIT` / `SERVICE_BOND_REFUND` row (amount only) + enqueue for the SR consumer to backfill `bondType`. |
 | `src/staking-factory.ts` | 1 | `handleInstanceCreated`. |
 | `src/staking-proxy.ts` | 1 | Stake (no synthetic deposit row in Rev. 2 — real SRTU events cover it) / claim / unstake / evict handlers. |
-| `src/erc20.ts` | 2a / 2b | OLAS (2a) + USDC / USDC.e (2b) `Transfer` handler; `classifyTransfer`; `SAFE_SETUP_TRANSFER` detection; `AgentFundingEvent` aggregation. |
+| `src/erc20.ts` | 2a / 2b | Generic `handleErc20Transfer` shared by all ERC-20 data sources — OLAS + WrappedNative (2a), USDC / USDC.e / pUSD (2b); `classifyTransfer`; `SAFE_SETUP_TRANSFER` detection; `AgentFundingEvent` aggregation. |
 | `src/safe.ts` | 2a | Native-coin handlers + `AddedOwner` / `RemovedOwner` / `ChangedThreshold` owner-list maintenance per §4.4. |
 | `tests/*.test.ts` + helpers | 1 / 2 | Matchstick — §10. |
 | `CLAUDE.md` | 1 | Subgraph context, per repo convention. |
@@ -1072,57 +1084,39 @@ plan document** — the table is the build contract for the follow-up PRs.
 
 | ABI | Status |
 |---|---|
-| `ServiceRegistryL2.json` | Exists. **Verify it includes** (a) the ERC-721 `Transfer` event (add fragment if absent), and (b) the `ActivateRegistration` event (used by `PendingBondAttribution` for SRTU bond-type disambiguation per §5.2). |
+| `ServiceRegistryL2.json` | Exists. **Verify it includes** (a) the ERC-721 `Transfer` event (add fragment if absent), and (b) the `ActivateRegistration` event (the bond-queue consumer for SRTU bond-type disambiguation per §5.2). |
 | `ServiceRegistryTokenUtility.json` | **New — must be added.** Source from [`valory-xyz/autonolas-registries`](https://github.com/valory-xyz/autonolas-registries) build artifacts. Needs at minimum the `TokenDeposit(address,address,uint256)` and `TokenRefund(address,address,uint256)` event fragments. |
 | `StakingFactory.json`, `StakingProxy.json` / `StakingToken.json` | Exist (used by `staking`). Reuse. |
-| `ERC20.json` (or `ERC20Detailed.json`) | Exists (predict). Reuse for Phase 2 `Transfer` events + `balanceOf` eth_call (used in `SAFE_SETUP_TRANSFER` baseline fallback per §6.2 and optionally for the `MASTER_EOA_BASELINE` row per §11 #8). |
+| `ERC20.json` (or `ERC20Detailed.json`) | Exists (predict). Reuse for Phase 2 `Transfer` events. (No `balanceOf` baseline call — opening balances are read frontend-side under Path A, §6.2.) |
 | `GnosisSafe.json` / `Safe.json` | Exist (`service-registry` / `babydegen`). Reuse for `getOwners()` / `getThreshold()` eth_calls (§4.4) and the `Safe` template events. |
 
-### 7.3 Repo-level changes (land **with the code PRs**, not this plan PR)
+### 7.3 Repo-level changes (landed alongside the code PRs)
 
 | File | Change |
 |---|---|
-| `.github/workflows/ci.yml` | Add a `pearl-funds` entry to the `test` matrix (`generate: true`, `manifest: subgraph.gnosis.yaml`); add `subgraphs/pearl-funds` to the `lockfile-lint` matrix. |
-| `CLAUDE.md` (root) | Add `pearl-funds/` to the subgraph tree + Multi-Network Patterns. |
-| `.supply-chain/` | If new dependencies appear, refresh `install-hooks.allowlist` per repo policy. (No new deps expected — toolchain is identical to `staking`.) |
-| `scripts/generate-manifests.js` | No change — already generic. |
+| `.github/workflows/ci.yml` | `pearl-transactions` entry in the `test` matrix + `lockfile-lint` matrix (landed with #130). |
+| `CLAUDE.md` (root) | `pearl-transactions/` documented in the subgraph tree + Multi-Network Patterns (landed with #130). |
+| `.supply-chain/` | `install-hooks.allowlist` refreshed when #131/#132 landed (no new deps — toolchain identical to `staking`). |
+| `scripts/generate-manifests.js` | Phase 2b (#138) added an optional per-network `erc20Tokens` array (guarded; no-op for other subgraphs) for the variable stablecoin count; otherwise generic. |
 
 ---
 
 ## 8. Implementation Sequence
 
-1. **This PR** — land this plan for verification. No code.
-2. **Scaffold** — `subgraphs/pearl-funds/` (rename per §11 #5 first if
-   adopting `pearl-transactions`) skeleton (package.json, tsconfig,
-   empty schema/template/networks.json across all 4 networks),
-   `ci.yml` matrix entry. CI green on an empty-but-valid subgraph.
-3. **Phase 1a — registry + SRTU bonds + Master EOA derivation** —
-   `ServiceRegistryL2` handlers (incl. `ActivateRegistration` + bond
-   attribution write); `ServiceRegistryTokenUtility` handlers
-   (`TokenDeposit` / `TokenRefund`); `Service` / `MasterSafe` /
-   `AgentSafe` / NFT custody; `getOrCreateMasterSafe` with `getOwners()`
-   eth_call; `SAFE_DEPLOYED` row; `SERVICE_BOND_DEPOSIT` /
-   `SERVICE_BOND_REFUND` rows with best-effort `bondType`; `ServiceIndex`
-   / `PendingRegistration` / `PendingBondAttribution`. Tests.
-4. **Phase 1b — staking** — `StakingFactory` + `StakingProxy` handlers;
-   `FundsMovement` semantic rows (`STAKING_REWARD_CLAIM` / `UNSTAKE_REWARD`
-   / `SERVICE_EVICTED`); `DailyServiceFunds`. Tests.
-5. **Verify Phase 1** — deploy to Studio (Gnosis + Polygon + Optimism +
-   Base); spot-check a known Pearl service's stake/claim/unstake against
-   a block explorer; spot-check `MasterSafe.masterEoa` matches the Pearl
-   onboarding tx for a known user.
-6. **Verify graph-node `startBlock`-in-context support** (§11 #6) — gate
-   for the §6.2 option 1 vs. option 2 decision. One-paragraph
-   verification PR or comment, not a deployment.
-7. **Phase 2a** — OLAS `Transfer` data source + `Safe` templates
-   (Master + Agent); `classifyTransfer`; `TrackedSafe` / `TokenBalance`
-   / `Token`; `AgentFundingEvent` aggregation; `SAFE_SETUP_TRANSFER`
-   per §6.2's chosen path; owner-list maintenance. Tests.
-8. **Phase 2b decision** (§6.3) — benchmark + product check; ship
-   USDC/USDC.e on-chain, or document the off-chain path.
-9. **Docs** — finalize `CLAUDE.md` / `README.md`; update root `CLAUDE.md`.
+How the work was sequenced (✅ = merged to `main`):
 
-Each of steps 3/4, 7, and 8 is a separate reviewable PR.
+1. ✅ **Plan** (this PR, #129) + **Scaffold** (#130) — `subgraphs/pearl-transactions/` skeleton + `ci.yml` matrix entry.
+2. ✅ **Phase 1a** (#131) — `ServiceRegistryL2` handlers; `ServiceRegistryTokenUtility` `TokenDeposit` / `TokenRefund`; `Service` / `MasterSafe` / `AgentSafe` / NFT custody; `getOrCreateMasterSafe` (`getOwners()` eth_call + `SAFE_DEPLOYED`); two `SERVICE_BOND_DEPOSIT` / `_REFUND` rows with the producer/consumer bond queue. (#131 also fixed the SRTU-before-SR ordering + the non-Safe NFT guard.)
+3. ✅ **Phase 1b** (#132) — `StakingFactory` + `StakingProxy`; `STAKING_REWARD_CLAIM` / `UNSTAKE_REWARD` / `SERVICE_EVICTED`; `DailyServiceFunds`.
+4. ✅ **Phase 2a** (#133) — OLAS + WrappedNative `Transfer` data sources + per-Safe `Safe` template; `classifyTransfer`; `TrackedSafe` / `TrackedEOA` / `TokenBalance` / `Token`; `AgentFundingEvent`; `SAFE_SETUP_TRANSFER` (first live inbound hop) + `historyFloorBlock` per the Path A decision (§6.2); owner-list maintenance.
+5. 🔄 **Phase 2b** (#138, in review) — stablecoin `Transfer` data sources (USDC / USDC.e / pUSD per chain, §6.3); on-chain path chosen, the §6.3a Polygon sync benchmark deferred.
+
+**§11 #6** (graph-node backdated `startBlock`) was verified NOT SUPPORTED — Path B is dead; AC #3 resolved via Path A (§6.2), so there is no "option 1 vs option 2" decision left.
+
+### Still ahead
+
+- **Verify on Studio** — deploy all four networks; spot-check a known Pearl service's stake/claim/unstake against a block explorer and `MasterSafe.masterEoa` against the onboarding tx. (Blocked on Studio provisioning.)
+- **Docs (Phase 9)** — finalize `subgraphs/pearl-transactions/CLAUDE.md` / `README.md`; the subgraph CLAUDE.md still describes the Phase 1a state.
 
 ---
 
@@ -1153,7 +1147,7 @@ Matchstick (`matchstick-as` 0.6.0), mirroring the repo's existing suites.
   multicall containing `ActivateRegistration` + `RegisterInstance` +
   two `TokenDeposit` events produces exactly two `SERVICE_BOND_DEPOSIT`
   rows with `bondType = SECURITY_DEPOSIT` and `AGENT_BOND` respectively
-  via the `PendingBondAttribution` queue; the same with
+  via the producer/consumer bond queue (§5.2); the same with
   `SERVICE_BOND_REFUND` on the unstake side; an unmodeled call
   ordering still produces the rows with null `bondType`**; stake →
   claim → unstake lifecycle produces the right `FundsMovement` rows
@@ -1230,10 +1224,11 @@ CI runs `yarn graph codegen` + `yarn graph test` via the `ci.yml` matrix.
    post-deploy) — wastes some indexing but is provably safe. Also
    verify the deduped Gnosis/Polygon address is not a doc error.
 8. ~~**Pre-Master-Safe Master EOA history**~~ **Resolved (Rev. 5,
-   2026-05-29):** Option (a) confirmed by product — `historyFloorBlock`
-   is the contract. The wallet UI renders "History starts here" at that
-   block; opening balances are fetched by the frontend via archive RPC
-   (`eth_getBalance` / `token.balanceOf` at `historyFloorBlock`).
+   2026-05-29):** Path A confirmed by product — `historyFloorBlock` is
+   the contract (the subgraph emits no opening-balance row). The wallet
+   UI renders "History starts here" at that block; opening balances are
+   fetched by the frontend via archive RPC (`eth_getBalance` /
+   `token.balanceOf` at `historyFloorBlock`).
    Native → Agent EOA transfers are a confirmed accepted gap for v1.
 
 ---
