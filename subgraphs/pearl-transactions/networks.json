@@ -11,6 +11,14 @@
     "StakingFactory": {
       "address": "0xb0228CA253A88Bc8eb4ca70BCAC8f87b381f4700",
       "startBlock": 35206806
+    },
+    "OLAS": {
+      "address": "0xcE11e14225575945b8E6Dc0D4F2dD4C570f79d9f",
+      "startBlock": 27871084
+    },
+    "WrappedNative": {
+      "address": "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d",
+      "startBlock": 27871084
     }
   },
   "matic": {
@@ -25,6 +33,14 @@
     "StakingFactory": {
       "address": "0x46C0D07F55d4F9B5Eed2Fc9680B5953e5fd7b461",
       "startBlock": 62213142
+    },
+    "OLAS": {
+      "address": "0xFEF5d947472e72Efbb2E388c730B7428406F2F95",
+      "startBlock": 41783952
+    },
+    "WrappedNative": {
+      "address": "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270",
+      "startBlock": 41783952
     }
   },
   "optimism": {
@@ -39,6 +55,14 @@
     "StakingFactory": {
       "address": "0xa45E64d13A30a51b91ae0eb182e88a40e9b18eD8",
       "startBlock": 124618633
+    },
+    "OLAS": {
+      "address": "0xFC2E6e6BCbd49ccf3A5f029c79984372DcBFE527",
+      "startBlock": 116423039
+    },
+    "WrappedNative": {
+      "address": "0x4200000000000000000000000000000000000006",
+      "startBlock": 116423039
     }
   },
   "base": {
@@ -53,6 +77,14 @@
     "StakingFactory": {
       "address": "0x1cEe30D08943EB58EFF84DD1AB44a6ee6FEff63a",
       "startBlock": 17310019
+    },
+    "OLAS": {
+      "address": "0x54330d28ca3357F294334BDC454a032e7f353416",
+      "startBlock": 10827380
+    },
+    "WrappedNative": {
+      "address": "0x4200000000000000000000000000000000000006",
+      "startBlock": 10827380
     }
   }
 }

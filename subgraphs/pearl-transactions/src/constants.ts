@@ -18,6 +18,16 @@ export const CATEGORY_STAKING_REWARD_CLAIM = "STAKING_REWARD_CLAIM";
 export const CATEGORY_UNSTAKE_REWARD = "UNSTAKE_REWARD";
 export const CATEGORY_SERVICE_EVICTED = "SERVICE_EVICTED";
 
+// Phase 2a categories.
+export const CATEGORY_SAFE_SETUP_TRANSFER = "SAFE_SETUP_TRANSFER";
+export const CATEGORY_MASTER_FUNDING_IN = "MASTER_FUNDING_IN";
+export const CATEGORY_MASTER_WITHDRAWAL = "MASTER_WITHDRAWAL";
+export const CATEGORY_MASTER_TO_AGENT = "MASTER_TO_AGENT";
+export const CATEGORY_AGENT_TO_MASTER = "AGENT_TO_MASTER";
+export const CATEGORY_AGENT_TO_APP = "AGENT_TO_APP";
+export const CATEGORY_APP_TO_AGENT = "APP_TO_AGENT";
+export const CATEGORY_OTHER = "OTHER";
+
 // ServiceBondType string values.
 export const BOND_TYPE_SECURITY_DEPOSIT = "SECURITY_DEPOSIT";
 export const BOND_TYPE_AGENT_BOND = "AGENT_BOND";
@@ -49,6 +59,71 @@ export function getOlasAddress(network: string): Address {
   }
   log.critical("Unsupported network in getOlasAddress: {}", [network]);
   return Address.zero();
+}
+
+// SRTU address resolver (mirrors networks.json). Used by classifyTransfer
+// in Phase 2a to mark Master Safe ↔ SRTU OLAS transfers as
+// SERVICE_BOND_DEPOSIT / SERVICE_BOND_REFUND raw reconciliation rows.
+// Gnosis + Polygon happen to share the same deployer-deterministic
+// address; Optimism and Base are distinct.
+const SRTU_GNOSIS = "0xa45E64d13A30a51b91ae0eb182e88a40e9b18eD8";
+const SRTU_POLYGON = "0xa45E64d13A30a51b91ae0eb182e88a40e9b18eD8";
+const SRTU_OPTIMISM = "0xBb7e1D6Cb6F243D6bdE81CE92a9f2aFF7Fbe7eac";
+const SRTU_BASE = "0x34C895f302D0b5cf52ec0Edd3945321EB0f83dd5";
+
+export function getSrtuAddress(network: string): Address {
+  if (network == "gnosis" || network == "xdai") {
+    return Address.fromString(SRTU_GNOSIS);
+  }
+  if (network == "matic" || network == "polygon") {
+    return Address.fromString(SRTU_POLYGON);
+  }
+  if (network == "optimism") {
+    return Address.fromString(SRTU_OPTIMISM);
+  }
+  if (network == "base") {
+    return Address.fromString(SRTU_BASE);
+  }
+  log.critical("Unsupported network in getSrtuAddress: {}", [network]);
+  return Address.zero();
+}
+
+// Wrapped-native resolvers (Rev. 4 — added per @Tanya-atatakai's PR #130
+// review). Each chain has exactly one wrapped native asset that Pearl
+// services may touch (DEX swaps, Omen settlements on Gnosis). Indexed
+// as a `WrappedNative` ERC-20 Transfer data source in the manifest,
+// not via the Safe template.
+const WXDAI_GNOSIS = "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d";
+const WPOL_POLYGON = "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270";
+const WETH_OPTIMISM = "0x4200000000000000000000000000000000000006";
+const WETH_BASE = "0x4200000000000000000000000000000000000006";
+
+export function getWrappedNativeAddress(network: string): Address {
+  if (network == "gnosis" || network == "xdai") {
+    return Address.fromString(WXDAI_GNOSIS);
+  }
+  if (network == "matic" || network == "polygon") {
+    return Address.fromString(WPOL_POLYGON);
+  }
+  if (network == "optimism") {
+    return Address.fromString(WETH_OPTIMISM);
+  }
+  if (network == "base") {
+    return Address.fromString(WETH_BASE);
+  }
+  log.critical("Unsupported network in getWrappedNativeAddress: {}", [
+    network,
+  ]);
+  return Address.zero();
+}
+
+// Token symbol/decimals for the wrapped native per chain. Used by
+// getOrCreateToken when first encountering the wrapped-native address.
+export function getWrappedNativeSymbol(network: string): string {
+  if (network == "gnosis" || network == "xdai") return "WXDAI";
+  if (network == "matic" || network == "polygon") return "WPOL";
+  if (network == "optimism" || network == "base") return "WETH";
+  return "WNATIVE";
 }
 
 // isAllowedImplementation — the Olas staking ecosystem allows multiple

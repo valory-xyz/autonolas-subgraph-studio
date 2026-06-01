@@ -31,6 +31,8 @@ dataSources:
           file: ../../abis/ServiceRegistryL2.json
         - name: GnosisSafe
           file: ../../abis/GnosisSafe.json
+        - name: ERC20
+          file: ../../abis/ERC20Detailed.json
       eventHandlers:
         - event: RegisterInstance(indexed address,indexed uint256,indexed address,uint256)
           handler: handleRegisterInstance
@@ -91,6 +93,52 @@ dataSources:
         - event: InstanceCreated(indexed address,indexed address,indexed address)
           handler: handleInstanceCreated
       file: ./src/staking-factory.ts
+  - kind: ethereum
+    name: OLAS
+    network: base
+    source:
+      address: "0x54330d28ca3357F294334BDC454a032e7f353416"
+      abi: ERC20
+      startBlock: 10827380
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - FundsMovement
+        - TokenBalance
+        - Token
+        - AgentFundingEvent
+      abis:
+        - name: ERC20
+          file: ../../abis/ERC20Detailed.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleErc20Transfer
+      file: ./src/erc20.ts
+  - kind: ethereum
+    name: WrappedNative
+    network: base
+    source:
+      address: "0x4200000000000000000000000000000000000006"
+      abi: ERC20
+      startBlock: 10827380
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - FundsMovement
+        - TokenBalance
+        - Token
+        - AgentFundingEvent
+      abis:
+        - name: ERC20
+          file: ../../abis/ERC20Detailed.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleErc20Transfer
+      file: ./src/erc20.ts
 templates:
   - name: StakingProxy
     kind: ethereum/contract
@@ -111,6 +159,8 @@ templates:
           file: ../../abis/StakingProxy.json
         - name: GnosisSafe
           file: ../../abis/GnosisSafe.json
+        - name: ERC20
+          file: ../../abis/ERC20Detailed.json
       eventHandlers:
         - event: ServiceStaked(uint256,indexed uint256,indexed address,indexed address,uint256[])
           handler: handleServiceStaked
@@ -126,3 +176,34 @@ templates:
         - event: ServicesEvicted(indexed uint256,uint256[],address[],address[],uint256[])
           handler: handleServicesEvicted
       file: ./src/staking-proxy.ts
+  - name: Safe
+    kind: ethereum/contract
+    network: base
+    source:
+      abi: GnosisSafe
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - FundsMovement
+        - MasterSafe
+        - TokenBalance
+        - Token
+      abis:
+        - name: GnosisSafe
+          file: ../../abis/GnosisSafe.json
+      eventHandlers:
+        - event: SafeReceived(indexed address,uint256)
+          handler: handleSafeReceived
+        - event: ExecutionSuccess(bytes32,uint256)
+          handler: handleSafeExecutionSuccess
+        - event: ExecutionFromModuleSuccess(indexed address)
+          handler: handleSafeExecutionFromModuleSuccess
+        - event: AddedOwner(address)
+          handler: handleSafeAddedOwner
+        - event: RemovedOwner(address)
+          handler: handleSafeRemovedOwner
+        - event: ChangedThreshold(uint256)
+          handler: handleSafeChangedThreshold
+      file: ./src/safe.ts

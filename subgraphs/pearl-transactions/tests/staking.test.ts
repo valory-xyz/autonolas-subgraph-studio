@@ -616,4 +616,149 @@ describe("pearl-transactions / Phase 1b — staking", () => {
     // Custody change row is still recorded.
     assert.entityCount("ServiceNftCustodyChange", 1);
   });
+
+  test("DailyServiceFunds rolls over at UTC midnight (two days = two buckets)", () => {
+    const tx1 = mockTx(10);
+    handleServiceStaked(
+      newServiceStaked(SERVICE_ID, EPOCH, MASTER_SAFE, AGENT_SAFE, STAKING_PROXY, tx1)
+    );
+
+    // First claim on day 1.
+    const day1Ts = BigInt.fromI32(86400 * 100); // arbitrary day boundary
+    const tx2 = mockTx(11);
+    const evt2 = newRewardClaimed(
+      SERVICE_ID,
+      EPOCH,
+      MASTER_SAFE,
+      AGENT_SAFE,
+      REWARD,
+      STAKING_PROXY,
+      tx2
+    );
+    evt2.block.timestamp = day1Ts;
+    handleRewardClaimed(evt2);
+
+    // Second claim ~25h later (definitely next UTC day).
+    const day2Ts = day1Ts.plus(BigInt.fromI32(90000));
+    const tx3 = mockTx(12);
+    const evt3 = newRewardClaimed(
+      SERVICE_ID,
+      EPOCH.plus(BigInt.fromI32(1)),
+      MASTER_SAFE,
+      AGENT_SAFE,
+      REWARD,
+      STAKING_PROXY,
+      tx3
+    );
+    evt3.block.timestamp = day2Ts;
+    handleRewardClaimed(evt3);
+
+    // Two distinct daily buckets.
+    assert.entityCount("DailyServiceFunds", 2);
+
+    const day1Bucket = day1Ts.toI64() / 86400 * 86400;
+    const day2Bucket = day2Ts.toI64() / 86400 * 86400;
+    const id1 = "42-" + day1Bucket.toString();
+    const id2 = "42-" + day2Bucket.toString();
+    assert.fieldEquals(
+      "DailyServiceFunds",
+      id1,
+      "olasRewardsClaimed",
+      REWARD.toString()
+    );
+    assert.fieldEquals(
+      "DailyServiceFunds",
+      id1,
+      "cumulativeOlasRewardsClaimed",
+      REWARD.toString()
+    );
+    assert.fieldEquals(
+      "DailyServiceFunds",
+      id2,
+      "olasRewardsClaimed",
+      REWARD.toString()
+    );
+    assert.fieldEquals(
+      "DailyServiceFunds",
+      id2,
+      "cumulativeOlasRewardsClaimed",
+      REWARD.plus(REWARD).toString()
+    );
+    // Service.totalOlasRewardsClaimed = 2x reward.
+    assert.fieldEquals(
+      "Service",
+      "42",
+      "totalOlasRewardsClaimed",
+      REWARD.plus(REWARD).toString()
+    );
+  });
+
+  test("Full stake → claim → unstake lifecycle: rows + cumulative counters", () => {
+    const tx1 = mockTx(13);
+    handleServiceStaked(
+      newServiceStaked(SERVICE_ID, EPOCH, MASTER_SAFE, AGENT_SAFE, STAKING_PROXY, tx1)
+    );
+    assert.fieldEquals("Service", "42", "state", "STAKED");
+
+    // Three reward claims across epochs.
+    const tx2 = mockTx(14);
+    handleRewardClaimed(
+      newRewardClaimed(SERVICE_ID, EPOCH, MASTER_SAFE, AGENT_SAFE, REWARD, STAKING_PROXY, tx2)
+    );
+    const tx3 = mockTx(15);
+    handleRewardClaimed(
+      newRewardClaimed(
+        SERVICE_ID,
+        EPOCH.plus(BigInt.fromI32(1)),
+        MASTER_SAFE,
+        AGENT_SAFE,
+        REWARD,
+        STAKING_PROXY,
+        tx3
+      )
+    );
+    const tx4 = mockTx(16);
+    handleRewardClaimed(
+      newRewardClaimed(
+        SERVICE_ID,
+        EPOCH.plus(BigInt.fromI32(2)),
+        MASTER_SAFE,
+        AGENT_SAFE,
+        REWARD,
+        STAKING_PROXY,
+        tx4
+      )
+    );
+
+    // Then unstake with one more reward delivered.
+    const tx5 = mockTx(17);
+    handleServiceUnstaked(
+      newServiceUnstaked(
+        SERVICE_ID,
+        EPOCH.plus(BigInt.fromI32(3)),
+        MASTER_SAFE,
+        AGENT_SAFE,
+        REWARD,
+        STAKING_PROXY,
+        tx5
+      )
+    );
+
+    // 3 claims + 1 unstake = 4 reward-bearing FundsMovement rows, plus
+    // the single SAFE_DEPLOYED anchor emitted at first sighting of
+    // MASTER_SAFE in handleServiceStaked (no opening-balance rows — AC #3
+    // / Path A). = 1 anchor + 4 reward = 5 total.
+    assert.entityCount("FundsMovement", 5);
+
+    // Cumulative: 4 × REWARD.
+    assert.fieldEquals(
+      "Service",
+      "42",
+      "totalOlasRewardsClaimed",
+      REWARD.times(BigInt.fromI32(4)).toString()
+    );
+
+    // Final state.
+    assert.fieldEquals("Service", "42", "state", "UNSTAKED");
+  });
 });
