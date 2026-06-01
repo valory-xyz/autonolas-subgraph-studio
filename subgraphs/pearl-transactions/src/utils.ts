@@ -9,6 +9,7 @@ import {
 import {
   AgentBondAttributionGuard,
   AgentSafe,
+  DailyServiceFunds,
   FundsMovement,
   MasterSafe,
   PendingBondCounter,
@@ -16,6 +17,7 @@ import {
   PendingRegistration,
   Service,
   ServiceIndex,
+  StakingContract,
 } from "../generated/schema";
 import { GnosisSafe } from "../generated/ServiceRegistryL2/GnosisSafe";
 import {
@@ -150,6 +152,14 @@ function emitSafeDeployedRow(
   row.save();
 }
 
+// isStakingContract — true if `addr` corresponds to an indexed
+// StakingContract entity. Used by handleServiceNftTransfer in Phase 1b
+// to skip Master Safe derivation on the NFT → staking-proxy hop
+// (avoids the getOwners() revert + warning log for proxy addresses).
+export function isStakingContract(addr: Address): boolean {
+  return StakingContract.load(addr) != null;
+}
+
 // --- AgentSafe -------------------------------------------------------
 
 export function getOrCreateAgentSafe(
@@ -187,6 +197,7 @@ export function getOrCreateService(
   service.agentIds = [];
   service.operators = [];
   service.state = SERVICE_STATE_REGISTERED;
+  service.totalOlasRewardsClaimed = BigInt.zero();
   service.registeredTimestamp = event.block.timestamp;
   service.updatedTimestamp = event.block.timestamp;
   service.save();
@@ -417,4 +428,65 @@ export function attributeAgentBondOncePerService(
   const guard = new AgentBondAttributionGuard(guardId);
   guard.save();
   dequeueAndAttribute(txHash, serviceId, bondType);
+}
+
+// --- DailyServiceFunds (Phase 1b) ------------------------------------
+
+const ONE_DAY: i64 = 86400;
+
+export function dayTimestamp(timestamp: BigInt): BigInt {
+  const t = timestamp.toI64();
+  const day = (t / ONE_DAY) * ONE_DAY;
+  return BigInt.fromI64(day);
+}
+
+// addDailyOlasReward — bump both the daily-bucket counter and the
+// per-service cumulative counter for an OLAS reward outflow
+// (RewardClaimed or *Unstaked reward). Idempotent on entity-creation;
+// just adds the amount.
+export function addDailyOlasReward(
+  service: Service,
+  amount: BigInt,
+  blockTimestamp: BigInt
+): void {
+  const day = dayTimestamp(blockTimestamp);
+  const id = service.id + "-" + day.toString();
+  let daily = DailyServiceFunds.load(id);
+  if (daily == null) {
+    daily = new DailyServiceFunds(id);
+    daily.service = service.id;
+    daily.dayTimestamp = day;
+    daily.olasRewardsClaimed = BigInt.zero();
+    daily.cumulativeOlasRewardsClaimed = service.totalOlasRewardsClaimed;
+  }
+  daily.olasRewardsClaimed = daily.olasRewardsClaimed.plus(amount);
+  daily.cumulativeOlasRewardsClaimed = service.totalOlasRewardsClaimed.plus(
+    amount
+  );
+  daily.save();
+
+  service.totalOlasRewardsClaimed = service.totalOlasRewardsClaimed.plus(
+    amount
+  );
+}
+
+// --- StakingContract -------------------------------------------------
+
+export function getOrCreateStakingContract(
+  proxyAddress: Address,
+  implementation: Bytes,
+  minStakingDeposit: BigInt,
+  numAgentInstances: BigInt,
+  event: ethereum.Event
+): StakingContract {
+  let sc = StakingContract.load(proxyAddress);
+  if (sc != null) return sc;
+  sc = new StakingContract(proxyAddress);
+  sc.implementation = implementation;
+  sc.minStakingDeposit = minStakingDeposit;
+  sc.numAgentInstances = numAgentInstances;
+  sc.createdBlock = event.block.number;
+  sc.createdTimestamp = event.block.timestamp;
+  sc.save();
+  return sc;
 }

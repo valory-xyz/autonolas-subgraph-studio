@@ -1,21 +1,22 @@
 // Per-network constants. Mirrors the shared/constants.ts pattern of a
-// dataSource.network() switch resolver. Phase 1a only needs OLAS for
-// the SAFE_DEPLOYED row's metadata (currently null) — the resolver is
-// here so later phases (raw OLAS Transfer handling) reuse it without
-// touching constants.
+// dataSource.network() switch resolver.
 
-import { Address, log } from "@graphprotocol/graph-ts";
+import { Address, Bytes, dataSource, log } from "@graphprotocol/graph-ts";
 
 // Service state strings (matches plan §5.1).
 export const SERVICE_STATE_REGISTERED = "REGISTERED";
 export const SERVICE_STATE_DEPLOYED = "DEPLOYED";
+export const SERVICE_STATE_STAKED = "STAKED";
+export const SERVICE_STATE_UNSTAKED = "UNSTAKED";
 export const SERVICE_STATE_TERMINATED = "TERMINATED";
-// Phase 1b will add STAKED / UNSTAKED.
 
 // FundsCategory string values (the schema enum surfaces in AS as strings).
 export const CATEGORY_SAFE_DEPLOYED = "SAFE_DEPLOYED";
 export const CATEGORY_SERVICE_BOND_DEPOSIT = "SERVICE_BOND_DEPOSIT";
 export const CATEGORY_SERVICE_BOND_REFUND = "SERVICE_BOND_REFUND";
+export const CATEGORY_STAKING_REWARD_CLAIM = "STAKING_REWARD_CLAIM";
+export const CATEGORY_UNSTAKE_REWARD = "UNSTAKE_REWARD";
+export const CATEGORY_SERVICE_EVICTED = "SERVICE_EVICTED";
 
 // ServiceBondType string values.
 export const BOND_TYPE_SECURITY_DEPOSIT = "SECURITY_DEPOSIT";
@@ -48,4 +49,41 @@ export function getOlasAddress(network: string): Address {
   }
   log.critical("Unsupported network in getOlasAddress: {}", [network]);
   return Address.zero();
+}
+
+// isAllowedImplementation — the Olas staking ecosystem allows multiple
+// StakingProxy implementations but pearl-transactions only indexes
+// proxies whose implementation appears on this per-network allow-list.
+// Sourced from `subgraphs/staking/src/utils.ts` (the staking subgraph's
+// canonical allow-list). Phase 1b includes only the 4 v1 networks; the
+// staking subgraph carries arbitrum / celo / mainnet entries that
+// aren't in this subgraph's network set.
+export function isAllowedImplementation(implementation: Bytes): boolean {
+  const network = dataSource.network();
+  let allowed: Bytes[] = [];
+
+  if (network == "gnosis" || network == "xdai") {
+    allowed = [
+      Bytes.fromHexString("0xEa00be6690a871827fAfD705440D20dd75e67AB1"),
+    ];
+  } else if (network == "matic" || network == "polygon") {
+    allowed = [
+      Bytes.fromHexString("0x4aba1Cf7a39a51D75cBa789f5f21cf4882162519"),
+    ];
+  } else if (network == "optimism") {
+    allowed = [
+      Bytes.fromHexString("0x63C2c53c09dE534Dd3bc0b7771bf976070936bAC"),
+    ];
+  } else if (network == "base") {
+    allowed = [
+      Bytes.fromHexString("0xEB5638eefE289691EcE01943f768EDBF96258a80"),
+    ];
+  }
+
+  for (let i = 0; i < allowed.length; i++) {
+    if (implementation.equals(allowed[i])) {
+      return true;
+    }
+  }
+  return false;
 }

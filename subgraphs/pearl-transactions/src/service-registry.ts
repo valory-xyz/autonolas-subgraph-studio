@@ -24,6 +24,7 @@ import {
   getOrCreateAgentSafe,
   getOrCreateMasterSafe,
   getOrCreateService,
+  isStakingContract,
   setServiceIndex,
 } from "./utils";
 
@@ -100,16 +101,15 @@ export function handleCreateMultisigWithAgents(
 
 // handleServiceNftTransfer — ERC-721 Transfer on the ServiceRegistryL2
 // contract (the service NFT). Records every custody change, then tries
-// to resolve the recipient to a Master Safe.
-//
-// Master Safe discovery is gated on getOrCreateMasterSafe succeeding
-// (i.e. the recipient answers getOwners() — a real Safe). The recipient
-// is NOT always a Master Safe: at mint it's the creator's Safe (the
-// Master Safe), but when a service is staked the NFT moves to a staking
-// proxy, and on burn it goes to the zero address. Only the Safe case
-// links service.masterSafe; non-Safe recipients are skipped so the real
-// Master Safe link (established at mint) is preserved. Phase 1b replaces
-// the getOwners() probe with an explicit StakingContract allowlist.
+// to resolve the recipient to a Master Safe. Skips two cases:
+//   - the zero address (mint / burn);
+//   - known staking proxies (StakingFactory-tracked) — on stake the NFT
+//     moves Master Safe → staking proxy, and getOwners() on a proxy
+//     reverts, so the explicit check (Phase 1b) avoids the eth_call/log.
+// For any other recipient, getOrCreateMasterSafe probes getOwners() and
+// returns null for non-Safes (defence-in-depth for untracked proxies /
+// EOAs); we only link when it resolves, so a stake hop never clobbers
+// the real Master Safe link established at mint.
 export function handleServiceNftTransfer(event: TransferEvent): void {
   const serviceId = event.params.id;
   const from = event.params.from;
@@ -129,16 +129,17 @@ export function handleServiceNftTransfer(event: TransferEvent): void {
   change.transactionHash = event.transaction.hash;
   change.save();
 
-  // Resolve the recipient to a Master Safe. Skip the zero address
-  // (burn). getOrCreateMasterSafe returns null when `to` isn't a Safe
-  // (staking proxy, EOA, …); only link when it resolves, so a stake hop
-  // (Master Safe → staking proxy) doesn't clobber the real link.
-  if (!to.equals(Address.zero())) {
-    const masterSafe = getOrCreateMasterSafe(to, event);
-    if (masterSafe != null) {
-      service.masterSafe = masterSafe.id;
-      service.save();
-    }
+  // Skip the zero address (mint / burn) and known staking proxies.
+  if (to.equals(Address.zero())) return;
+  if (isStakingContract(to)) return;
+
+  // getOrCreateMasterSafe returns null when `to` isn't a Safe (untracked
+  // proxy, EOA, …); only link when it resolves, so a stake hop never
+  // clobbers the real Master Safe link.
+  const masterSafe = getOrCreateMasterSafe(to, event);
+  if (masterSafe != null) {
+    service.masterSafe = masterSafe.id;
+    service.save();
   }
 }
 

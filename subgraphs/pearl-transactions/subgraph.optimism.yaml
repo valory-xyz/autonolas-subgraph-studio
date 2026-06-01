@@ -69,3 +69,60 @@ dataSources:
         - event: TokenRefund(indexed address,indexed address,uint256)
           handler: handleTokenRefund
       file: ./src/service-registry-token-utility.ts
+  - kind: ethereum
+    name: StakingFactory
+    network: optimism
+    source:
+      address: "0xa45E64d13A30a51b91ae0eb182e88a40e9b18eD8"
+      abi: StakingFactory
+      startBlock: 124618633
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - StakingContract
+      abis:
+        - name: StakingFactory
+          file: ../../abis/StakingFactory.json
+        - name: StakingProxy
+          file: ../../abis/StakingProxy.json
+      eventHandlers:
+        - event: InstanceCreated(indexed address,indexed address,indexed address)
+          handler: handleInstanceCreated
+      file: ./src/staking-factory.ts
+templates:
+  - name: StakingProxy
+    kind: ethereum/contract
+    network: optimism
+    source:
+      abi: StakingProxy
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Service
+        - MasterSafe
+        - FundsMovement
+        - DailyServiceFunds
+      abis:
+        - name: StakingProxy
+          file: ../../abis/StakingProxy.json
+        - name: GnosisSafe
+          file: ../../abis/GnosisSafe.json
+      eventHandlers:
+        - event: ServiceStaked(uint256,indexed uint256,indexed address,indexed address,uint256[])
+          handler: handleServiceStaked
+        - event: RewardClaimed(uint256,indexed uint256,indexed address,indexed
+            address,uint256[],uint256)
+          handler: handleRewardClaimed
+        - event: ServiceUnstaked(uint256,indexed uint256,indexed address,indexed
+            address,uint256[],uint256,uint256)
+          handler: handleServiceUnstaked
+        - event: ServiceForceUnstaked(uint256,indexed uint256,indexed address,indexed
+            address,uint256[],uint256,uint256)
+          handler: handleServiceForceUnstaked
+        - event: ServicesEvicted(indexed uint256,uint256[],address[],address[],uint256[])
+          handler: handleServicesEvicted
+      file: ./src/staking-proxy.ts
