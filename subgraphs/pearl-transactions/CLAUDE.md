@@ -62,6 +62,19 @@ Honest limits documented in
 that apply to Phase 1a as-shipped:
 - `bondType` attribution is best-effort; unmodeled call orderings
   leave it null but preserve the amount.
+- SRTU bond rows are **token-secured-only**. Every `TokenDeposit` /
+  `TokenRefund` emit in `ServiceRegistryTokenUtility` sits inside an
+  `if (token != address(0))` guard, so ETH/native-secured services emit
+  no SRTU events and produce no `SERVICE_BOND_DEPOSIT` / `_REFUND` rows
+  (the bond amount lives in the registry contract, not SRTU). For those
+  services `dequeueAndAttribute` simply finds an empty queue and no-ops.
+- `unbondTokenRefund` additionally guards on `refund > 0`, so a
+  fully-slashed operator emits `OperatorUnbond` without a matching
+  `TokenRefund`. Harmless in an isolated unbond tx (empty queue →
+  no-op); the only hazard is a single batched tx that unbonds several
+  operators where one is fully slashed, which could shift the per-tx
+  refund queue by one entry. Not observed in Pearl's flow (one operator
+  per service); revisit if Phase 1b+ touches batched unbonds.
 - Non-Safe NFT recipients (staking proxy when a service is staked,
   EOAs, etc.) are skipped: `getOrCreateMasterSafe` probes `getOwners()`
   and returns `null` on revert/empty, so no phantom `MasterSafe` /
