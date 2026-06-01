@@ -20,11 +20,15 @@ type MasterSafe @entity(immutable: false) {
   agentSafes: [AgentSafe!]! @derivedFrom(field: "masterSafe")
   firstSeenTimestamp: BigInt!
   firstSeenBlock: BigInt!             # internal provenance: when we first saw this Safe
-  # Anchor fields the wallet UI uses to render a "History starts here"
-  # divider, then fetch opening balances via archive RPC (balanceOf /
-  # eth_getBalance) at this block (AC #3 / Path A, §6.2). Equal to
-  # firstSeen* in practice; named distinctly because historyFloor* is a
+  # SINGLE SOURCE OF TRUTH for opening balances under AC #3 / Path A
+  # (§6.2): the subgraph emits NO opening-balance row — the wallet UI
+  # renders a "History starts here" divider at this block and fetches
+  # opening balances itself via archive RPC (balanceOf for ERC-20,
+  # eth_getBalance for native) at exactly historyFloorBlock. Equal to
+  # firstSeen* in practice; named distinctly because historyFloor* is the
   # consumer-facing UI contract while firstSeen* is internal provenance.
+  # (Native pre-discovery balance has no other on-chain hook — the FE
+  # surfaces any "unknown before this block" caption from this anchor.)
   historyFloorBlock: BigInt!
   historyFloorTimestamp: BigInt!
   lastActivityTimestamp: BigInt!
