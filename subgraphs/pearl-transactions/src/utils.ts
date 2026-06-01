@@ -37,6 +37,7 @@ import {
   SOURCE_SEMANTIC,
   getOlasAddress,
   getSrtuAddress,
+  getStablecoinSymbol,
   getWrappedNativeAddress,
   getWrappedNativeSymbol,
 } from "./constants";
@@ -617,10 +618,17 @@ export function getOrCreateToken(tokenAddress: Address): Token {
     token.symbol = getWrappedNativeSymbol(network);
     token.decimals = 18;
   } else {
-    // Fallback for any unknown token that shows up via classifyTransfer
-    // (shouldn't happen given our data-source set, but defensive).
-    token.symbol = "UNKNOWN";
-    token.decimals = 18;
+    const stablecoin = getStablecoinSymbol(network, tokenAddress);
+    if (stablecoin !== null) {
+      // Phase 2b stablecoins (USDC / USDC.e / pUSD) — all 6 decimals.
+      token.symbol = stablecoin;
+      token.decimals = 6;
+    } else {
+      // Fallback for any unknown token that shows up via classifyTransfer
+      // (shouldn't happen given our data-source set, but defensive).
+      token.symbol = "UNKNOWN";
+      token.decimals = 18;
+    }
   }
   token.save();
   return token;

@@ -94,8 +94,10 @@ that apply to Phase 1a as-shipped:
 | 5 — Verify on Studio | Spot-check stake/claim/unstake against block explorer for a known Pearl service | — |
 | 6 — Verify graph-node `startBlock`-in-context | Open Q #6: determines option for §6.2 pre-stake-transfer recovery | §6.2 |
 | 7 — Phase 2a | OLAS `Transfer` data source + per-Safe `Safe` templates; `classifyTransfer`; `TrackedSafe` / `TrackedEOA` / `TokenBalance` / `Token`; `AgentFundingEvent` aggregation | §6.1, §6.2, §6.4, §6.5 |
-| 8 — Phase 2b | USDC / USDC.e benchmark + product decision (§6.3) | §6.3 |
+| 8 — Phase 2b | Stablecoin `Transfer` data sources via the same `handleErc20Transfer` handler. Per-chain token set sourced from the Operate app (`frontend/config/tokens.ts`): gnosis USDC + USDC.e; matic USDC + USDC.e + pUSD; optimism USDC + USDC.e; base USDC (all 6 decimals). Rendered from a per-network `erc20Tokens` array in `networks.json` via the `{{ erc20TokenDataSources }}` marker (see `generate-manifests.js`); start block = chain's `ServiceRegistryL2` block (provably-safe lower bound). On-chain path chosen over the §6.3 off-chain fallback; the §6.3a Polygon sync benchmark was **deferred** (Studio deploy not yet provisioned) — revisit if Polygon full-sync proves too slow. | §6.3 |
 | 9 — Docs | Finalize this file + `README.md`; update root `CLAUDE.md` | — |
+
+> **Note:** this file's "Current state" header above still reflects Phase 1a; phases 1b/2a/2b landed without refreshing it. A full CLAUDE.md catch-up is the step-9 docs pass.
 
 ## Development workflow
 

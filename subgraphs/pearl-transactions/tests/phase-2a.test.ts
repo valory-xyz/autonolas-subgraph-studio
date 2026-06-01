@@ -115,6 +115,22 @@ function newOlasTransfer(
   return setMockEventBoilerplate(e, txHash, logIndex, OLAS_GNOSIS);
 }
 
+// newErc20TransferAt — a Transfer event whose `event.address` is an
+// arbitrary token (handleErc20Transfer reads event.address for the row's
+// `token`, so the same handler serves every ERC-20 data source).
+function newErc20TransferAt(
+  token: Address,
+  from: Address,
+  to: Address,
+  amount: BigInt,
+  txHash: Bytes,
+  logIndex: i32
+): OlasTransfer {
+  const e = newOlasTransfer(from, to, amount, txHash, logIndex);
+  e.address = token;
+  return e;
+}
+
 function newSafeReceived(
   sender: Address,
   value: BigInt,
@@ -693,5 +709,53 @@ describe("pearl-transactions / Phase 2a — raw OLAS + Safe template", () => {
       "category",
       "MASTER_FUNDING_IN"
     );
+  });
+
+  // ---- Phase 2b — stablecoins (USDC / USDC.e / pUSD, all 6 decimals) ----
+
+  test("Gnosis USDC.e Transfer routes via the generic handler; Token = USDC.e @ 6 decimals", () => {
+    seedMasterSafe(true);
+    const USDCE_GNOSIS = Address.fromString(
+      "0x2a22f9c3b484c3629090FeED35F17Ff8F88f76F0"
+    );
+    const amount = BigInt.fromString("1000000"); // 1 USDC.e (6 decimals)
+    const tx = mockTx(31);
+    handleErc20Transfer(
+      newErc20TransferAt(USDCE_GNOSIS, MASTER_EOA, MASTER_SAFE, amount, tx, 0)
+    );
+
+    const id = tx.concatI32(0);
+    assert.fieldEquals("FundsMovement", id.toHexString(), "category", "MASTER_FUNDING_IN");
+    assert.fieldEquals(
+      "FundsMovement",
+      id.toHexString(),
+      "token",
+      USDCE_GNOSIS.toHexString()
+    );
+    assert.fieldEquals("Token", USDCE_GNOSIS.toHexString(), "symbol", "USDC.e");
+    assert.fieldEquals("Token", USDCE_GNOSIS.toHexString(), "decimals", "6");
+  });
+
+  test("Polygon pUSD Transfer resolves to pUSD @ 6 decimals", () => {
+    dataSourceMock.setNetwork("matic");
+    seedMasterSafe(true);
+    const PUSD_POLYGON = Address.fromString(
+      "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB"
+    );
+    const amount = BigInt.fromString("2500000"); // 2.5 pUSD (6 decimals)
+    const tx = mockTx(32);
+    handleErc20Transfer(
+      newErc20TransferAt(PUSD_POLYGON, MASTER_EOA, MASTER_SAFE, amount, tx, 0)
+    );
+
+    const id = tx.concatI32(0);
+    assert.fieldEquals(
+      "FundsMovement",
+      id.toHexString(),
+      "token",
+      PUSD_POLYGON.toHexString()
+    );
+    assert.fieldEquals("Token", PUSD_POLYGON.toHexString(), "symbol", "pUSD");
+    assert.fieldEquals("Token", PUSD_POLYGON.toHexString(), "decimals", "6");
   });
 });
