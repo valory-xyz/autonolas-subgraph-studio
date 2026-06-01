@@ -659,11 +659,11 @@ describe("pearl-transactions / Phase 2a — raw OLAS + Safe template", () => {
     );
   });
 
-  test("OPENING_BALANCE does NOT pre-empt SAFE_SETUP_TRANSFER on first live inbound", () => {
-    // Seed the MasterSafe with setupTransferSeen=false to simulate
-    // the post-baseline state (the baseline emission does NOT flip
-    // the flag in Rev. 4). The first live Master EOA → Master Safe
-    // hop should still classify as SAFE_SETUP_TRANSFER.
+  test("first live Master EOA → Master Safe inbound is SAFE_SETUP_TRANSFER, subsequent are MASTER_FUNDING_IN", () => {
+    // Per AC #3 / Path A, the first live Master EOA → Master Safe hop
+    // observed after first sighting (setupTransferSeen=false) classifies
+    // as SAFE_SETUP_TRANSFER; the flag then flips and subsequent hops are
+    // MASTER_FUNDING_IN.
     seedMasterSafe(/* setupTransferSeen = */ false);
 
     const tx = mockTx(29);

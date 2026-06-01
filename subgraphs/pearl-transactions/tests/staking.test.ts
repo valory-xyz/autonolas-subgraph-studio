@@ -106,34 +106,6 @@ function mockProxyConfig(
   ).returns([ethereum.Value.fromUnsignedBigInt(numAgentInstances)]);
 }
 
-const OLAS_GNOSIS_ADDR = Address.fromString(
-  "0xcE11e14225575945b8E6Dc0D4F2dD4C570f79d9f"
-);
-const WXDAI_GNOSIS_ADDR = Address.fromString(
-  "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d"
-);
-function mockOlasBalanceOf(holder: Address, balance: BigInt): void {
-  createMockedFunction(
-    OLAS_GNOSIS_ADDR,
-    "balanceOf",
-    "balanceOf(address):(uint256)"
-  )
-    .withArgs([ethereum.Value.fromAddress(holder)])
-    .returns([ethereum.Value.fromUnsignedBigInt(balance)]);
-}
-function mockWrappedNativeBalanceOf(
-  holder: Address,
-  balance: BigInt
-): void {
-  createMockedFunction(
-    WXDAI_GNOSIS_ADDR,
-    "balanceOf",
-    "balanceOf(address):(uint256)"
-  )
-    .withArgs([ethereum.Value.fromAddress(holder)])
-    .returns([ethereum.Value.fromUnsignedBigInt(balance)]);
-}
-
 function setMockEventBoilerplate<T extends ethereum.Event>(
   event: T,
   txHash: Bytes,
@@ -443,10 +415,6 @@ describe("pearl-transactions / Phase 1b — staking", () => {
     mockGetOwners(MASTER_SAFE, [MASTER_EOA, BACKUP_EOA]);
     mockGetThreshold(MASTER_SAFE, 1);
     mockProxyConfig(STAKING_PROXY, MIN_STAKING_DEPOSIT, NUM_AGENT_INSTANCES);
-    // Phase 2a's emitMasterSafeOlasBaseline calls OLAS.balanceOf at
-    // first sighting; mock returns 0 for tests not covering baseline.
-    mockOlasBalanceOf(MASTER_SAFE, BigInt.zero());
-    mockWrappedNativeBalanceOf(MASTER_SAFE, BigInt.zero());
   });
 
   afterEach(() => {
@@ -776,13 +744,11 @@ describe("pearl-transactions / Phase 1b — staking", () => {
       )
     );
 
-    // 3 claims + 1 unstake = 4 reward-bearing FundsMovement rows.
-    // Plus the anchor set at first sighting of MASTER_SAFE in
-    // handleServiceStaked (Phase 2a Rev. 4):
-    //   1 SAFE_DEPLOYED
-    // + 3 OPENING_BALANCE (OLAS, WrappedNative, native marker)
-    // = 4 anchor + 4 reward = 8 total.
-    assert.entityCount("FundsMovement", 8);
+    // 3 claims + 1 unstake = 4 reward-bearing FundsMovement rows, plus
+    // the single SAFE_DEPLOYED anchor emitted at first sighting of
+    // MASTER_SAFE in handleServiceStaked (no opening-balance rows — AC #3
+    // / Path A). = 1 anchor + 4 reward = 5 total.
+    assert.entityCount("FundsMovement", 5);
 
     // Cumulative: 4 × REWARD.
     assert.fieldEquals(
