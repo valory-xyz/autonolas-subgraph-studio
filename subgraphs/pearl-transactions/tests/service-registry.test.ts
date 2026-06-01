@@ -4,6 +4,7 @@ import {
   beforeEach,
   clearStore,
   createMockedFunction,
+  dataSourceMock,
   describe,
   newMockEvent,
   test,
@@ -380,6 +381,9 @@ function newTokenRefund(
 describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds", () => {
   beforeEach(() => {
     clearStore();
+    // Pearl-transactions only supports gnosis/matic/optimism/base
+    // (matchstick defaults to mainnet).
+    dataSourceMock.setNetwork("gnosis");
     mockGetOwners(MASTER_SAFE, [MASTER_EOA, BACKUP_EOA]);
     mockGetThreshold(MASTER_SAFE, 1);
   });
@@ -531,8 +535,17 @@ describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds",
         "amount",
         "0"
       );
-      // Exactly one FundsMovement row so far (the SAFE_DEPLOYED).
+      // Per AC #3 / Path A (Rev. 5) the subgraph emits NO opening-balance
+      // rows — only the single SAFE_DEPLOYED anchor at first sighting.
       assert.entityCount("FundsMovement", 1);
+      // historyFloor* set on the MasterSafe at first-sighting (the
+      // frontend reads opening balances via archive RPC at this block).
+      assert.fieldEquals(
+        "MasterSafe",
+        MASTER_SAFE.toHexString(),
+        "historyFloorBlock",
+        "1" // matchstick default block.number = 1
+      );
 
       // Second NFT movement involving the same Master Safe must NOT
       // emit another SAFE_DEPLOYED row.
