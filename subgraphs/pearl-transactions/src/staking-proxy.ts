@@ -41,8 +41,14 @@ export function handleServiceStaked(event: ServiceStakedEvent): void {
   service.updatedTimestamp = event.block.timestamp;
   service.save();
 
+  // `owner` is the Master Safe (ServiceStaked carries it explicitly), so
+  // this is the canonical discovery path. getOrCreateMasterSafe returns
+  // null only if `owner` isn't a Safe (non-Pearl service / EOA owner) —
+  // skip the link in that case rather than crash.
   const masterSafe = getOrCreateMasterSafe(owner, event);
-  service.masterSafe = masterSafe.id;
+  if (masterSafe != null) {
+    service.masterSafe = masterSafe.id;
+  }
 
   const agentSafe = getOrCreateAgentSafe(multisig, service, event);
   service.agentSafe = agentSafe.id;
