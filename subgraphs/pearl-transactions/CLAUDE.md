@@ -84,6 +84,24 @@ that apply to Phase 1a as-shipped:
 - Master EOA owner-list staleness between first sighting and Phase 2a
   `Safe` template spawn (no `AddedOwner` / `RemovedOwner` handling
   yet).
+- **Native outflows from a Safe are not indexed.** A native transfer
+  *out* of a Safe surfaces only as `ExecutionSuccess` /
+  `ExecutionFromModuleSuccess`, which carry no amount or recipient (and
+  fire on every Safe tx) — so `handleSafeExecution*` are intentional
+  no-ops for v1. Consequence: **native withdrawals to external wallets**
+  and the **native agent gas-funding leg (Master Safe → Agent EOA)** do
+  not appear. Native *inflows* (`SafeReceived`) and all *token* flows
+  in/out are captured. Closing this needs call/trace handlers (the
+  rationale once floated for a self-hosted indexer); accepted v1 gap.
+- **Token coverage is a fixed allowlist, not "any token."** A subgraph
+  `Transfer` data source targets specific token contracts, so the
+  subgraph indexes the set the wallet displays (OLAS, wrapped-native,
+  USDC / USDC.e / pUSD per chain — sourced from the Operate app's
+  `frontend/config/tokens.ts`). An arbitrary/unknown ERC-20 landing in a
+  Safe won't appear. **Adding a wallet token requires updating
+  `networks.json` + `getStablecoinSymbol` in lockstep**, or its
+  transfers are silently missing from history (while the balance still
+  shows, since that comes from the app config).
 
 ## Coming in subsequent PRs (per `IMPLEMENTATION-PLAN.md` §8)
 
