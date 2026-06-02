@@ -3,7 +3,7 @@
 **Status:** Implemented through Phase 2a (PRs #131/#132/#133 merged to `main`); Phase 2b (#138) in review. This plan is the design-of-record.
 **Subgraph:** `subgraphs/pearl-transactions/` (renamed from `pearl-funds` per §11 #5)
 **Target networks (v1):** Gnosis, Polygon, Optimism, Base
-**Last updated:** 2026-06-01 (Rev. 6 — back-propagated the PR #131/#132 producer/consumer fixes so the plan matches shipped code: §3.3 SRTU is indexed, §4.6 SRTU-before-SR event order, §5.1/§5.2 inverted bond-attribution entities + handlers, §5.1 FundsMovement/Token mutability, §5.2 dual NFT guard + handleServiceStaked null-check, §5.4/§7/§8 staleness, pearl-transactions path. Rev. 5 — product decisions finalised: OPENING_BALANCE rows removed, opening balances delegated to the frontend via historyFloorBlock; native → Agent EOA confirmed accepted gap; AC #3 = Path A. Rev. 4 addressed PR #130 review + §11 #6. Rev. 3 added §4.5/§4.6. Rev. 2 added SRTU bond indexing, agent-ID anti-hardcoding, Master EOA tracking. Rev. 1 addressed PR #129 feedback.)
+**Last updated:** 2026-06-01 (Rev. 7 — Phase 2b token-set reconciliation: pUSD is a separate Polymarket contract `0xC011a7E1…`, not a USDC.e UI alias; §4.5 token table + §4.3 networks table rebuilt to the shipped per-chain set (USDC / USDC.e / pUSD); §6.3 records the ship-on-chain decision + Polygon USDC.e rollback condition; Polystrat funds in USDC + pUSD. Rev. 6 — back-propagated the PR #131/#132 producer/consumer fixes so the plan matches shipped code: §3.3 SRTU is indexed, §4.6 SRTU-before-SR event order, §5.1/§5.2 inverted bond-attribution entities + handlers, §5.1 FundsMovement/Token mutability, §5.2 dual NFT guard + handleServiceStaked null-check, §5.4/§7/§8 staleness, pearl-transactions path. Rev. 5 — product decisions finalised: OPENING_BALANCE rows removed, opening balances delegated to the frontend via historyFloorBlock; native → Agent EOA confirmed accepted gap; AC #3 = Path A. Rev. 4 addressed PR #130 review + §11 #6. Rev. 3 added §4.5/§4.6. Rev. 2 added SRTU bond indexing, agent-ID anti-hardcoding, Master EOA tracking. Rev. 1 addressed PR #129 feedback.)
 
 This document scopes a new subgraph that indexes **funds movement for the
 Master Safe and Agent Safe of Pearl predict services**. It covers Phase 1
@@ -50,7 +50,7 @@ are derived from on-chain data; no off-chain mapping or import.
 4. **Reward sweep.** Claimed OLAS is sometimes moved Agent Safe → Master
    Safe afterward. This is a discretionary transfer, not covered by any
    staking event.
-5. **App funding.** Native coin / USDC / USDC.e(pUSD) moves Master Safe →
+5. **App funding.** Native coin / USDC / USDC.e / pUSD moves Master Safe →
    app-specific contracts and is received back by the Master/Agent Safe as
    prediction proceeds (omenstrat on Gnosis, polystrat on Polygon).
 
@@ -158,7 +158,7 @@ seeding rather than full reindexes.
 |---|---|---|---|
 | **Phase 1 — Semantic ledger** | Master/Master-EOA/Agent/Service graph (Master EOA derived via one-shot `getOwners()`); service-NFT custody; real bond deposit/refund rows from `ServiceRegistryTokenUtility` events (twice per stake/unstake cycle, best-effort `bondType`); staking stake/claim/unstake/eviction with exact OLAS reward amounts (straight from events); synthetic `SAFE_DEPLOYED` anchor row | Low — no high-volume data sources | Ship first |
 | **Phase 2a — OLAS + native ledger** | OLAS `Transfer` data source (low volume); native coin + owner-list maintenance via `Safe` dynamic templates. Adds `SAFE_SETUP_TRANSFER`, agent-funding aggregation, Agent→Master OLAS sweeps and native funding | Low–moderate | After Phase 1 verified |
-| **Phase 2b — Stablecoin ledger** | USDC + USDC.e `Transfer` ledger, filtered to tracked safes | **High (Polygon USDC.e)** | **Benchmark-gated *and* product-gated — see §6.3** |
+| **Phase 2b — Stablecoin ledger** | USDC / USDC.e / pUSD `Transfer` ledger (per chain), filtered to tracked safes | **High (Polygon USDC.e)** | Shipped on-chain (#138); benchmark deferred + rollback condition — see §6.3 |
 
 The user-facing framing is "Phase 1 and Phase 2"; Phase 2 is split here
 only because **2a is cheap and unconditional** while **2b carries a real
@@ -227,17 +227,18 @@ deployments. All four networks have all four core data sources (Phase 1
 | `OLAS` (ERC-20) | `Transfer` | 2a |
 | `WrappedNative` (ERC-20, per-chain: WXDAI on Gnosis, WPOL on Polygon, WETH on Optimism + Base) | `Transfer` | 2a *(Rev. 4)* |
 | `Safe` (dynamic template, per Master/Agent Safe) | `SafeReceived`, `ExecutionSuccess`, `ExecutionFromModuleSuccess`, `AddedOwner`, `RemovedOwner`, `ChangedThreshold` | 2a |
-| `USDC` (ERC-20) | `Transfer` | 2b |
-| `USDC.e` (ERC-20, Polygon-only — bridged USDC, aka pUSD) | `Transfer` | 2b |
+| `USDC` / `USDCe` / `PUSD` (ERC-20, per chain — see §4.5; pUSD is Polygon-only) | `Transfer` | 2b |
 
-Per-network addresses:
+Per-network addresses (the Phase-2b stablecoins are rendered from a
+per-network `erc20Tokens` array in `networks.json` — see §4.5 for the
+full set; column below lists them):
 
-| Network (graph-node id) | `ServiceRegistryL2` | `ServiceRegistryTokenUtility` | `StakingFactory` | OLAS | WrappedNative *(2a)* | USDC (Phase 2b) |
+| Network (graph-node id) | `ServiceRegistryL2` | `ServiceRegistryTokenUtility` | `StakingFactory` | OLAS | WrappedNative *(2a)* | Stablecoins (Phase 2b) |
 |---|---|---|---|---|---|---|
-| `gnosis` | `0x9338b5153AE39BB89f50468E608eD9d764B755fD` @ 27,871,084 | `0xa45E64d13A30a51b91ae0eb182e88a40e9b18eD8` @ 30,095,874 | `0xb0228CA253A88Bc8eb4ca70BCAC8f87b381f4700` @ 35,206,806 | `0xcE11e14225575945b8E6Dc0D4F2dD4C570f79d9f` | WXDAI `0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d` | (none — xDAI is native) |
-| `matic` (Polygon) | `0xE3607b00E75f6405248323A9417ff6b39B244b50` @ 41,783,952 | `0xa45E64d13A30a51b91ae0eb182e88a40e9b18eD8` @ 52,737,296 | `0x46C0D07F55d4F9B5Eed2Fc9680B5953e5fd7b461` @ 62,213,142 | `0xFEF5d947472e72Efbb2E388c730B7428406F2F95` | WPOL/WMATIC `0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270` | USDC `0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359`; USDC.e `0x2791bca1f2de4661ed88a30c99a7a9449aa84174` |
-| `optimism` | `0x3d77596beb0f130a4415df3D2D8232B3d3D31e44` @ 116,423,039 | `0xBb7e1D6Cb6F243D6bdE81CE92a9f2aFF7Fbe7eac` @ 116,423,237 | `0xa45E64d13A30a51b91ae0eb182e88a40e9b18eD8` @ 124,618,633 | `0xFC2E6e6BCbd49ccf3A5f029c79984372DcBFE527` | WETH `0x4200000000000000000000000000000000000006` | USDC `0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85` |
-| `base` | `0x3C1fF68f5aa342D296d4DEe4Bb1cACCA912D95fE` @ 10,827,380 | `0x34C895f302D0b5cf52ec0Edd3945321EB0f83dd5` @ 10,827,475 | `0x1cEe30D08943EB58EFF84DD1AB44a6ee6FEff63a` @ 17,310,019 | `0x54330d28ca3357F294334BDC454a032e7f353416` | WETH `0x4200000000000000000000000000000000000006` | USDC `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` |
+| `gnosis` | `0x9338b5153AE39BB89f50468E608eD9d764B755fD` @ 27,871,084 | `0xa45E64d13A30a51b91ae0eb182e88a40e9b18eD8` @ 30,095,874 | `0xb0228CA253A88Bc8eb4ca70BCAC8f87b381f4700` @ 35,206,806 | `0xcE11e14225575945b8E6Dc0D4F2dD4C570f79d9f` | WXDAI `0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d` | USDC `0xDDAfbb50…`; USDC.e `0x2a22f9c3…` |
+| `matic` (Polygon) | `0xE3607b00E75f6405248323A9417ff6b39B244b50` @ 41,783,952 | `0xa45E64d13A30a51b91ae0eb182e88a40e9b18eD8` @ 52,737,296 | `0x46C0D07F55d4F9B5Eed2Fc9680B5953e5fd7b461` @ 62,213,142 | `0xFEF5d947472e72Efbb2E388c730B7428406F2F95` | WPOL/WMATIC `0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270` | USDC `0x3c499c54…`; USDC.e `0x2791bca1…`; pUSD `0xC011a7E1…` |
+| `optimism` | `0x3d77596beb0f130a4415df3D2D8232B3d3D31e44` @ 116,423,039 | `0xBb7e1D6Cb6F243D6bdE81CE92a9f2aFF7Fbe7eac` @ 116,423,237 | `0xa45E64d13A30a51b91ae0eb182e88a40e9b18eD8` @ 124,618,633 | `0xFC2E6e6BCbd49ccf3A5f029c79984372DcBFE527` | WETH `0x4200000000000000000000000000000000000006` | USDC `0x0b2C639c…`; USDC.e `0x7F5c764c…` |
+| `base` | `0x3C1fF68f5aa342D296d4DEe4Bb1cACCA912D95fE` @ 10,827,380 | `0x34C895f302D0b5cf52ec0Edd3945321EB0f83dd5` @ 10,827,475 | `0x1cEe30D08943EB58EFF84DD1AB44a6ee6FEff63a` @ 17,310,019 | `0x54330d28ca3357F294334BDC454a032e7f353416` | WETH `0x4200000000000000000000000000000000000006` | USDC `0x833589fC…` |
 
 `ServiceRegistryTokenUtility` addresses come from
 `valory-xyz/autonolas-registries`
@@ -322,17 +323,24 @@ which phase indexes it.
 | **Native gas coin** | native | xDAI | POL *(ex-MATIC, [renamed 2024-09](https://polygon.technology/blog/save-the-date-pol-saga-token-migration-coming-september-4th))* | ETH | ETH | per-Safe `Safe` template (`SafeReceived` in; `ExecutionSuccess`/`ExecutionFromModuleSuccess` out, approximate) | 2a |
 | **OLAS** | ERC-20 | `0xcE11e14225575945b8E6Dc0D4F2dD4C570f79d9f` | `0xFEF5d947472e72Efbb2E388c730B7428406F2F95` | `0xFC2E6e6BCbd49ccf3A5f029c79984372DcBFE527` | `0x54330d28ca3357F294334BDC454a032e7f353416` | dedicated `Transfer` data source with `TrackedAddress` in-handler filter; reconciled vs. Phase 1 semantic rows | 2a |
 | **Wrapped native** | ERC-20 | WXDAI `0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d` | WPOL/WMATIC `0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270` | WETH `0x4200000000000000000000000000000000000006` | WETH `0x4200000000000000000000000000000000000006` | dedicated `Transfer` data source w/ `TrackedAddress` filter (the `WrappedNative` slot in §4.3) | 2a *(Rev. 4)* |
-| **USDC (canonical)** | ERC-20 | — | `0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359` | `0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85` | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` | dedicated `Transfer` data source w/ `TrackedAddress` filter | 2b (benchmark-gated per §6.3) |
-| **USDC.e (a.k.a. pUSD in Pearl UI)** | ERC-20 | — | `0x2791bca1f2de4661ed88a30c99a7a9449aa84174` | — | — | dedicated `Transfer` data source w/ `TrackedAddress` filter | 2b (**Polygon cost hotspot — primary §6.3 benchmark target**) |
+| **USDC (canonical)** | ERC-20 (6 dec) | `0xDDAfbb505ad214D7b80b1f830fcCc89B60fb7A83` | `0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359` | `0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85` | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` | dedicated `Transfer` data source w/ `TrackedAddress` filter | 2b |
+| **USDC.e (bridged)** | ERC-20 (6 dec) | `0x2a22f9c3b484c3629090FeED35F17Ff8F88f76F0` | `0x2791bca1f2de4661ed88a30c99a7a9449aa84174` | `0x7F5c764cBc14f9669B88837ca1490cCa17c31607` | — | dedicated `Transfer` data source w/ `TrackedAddress` filter | 2b (**Polygon USDC.e = §2.2 cost hotspot**) |
+| **pUSD** (Polymarket USD) | ERC-20 (6 dec) | — | `0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB` | — | — | dedicated `Transfer` data source w/ `TrackedAddress` filter | 2b |
 
 Notes:
 
-- **pUSD = USDC.e on Polygon.** Pearl's UI labels the bridged USDC token
-  (`0x2791…4174`) as "pUSD". The on-chain asset is unchanged — it's still
-  the [PoS-bridged USDC from Ethereum](https://wallet.polygon.technology/polygon/bridge/deposit).
-  No separate token contract exists. polystrat funding flows in USDC.e
-  historically; Polymarket has begun migrating to canonical USDC
-  (`0x3c49…3359`), which is why both are listed.
+- **pUSD is a separate token from USDC.e.** Earlier revisions assumed
+  Pearl's "pUSD" was just a UI label for bridged USDC.e (`0x2791…4174`)
+  with no separate contract. That is **no longer true**: the Operate app's
+  [`frontend/config/tokens.ts`](https://github.com/valory-xyz/olas-operate-app/blob/main/frontend/config/tokens.ts)
+  lists **pUSD as a distinct contract `0xC011a7E1…`** (Polymarket's USD
+  stablecoin on Polygon), alongside USDC.e `0x2791…`. The shipped subgraph
+  (#138) follows the app and indexes all three Polygon stablecoins (USDC,
+  USDC.e, pUSD) as separate tokens — this table now matches that.
+- **Polystrat funds in USDC + pUSD** (per the current app config), not
+  USDC.e as earlier revisions stated.
+- The full token set is sourced from the Operate app `config/tokens.ts`
+  and resolved per chain in `getStablecoinSymbol` (all 6 decimals).
 - **Native coin tracking is half-precise.** Inbound native is reliable
   (`SafeReceived` event). Outbound native via Safe execution is
   approximate — a Safe executing via a relayer carries `value = 0` on the
@@ -905,9 +913,21 @@ verified as not supported upstream (§11 #6). Path C (on-chain workarounds
 substreams; see PR #129 history) was evaluated and rejected as
 unnecessary given the Path A product decision.
 
-### 6.3 Phase 2b — USDC / USDC.e — benchmark-gated *and* product-gated
+### 6.3 Phase 2b — stablecoins (USDC / USDC.e / pUSD)
 
-This is **two decisions, not one** (per @Tanya-atatakai's PR #129
+**Decision (Rev. 7): shipped on-chain (#138), benchmark deferred.** Product
+chose to ship all of 2b on-chain now and monitor post-deploy rather than
+gate on the §6.3a benchmark first — the benchmark couldn't run because
+Studio isn't provisioned yet (no environment to measure in). The token set
+is **USDC + USDC.e + pUSD** (per the Operate app `config/tokens.ts`; pUSD is
+a distinct Polymarket contract, not a USDC.e alias — see §4.5). **Rollback
+condition:** if Polygon USDC.e sync (the §2.2 hotspot) proves too slow once
+deployed, drop the `matic` USDC.e entry from `networks.json` `erc20Tokens`
+(a one-line change — no re-render of the rest of the matrix) and fall back
+to the off-chain path below for that one token.
+
+The original gating analysis (still the rationale behind the rollback
+condition) was **two decisions, not one** (per @Tanya-atatakai's PR #129
 review):
 
 **(a) Indexing-cost decision.** USDC.e on Polygon is the cost hotspot
@@ -927,7 +947,8 @@ review):
    substreams-powered data source becomes viable for Polygon.
 
 **(b) Product decision.** Polystrat funding on Polygon is
-USDC.e-denominated. If 2b is punted off-chain, **the Polygon wallet
+stablecoin-denominated (USDC + pUSD per the current app config). If 2b is
+punted off-chain, **the Polygon wallet
 view cannot satisfy the VLOP-73 acceptance criterion *"Each included
 transaction type renders correctly"* without the consumer pulling
 stablecoin transfers from a second source.** This is a product
