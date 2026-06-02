@@ -139,6 +139,10 @@ dataSources:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleErc20Transfer
       file: ./src/erc20.ts
+  # Phase 2b — per-network stablecoin Transfer data sources (USDC /
+  # USDC.e / pUSD), expanded from networks.json `erc20Tokens` by
+  # generate-manifests.js. Count varies per chain (1–3).
+{{ erc20TokenDataSources }}
 templates:
   - name: StakingProxy
     kind: ethereum/contract

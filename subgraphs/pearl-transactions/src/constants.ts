@@ -126,6 +126,35 @@ export function getWrappedNativeSymbol(network: string): string {
   return "WNATIVE";
 }
 
+// getStablecoinSymbol — Phase 2b stablecoin metadata resolver. Returns
+// the display symbol for a known per-network stablecoin (all 6 decimals),
+// or null if `address` isn't a tracked stablecoin. Addresses mirror the
+// `erc20Tokens` set in networks.json (sourced from the Operate app's
+// frontend/config/tokens.ts). All comparisons are lowercase-hex
+// (graph-ts toHexString() is lowercase).
+export function getStablecoinSymbol(
+  network: string,
+  address: Address
+): string | null {
+  // Lowercase explicitly: the address literals below are lowercase, and
+  // this drops a hidden dependency on graph-ts toHexString() casing.
+  const a = address.toHexString().toLowerCase();
+  if (network == "gnosis" || network == "xdai") {
+    if (a == "0xddafbb505ad214d7b80b1f830fccc89b60fb7a83") return "USDC";
+    if (a == "0x2a22f9c3b484c3629090feed35f17ff8f88f76f0") return "USDC.e";
+  } else if (network == "matic" || network == "polygon") {
+    if (a == "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359") return "USDC";
+    if (a == "0x2791bca1f2de4661ed88a30c99a7a9449aa84174") return "USDC.e";
+    if (a == "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb") return "pUSD";
+  } else if (network == "optimism") {
+    if (a == "0x0b2c639c533813f4aa9d7837caf62653d097ff85") return "USDC";
+    if (a == "0x7f5c764cbc14f9669b88837ca1490cca17c31607") return "USDC.e";
+  } else if (network == "base") {
+    if (a == "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913") return "USDC";
+  }
+  return null;
+}
+
 // isAllowedImplementation — the Olas staking ecosystem allows multiple
 // StakingProxy implementations but pearl-transactions only indexes
 // proxies whose implementation appears on this per-network allow-list.

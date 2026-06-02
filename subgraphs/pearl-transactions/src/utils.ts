@@ -37,6 +37,7 @@ import {
   SOURCE_SEMANTIC,
   getOlasAddress,
   getSrtuAddress,
+  getStablecoinSymbol,
   getWrappedNativeAddress,
   getWrappedNativeSymbol,
 } from "./constants";
@@ -599,12 +600,17 @@ export function upsertTrackedEOA(
   tracked.save();
 }
 
-// getOrCreateToken — Phase 2a tokens are OLAS (always 18 decimals,
-// symbol "OLAS") and the per-chain wrapped native (always 18 decimals;
-// symbol per getWrappedNativeSymbol). Phase 2b will extend with USDC
-// (6 decimals) and USDC.e (6 decimals). Token metadata is hardcoded
-// rather than queried because the ERC20Detailed ABI in this repo
-// doesn't include symbol() and Pearl's token set is small + known.
+// getOrCreateToken — resolves token metadata for the indexed token set.
+// Metadata is hardcoded (not queried) because the ERC20Detailed ABI in
+// this repo doesn't include symbol()/decimals() and Pearl's token set is
+// small + known:
+//   - OLAS — 18 decimals (per-chain address via getOlasAddress).
+//   - wrapped native — 18 decimals (symbol per getWrappedNativeSymbol).
+//   - stablecoins — USDC / USDC.e / pUSD, all 6 decimals, resolved per
+//     chain via getStablecoinSymbol (the set varies per chain — see
+//     networks.json `erc20Tokens`).
+// First write wins (early return on an existing Token), so a wrong
+// decimals value would persist forever — hence the log.critical guard.
 export function getOrCreateToken(tokenAddress: Address): Token {
   let token = Token.load(tokenAddress);
   if (token != null) return token;
@@ -617,10 +623,26 @@ export function getOrCreateToken(tokenAddress: Address): Token {
     token.symbol = getWrappedNativeSymbol(network);
     token.decimals = 18;
   } else {
-    // Fallback for any unknown token that shows up via classifyTransfer
-    // (shouldn't happen given our data-source set, but defensive).
-    token.symbol = "UNKNOWN";
-    token.decimals = 18;
+    const stablecoin = getStablecoinSymbol(network, tokenAddress);
+    if (stablecoin !== null) {
+      // Per-chain stablecoin (USDC / USDC.e / pUSD) — all 6 decimals.
+      token.symbol = stablecoin;
+      token.decimals = 6;
+    } else {
+      // Reached here only via a tracked Transfer, so this is an indexed
+      // token with no metadata resolver — almost certainly an
+      // `erc20Tokens` entry in networks.json without a matching
+      // getStablecoinSymbol branch. UNKNOWN/18 would silently misformat a
+      // 6-decimal stablecoin by 10^12 in every consumer, and first-write-
+      // wins makes it permanent. Loud on purpose so it surfaces in
+      // indexing logs, not in the wallet UI.
+      log.critical(
+        "getOrCreateToken: no symbol/decimals resolver for indexed token {} on {} — add a getStablecoinSymbol branch (networks.json `erc20Tokens` and the resolver are out of sync). Falling back to UNKNOWN/18.",
+        [tokenAddress.toHexString(), network]
+      );
+      token.symbol = "UNKNOWN";
+      token.decimals = 18;
+    }
   }
   token.save();
   return token;
