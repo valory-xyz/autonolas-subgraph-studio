@@ -4,10 +4,10 @@
     "codegen": "graph codegen subgraph.base.yaml",
     "build": "graph build subgraph.base.yaml",
     "generate-manifests": "node ../../scripts/generate-manifests.js --path=.",
-    "deploy-gnosis": "yarn generate-manifests && graph deploy pearl-transactions-gnosis subgraph.gnosis.yaml",
-    "deploy-matic": "yarn generate-manifests && graph deploy pearl-transactions-matic subgraph.matic.yaml",
-    "deploy-optimism": "yarn generate-manifests && graph deploy pearl-transactions-optimism subgraph.optimism.yaml",
-    "deploy-base": "yarn generate-manifests && graph deploy pearl-transactions-base subgraph.base.yaml",
+    "deploy-gnosis": "yarn generate-manifests && graph deploy pearl-gnosis-transactions subgraph.gnosis.yaml",
+    "deploy-matic": "yarn generate-manifests && graph deploy pearl-polygon-transactions subgraph.matic.yaml",
+    "deploy-optimism": "yarn generate-manifests && graph deploy pearl-optimism-transactions subgraph.optimism.yaml",
+    "deploy-base": "yarn generate-manifests && graph deploy pearl-base-transactions subgraph.base.yaml",
     "test": "ln -s subgraph.gnosis.yaml subgraph.yaml && graph test; rm -f subgraph.yaml"
   },
   "dependencies": {
@@ -26,7 +26,7 @@
     "js-yaml": "^4.1.1",
     "follow-redirects": "^1.16.0",
     "ejs": "^3.1.10",
-    "tmp": "^0.2.4",
+    "tmp": "^0.2.6",
     "undici": "^7.24.0",
     "apisauce": "^3.2.2",
     "**/micromatch/picomatch": "2.3.2",
