@@ -19,16 +19,20 @@
     "WrappedNative": {
       "address": "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d",
       "startBlock": 27871084
-    }
+    },
+    "erc20Tokens": [
+      { "name": "USDC", "address": "0xDDAfbb505ad214D7b80b1f830fcCc89B60fb7A83" },
+      { "name": "USDCe", "address": "0x2a22f9c3b484c3629090FeED35F17Ff8F88f76F0" }
+    ]
   },
   "matic": {
     "ServiceRegistryL2": {
       "address": "0xE3607b00E75f6405248323A9417ff6b39B244b50",
-      "startBlock": 41783952
+      "startBlock": 80360433
     },
     "ServiceRegistryTokenUtility": {
       "address": "0xa45E64d13A30a51b91ae0eb182e88a40e9b18eD8",
-      "startBlock": 52737296
+      "startBlock": 80360433
     },
     "StakingFactory": {
       "address": "0x46C0D07F55d4F9B5Eed2Fc9680B5953e5fd7b461",
@@ -36,12 +40,17 @@
     },
     "OLAS": {
       "address": "0xFEF5d947472e72Efbb2E388c730B7428406F2F95",
-      "startBlock": 41783952
+      "startBlock": 80360433
     },
     "WrappedNative": {
       "address": "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270",
-      "startBlock": 41783952
-    }
+      "startBlock": 80360433
+    },
+    "erc20Tokens": [
+      { "name": "USDC", "address": "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359" },
+      { "name": "USDCe", "address": "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174" },
+      { "name": "PUSD", "address": "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB" }
+    ]
   },
   "optimism": {
     "ServiceRegistryL2": {
@@ -63,7 +72,11 @@
     "WrappedNative": {
       "address": "0x4200000000000000000000000000000000000006",
       "startBlock": 116423039
-    }
+    },
+    "erc20Tokens": [
+      { "name": "USDC", "address": "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85" },
+      { "name": "USDCe", "address": "0x7F5c764cBc14f9669B88837ca1490cCa17c31607" }
+    ]
   },
   "base": {
     "ServiceRegistryL2": {
@@ -85,6 +98,9 @@
     "WrappedNative": {
       "address": "0x4200000000000000000000000000000000000006",
       "startBlock": 10827380
-    }
+    },
+    "erc20Tokens": [
+      { "name": "USDC", "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" }
+    ]
   }
 }
