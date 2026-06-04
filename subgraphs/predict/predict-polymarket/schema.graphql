@@ -1,12 +1,23 @@
-# Entity is only created if trader agent (with id 86) is registered in a service
-# Allows tracking TraderAgent properly
-type TraderService @entity (immutable: true) {
-  id: ID! # serviceId
+# One row per Olas service registered on ServiceRegistryL2 (Polygon). The
+# trader subgraph indexes every service so non-polystrat cohorts (Pearl Mini,
+# future cohorts) aren't silently dropped. Consumers filter cohorts client-
+# side via `agentIds` / `operators` (deduplicated arrays). Mirrors the same
+# Service.agentIds / Service.operators model in `pearl-transactions/`, kept
+# in this subgraph so a trade-side query can filter cohort without a cross-
+# subgraph join.
+type TraderService @entity(immutable: false) {
+  id: ID!                       # serviceId.toHexString()
+  agentIds: [Int!]!             # deduplicated, populated from RegisterInstance
+  operators: [Bytes!]!          # deduplicated, populated from RegisterInstance
+  traderAgent: TraderAgent      # set once CreateMultisigWithAgents fires
 }
 
 type TraderAgent @entity (immutable: false) {
   id: Bytes!
   serviceId: BigInt!
+  # Link back to the service registration; cohort filters route through here
+  # (e.g. `traderAgents(where: { traderService_: { agentIds_contains: [86] } })`).
+  traderService: TraderService!
   firstParticipation: BigInt
   lastActive: BigInt
   totalBets: Int! # all bets done regardless of settlement
@@ -122,6 +133,18 @@ type Global @entity (immutable: false) {
   totalMarketsParticipated: Int! # count of unique markets where any agent participated
 }
 
+# Which on-chain path emitted the redemption event. CONDITIONAL_TOKENS and
+# NEG_RISK_ADAPTER are the pre-v2-cutover direct paths; COLLATERAL_ADAPTER
+# covers post-cutover redemptions routed through CtfCollateralAdapter and
+# NegRiskCtfCollateralAdapter (the standard and neg-risk wrappers share
+# the same `PositionsRedeemed` event signature). Lets downstream tools
+# distinguish the routing without re-deriving it from the tx call graph.
+enum PayoutSource {
+  CONDITIONAL_TOKENS
+  NEG_RISK_ADAPTER
+  COLLATERAL_ADAPTER
+}
+
 # Immutable log entity for every PayoutRedemption event (debugging/auditing)
 type PayoutRedemption @entity(immutable: true) {
   id: Bytes! # txHash + logIndex
@@ -129,6 +152,7 @@ type PayoutRedemption @entity(immutable: true) {
   conditionId: Bytes!
   question: Question
   payoutAmount: BigInt!
+  source: PayoutSource!
   blockNumber: BigInt!
   blockTimestamp: BigInt!
   transactionHash: Bytes!

@@ -2,7 +2,7 @@ import { assert, describe, test, clearStore, beforeEach, newMockEvent } from "ma
 import { Address, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts";
 import { handleTokenRegistered, handleOrderFilled } from "../src/ctf-exchange";
 import { TokenRegistered, OrderFilled } from "../generated/CTFExchange/CTFExchange";
-import { TraderAgent, Question, MarketMetadata } from "../generated/schema";
+import { TraderAgent, TraderService, Question, MarketMetadata } from "../generated/schema";
 
 const CONDITION_ID = Bytes.fromHexString("0x1111111111111111111111111111111111111111111111111111111111111111");
 const TOKEN_0 = BigInt.fromI32(100);
@@ -52,8 +52,18 @@ function createOrderFilledEvent(
 }
 
 function setupTraderAgent(address: Address, serviceId: BigInt): void {
+  const serviceKey = serviceId.toHexString();
+  let service = TraderService.load(serviceKey);
+  if (service == null) {
+    service = new TraderService(serviceKey);
+    service.agentIds = [];
+    service.operators = [];
+    service.save();
+  }
+
   let agent = new TraderAgent(address);
   agent.serviceId = serviceId;
+  agent.traderService = service.id;
   agent.totalBets = 0;
   agent.totalTraded = BigInt.zero();
   agent.totalTradedSettled = BigInt.zero();

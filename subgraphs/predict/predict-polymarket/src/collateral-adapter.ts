@@ -1,5 +1,6 @@
 import { PositionsRedeemed as PositionsRedeemedEvent } from "../generated/CtfCollateralAdapter/CtfCollateralAdapter";
 import { processRedemption } from "./utils";
+import { PAYOUT_SOURCE_COLLATERAL_ADAPTER } from "./constants";
 
 // Post-v2 cutover, agents redeem via CtfCollateralAdapter (standard markets) or
 // NegRiskCtfCollateralAdapter (neg-risk markets). Both wrap USDC.e → pUSD inside
@@ -22,5 +23,6 @@ export function handlePositionsRedeemed(
     event.block.number,
     event.transaction.hash,
     event.logIndex.toI32(),
+    PAYOUT_SOURCE_COLLATERAL_ADAPTER,
   );
 }

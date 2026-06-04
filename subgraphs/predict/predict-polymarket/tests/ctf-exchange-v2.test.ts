@@ -11,6 +11,7 @@ import { handleOrderFilledV2 } from "../src/ctf-exchange-v2";
 import { OrderFilled } from "../generated/CTFExchangeV2/CTFExchangeV2";
 import {
   TraderAgent,
+  TraderService,
   Question,
   MarketMetadata,
   TokenRegistry,
@@ -63,8 +64,18 @@ function createOrderFilledV2Event(
 }
 
 function setupTraderAgent(address: Address, serviceId: BigInt): void {
+  const serviceKey = serviceId.toHexString();
+  let service = TraderService.load(serviceKey);
+  if (service == null) {
+    service = new TraderService(serviceKey);
+    service.agentIds = [];
+    service.operators = [];
+    service.save();
+  }
+
   let agent = new TraderAgent(address);
   agent.serviceId = serviceId;
+  agent.traderService = service.id;
   agent.totalBets = 0;
   agent.totalTraded = BigInt.zero();
   agent.totalTradedSettled = BigInt.zero();
