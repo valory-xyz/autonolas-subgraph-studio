@@ -77,7 +77,7 @@ dataSources:
     source:
       address: "0x46C0D07F55d4F9B5Eed2Fc9680B5953e5fd7b461"
       abi: StakingFactory
-      startBlock: 62213142
+      startBlock: 80360433
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
