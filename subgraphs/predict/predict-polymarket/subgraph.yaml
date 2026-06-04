@@ -48,6 +48,7 @@ dataSources:
         - Global
         - DailyProfitStatistic
         - TokenRegistry
+        - PayoutRedemption
       abis:
         - name: ConditionalTokens
           file: ../../../abis/ConditionalTokens.json
@@ -132,6 +133,11 @@ dataSources:
         - Question
         - MarketMetadata
         - QuestionResolution
+        - PayoutRedemption
+        - TraderAgent
+        - MarketParticipant
+        - DailyProfitStatistic
+        - Global
       abis:
         - name: NegRiskAdapter
           file: ../../../abis/NegRiskAdapter.json

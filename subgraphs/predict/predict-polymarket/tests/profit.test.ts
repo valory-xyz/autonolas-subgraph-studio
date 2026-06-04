@@ -10,7 +10,19 @@ import {
   createPayoutRedemptionEvent,
   createTokenRegisteredEvent,
 } from "./profit";
-import { TraderAgent, Question, MarketMetadata } from "../generated/schema";
+import { TraderAgent, TraderService, Question, MarketMetadata } from "../generated/schema";
+
+function ensureTraderService(serviceId: BigInt): string {
+  const id = serviceId.toHexString();
+  let service = TraderService.load(id);
+  if (service == null) {
+    service = new TraderService(id);
+    service.agentIds = [];
+    service.operators = [];
+    service.save();
+  }
+  return id;
+}
 import { TestAddresses, TestBytes, TestConstants, createAncillaryData, normalizeTimestamp, createBridge } from "./test-helpers";
 
 const AGENT = TestAddresses.TRADER_AGENT_1;
@@ -30,6 +42,7 @@ function setupAgent(): void {
   let agent = new TraderAgent(AGENT);
   agent.totalBets = 0;
   agent.serviceId = TestConstants.SERVICE_ID_1;
+  agent.traderService = ensureTraderService(TestConstants.SERVICE_ID_1);
   agent.totalTraded = BigInt.zero();
   agent.totalPayout = BigInt.zero();
   agent.totalTradedSettled = BigInt.zero();
@@ -406,6 +419,7 @@ describe("Profit Chart Integration", () => {
     let agent2 = new TraderAgent(AGENT2);
     agent2.totalBets = 0;
     agent2.serviceId = TestConstants.SERVICE_ID_2;
+    agent2.traderService = ensureTraderService(TestConstants.SERVICE_ID_2);
     agent2.totalTraded = BigInt.zero();
     agent2.totalPayout = BigInt.zero();
     agent2.totalTradedSettled = BigInt.zero();
@@ -787,6 +801,7 @@ describe("Profit Chart Integration", () => {
     let agent2 = new TraderAgent(AGENT2);
     agent2.totalBets = 0;
     agent2.serviceId = TestConstants.SERVICE_ID_2;
+    agent2.traderService = ensureTraderService(TestConstants.SERVICE_ID_2);
     agent2.totalTraded = BigInt.zero();
     agent2.totalPayout = BigInt.zero();
     agent2.totalTradedSettled = BigInt.zero();

@@ -10,11 +10,11 @@ import { Address, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts";
 import { handleOrderFilledV2 } from "../src/ctf-exchange-v2";
 import { OrderFilled } from "../generated/CTFExchangeV2/CTFExchangeV2";
 import {
-  TraderAgent,
   Question,
   MarketMetadata,
   TokenRegistry,
 } from "../generated/schema";
+import { setupTraderAgent } from "./test-helpers";
 
 const CONDITION_ID = Bytes.fromHexString(
   "0x1111111111111111111111111111111111111111111111111111111111111111",
@@ -60,22 +60,6 @@ function createOrderFilledV2Event(
   event.parameters.push(new ethereum.EventParam("metadata", ethereum.Value.fromFixedBytes(metadata)));
 
   return event;
-}
-
-function setupTraderAgent(address: Address, serviceId: BigInt): void {
-  let agent = new TraderAgent(address);
-  agent.serviceId = serviceId;
-  agent.totalBets = 0;
-  agent.totalTraded = BigInt.zero();
-  agent.totalTradedSettled = BigInt.zero();
-  agent.totalPayout = BigInt.zero();
-  agent.totalExpectedPayout = BigInt.zero();
-  agent.blockNumber = BigInt.fromI32(1);
-  agent.blockTimestamp = BigInt.fromI32(1);
-  agent.transactionHash = Bytes.fromHexString(
-    "0x1234567890123456789012345678901234567890123456789012345678901234",
-  );
-  agent.save();
 }
 
 function setupQuestion(conditionId: Bytes, questionId: Bytes): void {

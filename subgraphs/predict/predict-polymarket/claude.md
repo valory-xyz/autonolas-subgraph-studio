@@ -53,7 +53,7 @@ subgraphs/predict/predict-polymarket/
 ### Core Business Rules
 
 1.  **Selective Tracking**:
-    * **Agents**: Only tracks services with agent ID 86 registered through the `ServiceRegistryL2` contract on Polygon.
+    * **Agents**: Every Olas service registered on `ServiceRegistryL2` (Polygon) is indexed. The previous `agentId == 86` gate (polystrat-only) was lifted so non-polystrat cohorts (Pearl Mini, future cohorts) aren't silently dropped from trader-P&L analytics. Cohort filtering is resolved client-side via `traderService_: { agentIds_contains: [...] }` / `operators_contains: [...]` — see *Cohort filtering* below. The full per-service `Service.agentIds` / `Service.operators` graph (with Master/Agent Safe + funds movement) lives in [`pearl-transactions`](../../pearl-transactions/); both subgraphs use the same dedup-array model.
     * **Markets**: Binary markets (2 outcomes) tracked via UMA OptimisticOracleV3 and ConditionalTokens.
 2.  **Two-Tier Accounting**:
     * `totalTraded` tracks all bets regardless of settlement status (updated immediately when bets are placed)
@@ -73,16 +73,19 @@ subgraphs/predict/predict-polymarket/
 ### Primary Entities (schema.graphql)
 
 #### TraderService
-Helper entity for filtering agents with ID 86.
+Per-service cohort metadata; one row per Olas service on Polygon. Carries deduplicated `agentIds` + `operators` arrays accumulated across `RegisterInstance` events, plus a `traderAgent` back-link set once `CreateMultisigWithAgents` fires.
 
 **Key Fields:**
 ```graphql
-type TraderService @entity(immutable: true) {
-  id: ID!                       # serviceId
+type TraderService @entity(immutable: false) {
+  id: ID!                       # serviceId.toHexString()
+  agentIds: [Int!]!             # deduplicated
+  operators: [Bytes!]!          # deduplicated
+  traderAgent: TraderAgent      # null until CreateMultisigWithAgents fires
 }
 ```
 
-**Pattern**: Only created when a service registers with agent ID 86, allowing proper TraderAgent filtering.
+**Pattern**: Created on the first `RegisterInstance` for a service (or defensively on `CreateMultisigWithAgents` if it fires first). Subsequent `RegisterInstance` events dedup-append to the arrays. Cohort filters route through this entity via `traderAgents(where: { traderService_: { agentIds_contains: [86] } })`.
 
 ---
 
@@ -94,6 +97,7 @@ Represents an Autonolas trading agent with cumulative performance metrics.
 type TraderAgent @entity {
   id: Bytes!                    # Agent's multisig address
   serviceId: BigInt!            # ServiceRegistryL2 ID
+  traderService: TraderService! # → cohort metadata (agentIds / operators)
 
   # Activity tracking
   firstParticipation: BigInt
@@ -336,13 +340,14 @@ type PayoutRedemption @entity(immutable: true) {
   conditionId: Bytes!
   question: Question
   payoutAmount: BigInt!
+  source: PayoutSource!         # CONDITIONAL_TOKENS | NEG_RISK_ADAPTER | COLLATERAL_ADAPTER
   blockNumber: BigInt!
   blockTimestamp: BigInt!
   transactionHash: Bytes!
 }
 ```
 
-**Pattern**: Created during PayoutRedemption events. Provides an audit trail for all payouts.
+**Pattern**: Created during PayoutRedemption / PositionsRedeemed events. Provides an audit trail for all payouts. `source` records which on-chain path emitted the event — pre-cutover direct paths (CONDITIONAL_TOKENS, NEG_RISK_ADAPTER) vs. post-cutover adapter-routed redemptions (COLLATERAL_ADAPTER; covers both `CtfCollateralAdapter` and `NegRiskCtfCollateralAdapter`, which share the `PositionsRedeemed` signature).
 
 ---
 
@@ -352,49 +357,49 @@ type PayoutRedemption @entity(immutable: true) {
 
 #### Event 1: `RegisterInstance(operator, serviceId, agentInstance, agentId)`
 
-**Handler**: `handleRegisterInstance`
+**Handler**: `handleRegisterInstance` — load-or-create the per-service `TraderService` row and dedup-append `(agentId, operator)` to its arrays.
 
 ```typescript
 export function handleRegisterInstance(event: RegisterInstanceEvent): void {
-  let agentId = event.params.agentId.toI32();
-  // Only create TraderService if it has agent ID 86
-  if (agentId !== PREDICT_AGENT_ID) return;
+  const serviceId = event.params.serviceId.toHexString();
+  const agentId = event.params.agentId.toI32();
+  const operator = event.params.operator;
 
-  let serviceId = event.params.serviceId.toString();
-  let traderService = TraderService.load(serviceId);
-  if (traderService !== null) return;
-
-  traderService = new TraderService(serviceId);
-  traderService.save()
+  recordRegistration(serviceId, agentId, operator);  // dedup append
 }
 ```
 
-**Pattern**: Creates TraderService marker entity only for services with agent ID 86, enabling selective tracking in the next handler.
+**Pattern**: Every Olas service on Polygon is recorded (the previous `agentId == 86` gate is gone). `TraderService.agentIds` and `TraderService.operators` accumulate every registration with dedup; consumers filter cohort client-side via these arrays. Mirrors the pearl-transactions `appendServiceRegistration` / `bufferPendingRegistration` helpers so the two subgraphs surface the same per-service cohort metadata without a cross-subgraph join.
 
 ---
 
 #### Event 2: `CreateMultisigWithAgents(serviceId, multisig)`
 
-**Handler**: `handleCreateMultisigWithAgents`
+**Handler**: `handleCreateMultisigWithAgents` — create the `TraderAgent` keyed on multisig address and wire it to the per-service `TraderService` row (load-or-created defensively in case `CreateMultisigWithAgents` fires first).
 
 ```typescript
 export function handleCreateMultisigWithAgents(event: CreateMultisigWithAgentsEvent): void {
-  // Skip non-trader services
-  let traderService = TraderService.load(event.params.serviceId.toString())
-  if (traderService === null) return;
+  const serviceId = event.params.serviceId.toHexString();
+  const multisig = event.params.multisig;
 
-  let traderAgent = TraderAgent.load(event.params.multisig);
+  let service = TraderService.load(serviceId);
+  if (service == null) {
+    service = new TraderService(serviceId);
+    service.agentIds = [];
+    service.operators = [];
+    service.save();
+  }
+
+  let traderAgent = TraderAgent.load(multisig);
   if (traderAgent === null) {
-    traderAgent = new TraderAgent(event.params.multisig);
-    traderAgent.totalBets = 0;
+    traderAgent = new TraderAgent(multisig);
     traderAgent.serviceId = event.params.serviceId;
-    traderAgent.totalPayout = BigInt.zero();
-    traderAgent.totalTraded = BigInt.zero();
-    traderAgent.totalTradedSettled = BigInt.zero();
-    traderAgent.blockNumber = event.block.number;
-    traderAgent.blockTimestamp = event.block.timestamp;
-    traderAgent.transactionHash = event.transaction.hash;
+    traderAgent.traderService = service.id;            // forward link
+    // ... totals initialised to zero, block metadata set ...
     traderAgent.save();
+
+    service.traderAgent = traderAgent.id;              // reverse link
+    service.save();
 
     let global = getGlobal();
     global.totalTraderAgents += 1;
@@ -403,7 +408,7 @@ export function handleCreateMultisigWithAgents(event: CreateMultisigWithAgentsEv
 }
 ```
 
-**Pattern**: Two-step filtering ensures only services with agent ID 86 create TraderAgent entities. Uses TraderService as a gate.
+**Pattern**: One `TraderAgent` per multisig, linked back to its `TraderService`. `Global.totalTraderAgents` increments once per multisig (idempotent on repeated `CreateMultisigWithAgents`). No cohort gate — every Olas service that produces a multisig gets a `TraderAgent`; if it never trades on Polymarket, the TraderAgent simply has `totalBets = 0` and no `Bet` rows.
 
 ---
 
@@ -647,6 +652,36 @@ Two redemption paths exist post-v2-cutover:
 
 ## Common Queries
 
+### Cohort filtering — by agent ID or operator (Pearl Mini, polystrat, …)
+
+Cohort membership is on `TraderService` (not `TraderAgent` directly). Consumers maintain a small local address/label map and filter via the link:
+
+```graphql
+# Polystrat (the previous implicit filter)
+{
+  traderAgents(where: { traderService_: { agentIds_contains: [86] } }) {
+    id serviceId totalTraded totalPayout
+    traderService { agentIds operators }
+  }
+}
+
+# Pearl Mini — services registered via the PolySafeCreator operator
+{
+  traderAgents(
+    where: { traderService_: { operators_contains: ["0xA749f605d93b3efcc207c54270d83c6e8fa70ff8"] } }
+  ) {
+    id serviceId totalTraded totalPayout
+  }
+}
+
+# All Olas services on Polygon, regardless of whether they've ever traded
+{ traderServices { id agentIds operators traderAgent { id totalBets } } }
+```
+
+For richer per-service metadata (Master / Agent Safe addresses, funds movement, on-chain custody), join on the multisig (= `TraderAgent.id` = `pearl-transactions:AgentSafe.id`) to the [`pearl-transactions`](../../pearl-transactions/) subgraph.
+
+---
+
 ### Agent Statistics
 Track an individual agent's performance.
 
@@ -737,7 +772,7 @@ List all registered agents.
 
 ### Project Structure
 This subgraph is part of the autonolas-subgraph-studio monorepo:
-- `src/service-registry-l-2.ts`: Agent registration (services with agent ID 86 only)
+- `src/service-registry-l-2.ts`: Service / TraderService registration (every Olas service on Polygon; cohort filter on `TraderService.agentIds` / `operators`)
 - `src/conditional-tokens.ts`: Condition preparation and payout handling
 - `src/ctf-exchange.ts`: Order tracking from CTF Exchange (agents as makers)
 - `src/uma-mapping.ts`: Market metadata extraction from UMA events
@@ -793,7 +828,7 @@ graph deploy --studio autonolas-predict-polymarket
 This subgraph includes comprehensive tracking for Autonolas agents on Polymarket:
 
 ### Core Tracking
-- ✅ **Agent Registration**: Tracks services with agent ID 86
+- ✅ **Agent Registration**: every Olas service on Polygon (cohort filter is client-side via `TraderService.agentIds` / `operators`)
 - ✅ **Market Creation**: Binary market tracking via ConditionalTokens
 - ✅ **Market Metadata**: Extracts human-readable info from UMA oracle
 - ✅ **Token Registry**: Maps outcome tokens to their indices
@@ -823,7 +858,7 @@ This subgraph includes comprehensive tracking for Autonolas agents on Polymarket
 
 This Polymarket subgraph differs from the Omen implementation:
 
-1. **Agent Filtering**: Only tracks services with agent ID 86 using TraderService helper entity
+1. **Agent Filtering**: every Olas service on Polygon is indexed; cohort filtering (polystrat / Pearl Mini / future cohorts) is resolved client-side via `TraderService.agentIds` + `operators` dedup arrays. Pearl-specific Master/Agent Safe + funds-movement metadata lives in [`pearl-transactions`](../../pearl-transactions/); join on the multisig address.
 2. **Network**: Polygon instead of Gnosis Chain
 3. **Platform**: Polymarket (UMA + ConditionalTokens) instead of Omen (Reality.eth + ConditionalTokens)
 4. **Market Metadata**: Extracts market info from UMA OptimisticOracleV3 ancillary data
@@ -905,7 +940,7 @@ graph deploy --studio autonolas-predict-polymarket
 
 ### Critical Points to Remember
 
-1. **Agent ID 86 Only**: Two-step filtering via TraderService + TraderAgent entities
+1. **No agent-ID gate**: every Olas service on Polygon is indexed. `TraderService.agentIds` (deduplicated `[Int!]!`) + `TraderService.operators` (deduplicated `[Bytes!]!`) carry cohort metadata; consumers filter via `traderAgents(where: { traderService_: { agentIds_contains: [...] } })`. `PREDICT_AGENT_ID = 86` is retained as a client-side example constant only.
 2. **Binary Markets Only**: Only tracks markets with 2 outcomes via ConditionalTokens
 3. **Agents as Makers**: Our agents are MAKERS (not takers) in CTF Exchange - identify via `event.params.maker`
 4. **Two-Tier Accounting**:
