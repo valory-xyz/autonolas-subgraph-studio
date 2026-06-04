@@ -1,153 +1,174 @@
 # pearl-transactions
 
-Funds movement subgraph for Pearl Master Safe / Agent Safe accounts on
-Gnosis, Polygon, Optimism, Base. **Currently a scaffold only** — see
-[`IMPLEMENTATION-PLAN.md`](../pearl-funds/IMPLEMENTATION-PLAN.md) on the
-`docs/pearl-funds-plan` branch / PR #129 for the full design.
+Funds-movement subgraph for Pearl **Master Safe / Agent Safe** accounts on
+Gnosis, Polygon, Optimism, Base. Powers the Pearl wallet transaction-history
+view (VLOP-73): every fund movement in/out of the Master Safe, classified
+into wallet-history rows. Design-of-record:
+[`IMPLEMENTATION-PLAN.md`](../pearl-funds/IMPLEMENTATION-PLAN.md).
 
-The directory name historically tracked the plan branch (`pearl-funds`)
-but was renamed to `pearl-transactions` per PR #129 review §11 #5 to
-match the downstream consumer (Pearl wallet transaction-history UI,
-VLOP-73).
+(Directory was renamed from `pearl-funds` per PR #129 review §11 #5 to match
+the consumer.)
 
-## Current state — Phase 1a (registry + SRTU bonds + Master EOA)
+## Status — all phases implemented; deployed to Studio
 
-Following the scaffold PR, Phase 1a (step 3 of
-[`IMPLEMENTATION-PLAN.md`](../pearl-funds/IMPLEMENTATION-PLAN.md) §8)
-adds the full semantic ledger for the registry + SRTU side. Implemented:
+| Phase | PR | Adds |
+|---|---|---|
+| 1a | #131 | `ServiceRegistryL2` + `ServiceRegistryTokenUtility`; `Service` / `MasterSafe` / `AgentSafe`; Master EOA via `getOwners()`; `SAFE_DEPLOYED`; SRTU bond deposit/refund rows |
+| 1b | #132 | `StakingFactory` + `StakingProxy` template; reward / unstake / eviction rows; `DailyServiceFunds` |
+| 2a | #133 | OLAS + WrappedNative `Transfer` + per-Safe `Safe` template; `classifyTransfer`; `TrackedSafe`/`TrackedEOA`/`TokenBalance`/`Token`; `AgentFundingEvent`; `SAFE_SETUP_TRANSFER` + `historyFloorBlock` (Path A) |
+| 2b | #138 | Per-chain stablecoin `Transfer` data sources — USDC / USDC.e / pUSD |
 
-- **Schema** (`schema.graphql`) — `MasterSafe` (with `masterEoa` /
-  `owners` / `threshold` from `getOwners()` eth_call), `AgentSafe`,
-  `Service` (with `agentIds` + `operators` consumer-filter lists, NFT
-  custodian, state), `FundsMovement` (immutable, with `bondType` enum),
-  `ServiceNftCustodyChange`, plus internal helpers (`ServiceIndex`,
-  `PendingRegistration`, `PendingBondCounter`, `PendingBondAttribution`,
-  `AgentBondStashGuard`).
-- **Handlers** (`src/service-registry.ts`):
-  `handleRegisterInstance` (with `PendingRegistration` buffering +
-  `AGENT_BOND` attribution dedupe via `AgentBondStashGuard`);
-  `handleActivateRegistration` (`SECURITY_DEPOSIT` attribution);
-  `handleCreateMultisigWithAgents` (create `Service` + `AgentSafe`,
-  drain buffer, write `ServiceIndex`); `handleServiceNftTransfer`
-  (NFT custody + `getOrCreateMasterSafe` for the un-staked path);
-  `handleTerminateService` (state + refund attribution);
-  `handleOperatorUnbond` (`AGENT_BOND` refund attribution).
-- **Handlers** (`src/service-registry-token-utility.ts`):
-  `handleTokenDeposit` → `SERVICE_BOND_DEPOSIT` row with best-effort
-  `bondType` consumed from the per-tx queue; `handleTokenRefund`
-  mirror.
-- **Master EOA derivation** (`src/utils.ts` `getOrCreateMasterSafe`) —
-  one-shot `GnosisSafe.getOwners()` + `getThreshold()` eth_call at
-  first sighting of each Master Safe. Emits a `SAFE_DEPLOYED`
-  semantic row anchoring the consumer wallet UI's "Setup complete"
-  entry. Idempotent on subsequent calls (only bumps
-  `lastActivityTimestamp`).
-- **Bond-type attribution queue** (`src/utils.ts`
-  `enqueuePendingBondRow` / `dequeueAndAttribute`) — per-tx FIFO.
-  On-chain the SRTU event (`TokenDeposit`/`TokenRefund`) always fires
-  *before* its `ServiceRegistryL2` counterpart (`ServiceManager` calls
-  the `*TokenDeposit`/`*TokenRefund` function before the registry
-  function in every path), so the SRTU handler is the **producer** — it
-  creates the `FundsMovement` row and enqueues its id — and the
-  `ServiceRegistryL2` handler is the **consumer**, dequeuing the oldest
-  pending row and backfilling `serviceId` + `bondType` (hence
-  `FundsMovement` is `immutable: false`). `bondType` stays null when no
-  SR event follows the deposit/refund.
-- **8 Matchstick tests** covering ordering, dedupe, NFT custody,
-  stake/unstake cycles with bondType attribution, null-attribution
-  fallback, per-tx isolation.
+**Deployed:** `pearl-gnosis-transactions` + `pearl-polygon-transactions`
+**v0.0.5** (Studio account `1716136`). Optimism/Base manifests build but
+aren't deployed on the company account yet (validated on a personal Studio
+account first; the 3-subgraph cap is the blocker).
 
-Honest limits documented in
-[`IMPLEMENTATION-PLAN.md`](../pearl-funds/IMPLEMENTATION-PLAN.md) §5.4
-that apply to Phase 1a as-shipped:
-- `bondType` attribution is best-effort; unmodeled call orderings
-  leave it null but preserve the amount.
+**Remaining (Step 5 / 9):** on-Studio verification against real services
+(see [`STEP5-VERIFICATION.md`](./STEP5-VERIFICATION.md)); Optimism/Base
+deploy; watch Polygon USDC.e sync (the §2.2 cost hotspot).
+
+## Entities (`schema.graphql`)
+
+- **Structural:** `MasterSafe` (`masterEoa`/`owners`/`threshold`,
+  `historyFloorBlock`, `setupTransferSeen`), `AgentSafe`, `Service`
+  (`agentIds`/`operators` consumer-filter lists, `state`, `nftCustodian`,
+  `currentStakingContract`, `totalOlasRewardsClaimed`), `StakingContract`.
+- **Ledger:** `FundsMovement` (**`immutable: false`** — see bond queue
+  below), `DailyServiceFunds`, `ServiceNftCustodyChange`,
+  `AgentFundingEvent`.
+- **Phase-2 tracking:** `Token`, `TrackedSafe`, `TrackedEOA`, `TokenBalance`.
+- **Internal helpers:** `ServiceIndex`, `PendingRegistration`,
+  `PendingBondCounter`, `PendingBondRow`, `AgentBondAttributionGuard`.
+- **Enums:** `FundsCategory`, `ServiceBondType`, `FundsSource`.
+
+## Data sources & handlers
+
+- **`ServiceRegistryL2`** (`src/service-registry.ts`) — `RegisterInstance`,
+  `ActivateRegistration`, `CreateMultisigWithAgents`, `Transfer` (service
+  NFT), `TerminateService`, `OperatorUnbond`. Consumer side of the bond
+  queue; dual-guarded Master Safe discovery on the NFT path.
+- **`ServiceRegistryTokenUtility`** (`src/service-registry-token-utility.ts`)
+  — `TokenDeposit` / `TokenRefund`. Producer side: creates the
+  `SERVICE_BOND_DEPOSIT` / `_REFUND` row (amount only) + enqueues it.
+- **`StakingFactory`** (`src/staking-factory.ts`) — `InstanceCreated`:
+  allow-list check → spawn `StakingProxy` template + create `StakingContract`.
+- **`StakingProxy`** template (`src/staking-proxy.ts`) — `ServiceStaked`
+  (canonical Master+Agent Safe discovery), `RewardClaimed`,
+  `ServiceUnstaked`, `ServiceForceUnstaked`, `ServicesEvicted`.
+- **`OLAS` / `WrappedNative` / per-chain stablecoins** (`src/erc20.ts`
+  `handleErc20Transfer`) — one generic ERC-20 `Transfer` handler shared by
+  all token data sources; the row's `token` is `event.address`. Stablecoin
+  data sources are rendered from a per-network `erc20Tokens` array in
+  `networks.json` via the `{{ erc20TokenDataSources }}` marker in
+  `generate-manifests.js`.
+- **`Safe`** template (`src/safe.ts`) — `SafeReceived` (native inbound,
+  precise); `ExecutionSuccess` / `ExecutionFromModuleSuccess` (native-out:
+  intentional no-op, see limits); `AddedOwner` / `RemovedOwner` /
+  `ChangedThreshold` (Master Safe owner-list maintenance).
+
+## Key mechanisms (`src/utils.ts` unless noted)
+
+- **`getOrCreateMasterSafe`** — first-sighting `GnosisSafe.getOwners()` +
+  `getThreshold()` eth_call; returns `null` if `getOwners()` reverts (not a
+  Safe), so staking proxies / EOAs don't become phantom Master Safes. NFT
+  handler also short-circuits known proxies via `isStakingContract` (dual
+  guard). Emits the `SAFE_DEPLOYED` anchor once per Master Safe.
+- **Bond-type attribution queue** (`enqueuePendingBondRow` /
+  `dequeueAndAttribute`, dedupe via `attributeAgentBondOncePerService`) —
+  on-chain the SRTU event fires **before** its `ServiceRegistryL2`
+  counterpart in every path (`ServiceManager` calls `*TokenDeposit`/
+  `*TokenRefund` before the registry fn), so the **SRTU handler is the
+  producer** (creates the `FundsMovement` row + enqueues its id) and the
+  **`ServiceRegistryL2` handler is the consumer** (dequeues + backfills
+  `serviceId` + `bondType`). Hence `FundsMovement` is mutable. `bondType`
+  stays null when no SR event follows.
+- **`classifyTransfer`** — routes `(from, to)` against `TrackedSafe` /
+  `TrackedEOA` / `StakingContract` / SRTU, most-specific first, into the
+  `FundsCategory` (`MASTER_FUNDING_IN`, `MASTER_TO_AGENT`, `AGENT_TO_MASTER`,
+  `MASTER_WITHDRAWAL`, `STAKING_REWARD_CLAIM`, `SAFE_SETUP_TRANSFER`, …).
+  Returns null for untracked counterparties (row dropped).
+- **`getOrCreateToken`** — OLAS / wrapped-native 18 decimals; stablecoins
+  (USDC / USDC.e / pUSD) 6 decimals via `getStablecoinSymbol` (constants.ts);
+  `log.critical` + UNKNOWN/18 if an indexed token has no resolver branch.
+- **`AgentFundingEvent`** — groups same-tx `MASTER_TO_AGENT` rows so one
+  funding action is one consumer row.
+- **`SAFE_SETUP_TRANSFER` / Path A** — the first live Master-EOA → Master-Safe
+  inbound hop after first sighting is tagged `SAFE_SETUP_TRANSFER`; opening
+  balances are NOT emitted by the subgraph — the frontend reads them via
+  archive RPC at `MasterSafe.historyFloorBlock` (AC #3 / Path A).
+
+## Honest limits
+
+- `bondType` attribution is best-effort; unmodeled call orderings leave it
+  null but preserve the amount.
 - SRTU bond rows are **token-secured-only**. Every `TokenDeposit` /
   `TokenRefund` emit in `ServiceRegistryTokenUtility` sits inside an
-  `if (token != address(0))` guard, so ETH/native-secured services emit
-  no SRTU events and produce no `SERVICE_BOND_DEPOSIT` / `_REFUND` rows
-  (the bond amount lives in the registry contract, not SRTU). For those
-  services `dequeueAndAttribute` simply finds an empty queue and no-ops.
-- `unbondTokenRefund` additionally guards on `refund > 0`, so a
-  fully-slashed operator emits `OperatorUnbond` without a matching
-  `TokenRefund`. Harmless in an isolated unbond tx (empty queue →
-  no-op); the only hazard is a single batched tx that unbonds several
-  operators where one is fully slashed, which could shift the per-tx
-  refund queue by one entry. Not observed in Pearl's flow (one operator
-  per service); revisit if Phase 1b+ touches batched unbonds.
-- Non-Safe NFT recipients (staking proxy when a service is staked,
-  EOAs, etc.) are skipped: `getOrCreateMasterSafe` probes `getOwners()`
-  and returns `null` on revert/empty, so no phantom `MasterSafe` /
-  `SAFE_DEPLOYED` row is created and the service keeps its real Master
-  Safe link from mint. Phase 1b replaces this probe with an explicit
-  `StakingContract` allowlist.
-- Master EOA owner-list staleness between first sighting and Phase 2a
-  `Safe` template spawn (no `AddedOwner` / `RemovedOwner` handling
-  yet).
-- **Native outflows from a Safe are not indexed.** A native transfer
-  *out* of a Safe surfaces only as `ExecutionSuccess` /
-  `ExecutionFromModuleSuccess`, which carry no amount or recipient (and
-  fire on every Safe tx) — so `handleSafeExecution*` are intentional
-  no-ops for v1. Consequence: **native withdrawals to external wallets**
-  and the **native agent gas-funding leg (Master Safe → Agent EOA)** do
-  not appear. Native *inflows* (`SafeReceived`) and all *token* flows
-  in/out are captured. Closing this needs call/trace handlers (the
-  rationale once floated for a self-hosted indexer); accepted v1 gap.
+  `if (token != address(0))` guard, so ETH/native-secured services emit no
+  SRTU events and produce no `SERVICE_BOND_DEPOSIT` / `_REFUND` rows.
+- `unbondTokenRefund` additionally guards on `refund > 0`, so a fully-slashed
+  operator emits `OperatorUnbond` without a matching `TokenRefund`. Harmless
+  in an isolated unbond tx; the only hazard is a batched multi-operator
+  unbond with one fully slashed (not in Pearl's one-operator-per-service
+  flow).
+- Non-Safe NFT recipients (staking proxy, EOAs) are skipped via the
+  `getOwners()` probe + `isStakingContract`, so the real Master Safe link
+  from mint is preserved.
+- **Native outflows from a Safe are not indexed.** Native sent *out*
+  surfaces only as `ExecutionSuccess` (no amount/recipient), so
+  `handleSafeExecution*` are intentional no-ops. Consequence: **native
+  withdrawals to external wallets** and the **native agent gas-funding leg
+  (Master Safe → Agent EOA)** do not appear. Native *inflows* (`SafeReceived`)
+  and all *token* flows in/out are captured. Closing this needs call/trace
+  handlers (the rejected self-hosted indexer); accepted v1 gap.
 - **Token coverage is a fixed allowlist, not "any token."** A subgraph
-  `Transfer` data source targets specific token contracts, so the
-  subgraph indexes the set the wallet displays (OLAS, wrapped-native,
-  USDC / USDC.e / pUSD per chain — sourced from the Operate app's
-  `frontend/config/tokens.ts`). An arbitrary/unknown ERC-20 landing in a
-  Safe won't appear. **Adding a wallet token requires updating
-  `networks.json` + `getStablecoinSymbol` in lockstep**, or its
-  transfers are silently missing from history (while the balance still
-  shows, since that comes from the app config).
+  `Transfer` data source targets specific contracts, so we index the set the
+  wallet displays (OLAS, wrapped-native, USDC / USDC.e / pUSD per chain,
+  from the Operate app `frontend/config/tokens.ts`). An arbitrary ERC-20
+  won't appear. **Adding a wallet token requires updating `networks.json`
+  `erc20Tokens` + `getStablecoinSymbol` in lockstep** (the `log.critical`
+  above is the drift canary).
+- Master EOA owner-list staleness in the window before the `Safe` template
+  spawns (no `AddedOwner`/`RemovedOwner` handling pre-spawn).
 
-## Coming in subsequent PRs (per `IMPLEMENTATION-PLAN.md` §8)
+## Token set (per chain — from the Operate app `config/tokens.ts`)
 
-| Step | Adds | Plan §§ |
-|---|---|---|
-| 3 — Phase 1a | ✅ landed in this PR — `ServiceRegistryTokenUtility` data source + `Master Safe` / `MasterEOA` derivation via `getOwners()` + `SAFE_DEPLOYED` row + `SERVICE_BOND_DEPOSIT` / `_REFUND` rows with best-effort `bondType` attribution | §4.4, §5.1, §5.2 |
-| 4 — Phase 1b | `StakingFactory` + `StakingProxy` (dynamic template); `STAKING_REWARD_CLAIM` / `UNSTAKE_REWARD` / `SERVICE_EVICTED` rows; `DailyServiceFunds` | §5.2 |
-| 5 — Verify on Studio | Spot-check stake/claim/unstake against block explorer for a known Pearl service | — |
-| 6 — Verify graph-node `startBlock`-in-context | Open Q #6: determines option for §6.2 pre-stake-transfer recovery | §6.2 |
-| 7 — Phase 2a | OLAS `Transfer` data source + per-Safe `Safe` templates; `classifyTransfer`; `TrackedSafe` / `TrackedEOA` / `TokenBalance` / `Token`; `AgentFundingEvent` aggregation | §6.1, §6.2, §6.4, §6.5 |
-| 8 — Phase 2b | Stablecoin `Transfer` data sources via the same `handleErc20Transfer` handler. Per-chain token set sourced from the Operate app (`frontend/config/tokens.ts`): gnosis USDC + USDC.e; matic USDC + USDC.e + pUSD; optimism USDC + USDC.e; base USDC (all 6 decimals). Rendered from a per-network `erc20Tokens` array in `networks.json` via the `{{ erc20TokenDataSources }}` marker (see `generate-manifests.js`); start block = chain's `ServiceRegistryL2` block (provably-safe lower bound). On-chain path chosen over the §6.3 off-chain fallback; the §6.3a Polygon sync benchmark was **deferred** (Studio deploy not yet provisioned) — revisit if Polygon full-sync proves too slow. | §6.3 |
-| 9 — Docs | Finalize this file + `README.md`; update root `CLAUDE.md` | — |
+| Chain | OLAS | Wrapped native | Stablecoins (6 dec) |
+|---|---|---|---|
+| gnosis | `0xcE11…9d9f` | WXDAI `0xe91D…a97d` | USDC `0xDDAfbb50…`, USDC.e `0x2a22f9c3…` |
+| matic | `0xFEF5…2F95` | WPOL `0x0d50…1270` | USDC `0x3c499c54…`, USDC.e `0x2791bca1…`, pUSD `0xC011a7E1…` |
+| optimism | `0xFC2E…E527` | WETH `0x4200…0006` | USDC `0x0b2C639c…`, USDC.e `0x7F5c764c…` |
+| base | `0x5433…3416` | WETH `0x4200…0006` | USDC `0x833589fC…` |
 
-> **Note:** this file's "Current state" header above still reflects Phase 1a; phases 1b/2a/2b landed without refreshing it. A full CLAUDE.md catch-up is the step-9 docs pass.
+## Tests
+
+44 Matchstick tests across `tests/service-registry.test.ts` (Phase 1a),
+`tests/staking.test.ts` (Phase 1b), `tests/phase-2a.test.ts` (Phase 2a + the
+Phase-2b stablecoin suite — all 8 (chain, token) tuples). `yarn test`.
 
 ## Development workflow
 
 ```bash
 cd subgraphs/pearl-transactions
-yarn install                  # Install dependencies
-yarn generate-manifests       # Render per-network manifests from template
-yarn codegen                  # Generate TS types from schema + ABIs
-yarn build                    # Build (compiles to WASM, uses gnosis manifest)
-yarn test                     # Run Matchstick tests
+yarn install
+yarn generate-manifests   # render per-network manifests from the template
+yarn codegen
+yarn build                # uses subgraph.gnosis.yaml
+yarn test
 ```
 
-Deploy per network (manual; CI/CD also wraps these):
+## Deployment
 
-```bash
-yarn deploy-gnosis
-yarn deploy-matic
-yarn deploy-optimism
-yarn deploy-base
-```
+Manual via the `Deploy Subgraph` GitHub Action (workflow_dispatch from
+`main`) or `yarn deploy-{gnosis,matic,optimism,base}`. Studio slugs:
+`pearl-{gnosis,polygon,optimism,base}-transactions`. The GH-Actions workflow
+builds the **committed** per-network manifest (`subgraph.<network>.yaml`)
+as-is — it does not re-run `generate-manifests`, so if you change
+`networks.json` or the template, regenerate + commit before triggering it.
+(The local `yarn deploy-<network>` scripts run `generate-manifests` first as
+a safety net.)
 
-## Multi-network deployment
-
-| Network | `ServiceRegistryL2` | `ServiceRegistryTokenUtility` |
-|---|---|---|
-| `gnosis` | `0x9338…755fD` @ 27,871,084 | `0xa45E…7eD8` @ 30,095,874 |
-| `matic` (Polygon) | `0xE360…4b50` @ 41,783,952 | `0xa45E…7eD8` @ 52,737,296 |
-| `optimism` | `0x3d77…1e44` @ 116,423,039 | `0xBb7e…7eac` @ 116,423,237 |
-| `base` | `0x3C1f…95fE` @ 10,827,380 | `0x34C8…3dd5` @ 10,827,475 |
-
-SRTU addresses from
-[`valory-xyz/autonolas-registries`](https://github.com/valory-xyz/autonolas-registries/blob/main/docs/configuration.json);
-start blocks verified per chain via explorer creation-tx lookup.
-StakingFactory and the rest of the Phase 2 data sources (OLAS, USDC,
-USDC.e, Safe template) come online in subsequent PRs per the plan.
+Per-network data-source addresses live in `networks.json` (ServiceRegistryL2,
+ServiceRegistryTokenUtility, StakingFactory, OLAS, WrappedNative, and the
+`erc20Tokens` stablecoin array). All Phase-2b stablecoin data sources start at
+the chain's `ServiceRegistryL2` block — a provably-safe lower bound (no Pearl
+Safe predates it).

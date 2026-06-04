@@ -23,7 +23,7 @@ subgraphs/
   liquidity/                   # Protocol Owned Liquidity — Ethereum mainnet (OLAS-ETH + bridged L2 LP tokens)
   liquidity-l2/                # Protocol Owned Liquidity — L2 pools (6 networks; template pattern with manual overrides for Base dual-pool and Celo Ubeswap)
   new-mech-fees/               # Multi-network mech fees (Gnosis, Base, Polygon, Optimism, Arbitrum, Celo, Ethereum — 7 networks)
-  pearl-transactions/          # Pearl Master/Agent Safe funds movement (Gnosis, Polygon, Optimism, Base — template pattern). Scaffold only; full design in PR #129.
+  pearl-transactions/          # Pearl Master/Agent Safe funds movement → wallet transaction history, VLOP-73 (Gnosis, Polygon, Optimism, Base — template pattern). Phases 1a/1b/2a/2b shipped; Gnosis+Polygon deployed. Design: subgraphs/pearl-funds/IMPLEMENTATION-PLAN.md.
   predict/                     # Prediction markets (Omen on Gnosis, Polymarket on Polygon)
   service-registry/            # Service registry (8 networks; hybrid: hand-crafted mainnet manifest + L2 template)
   staking/                     # Staking contracts (7 networks, template pattern)
