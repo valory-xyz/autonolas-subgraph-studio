@@ -52,7 +52,7 @@ describe("ServiceRegistryL2 - handleRegisterInstance (gate lifted)", () => {
     clearStore();
   });
 
-  test("Creates TraderService for the polystrat agentId (86)", () => {
+  test("Creates TraderService recording an arbitrary agentId (here, polystrat 86)", () => {
     handleRegisterInstance(
       createRegisterInstanceEvent(OPERATOR_1, SERVICE_ID_1, AGENT_INSTANCE, BigInt.fromI32(PREDICT_AGENT_ID))
     );
@@ -196,5 +196,27 @@ describe("ServiceRegistryL2 - handleCreateMultisigWithAgents", () => {
     assert.fieldEquals("Global", "", "totalTraderAgents", "2");
     assert.fieldEquals("TraderAgent", MULTISIG_1.toHexString(), "traderService", serviceKey(SERVICE_ID_1));
     assert.fieldEquals("TraderAgent", MULTISIG_2.toHexString(), "traderService", serviceKey(SERVICE_ID_2));
+  });
+
+  // Rare-but-reachable shape: Safe address reuse — two distinct services
+  // emit CreateMultisigWithAgents for the same multisig. The TraderAgent
+  // already exists from service 1, so the inner block doesn't fire — but
+  // service 2's defensive TraderService row must still receive a
+  // `traderAgent` back-link instead of staying null forever.
+  test("Idempotent reverse link survives Safe address reuse across services", () => {
+    handleRegisterInstance(
+      createRegisterInstanceEvent(OPERATOR_1, SERVICE_ID_1, AGENT_INSTANCE, BigInt.fromI32(PREDICT_AGENT_ID))
+    );
+    handleCreateMultisigWithAgents(createCreateMultisigWithAgentsEvent(SERVICE_ID_1, MULTISIG_1));
+
+    // Service 2 reuses the same multisig — TraderAgent already exists.
+    handleCreateMultisigWithAgents(createCreateMultisigWithAgentsEvent(SERVICE_ID_2, MULTISIG_1));
+
+    // Single TraderAgent (no double-count in Global).
+    assert.fieldEquals("Global", "", "totalTraderAgents", "1");
+    // Service 1's TraderService still points at the agent.
+    assert.fieldEquals("TraderService", serviceKey(SERVICE_ID_1), "traderAgent", MULTISIG_1.toHexString());
+    // Service 2's TraderService also gets the link, not null.
+    assert.fieldEquals("TraderService", serviceKey(SERVICE_ID_2), "traderAgent", MULTISIG_1.toHexString());
   });
 });

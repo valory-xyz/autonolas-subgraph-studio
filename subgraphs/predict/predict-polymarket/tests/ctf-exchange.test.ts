@@ -2,7 +2,8 @@ import { assert, describe, test, clearStore, beforeEach, newMockEvent } from "ma
 import { Address, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts";
 import { handleTokenRegistered, handleOrderFilled } from "../src/ctf-exchange";
 import { TokenRegistered, OrderFilled } from "../generated/CTFExchange/CTFExchange";
-import { TraderAgent, TraderService, Question, MarketMetadata } from "../generated/schema";
+import { Question, MarketMetadata } from "../generated/schema";
+import { setupTraderAgent } from "./test-helpers";
 
 const CONDITION_ID = Bytes.fromHexString("0x1111111111111111111111111111111111111111111111111111111111111111");
 const TOKEN_0 = BigInt.fromI32(100);
@@ -49,30 +50,6 @@ function createOrderFilledEvent(
   event.parameters.push(new ethereum.EventParam("fee", ethereum.Value.fromUnsignedBigInt(fee)));
 
   return event;
-}
-
-function setupTraderAgent(address: Address, serviceId: BigInt): void {
-  const serviceKey = serviceId.toHexString();
-  let service = TraderService.load(serviceKey);
-  if (service == null) {
-    service = new TraderService(serviceKey);
-    service.agentIds = [];
-    service.operators = [];
-    service.save();
-  }
-
-  let agent = new TraderAgent(address);
-  agent.serviceId = serviceId;
-  agent.traderService = service.id;
-  agent.totalBets = 0;
-  agent.totalTraded = BigInt.zero();
-  agent.totalTradedSettled = BigInt.zero();
-  agent.totalPayout = BigInt.zero();
-  agent.totalExpectedPayout = BigInt.zero();
-  agent.blockNumber = BigInt.fromI32(1);
-  agent.blockTimestamp = BigInt.fromI32(1);
-  agent.transactionHash = Bytes.fromHexString("0x1234567890123456789012345678901234567890123456789012345678901234");
-  agent.save();
 }
 
 function setupQuestion(conditionId: Bytes, questionId: Bytes): void {

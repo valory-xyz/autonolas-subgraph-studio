@@ -123,6 +123,12 @@ type MarketParticipant @entity (immutable: false) {
 
 type Global @entity (immutable: false) {
   id: ID!
+  # Counts every Olas service multisig observed on Polygon
+  # ServiceRegistryL2 — NOT only the polystrat cohort. The previous
+  # `agentId == 86` gate was lifted (consumers filter via
+  # `TraderService.agentIds` / `operators`), so this is the cross-cohort
+  # head count. For the polystrat-only equivalent, count
+  # `traderAgents(where: { traderService_: { agentIds_contains: [86] } })`.
   totalTraderAgents: Int!
   totalActiveTraderAgents: Int!
   totalBets: Int! # all bets including for open markets
@@ -139,6 +145,14 @@ type Global @entity (immutable: false) {
 # NegRiskCtfCollateralAdapter (the standard and neg-risk wrappers share
 # the same `PositionsRedeemed` event signature). Lets downstream tools
 # distinguish the routing without re-deriving it from the tx call graph.
+#
+# Note: post-cutover (block ≥ ~86,219,367, see `src/collateral-adapter.ts`
+# header), the legacy CT / NegRiskAdapter PayoutRedemption events still
+# fire but with `redeemer = adapter address` — the un-tracked-redeemer
+# guard in `processRedemption` (utils.ts) drops those rows on purpose so
+# Path A doesn't double-count against Path B. Result: `CONDITIONAL_TOKENS`
+# and `NEG_RISK_ADAPTER` rows are effectively historical (pre-cutover);
+# new rows after the cutover are almost exclusively `COLLATERAL_ADAPTER`.
 enum PayoutSource {
   CONDITIONAL_TOKENS
   NEG_RISK_ADAPTER

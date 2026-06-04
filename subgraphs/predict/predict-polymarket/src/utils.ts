@@ -1,4 +1,4 @@
-import { BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts";
+import { BigInt, Bytes, ethereum, log } from "@graphprotocol/graph-ts";
 import {
   Global,
   TraderAgent,
@@ -314,17 +314,41 @@ export function processRedemption(
   logIndex: i32,
   source: string,
 ): void {
-  // 1. Validation: Only process if it's one of our agents
+  // 1. Validation: Only process if it's one of our agents.
+  // INTENTIONAL silent return: post-v2-cutover the legacy CTF /
+  // NegRiskAdapter PayoutRedemption events fire with `redeemer = adapter
+  // address` (Path A), and the actual payout is recorded via the
+  // CtfCollateralAdapter PositionsRedeemed handler (Path B). This guard
+  // is what prevents Path A from double-counting against Path B.
+  // See `src/collateral-adapter.ts` header comment for the full design.
   let agent = TraderAgent.load(redeemer);
   if (agent == null) return;
 
-  // 2. Validation: Only process if it's a market we track
+  // 2. Validation: market must be one we've observed via ConditionPreparation.
+  // Not an intentional filter — if it fires, we have a tracked agent
+  // redeeming from a conditionId we never indexed (start-block race on
+  // the market-creation data source, indexing gap). Without the warning
+  // the payout is silently dropped from `totalPayout` / `Global` and the
+  // discrepancy only surfaces in downstream reconciliation. Warn so it
+  // shows up in indexing logs.
   let question = Question.load(conditionId);
-  if (question == null) return;
+  if (question == null) {
+    log.warning(
+      "processRedemption: question not found for conditionId={} redeemer={} source={} (start-block race or indexing gap?)",
+      [conditionId.toHexString(), redeemer.toHexString(), source]
+    );
+    return;
+  }
 
   let participantId = redeemer.toHexString() + "_" + conditionId.toHexString();
   let participant = MarketParticipant.load(participantId);
-  if (participant == null) return;
+  if (participant == null) {
+    log.warning(
+      "processRedemption: participant not found for conditionId={} redeemer={} source={} (agent redeemed without an observed bet?)",
+      [conditionId.toHexString(), redeemer.toHexString(), source]
+    );
+    return;
+  }
 
   let global = getGlobal();
 

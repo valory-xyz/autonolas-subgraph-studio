@@ -772,7 +772,7 @@ List all registered agents.
 
 ### Project Structure
 This subgraph is part of the autonolas-subgraph-studio monorepo:
-- `src/service-registry-l-2.ts`: Agent registration (services with agent ID 86 only)
+- `src/service-registry-l-2.ts`: Service / TraderService registration (every Olas service on Polygon; cohort filter on `TraderService.agentIds` / `operators`)
 - `src/conditional-tokens.ts`: Condition preparation and payout handling
 - `src/ctf-exchange.ts`: Order tracking from CTF Exchange (agents as makers)
 - `src/uma-mapping.ts`: Market metadata extraction from UMA events

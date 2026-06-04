@@ -6,6 +6,19 @@ import {
 import { TraderAgent, TraderService } from "../generated/schema";
 import { getGlobal } from "./utils";
 
+// Load-or-create a TraderService row with empty arrays. Does NOT save —
+// callers either save it as-is (defensive create at multisig time) or
+// after appending registration data.
+function ensureTraderService(serviceId: string): TraderService {
+  let service = TraderService.load(serviceId);
+  if (service == null) {
+    service = new TraderService(serviceId);
+    service.agentIds = [];
+    service.operators = [];
+  }
+  return service;
+}
+
 // Load-or-create a TraderService row, append (agentId, operator) with dedup.
 // Mirrors `appendServiceRegistration` + `bufferPendingRegistration` in
 // pearl-transactions: same dedup semantics so the two subgraphs surface the
@@ -15,12 +28,7 @@ function recordRegistration(
   agentId: i32,
   operator: Bytes
 ): TraderService {
-  let service = TraderService.load(serviceId);
-  if (service == null) {
-    service = new TraderService(serviceId);
-    service.agentIds = [];
-    service.operators = [];
-  }
+  let service = ensureTraderService(serviceId);
 
   let agentIds = service.agentIds;
   let agentSeen = false;
@@ -85,13 +93,8 @@ export function handleCreateMultisigWithAgents(
   const serviceId = event.params.serviceId.toHexString();
   const multisig = event.params.multisig;
 
-  let service = TraderService.load(serviceId);
-  if (service == null) {
-    service = new TraderService(serviceId);
-    service.agentIds = [];
-    service.operators = [];
-    service.save();
-  }
+  let service = ensureTraderService(serviceId);
+  service.save();
 
   let traderAgent = TraderAgent.load(multisig);
   if (traderAgent === null) {
@@ -110,11 +113,22 @@ export function handleCreateMultisigWithAgents(
 
     traderAgent.save();
 
-    service.traderAgent = traderAgent.id;
-    service.save();
-
     let global = getGlobal();
     global.totalTraderAgents += 1;
     global.save();
+  }
+
+  // Idempotent reverse link. Set outside the `if` block so a TraderService
+  // that exists from a prior multisig-fired-first sighting (or — rare —
+  // Safe address reuse across services) still receives the back-pointer
+  // on a later CreateMultisigWithAgents. Without this, the second service's
+  // TraderService row would keep `traderAgent = null` forever and any
+  // `traderService { traderAgent { ... } }` query silently loses the agent.
+  // Local binding works around an AS compiler hiccup with `entity.field == null`
+  // on `Bytes | null` accessors.
+  const existingLink = service.traderAgent;
+  if (existingLink === null) {
+    service.traderAgent = traderAgent.id;
+    service.save();
   }
 }

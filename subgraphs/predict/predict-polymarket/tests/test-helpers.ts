@@ -1,6 +1,10 @@
 import { Address, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts";
 import { createMockedFunction } from "matchstick-as/assembly/index";
-import { QuestionIdToConditionId } from "../generated/schema";
+import {
+  QuestionIdToConditionId,
+  TraderAgent,
+  TraderService,
+} from "../generated/schema";
 
 // Default contract address used by matchstick's newMockEvent() — handlers bind
 // the ConditionalTokens contract to event.address, so mocks must target this.
@@ -186,4 +190,36 @@ export function createBridge(questionId: Bytes, conditionId: Bytes): void {
   bridge.oracle = TestAddresses.ORACLE;
   bridge.transactionHash = TestBytes.DUMMY_HASH;
   bridge.save();
+}
+
+/**
+ * Seeds a `TraderService` + `TraderAgent` pair, satisfying the required
+ * `TraderAgent.traderService!` schema link. Use from tests that exercise
+ * handlers downstream of the registration flow (CTF / NegRisk / etc.).
+ *
+ * Mirrors the entity shape `handleCreateMultisigWithAgents` would write
+ * for a service with no `RegisterInstance` history (empty cohort arrays).
+ */
+export function setupTraderAgent(address: Address, serviceId: BigInt): void {
+  const serviceKey = serviceId.toHexString();
+  let service = TraderService.load(serviceKey);
+  if (service == null) {
+    service = new TraderService(serviceKey);
+    service.agentIds = [];
+    service.operators = [];
+    service.save();
+  }
+
+  let agent = new TraderAgent(address);
+  agent.serviceId = serviceId;
+  agent.traderService = service.id;
+  agent.totalBets = 0;
+  agent.totalTraded = BigInt.zero();
+  agent.totalTradedSettled = BigInt.zero();
+  agent.totalPayout = BigInt.zero();
+  agent.totalExpectedPayout = BigInt.zero();
+  agent.blockNumber = BigInt.fromI32(1);
+  agent.blockTimestamp = BigInt.fromI32(1);
+  agent.transactionHash = TestBytes.DUMMY_HASH;
+  agent.save();
 }

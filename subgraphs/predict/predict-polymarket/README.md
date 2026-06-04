@@ -6,7 +6,7 @@ A streamlined GraphQL API for tracking Autonolas agent performance on Polymarket
 
 ## Quick Overview
 
-- Tracks agents registered via `ServiceRegistryL2` (agent ID 86) and binary markets via UMA + ConditionalTokens
+- Indexes every Olas service registered via `ServiceRegistryL2` on Polygon; cohort filtering (polystrat agent ID 86, Pearl Mini operator, etc.) is client-side via `TraderService.agentIds` / `operators` (deduplicated arrays). Binary markets tracked via UMA + ConditionalTokens.
 - **Two-tier accounting**: `totalTraded` recorded immediately; `totalTradedSettled` at settlement
 - **Settlement-day profit**: All PnL calculated at `QuestionResolved` using outcome share balances
 - **No re-answer logic**: Polymarket resolutions are final (unlike omen)
