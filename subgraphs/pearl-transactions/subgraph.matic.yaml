@@ -10,7 +10,7 @@ dataSources:
     source:
       address: "0xE3607b00E75f6405248323A9417ff6b39B244b50"
       abi: ServiceRegistryL2
-      startBlock: 41783952
+      startBlock: 80360433
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -53,7 +53,7 @@ dataSources:
     source:
       address: "0xa45E64d13A30a51b91ae0eb182e88a40e9b18eD8"
       abi: ServiceRegistryTokenUtility
-      startBlock: 52737296
+      startBlock: 80360433
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -99,7 +99,7 @@ dataSources:
     source:
       address: "0xFEF5d947472e72Efbb2E388c730B7428406F2F95"
       abi: ERC20
-      startBlock: 41783952
+      startBlock: 80360433
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -122,7 +122,7 @@ dataSources:
     source:
       address: "0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270"
       abi: ERC20
-      startBlock: 41783952
+      startBlock: 80360433
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -148,7 +148,7 @@ dataSources:
     source:
       address: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"
       abi: ERC20
-      startBlock: 41783952
+      startBlock: 80360433
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -171,7 +171,7 @@ dataSources:
     source:
       address: "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
       abi: ERC20
-      startBlock: 41783952
+      startBlock: 80360433
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -194,7 +194,7 @@ dataSources:
     source:
       address: "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB"
       abi: ERC20
-      startBlock: 41783952
+      startBlock: 80360433
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
