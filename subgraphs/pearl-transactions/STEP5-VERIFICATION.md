@@ -5,7 +5,7 @@ was unit-tested with mocked events; this confirms the handlers behave against
 real Pearl transactions. Run after a deploy and once indexing has progressed.
 
 **Endpoints:** `https://api.studio.thegraph.com/query/1716136/pearl-<network>-transactions/<version>`
-(`<network>` = `gnosis` | `polygon`; `<version>` = `v0.0.3`). Use the Studio
+(`<network>` = `gnosis` | `polygon`; `<version>` = `v0.0.5`). Use the Studio
 **Playground**, or POST the query as `{"query":"…"}`.
 
 **Pearl agents by home chain** (to pick a real service; `Service.agentIds`
@@ -17,6 +17,10 @@ contains these):
 | matic | Polystrat | 86 |
 | optimism | Optimus | 40 |
 | base | Agents.fun | 43 |
+
+> `agentIds` source: `olas-operate-app/frontend/config/agents.ts`
+> (`AGENT_CONFIG[*].agentIds`). `25` (omenstrat) and `86` (polystrat) also
+> match plan §3 + `predict-polymarket`.
 
 ---
 
@@ -85,7 +89,7 @@ Pick a service that has staked at least once and verify against the explorer:
 ## E. Polygon USDC.e sync-lag watch (the §2.2 cost hotspot)
 
 Compare `_meta.block.number` (query A) to the current Polygon chain head:
-- [ ] v0.0.3 has reached chain head (fully synced), **or** is closing the gap
+- [ ] v0.0.5 has reached chain head (fully synced), **or** is closing the gap
       at a healthy rate
 - [ ] If sync stalls / falls badly behind: this is the USDC.e firehose. Rollback
       = drop the `matic` USDC.e entry from `networks.json` `erc20Tokens`

@@ -6,7 +6,8 @@ transaction-history view (VLOP-73).
 
 > **Status — implemented (phases 1a/1b/2a/2b), deployed.** Gnosis + Polygon
 > are live on Studio (`pearl-gnosis-transactions`, `pearl-polygon-transactions`,
-> v0.0.3). Optimism/Base manifests build but aren't deployed yet. See
+> v0.0.5). Optimism/Base manifests build but aren't deployed on the company
+> account yet. See
 > [`CLAUDE.md`](./CLAUDE.md) for architecture and
 > [`IMPLEMENTATION-PLAN.md`](../pearl-funds/IMPLEMENTATION-PLAN.md) for the design.
 
@@ -38,7 +39,7 @@ integer (divide by `Token.decimals` — **stablecoins are 6, OLAS/native 18**).
 ## Query endpoints
 
 Studio: `https://api.studio.thegraph.com/query/1716136/pearl-<network>-transactions/<version>`
-(`<network>` = `gnosis` | `polygon`; current `<version>` = `v0.0.3`).
+(`<network>` = `gnosis` | `polygon`; current `<version>` = `v0.0.5`).
 
 ### Wallet history for a Master Safe
 

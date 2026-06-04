@@ -19,8 +19,9 @@ the consumer.)
 | 2b | #138 | Per-chain stablecoin `Transfer` data sources — USDC / USDC.e / pUSD |
 
 **Deployed:** `pearl-gnosis-transactions` + `pearl-polygon-transactions`
-**v0.0.3** (Studio account `1716136`). Optimism/Base manifests build but
-aren't deployed yet.
+**v0.0.5** (Studio account `1716136`). Optimism/Base manifests build but
+aren't deployed on the company account yet (validated on a personal Studio
+account first; the 3-subgraph cap is the blocker).
 
 **Remaining (Step 5 / 9):** on-Studio verification against real services
 (see [`STEP5-VERIFICATION.md`](./STEP5-VERIFICATION.md)); Optimism/Base
@@ -159,9 +160,12 @@ yarn test
 
 Manual via the `Deploy Subgraph` GitHub Action (workflow_dispatch from
 `main`) or `yarn deploy-{gnosis,matic,optimism,base}`. Studio slugs:
-`pearl-{gnosis,polygon,optimism,base}-transactions`. The deploy builds the
-**committed** per-network manifest (`subgraph.<network>.yaml`) — it does not
-re-run `generate-manifests`, so regenerate + commit before deploying.
+`pearl-{gnosis,polygon,optimism,base}-transactions`. The GH-Actions workflow
+builds the **committed** per-network manifest (`subgraph.<network>.yaml`)
+as-is — it does not re-run `generate-manifests`, so if you change
+`networks.json` or the template, regenerate + commit before triggering it.
+(The local `yarn deploy-<network>` scripts run `generate-manifests` first as
+a safety net.)
 
 Per-network data-source addresses live in `networks.json` (ServiceRegistryL2,
 ServiceRegistryTokenUtility, StakingFactory, OLAS, WrappedNative, and the
