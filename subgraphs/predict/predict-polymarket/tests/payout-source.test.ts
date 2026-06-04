@@ -197,3 +197,72 @@ describe("PayoutRedemption.source — per-handler tagging", () => {
     );
   });
 });
+
+// Early-return guards in `processRedemption` — documents the safety
+// contract that keeps Path A (legacy PayoutRedemption) from leaking rows
+// when the redeemer isn't one of our agents (e.g. post-cutover when
+// `redeemer = adapter address`), and prevents a PayoutRedemption row
+// from being created for an event whose conditionId we never indexed.
+//
+// Pre-existing behavior; bundled here because the post-cutover collateral
+// adapter design (`src/collateral-adapter.ts` header comment) relies on
+// the un-tracked-redeemer early-return to avoid double-counting between
+// Path A and Path B.
+describe("PayoutRedemption.source — early-return guards", () => {
+  beforeEach(() => {
+    clearStore();
+  });
+
+  test("Un-tracked redeemer drops the row (no PayoutRedemption created)", () => {
+    // Intentionally do NOT seed a TraderAgent for AGENT.
+    const event = createPayoutRedemptionEvent(
+      AGENT,
+      BigInt.fromI32(1_000_000),
+      CONDITION,
+      START_TS
+    );
+    event.transaction.hash = DUMMY_HASH;
+    event.logIndex = BigInt.fromI32(0);
+
+    handlePayoutRedemption(event);
+
+    assert.notInStore("PayoutRedemption", singlePayoutRedemptionId(0));
+  });
+
+  test("Tracked redeemer + un-indexed conditionId drops the row", () => {
+    // Seed only the agent + service; deliberately skip the Question /
+    // MarketParticipant for `CONDITION`, so the conditionId is unknown
+    // to the subgraph.
+    const serviceKey = SERVICE_ID.toHexString();
+    let service = new TraderService(serviceKey);
+    service.agentIds = [];
+    service.operators = [];
+    service.save();
+
+    let agent = new TraderAgent(AGENT);
+    agent.serviceId = SERVICE_ID;
+    agent.traderService = service.id;
+    agent.totalBets = 0;
+    agent.totalTraded = BigInt.zero();
+    agent.totalTradedSettled = BigInt.zero();
+    agent.totalPayout = BigInt.zero();
+    agent.totalExpectedPayout = BigInt.zero();
+    agent.blockNumber = BigInt.fromI32(1000);
+    agent.blockTimestamp = START_TS;
+    agent.transactionHash = DUMMY_HASH;
+    agent.save();
+
+    const event = createPayoutRedemptionEvent(
+      AGENT,
+      BigInt.fromI32(2_000_000),
+      CONDITION,
+      START_TS
+    );
+    event.transaction.hash = DUMMY_HASH;
+    event.logIndex = BigInt.fromI32(1);
+
+    handlePayoutRedemption(event);
+
+    assert.notInStore("PayoutRedemption", singlePayoutRedemptionId(1));
+  });
+});
