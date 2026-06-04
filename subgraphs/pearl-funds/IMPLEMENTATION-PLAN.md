@@ -216,7 +216,8 @@ Address/start-block source: `subgraphs/service-registry/networks.json`
 (ServiceRegistryL2), `subgraphs/staking/networks.json` (StakingFactory),
 `shared/constants.ts` (OLAS), with USDC values from canonical token
 deployments. All four networks have all four core data sources (Phase 1
-+ Phase 2a). USDC / USDC.e (Phase 2b) is benchmark-gated per §6.3.
++ Phase 2a). USDC / USDC.e / pUSD (Phase 2b) is shipped on-chain (#138)
+per §6.3.
 
 | Data source | Events | Phase |
 |---|---|---|
@@ -481,8 +482,10 @@ preserve amounts.
 
 #### C. Predict-app funding flow (polystrat on Polygon)
 
-Where Pearl predict's *stablecoin* (USDC.e / pUSD; or canonical USDC
-post-migration) moves. Same shape applies to omenstrat on Gnosis with
+Where Pearl predict's *stablecoin* moves. Per §4.5 / §6.3.b, polystrat
+funds in **USDC / pUSD**; **USDC.e** is the Polymarket bet collateral and
+the §2.2 high-volume hotspot, not the canonical funding token. Same shape
+applies to omenstrat on Gnosis with
 xDAI / WXDAI substituted; the predict subgraphs cover the in-market
 side, this subgraph covers the funding side.
 
@@ -494,9 +497,9 @@ flowchart LR
     AEOA["Agent EOA<br/>(gas wallet)"]
     POLY["Polymarket<br/>CTFExchange + ConditionalTokens"]
 
-    MEOA -->|"USDC.e funding<br/>(SAFE_SETUP_TRANSFER, then MASTER_FUNDING_IN)"| MSAFE
-    MSAFE -->|"polystrat capital (USDC.e)<br/>MASTER_TO_AGENT"| ASAFE
-    MSAFE -->|"gas top-up (POL or USDC.e)<br/>grouped under AgentFundingEvent"| AEOA
+    MEOA -->|"stablecoin funding USDC / pUSD<br/>(SAFE_SETUP_TRANSFER, then MASTER_FUNDING_IN)"| MSAFE
+    MSAFE -->|"polystrat capital (USDC / pUSD)<br/>MASTER_TO_AGENT"| ASAFE
+    MSAFE -->|"gas top-up (POL or stablecoin)<br/>grouped under AgentFundingEvent"| AEOA
     ASAFE -->|"place bet (USDC.e collateral)"| POLY
     POLY -->|"payout / refund"| ASAFE
     ASAFE -->|"optional profit sweep<br/>AGENT_TO_MASTER"| MSAFE
