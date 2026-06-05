@@ -88,6 +88,36 @@ export function getSrtuAddress(network: string): Address {
   return Address.zero();
 }
 
+// ServiceRegistryL2 address resolver (mirrors networks.json). Used by
+// classifyTransfer to recognise dust the registry contract itself sends
+// to a Master Safe (e.g. 1-wei native refunds emitted during
+// terminate / unbond). Those are protocol bookkeeping, NOT user
+// deposits, so they must classify as OTHER rather than
+// MASTER_FUNDING_IN.
+const SERVICE_REGISTRY_GNOSIS = "0x9338b5153AE39BB89f50468E608eD9d764B755fD";
+const SERVICE_REGISTRY_POLYGON = "0xE3607b00E75f6405248323A9417ff6b39B244b50";
+const SERVICE_REGISTRY_OPTIMISM = "0x3d77596beb0f130a4415df3D2D8232B3d3D31e44";
+const SERVICE_REGISTRY_BASE = "0x3C1fF68f5aa342D296d4DEe4Bb1cACCA912D95fE";
+
+export function getServiceRegistryAddress(network: string): Address {
+  if (network == "gnosis" || network == "xdai") {
+    return Address.fromString(SERVICE_REGISTRY_GNOSIS);
+  }
+  if (network == "matic" || network == "polygon") {
+    return Address.fromString(SERVICE_REGISTRY_POLYGON);
+  }
+  if (network == "optimism") {
+    return Address.fromString(SERVICE_REGISTRY_OPTIMISM);
+  }
+  if (network == "base") {
+    return Address.fromString(SERVICE_REGISTRY_BASE);
+  }
+  log.critical("Unsupported network in getServiceRegistryAddress: {}", [
+    network,
+  ]);
+  return Address.zero();
+}
+
 // Wrapped-native resolvers (Rev. 4 — added per @Tanya-atatakai's PR #130
 // review). Each chain has exactly one wrapped native asset that Pearl
 // services may touch (DEX swaps, Omen settlements on Gnosis). Indexed

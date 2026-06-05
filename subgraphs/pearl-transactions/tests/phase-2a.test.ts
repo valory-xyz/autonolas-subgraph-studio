@@ -372,6 +372,24 @@ describe("pearl-transactions / Phase 2a — raw OLAS + Safe template", () => {
     );
   });
 
+  test("ServiceRegistryL2 dust → Master Safe classifies as OTHER, not MASTER_FUNDING_IN", () => {
+    seedMasterSafe(/* setupTransferSeen = */ true);
+    // The ServiceRegistryL2 contract sends tiny native dust to the Master
+    // Safe during terminate / unbond. It shares the classifier with the
+    // OLAS handler, so a transfer from the registry address must NOT be
+    // mistaken for a user deposit.
+    const REGISTRY_GNOSIS = Address.fromString(
+      "0x9338b5153AE39BB89f50468E608eD9d764B755fD"
+    );
+    const tx = mockTx(99);
+    handleErc20Transfer(
+      newOlasTransfer(REGISTRY_GNOSIS, MASTER_SAFE, AMOUNT, tx, 0)
+    );
+
+    const id = tx.concatI32(0);
+    assert.fieldEquals("FundsMovement", id.toHexString(), "category", "OTHER");
+  });
+
   test("Master Safe → Agent Safe groups under AgentFundingEvent", () => {
     seedMasterSafe(true);
     seedAgentSafe(SERVICE_ID);
@@ -515,7 +533,7 @@ describe("pearl-transactions / Phase 2a — raw OLAS + Safe template", () => {
     );
   });
 
-  test("Master Safe → SRTU → SERVICE_BOND_DEPOSIT raw reconciliation row", () => {
+  test("Master Safe → SRTU OLAS Transfer emits no RAW bond row (deduped vs SEMANTIC)", () => {
     seedMasterSafe(true);
     const SRTU_GNOSIS = Address.fromString(
       "0xa45E64d13A30a51b91ae0eb182e88a40e9b18eD8"
@@ -523,22 +541,14 @@ describe("pearl-transactions / Phase 2a — raw OLAS + Safe template", () => {
     const tx = mockTx(21);
     handleErc20Transfer(newOlasTransfer(MASTER_SAFE, SRTU_GNOSIS, AMOUNT, tx, 0));
 
-    const id = tx.concatI32(0);
-    assert.fieldEquals(
-      "FundsMovement",
-      id.toHexString(),
-      "category",
-      "SERVICE_BOND_DEPOSIT"
-    );
-    assert.fieldEquals(
-      "FundsMovement",
-      id.toHexString(),
-      "source",
-      "RAW_TRANSFER"
-    );
+    // classifyTransfer drops the Master Safe ↔ SRTU OLAS hop: the SRTU
+    // handler already books the canonical SEMANTIC bond row (now carrying
+    // masterSafe), so a second RAW_TRANSFER row here would double-count
+    // the bond in a masterSafe-filtered wallet query.
+    assert.entityCount("FundsMovement", 0);
   });
 
-  test("SRTU → Master Safe → SERVICE_BOND_REFUND raw reconciliation row", () => {
+  test("SRTU → Master Safe OLAS Transfer emits no RAW bond row (deduped vs SEMANTIC)", () => {
     seedMasterSafe(true);
     const SRTU_GNOSIS = Address.fromString(
       "0xa45E64d13A30a51b91ae0eb182e88a40e9b18eD8"
@@ -546,19 +556,7 @@ describe("pearl-transactions / Phase 2a — raw OLAS + Safe template", () => {
     const tx = mockTx(22);
     handleErc20Transfer(newOlasTransfer(SRTU_GNOSIS, MASTER_SAFE, AMOUNT, tx, 0));
 
-    const id = tx.concatI32(0);
-    assert.fieldEquals(
-      "FundsMovement",
-      id.toHexString(),
-      "category",
-      "SERVICE_BOND_REFUND"
-    );
-    assert.fieldEquals(
-      "FundsMovement",
-      id.toHexString(),
-      "source",
-      "RAW_TRANSFER"
-    );
+    assert.entityCount("FundsMovement", 0);
   });
 
   test("StakingProxy → Agent Safe OLAS Transfer = STAKING_REWARD_CLAIM raw reconciliation", () => {

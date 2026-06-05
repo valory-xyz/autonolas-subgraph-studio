@@ -31,11 +31,10 @@ import {
   CATEGORY_OTHER,
   CATEGORY_SAFE_DEPLOYED,
   CATEGORY_SAFE_SETUP_TRANSFER,
-  CATEGORY_SERVICE_BOND_DEPOSIT,
-  CATEGORY_SERVICE_BOND_REFUND,
   SERVICE_STATE_REGISTERED,
   SOURCE_SEMANTIC,
   getOlasAddress,
+  getServiceRegistryAddress,
   getSrtuAddress,
   getStablecoinSymbol,
   getWrappedNativeAddress,
@@ -472,6 +471,23 @@ export function dequeueAndAttribute(
       if (movement != null) {
         movement.service = serviceId.toString();
         movement.bondType = bondType;
+        // Backfill the agent link so the wallet can render the agent
+        // name on stake / unstake rows. The Service carries agentIds
+        // (set at RegisterInstance) for the display name regardless; the
+        // agentSafe multisig only exists post-CreateMultisigWithAgents,
+        // so it resolves on refunds and any re-stake but is null on the
+        // very first deposit (the name still resolves via service.agentIds).
+        // masterSafe is normally stamped by the SRTU producer; fall back
+        // to the Service link here for services discovered out of order.
+        const service = Service.load(serviceId.toString());
+        if (service != null) {
+          if (movement.masterSafe === null && service.masterSafe !== null) {
+            movement.masterSafe = service.masterSafe;
+          }
+          if (service.agentSafe !== null) {
+            movement.agentSafe = service.agentSafe;
+          }
+        }
         movement.save();
       }
       return;
@@ -717,37 +733,31 @@ export function classifyTransfer(
   const srtuAddr = getSrtuAddress(currentNetwork());
   const fromIsSrtu = from.equals(srtuAddr);
   const toIsSrtu = to.equals(srtuAddr);
+  const registryAddr = getServiceRegistryAddress(currentNetwork());
 
   // Most-specific patterns first.
 
-  // Master Safe → SRTU → SERVICE_BOND_DEPOSIT raw reconciliation
-  // (Phase 1a's SRTU handler already booked the canonical SEMANTIC
-  // rows; consumer filters by source=SEMANTIC).
+  // Master Safe ↔ SRTU OLAS transfers are the on-chain bond movement.
+  // The SRTU handler (handleTokenDeposit / handleTokenRefund) already
+  // books the canonical SEMANTIC bond row and the consumer backfills
+  // serviceId + bondType + masterSafe + agentSafe onto it, so that one
+  // row is the complete record. Emitting a second RAW_TRANSFER row here
+  // would double-count the bond in any masterSafe-filtered wallet query,
+  // so we drop it (return null). The OLAS TokenBalance delta is updated
+  // separately in handleErc20Transfer and is unaffected.
   if (
     fromMaster != null &&
     fromMaster.role == "MASTER" &&
     toIsSrtu
   ) {
-    return new ClassifyResult(
-      CATEGORY_SERVICE_BOND_DEPOSIT,
-      null,
-      fromMaster.masterSafe,
-      null
-    );
+    return null;
   }
-
-  // SRTU → Master Safe → SERVICE_BOND_REFUND raw reconciliation.
   if (
     fromIsSrtu &&
     toMaster != null &&
     toMaster.role == "MASTER"
   ) {
-    return new ClassifyResult(
-      CATEGORY_SERVICE_BOND_REFUND,
-      null,
-      toMaster.masterSafe,
-      null
-    );
+    return null;
   }
 
   // Master Safe → Agent Safe / Agent EOA → MASTER_TO_AGENT (grouped).
@@ -801,6 +811,14 @@ export function classifyTransfer(
 
   // EOA (Master EOA / other) → Master Safe.
   if (toMaster != null && toMaster.role == "MASTER") {
+    // The ServiceRegistryL2 contract itself sends tiny native dust to the
+    // Master Safe during terminate / unbond (observed: 1-wei xDAI refunds
+    // sharing a tx with SERVICE_BOND_REFUND). That is protocol
+    // bookkeeping, not a user deposit, so classify it OTHER (kept for the
+    // forensic view, hidden from the wallet) rather than MASTER_FUNDING_IN.
+    if (from.equals(registryAddr)) {
+      return new ClassifyResult(CATEGORY_OTHER, null, toMaster.masterSafe, null);
+    }
     const ms = MasterSafe.load(toMaster.masterSafe);
     if (ms != null && !ms.setupTransferSeen && fromEOA != null && fromEOA.role == "MASTER_EOA") {
       // First Master EOA → Master Safe hop after creation.

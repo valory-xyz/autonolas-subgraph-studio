@@ -1,14 +1,28 @@
+import { Address } from "@graphprotocol/graph-ts";
 import {
   TokenDeposit as TokenDepositEvent,
   TokenRefund as TokenRefundEvent,
 } from "../generated/ServiceRegistryTokenUtility/ServiceRegistryTokenUtility";
-import { FundsMovement } from "../generated/schema";
+import { FundsMovement, TrackedSafe } from "../generated/schema";
 import {
   CATEGORY_SERVICE_BOND_DEPOSIT,
   CATEGORY_SERVICE_BOND_REFUND,
   SOURCE_SEMANTIC,
 } from "./constants";
 import { enqueuePendingBondRow, fundsMovementId } from "./utils";
+
+// linkBondMasterSafe — the SRTU `account` is the bond payer, which in
+// Pearl is the Master Safe. Stamp it onto the SEMANTIC bond row so the
+// wallet (which filters FundsMovement by masterSafe) surfaces this row
+// directly — the RAW_TRANSFER duplicate that used to carry the link is
+// now suppressed in classifyTransfer. Guarded to addresses already
+// tracked as MASTER so non-Pearl bonds stay unlinked.
+function linkBondMasterSafe(row: FundsMovement, account: Address): void {
+  const tracked = TrackedSafe.load(account);
+  if (tracked != null && tracked.role == "MASTER") {
+    row.masterSafe = tracked.masterSafe;
+  }
+}
 
 // handleTokenDeposit — fires once per activateRegistrationTokenDeposit
 // (security deposit) and once per registerAgentsTokenDeposit (agent
@@ -26,6 +40,7 @@ export function handleTokenDeposit(event: TokenDepositEvent): void {
   row.amount = event.params.amount;
   row.from = event.params.account;
   row.to = event.address;
+  linkBondMasterSafe(row, event.params.account);
   row.blockNumber = event.block.number;
   row.blockTimestamp = event.block.timestamp;
   row.transactionHash = event.transaction.hash;
@@ -45,6 +60,7 @@ export function handleTokenRefund(event: TokenRefundEvent): void {
   row.amount = event.params.amount;
   row.from = event.address;
   row.to = event.params.account;
+  linkBondMasterSafe(row, event.params.account);
   row.blockNumber = event.block.number;
   row.blockTimestamp = event.block.timestamp;
   row.transactionHash = event.transaction.hash;
