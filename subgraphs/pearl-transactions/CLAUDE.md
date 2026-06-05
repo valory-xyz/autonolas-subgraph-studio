@@ -49,7 +49,15 @@ deploy; watch Polygon USDC.e sync (the §2.2 cost hotspot).
   queue; dual-guarded Master Safe discovery on the NFT path.
 - **`ServiceRegistryTokenUtility`** (`src/service-registry-token-utility.ts`)
   — `TokenDeposit` / `TokenRefund`. Producer side: creates the
-  `SERVICE_BOND_DEPOSIT` / `_REFUND` row (amount only) + enqueues it.
+  `SERVICE_BOND_DEPOSIT` / `_REFUND` row + stamps `masterSafe` from the bond
+  payer (`account`, guarded to tracked Master Safes) + enqueues it. The
+  consumer (`dequeueAndAttribute`) backfills `serviceId` + `bondType` +
+  `agentSafe` (and `masterSafe` as fallback). This single SEMANTIC row is the
+  complete bond record — `classifyTransfer` drops the Master Safe ↔ SRTU OLAS
+  `RAW_TRANSFER` duplicate so the wallet (masterSafe-filtered) doesn't
+  double-count. `agentSafe` resolves on refunds (multisig already exists); a
+  genesis deposit leaves it null but `service.agentIds` still yields the
+  display name.
 - **`StakingFactory`** (`src/staking-factory.ts`) — `InstanceCreated`:
   allow-list check → spawn `StakingProxy` template + create `StakingContract`.
 - **`StakingProxy`** template (`src/staking-proxy.ts`) — `ServiceStaked`
@@ -83,10 +91,15 @@ deploy; watch Polygon USDC.e sync (the §2.2 cost hotspot).
   `serviceId` + `bondType`). Hence `FundsMovement` is mutable. `bondType`
   stays null when no SR event follows.
 - **`classifyTransfer`** — routes `(from, to)` against `TrackedSafe` /
-  `TrackedEOA` / `StakingContract` / SRTU, most-specific first, into the
-  `FundsCategory` (`MASTER_FUNDING_IN`, `MASTER_TO_AGENT`, `AGENT_TO_MASTER`,
-  `MASTER_WITHDRAWAL`, `STAKING_REWARD_CLAIM`, `SAFE_SETUP_TRANSFER`, …).
-  Returns null for untracked counterparties (row dropped).
+  `TrackedEOA` / `StakingContract` / SRTU / ServiceRegistryL2, most-specific
+  first, into the `FundsCategory` (`MASTER_FUNDING_IN`, `MASTER_TO_AGENT`,
+  `AGENT_TO_MASTER`, `MASTER_WITHDRAWAL`, `STAKING_REWARD_CLAIM`,
+  `SAFE_SETUP_TRANSFER`, …). Returns null for untracked counterparties (row
+  dropped) **and** for Master Safe ↔ SRTU OLAS hops (deduped against the
+  SEMANTIC bond row). Inbound to a Master Safe **from the ServiceRegistryL2
+  contract** is classified `OTHER` (protocol dust — e.g. 1-wei native refunds
+  during terminate/unbond — not a user deposit; `getServiceRegistryAddress`
+  in constants.ts).
 - **`getOrCreateToken`** — OLAS / wrapped-native 18 decimals; stablecoins
   (USDC / USDC.e / pUSD) 6 decimals via `getStablecoinSymbol` (constants.ts);
   `log.critical` + UNKNOWN/18 if an indexed token has no resolver branch.
@@ -141,7 +154,7 @@ deploy; watch Polygon USDC.e sync (the §2.2 cost hotspot).
 
 ## Tests
 
-44 Matchstick tests across `tests/service-registry.test.ts` (Phase 1a),
+46 Matchstick tests across `tests/service-registry.test.ts` (Phase 1a),
 `tests/staking.test.ts` (Phase 1b), `tests/phase-2a.test.ts` (Phase 2a + the
 Phase-2b stablecoin suite — all 8 (chain, token) tuples). `yarn test`.
 

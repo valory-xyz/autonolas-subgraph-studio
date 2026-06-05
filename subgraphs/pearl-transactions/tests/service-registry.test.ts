@@ -751,6 +751,57 @@ describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds",
   );
 
   test(
+    "Bond rows carry masterSafe + agentSafe so the wallet can show the agent name",
+    () => {
+      // Establish a fully-formed service the way it exists on-chain by the
+      // time an unstake/refund happens: the NFT mint tracks the Master Safe
+      // (role=MASTER) and links service.masterSafe; CreateMultisigWithAgents
+      // links service.agentSafe.
+      mockGetOwners(MASTER_SAFE, [MASTER_EOA, BACKUP_EOA]);
+      mockGetThreshold(MASTER_SAFE, 1);
+
+      const setupTx = mockTx(30);
+      handleServiceNftTransfer(
+        newNftTransfer(ZERO, MASTER_SAFE, SERVICE_ID, setupTx, 0)
+      );
+      handleCreateMultisigWithAgents(
+        newCreateMultisig(SERVICE_ID, AGENT_SAFE, setupTx, 1)
+      );
+
+      // Unstake: TokenRefund (SRTU producer, stamps masterSafe from the
+      // bond payer) → OperatorUnbond (SR consumer, backfills service +
+      // bondType + agentSafe).
+      const tx = mockTx(31);
+      handleTokenRefund(
+        newTokenRefund(MASTER_SAFE, OLAS_GNOSIS, AGENT_BOND, tx, 0)
+      );
+      handleOperatorUnbond(newOperatorUnbond(OPERATOR, SERVICE_ID, tx, 1));
+
+      const id = tx.concatI32(0);
+      assertBondRow(
+        tx,
+        0,
+        "SERVICE_BOND_REFUND",
+        "AGENT_BOND",
+        "42",
+        AGENT_BOND.toString()
+      );
+      assert.fieldEquals(
+        "FundsMovement",
+        id.toHexString(),
+        "masterSafe",
+        MASTER_SAFE.toHexString()
+      );
+      assert.fieldEquals(
+        "FundsMovement",
+        id.toHexString(),
+        "agentSafe",
+        AGENT_SAFE.toHexString()
+      );
+    }
+  );
+
+  test(
     "TokenDeposit with no prior attribution → row recorded; service + bondType unset",
     () => {
       const tx = mockTx(7);
