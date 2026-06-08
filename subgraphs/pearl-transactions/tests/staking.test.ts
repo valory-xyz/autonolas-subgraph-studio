@@ -577,10 +577,12 @@ describe("pearl-transactions / Phase 1b — staking", () => {
       )
     );
 
-    // Two FundsMovement rows, both SERVICE_EVICTED with amount 0.
+    // Two FundsMovement rows, both SERVICE_EVICTED with amount 0. IDs
+    // compose the event logIndex (0 on the mock) AND the slot index as
+    // separate segments, so the rows can't collide with same-tx events.
     assert.entityCount("FundsMovement", 2);
-    const id1 = tx.concatI32(0);
-    const id2 = tx.concatI32(1);
+    const id1 = tx.concatI32(0).concatI32(0);
+    const id2 = tx.concatI32(0).concatI32(1);
     assert.fieldEquals("FundsMovement", id1.toHexString(), "category", "SERVICE_EVICTED");
     assert.fieldEquals("FundsMovement", id1.toHexString(), "amount", "0");
     assert.fieldEquals("FundsMovement", id2.toHexString(), "category", "SERVICE_EVICTED");
