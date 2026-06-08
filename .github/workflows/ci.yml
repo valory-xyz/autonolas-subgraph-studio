@@ -238,6 +238,27 @@ jobs:
               -v
           fi
 
+  license-check:
+    name: License allowlist gate
+    # License allowlist gate (PARANOID): every production dependency's license
+    # must be on the allowlist in .supply-chain/license-allowlist.json, or be a
+    # reasoned exemption.
+    # NON-BLOCKING PILOT: deliberately NOT in `all-checks-passed.needs` below, so
+    # it reports without gating merges. Promote to required by adding it to that
+    # `needs:` array (+ branch protection). See .plans/license-check-gate.md.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444  # v5.0.0
+        with:
+          node-version-file: .nvmrc
+      - name: Activate pinned Yarn via Corepack
+        run: |
+          corepack enable
+          corepack prepare yarn@1.22.22 --activate
+      - run: yarn install --frozen-lockfile
+      - run: yarn license-check
+
   # Single cross-cutting gate. Branch protection on `main` requires
   # exactly one status context — "All checks passed" — which is
   # emitted by this job. Adding or removing a mandatory CI job is a
