@@ -1,12 +1,23 @@
-# Entity is only created if trader agent (with id 86) is registered in a service
-# Allows tracking TraderAgent properly
-type TraderService @entity (immutable: true) {
-  id: ID! # serviceId
+# One row per Olas service registered on ServiceRegistryL2 (Polygon). The
+# trader subgraph indexes every service so non-polystrat cohorts (Pearl Mini,
+# future cohorts) aren't silently dropped. Consumers filter cohorts client-
+# side via `agentIds` / `operators` (deduplicated arrays). Mirrors the same
+# Service.agentIds / Service.operators model in `pearl-transactions/`, kept
+# in this subgraph so a trade-side query can filter cohort without a cross-
+# subgraph join.
+type TraderService @entity(immutable: false) {
+  id: ID!                       # serviceId.toHexString()
+  agentIds: [Int!]!             # deduplicated, populated from RegisterInstance
+  operators: [Bytes!]!          # deduplicated, populated from RegisterInstance
+  traderAgent: TraderAgent      # set once CreateMultisigWithAgents fires
 }
 
 type TraderAgent @entity (immutable: false) {
   id: Bytes!
   serviceId: BigInt!
+  # Link back to the service registration; cohort filters route through here
+  # (e.g. `traderAgents(where: { traderService_: { agentIds_contains: [86] } })`).
+  traderService: TraderService!
   firstParticipation: BigInt
   lastActive: BigInt
   totalBets: Int! # all bets done regardless of settlement
@@ -112,6 +123,12 @@ type MarketParticipant @entity (immutable: false) {
 
 type Global @entity (immutable: false) {
   id: ID!
+  # Counts every Olas service multisig observed on Polygon
+  # ServiceRegistryL2 — NOT only the polystrat cohort. The previous
+  # `agentId == 86` gate was lifted (consumers filter via
+  # `TraderService.agentIds` / `operators`), so this is the cross-cohort
+  # head count. For the polystrat-only equivalent, count
+  # `traderAgents(where: { traderService_: { agentIds_contains: [86] } })`.
   totalTraderAgents: Int!
   totalActiveTraderAgents: Int!
   totalBets: Int! # all bets including for open markets
@@ -122,6 +139,26 @@ type Global @entity (immutable: false) {
   totalMarketsParticipated: Int! # count of unique markets where any agent participated
 }
 
+# Which on-chain path emitted the redemption event. CONDITIONAL_TOKENS and
+# NEG_RISK_ADAPTER are the pre-v2-cutover direct paths; COLLATERAL_ADAPTER
+# covers post-cutover redemptions routed through CtfCollateralAdapter and
+# NegRiskCtfCollateralAdapter (the standard and neg-risk wrappers share
+# the same `PositionsRedeemed` event signature). Lets downstream tools
+# distinguish the routing without re-deriving it from the tx call graph.
+#
+# Note: post-cutover (block ≥ ~86,219,367, see `src/collateral-adapter.ts`
+# header), the legacy CT / NegRiskAdapter PayoutRedemption events still
+# fire but with `redeemer = adapter address` — the un-tracked-redeemer
+# guard in `processRedemption` (utils.ts) drops those rows on purpose so
+# Path A doesn't double-count against Path B. Result: `CONDITIONAL_TOKENS`
+# and `NEG_RISK_ADAPTER` rows are effectively historical (pre-cutover);
+# new rows after the cutover are almost exclusively `COLLATERAL_ADAPTER`.
+enum PayoutSource {
+  CONDITIONAL_TOKENS
+  NEG_RISK_ADAPTER
+  COLLATERAL_ADAPTER
+}
+
 # Immutable log entity for every PayoutRedemption event (debugging/auditing)
 type PayoutRedemption @entity(immutable: true) {
   id: Bytes! # txHash + logIndex
@@ -129,6 +166,7 @@ type PayoutRedemption @entity(immutable: true) {
   conditionId: Bytes!
   question: Question
   payoutAmount: BigInt!
+  source: PayoutSource!
   blockNumber: BigInt!
   blockTimestamp: BigInt!
   transactionHash: Bytes!
@@ -144,6 +182,12 @@ type DailyProfitStatistic @entity(immutable: false) {
   totalBets: Int! # total Bets placed today
   totalTraded: BigInt! # total traded today, regardless of market settlement
   totalPayout: BigInt! # Payouts received today
+
+  # Cost basis of bets that became settled on this day. Written by processMarketResolution.
+  # Lets ROI for arbitrary windows be computed as profit / dailyTradedSettled without
+  # having to derive `cost = payout - profit`, which is wrong here because totalTraded
+  # lands on bet day, dailyProfit on resolution day, and totalPayout on redemption day.
+  dailyTradedSettled: BigInt!
 
   # Profit realized on this day (from settlements/payouts)
   dailyProfit: BigInt!

@@ -10,6 +10,7 @@ import {
 import { extractTitle } from "./uma-mapping";
 import { log, BigInt } from "@graphprotocol/graph-ts";
 import { processMarketResolution, processRedemption } from "./utils";
+import { PAYOUT_SOURCE_NEG_RISK_ADAPTER } from "./constants";
 import { OutcomeReported } from "../generated/NegRiskAdapter/NegRiskAdapter";
 
 export function handleQuestionPrepared(event: QuestionPreparedEvent): void {
@@ -82,5 +83,6 @@ export function handleNegRiskPayoutRedemption(
     event.block.number,
     event.transaction.hash,
     event.logIndex.toI32(),
+    PAYOUT_SOURCE_NEG_RISK_ADAPTER,
   );
 }

@@ -1,0 +1,274 @@
+# pearl-transactions schema — Phase 1a + 1b + 2a.
+#
+# Matches IMPLEMENTATION-PLAN.md §5.1 (semantic ledger) + §6.5 (raw
+# ledger). Phase 2b additions (USDC/USDC.e Transfer data sources) reuse
+# Token / TrackedSafe / TokenBalance and add no new schema; they
+# arrive in their own PR (benchmark + product-gated per §6.3).
+
+# --- Structural -------------------------------------------------------
+
+type MasterSafe @entity(immutable: false) {
+  id: Bytes!                          # Master Safe address
+  network: String!
+  # Owner derivation per §4.4. Master EOA via one-shot getOwners()
+  # eth_call at first sighting; updated by Safe.AddedOwner /
+  # RemovedOwner / ChangedThreshold in Phase 2a.
+  masterEoa: Bytes!                   # owners[0] at first sighting
+  owners: [Bytes!]!                   # full owner list at first sighting
+  threshold: BigInt!                  # signature threshold (Pearl default: 1)
+  services: [Service!]! @derivedFrom(field: "masterSafe")
+  agentSafes: [AgentSafe!]! @derivedFrom(field: "masterSafe")
+  firstSeenTimestamp: BigInt!
+  firstSeenBlock: BigInt!             # internal provenance: when we first saw this Safe
+  # SINGLE SOURCE OF TRUTH for opening balances under AC #3 / Path A
+  # (§6.2): the subgraph emits NO opening-balance row — the wallet UI
+  # renders a "History starts here" divider at this block and fetches
+  # opening balances itself via archive RPC (balanceOf for ERC-20,
+  # eth_getBalance for native) at exactly historyFloorBlock. Equal to
+  # firstSeen* in practice; named distinctly because historyFloor* is the
+  # consumer-facing UI contract while firstSeen* is internal provenance.
+  # (Native pre-discovery balance has no other on-chain hook — the FE
+  # surfaces any "unknown before this block" caption from this anchor.)
+  historyFloorBlock: BigInt!
+  historyFloorTimestamp: BigInt!
+  lastActivityTimestamp: BigInt!
+  # Phase 2a: flips true the first time a live ERC-20 / native inbound
+  # from masterEoa is observed after first sighting. classifyTransfer
+  # tags that first qualifying hop SAFE_SETUP_TRANSFER (subsequent ones
+  # are MASTER_FUNDING_IN).
+  setupTransferSeen: Boolean!
+}
+
+type AgentSafe @entity(immutable: false) {
+  id: Bytes!                          # Agent Safe (service multisig) address
+  masterSafe: MasterSafe
+  service: Service!
+  createdTimestamp: BigInt!
+}
+
+type Service @entity(immutable: false) {
+  id: ID!                             # serviceId as string
+  serviceId: BigInt!
+  agentIds: [Int!]!                   # deduplicated; from RegisterInstance — consumer filter
+  operators: [Bytes!]!                # deduplicated; sub-cohort filter
+  masterSafe: MasterSafe
+  agentSafe: AgentSafe
+  state: String!                      # REGISTERED|DEPLOYED|STAKED|UNSTAKED|TERMINATED
+  nftCustodian: Bytes                 # current ERC-721 owner
+  currentStakingContract: StakingContract  # set on stake, cleared on unstake
+  totalOlasRewardsClaimed: BigInt!    # cumulative across stake-cycles
+  registeredTimestamp: BigInt!
+  updatedTimestamp: BigInt!
+}
+
+# Staking proxy / "staking contract" — created on
+# StakingFactory.InstanceCreated for any allowed implementation. Config
+# snapshot is captured via contract calls at creation time; nothing
+# updates afterward.
+type StakingContract @entity(immutable: false) {
+  id: Bytes!                          # staking proxy address
+  implementation: Bytes!
+  minStakingDeposit: BigInt!
+  numAgentInstances: BigInt!
+  createdBlock: BigInt!
+  createdTimestamp: BigInt!
+}
+
+# --- Ledger -----------------------------------------------------------
+
+enum FundsCategory {
+  # Phase 1a — semantic (registry + SRTU)
+  SAFE_DEPLOYED                       # First sighting of a Master Safe — "Setup complete" anchor (amount=0)
+  SERVICE_BOND_DEPOSIT                # SRTU.TokenDeposit; fires twice per stake-cycle (activate + register)
+  SERVICE_BOND_REFUND                 # SRTU.TokenRefund; fires twice per unstake-cycle (terminate + unbond)
+  # Phase 1b — staking
+  STAKING_REWARD_CLAIM                # StakingProxy.RewardClaimed → Agent Safe
+  UNSTAKE_REWARD                      # StakingProxy.ServiceUnstaked / ServiceForceUnstaked → Agent Safe
+  SERVICE_EVICTED                     # StakingProxy.ServicesEvicted (informational; amount=0)
+  # Phase 2a — raw token / native ledger (source=RAW_TRANSFER unless noted)
+  # NB: no OPENING_BALANCE — per AC #3 / Path A (Rev. 5, §6.2), opening
+  # balances are derived frontend-side via archive RPC at
+  # historyFloorBlock; the subgraph emits no opening-balance row.
+  SAFE_SETUP_TRANSFER                 # First LIVE Master EOA → Master Safe inbound hop after first sighting. Fires once per Master Safe.
+  MASTER_FUNDING_IN                   # subsequent EOA → Master Safe (after SAFE_SETUP_TRANSFER consumed)
+  MASTER_WITHDRAWAL                   # Master Safe → EOA
+  MASTER_TO_AGENT                     # Master Safe → Agent Safe / Agent EOA (grouped via AgentFundingEvent)
+  AGENT_TO_MASTER                     # Agent Safe → Master Safe (OLAS reward sweep)
+  AGENT_TO_APP                        # Agent Safe → known app contract (FPMM, Polymarket CTFExchange, etc.)
+  APP_TO_AGENT                        # known app contract → Agent Safe (payout)
+  OTHER                               # tracked address ↔ unmatched counterparty
+}
+
+# Best-effort disambiguator for SERVICE_BOND_DEPOSIT / SERVICE_BOND_REFUND
+# rows. Both deposit-side functions emit the same event signature; same
+# for the two refund functions. Attribution is done via cross-event
+# correlation in the same tx with ServiceRegistryL2 events
+# (ActivateRegistration ↔ SECURITY_DEPOSIT; RegisterInstance ↔
+# AGENT_BOND; TerminateService ↔ SECURITY_DEPOSIT-refund). Best-effort:
+# unmodeled call orderings leave bondType null.
+enum ServiceBondType {
+  SECURITY_DEPOSIT                    # activateRegistrationTokenDeposit / terminateTokenRefund
+  AGENT_BOND                          # registerAgentsTokenDeposit / unbondTokenRefund
+}
+
+enum FundsSource {
+  SEMANTIC                            # Derived from a typed event (TokenDeposit, RewardClaimed, etc.)
+  RAW_TRANSFER                        # Direct ERC-20 / native Transfer (Phase 2)
+}
+
+type FundsMovement @entity(immutable: false) {
+  # Mutable: SRTU TokenDeposit/TokenRefund rows are created bondType/
+  # service-less and backfilled by the matching ServiceRegistryL2 handler
+  # later in the same tx (see PendingBondRow). All other rows are
+  # write-once in practice.
+  id: Bytes!                          # see §5.1; tx.hash.concatI32(logIndex) or a stable sub-index for synthetic rows
+  service: Service
+  masterSafe: MasterSafe
+  agentSafe: AgentSafe
+  stakingContract: StakingContract    # set for STAKING_REWARD_CLAIM / UNSTAKE_REWARD / SERVICE_EVICTED rows
+  epoch: BigInt                       # staking-side row only; from the StakingProxy event
+  category: FundsCategory!
+  source: FundsSource!
+  bondType: ServiceBondType           # nullable; populated for SERVICE_BOND_DEPOSIT/REFUND when attribution succeeds
+  agentFundingEvent: AgentFundingEvent # Phase 2a backref — set for MASTER_TO_AGENT rows grouped by same-tx funding action
+  token: Bytes                        # token address (null for SAFE_DEPLOYED / SERVICE_EVICTED / native rows where Token entity is implicit)
+  amount: BigInt!                     # 0 for SAFE_DEPLOYED / SERVICE_EVICTED informational rows
+  from: Bytes!
+  to: Bytes!
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+# Daily roll-up of OLAS rewards per service (UTC midnight bucket).
+# Updated on each StakingProxy.RewardClaimed and the
+# unstake-reward path. Phase 2 adds per-token / per-safe daily
+# roll-ups under a separate entity if needed.
+type DailyServiceFunds @entity(immutable: false) {
+  id: ID!                             # serviceId-dayTimestamp
+  service: Service!
+  dayTimestamp: BigInt!               # UTC midnight (timestamp / 86400 * 86400)
+  olasRewardsClaimed: BigInt!         # that day
+  cumulativeOlasRewardsClaimed: BigInt!
+}
+
+# --- Service-NFT custody trail ---------------------------------------
+
+type ServiceNftCustodyChange @entity(immutable: true) {
+  id: Bytes!
+  service: Service!
+  from: Bytes!
+  to: Bytes!
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+# --- Internal helpers (not part of the public consumer contract) -----
+
+# Reverse index used to resolve Service.multisig in event-ordering
+# scenarios (CreateMultisigWithAgents → Service.multisig).
+type ServiceIndex @entity(immutable: false) {
+  id: Bytes!                          # serviceId as Bytes
+  multisig: Bytes!
+}
+
+# Buffer for RegisterInstance data that arrives before
+# CreateMultisigWithAgents creates the Service entity. Drained when
+# the Service is created.
+type PendingRegistration @entity(immutable: false) {
+  id: Bytes!                          # serviceId as Bytes
+  agentIds: [Int!]!
+  operators: [Bytes!]!
+}
+
+# Per-tx cursor for the bond-attribution queue. The SRTU TokenDeposit /
+# TokenRefund events carry no serviceId, so a token movement can only be
+# tied to a service via same-tx event order. On-chain the SRTU event
+# always fires *before* its ServiceRegistryL2 counterpart (ServiceManager
+# calls *TokenDeposit / *TokenRefund before the registry call in every
+# path), so the SRTU handler is the PRODUCER: it creates the FundsMovement
+# row and ENQUEUES its id here. The ServiceRegistryL2 handler is the
+# CONSUMER: it DEQUEUES the oldest pending row and backfills serviceId +
+# bondType.
+type PendingBondCounter @entity(immutable: false) {
+  id: Bytes!                          # tx.hash
+  nextEnqueueSlot: Int!
+  nextDequeueSlot: Int!
+}
+
+# Per-slot queue entry pointing at the FundsMovement row awaiting
+# attribution. Enqueued by the SRTU handler (TokenDeposit / TokenRefund);
+# `attributed` is flipped when a ServiceRegistryL2 handler
+# (ActivateRegistration / RegisterInstance / TerminateService /
+# OperatorUnbond) backfills the row's serviceId + bondType.
+type PendingBondRow @entity(immutable: false) {
+  id: Bytes!                          # tx.hash.concatI32(slot)
+  fundsMovement: Bytes!               # FundsMovement id awaiting serviceId + bondType
+  attributed: Boolean!
+}
+
+# Dedupe guard: RegisterInstance fires once per agent instance, but
+# registerAgentsTokenDeposit emits only one TokenDeposit for the
+# combined agent bond. The guard ensures exactly one RegisterInstance
+# per (txHash, serviceId) dequeues + attributes that single AGENT_BOND
+# row, regardless of how many RegisterInstance events fire.
+type AgentBondAttributionGuard @entity(immutable: true) {
+  id: Bytes!                          # tx.hash.concat(serviceId.toBytes())
+}
+
+# --- Phase 2a — raw token / native ledger ----------------------------
+
+# Token metadata snapshot. Populated lazily on first encounter.
+type Token @entity(immutable: false) {
+  id: Bytes!                          # token address
+  symbol: String!
+  decimals: Int!
+}
+
+# A Master Safe or Agent Safe we actively watch. Populated when the
+# entity becomes known via the registry / staking path. Lookup of
+# from/to in the OLAS Transfer handler routes through this table.
+type TrackedSafe @entity(immutable: false) {
+  id: Bytes!                          # Safe address
+  role: String!                       # MASTER | AGENT
+  service: Service                    # null for MASTER (a Master Safe owns multiple services)
+  masterSafe: MasterSafe!
+}
+
+# A Master EOA or Agent EOA we actively watch. Master EOAs are added
+# in Phase 1a via getOrCreateMasterSafe's getOwners(); agent EOAs come
+# from RegisterInstance.agentInstance.
+type TrackedEOA @entity(immutable: false) {
+  id: Bytes!                          # EOA address
+  role: String!                       # MASTER_EOA | AGENT_EOA
+  masterSafe: MasterSafe              # null for AGENT_EOA shared across services
+  service: Service                    # null for MASTER_EOA
+  firstTrackedBlock: BigInt!
+}
+
+# Running balance per (safe, token). Updated by the OLAS Transfer
+# handler on each from/to hit. Phase 2b will add USDC/USDC.e.
+type TokenBalance @entity(immutable: false) {
+  id: Bytes!                          # safe.concat(token)
+  safe: Bytes!
+  token: Token!
+  balance: BigInt!
+  lastUpdatedTimestamp: BigInt!
+  lastUpdatedBlock: BigInt!
+}
+
+# Per-tx grouping of all Master → Agent constituent transfers for a
+# service. Wallet UI renders one row per AgentFundingEvent; consumers
+# can read raw FundsMovement rows via the agentFundingEvent backref
+# if they want the breakdown. See §6.5.
+type AgentFundingEvent @entity(immutable: false) {
+  id: Bytes!                          # txHash.concat(masterSafe).concat(serviceId.toBytes())
+  service: Service!
+  masterSafe: MasterSafe!
+  txHash: Bytes!
+  blockTimestamp: BigInt!
+  totalNativeAmount: BigInt!          # sum across constituent native rows
+  totalOlasAmount: BigInt!            # sum across constituent OLAS rows
+  transfers: [FundsMovement!]! @derivedFrom(field: "agentFundingEvent")
+}

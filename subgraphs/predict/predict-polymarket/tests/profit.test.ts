@@ -10,7 +10,19 @@ import {
   createPayoutRedemptionEvent,
   createTokenRegisteredEvent,
 } from "./profit";
-import { TraderAgent, Question, MarketMetadata } from "../generated/schema";
+import { TraderAgent, TraderService, Question, MarketMetadata } from "../generated/schema";
+
+function ensureTraderService(serviceId: BigInt): string {
+  const id = serviceId.toHexString();
+  let service = TraderService.load(id);
+  if (service == null) {
+    service = new TraderService(id);
+    service.agentIds = [];
+    service.operators = [];
+    service.save();
+  }
+  return id;
+}
 import { TestAddresses, TestBytes, TestConstants, createAncillaryData, normalizeTimestamp, createBridge } from "./test-helpers";
 
 const AGENT = TestAddresses.TRADER_AGENT_1;
@@ -30,6 +42,7 @@ function setupAgent(): void {
   let agent = new TraderAgent(AGENT);
   agent.totalBets = 0;
   agent.serviceId = TestConstants.SERVICE_ID_1;
+  agent.traderService = ensureTraderService(TestConstants.SERVICE_ID_1);
   agent.totalTraded = BigInt.zero();
   agent.totalPayout = BigInt.zero();
   agent.totalTradedSettled = BigInt.zero();
@@ -112,6 +125,7 @@ describe("Profit Chart Integration", () => {
 
     let day3Id = AGENT.toHexString() + "_" + day3TSNormalized.toString();
     assert.fieldEquals("DailyProfitStatistic", day3Id, "dailyProfit", "-1000");
+    assert.fieldEquals("DailyProfitStatistic", day3Id, "dailyTradedSettled", "1000");
     assert.fieldEquals("DailyProfitStatistic", day3Id, "profitParticipants", "[" + CONDITION_LOST.toHexString() + "]");
   });
 
@@ -138,6 +152,7 @@ describe("Profit Chart Integration", () => {
     // Profit recorded on Day 3: expectedPayout(2000) - totalTraded(1000) = 1000
     let day3Id = AGENT.toHexString() + "_" + day3TSNormalized.toString();
     assert.fieldEquals("DailyProfitStatistic", day3Id, "dailyProfit", "1000");
+    assert.fieldEquals("DailyProfitStatistic", day3Id, "dailyTradedSettled", "1000");
     assert.fieldEquals("DailyProfitStatistic", day3Id, "profitParticipants", "[" + CONDITION_WON.toHexString() + "]");
 
     // Verify expectedPayout on participant
@@ -259,6 +274,8 @@ describe("Profit Chart Integration", () => {
 
     // Both bets lost: -1000 - 2000 = -3000
     assert.fieldEquals("DailyProfitStatistic", day3Id, "dailyProfit", "-3000");
+    // Cost settled across both markets on day 3: 1000 + 2000 = 3000
+    assert.fieldEquals("DailyProfitStatistic", day3Id, "dailyTradedSettled", "3000");
   });
 
   /**
@@ -402,6 +419,7 @@ describe("Profit Chart Integration", () => {
     let agent2 = new TraderAgent(AGENT2);
     agent2.totalBets = 0;
     agent2.serviceId = TestConstants.SERVICE_ID_2;
+    agent2.traderService = ensureTraderService(TestConstants.SERVICE_ID_2);
     agent2.totalTraded = BigInt.zero();
     agent2.totalPayout = BigInt.zero();
     agent2.totalTradedSettled = BigInt.zero();
@@ -783,6 +801,7 @@ describe("Profit Chart Integration", () => {
     let agent2 = new TraderAgent(AGENT2);
     agent2.totalBets = 0;
     agent2.serviceId = TestConstants.SERVICE_ID_2;
+    agent2.traderService = ensureTraderService(TestConstants.SERVICE_ID_2);
     agent2.totalTraded = BigInt.zero();
     agent2.totalPayout = BigInt.zero();
     agent2.totalTradedSettled = BigInt.zero();
@@ -887,5 +906,56 @@ describe("Profit Chart Integration", () => {
     assert.fieldEquals("Global", "", "totalTradedSettled", "3500");
     assert.fieldEquals("Global", "", "totalPayout", "2000");
     assert.fieldEquals("Global", "", "totalTraded", "3500");
+  });
+
+  /**
+   * Test: Duplicate resolution is a no-op (fix #6)
+   * If QuestionResolved fires twice for the same market, the second is skipped.
+   */
+  test("Duplicate resolution: second QuestionResolved is a no-op", () => {
+    setupMarket(CONDITION_LOST, QUESTION_LOST, TOKEN_0_LOST, TOKEN_1_LOST);
+
+    handleOrderFilled(createOrderFilledEvent(AGENT, BigInt.fromI32(1000), BigInt.fromI32(2000), TOKEN_0_LOST, START_TS));
+
+    // First resolution
+    let day3TS = START_TS.plus(BigInt.fromI32(DAY * 2));
+    let payouts = [BigInt.fromI32(0), BigInt.fromString("1000000000000000000")];
+    handleOOQuestionResolved(createQuestionResolvedEvent(QUESTION_LOST, payouts, BigInt.fromI32(1), day3TS));
+
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalTradedSettled", "1000");
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalExpectedPayout", "0");
+
+    // Second resolution (duplicate) — should be no-op
+    let day5TS = START_TS.plus(BigInt.fromI32(DAY * 4));
+    handleOOQuestionResolved(createQuestionResolvedEvent(QUESTION_LOST, payouts, BigInt.fromI32(1), day5TS));
+
+    // Totals unchanged — no double-counting
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalTradedSettled", "1000");
+    assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalExpectedPayout", "0");
+    assert.fieldEquals("Global", "", "totalTradedSettled", "1000");
+  });
+
+  /**
+   * Test: Global is NOT updated when no participants are processed (fix #7)
+   * Resolution with no bets but an existing Global doesn't modify settled totals.
+   */
+  test("Resolution with no participants: global settled totals unchanged", () => {
+    setupMarket(CONDITION_LOST, QUESTION_LOST, TOKEN_0_LOST, TOKEN_1_LOST);
+    setupMarket(CONDITION_WON, QUESTION_WON, TOKEN_0_WON, TOKEN_1_WON);
+
+    // Place a bet on CONDITION_WON so Global gets created
+    handleOrderFilled(createOrderFilledEvent(AGENT, BigInt.fromI32(500), BigInt.fromI32(1000), TOKEN_0_WON, START_TS));
+
+    assert.fieldEquals("Global", "", "totalTraded", "500");
+    assert.fieldEquals("Global", "", "totalTradedSettled", "0");
+
+    // Resolve CONDITION_LOST (no participants in this market) — global should NOT change
+    let day3TS = START_TS.plus(BigInt.fromI32(DAY * 2));
+    let payouts = [BigInt.fromI32(0), BigInt.fromString("1000000000000000000")];
+    handleOOQuestionResolved(createQuestionResolvedEvent(QUESTION_LOST, payouts, BigInt.fromI32(1), day3TS));
+
+    // Global unchanged — no participants to settle
+    assert.fieldEquals("Global", "", "totalTradedSettled", "0");
+    assert.fieldEquals("Global", "", "totalExpectedPayout", "0");
   });
 });

@@ -100,6 +100,11 @@ export function handleOrderFilled(event: OrderFilledEvent): void {
   let question = Question.load(tokenRegistry.conditionId);
   if (question !== null) {
     bet.question = question.id;
+  } else {
+    log.warning("Question not found for conditionId {} in tx {}", [
+      tokenRegistry.conditionId.toHexString(),
+      event.transaction.hash.toHexString(),
+    ]);
   }
   bet.save();
 

@@ -1,6 +1,15 @@
 import { Address, BigInt, Bytes } from "@graphprotocol/graph-ts";
 
+// Polymarket cohort agent ID — kept for documentation / client-side filter
+// examples (e.g. `traderAgents(where: { traderService_: { agentIds_contains: [86] } })`).
+// The subgraph itself NO LONGER gates on this — every Olas service is indexed,
+// cohort filtering is resolved client-side via TraderService.agentIds.
 export const PREDICT_AGENT_ID = 86;
+
+// PayoutSource enum values — must match the GraphQL enum in schema.graphql.
+export const PAYOUT_SOURCE_CONDITIONAL_TOKENS = "CONDITIONAL_TOKENS";
+export const PAYOUT_SOURCE_NEG_RISK_ADAPTER = "NEG_RISK_ADAPTER";
+export const PAYOUT_SOURCE_COLLATERAL_ADAPTER = "COLLATERAL_ADAPTER";
 
 export const ONE_DAY = BigInt.fromI32(86400);
 

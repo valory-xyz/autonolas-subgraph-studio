@@ -1,0 +1,213 @@
+specVersion: 1.0.0
+indexerHints:
+  prune: auto
+schema:
+  file: ./schema.graphql
+dataSources:
+  - kind: ethereum
+    name: ServiceRegistryL2
+    network: {{ network }}
+    source:
+      address: "{{ ServiceRegistryL2.address }}"
+      abi: ServiceRegistryL2
+      startBlock: {{ ServiceRegistryL2.startBlock }}
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Service
+        - AgentSafe
+        - MasterSafe
+        - ServiceIndex
+        - PendingRegistration
+        - PendingBondCounter
+        - PendingBondRow
+        - AgentBondAttributionGuard
+        - ServiceNftCustodyChange
+        - FundsMovement
+      abis:
+        - name: ServiceRegistryL2
+          file: ../../abis/ServiceRegistryL2.json
+        - name: GnosisSafe
+          file: ../../abis/GnosisSafe.json
+        - name: ERC20
+          file: ../../abis/ERC20Detailed.json
+      eventHandlers:
+        - event: RegisterInstance(indexed address,indexed uint256,indexed address,uint256)
+          handler: handleRegisterInstance
+        - event: ActivateRegistration(indexed uint256)
+          handler: handleActivateRegistration
+        - event: CreateMultisigWithAgents(indexed uint256,indexed address)
+          handler: handleCreateMultisigWithAgents
+        - event: Transfer(indexed address,indexed address,indexed uint256)
+          handler: handleServiceNftTransfer
+        - event: TerminateService(indexed uint256)
+          handler: handleTerminateService
+        - event: OperatorUnbond(indexed address,indexed uint256)
+          handler: handleOperatorUnbond
+      file: ./src/service-registry.ts
+  - kind: ethereum
+    name: ServiceRegistryTokenUtility
+    network: {{ network }}
+    source:
+      address: "{{ ServiceRegistryTokenUtility.address }}"
+      abi: ServiceRegistryTokenUtility
+      startBlock: {{ ServiceRegistryTokenUtility.startBlock }}
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - FundsMovement
+        - PendingBondCounter
+        - PendingBondRow
+      abis:
+        - name: ServiceRegistryTokenUtility
+          file: ../../abis/ServiceRegistryTokenUtility.json
+      eventHandlers:
+        - event: TokenDeposit(indexed address,indexed address,uint256)
+          handler: handleTokenDeposit
+        - event: TokenRefund(indexed address,indexed address,uint256)
+          handler: handleTokenRefund
+      file: ./src/service-registry-token-utility.ts
+  - kind: ethereum
+    name: StakingFactory
+    network: {{ network }}
+    source:
+      address: "{{ StakingFactory.address }}"
+      abi: StakingFactory
+      startBlock: {{ StakingFactory.startBlock }}
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - StakingContract
+      abis:
+        - name: StakingFactory
+          file: ../../abis/StakingFactory.json
+        - name: StakingProxy
+          file: ../../abis/StakingProxy.json
+      eventHandlers:
+        - event: InstanceCreated(indexed address,indexed address,indexed address)
+          handler: handleInstanceCreated
+      file: ./src/staking-factory.ts
+  - kind: ethereum
+    name: OLAS
+    network: {{ network }}
+    source:
+      address: "{{ OLAS.address }}"
+      abi: ERC20
+      startBlock: {{ OLAS.startBlock }}
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - FundsMovement
+        - TokenBalance
+        - Token
+        - AgentFundingEvent
+      abis:
+        - name: ERC20
+          file: ../../abis/ERC20Detailed.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleErc20Transfer
+      file: ./src/erc20.ts
+  - kind: ethereum
+    name: WrappedNative
+    network: {{ network }}
+    source:
+      address: "{{ WrappedNative.address }}"
+      abi: ERC20
+      startBlock: {{ WrappedNative.startBlock }}
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - FundsMovement
+        - TokenBalance
+        - Token
+        - AgentFundingEvent
+      abis:
+        - name: ERC20
+          file: ../../abis/ERC20Detailed.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleErc20Transfer
+      file: ./src/erc20.ts
+  # Phase 2b — per-network stablecoin Transfer data sources (USDC /
+  # USDC.e / pUSD), expanded from networks.json `erc20Tokens` by
+  # generate-manifests.js. Count varies per chain (1–3).
+{{ erc20TokenDataSources }}
+templates:
+  - name: StakingProxy
+    kind: ethereum/contract
+    network: {{ network }}
+    source:
+      abi: StakingProxy
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Service
+        - MasterSafe
+        - FundsMovement
+        - DailyServiceFunds
+      abis:
+        - name: StakingProxy
+          file: ../../abis/StakingProxy.json
+        - name: GnosisSafe
+          file: ../../abis/GnosisSafe.json
+        - name: ERC20
+          file: ../../abis/ERC20Detailed.json
+      eventHandlers:
+        - event: ServiceStaked(uint256,indexed uint256,indexed address,indexed address,uint256[])
+          handler: handleServiceStaked
+        - event: RewardClaimed(uint256,indexed uint256,indexed address,indexed
+            address,uint256[],uint256)
+          handler: handleRewardClaimed
+        - event: ServiceUnstaked(uint256,indexed uint256,indexed address,indexed
+            address,uint256[],uint256,uint256)
+          handler: handleServiceUnstaked
+        - event: ServiceForceUnstaked(uint256,indexed uint256,indexed address,indexed
+            address,uint256[],uint256,uint256)
+          handler: handleServiceForceUnstaked
+        - event: ServicesEvicted(indexed uint256,uint256[],address[],address[],uint256[])
+          handler: handleServicesEvicted
+      file: ./src/staking-proxy.ts
+  - name: Safe
+    kind: ethereum/contract
+    network: {{ network }}
+    source:
+      abi: GnosisSafe
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - FundsMovement
+        - MasterSafe
+        - TokenBalance
+        - Token
+      abis:
+        - name: GnosisSafe
+          file: ../../abis/GnosisSafe.json
+      eventHandlers:
+        - event: SafeReceived(indexed address,uint256)
+          handler: handleSafeReceived
+        - event: ExecutionSuccess(bytes32,uint256)
+          handler: handleSafeExecutionSuccess
+        - event: ExecutionFromModuleSuccess(indexed address)
+          handler: handleSafeExecutionFromModuleSuccess
+        - event: AddedOwner(address)
+          handler: handleSafeAddedOwner
+        - event: RemovedOwner(address)
+          handler: handleSafeRemovedOwner
+        - event: ChangedThreshold(uint256)
+          handler: handleSafeChangedThreshold
+      file: ./src/safe.ts

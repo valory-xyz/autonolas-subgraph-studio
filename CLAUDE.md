@@ -23,6 +23,7 @@ subgraphs/
   liquidity/                   # Protocol Owned Liquidity — Ethereum mainnet (OLAS-ETH + bridged L2 LP tokens)
   liquidity-l2/                # Protocol Owned Liquidity — L2 pools (6 networks; template pattern with manual overrides for Base dual-pool and Celo Ubeswap)
   new-mech-fees/               # Multi-network mech fees (Gnosis, Base, Polygon, Optimism, Arbitrum, Celo, Ethereum — 7 networks)
+  pearl-transactions/          # Pearl Master/Agent Safe funds movement → wallet transaction history, VLOP-73 (Gnosis, Polygon, Optimism, Base — template pattern). Phases 1a/1b/2a/2b shipped; Gnosis+Polygon deployed. Design: subgraphs/pearl-funds/IMPLEMENTATION-PLAN.md.
   predict/                     # Prediction markets (Omen on Gnosis, Polymarket on Polygon)
   service-registry/            # Service registry (8 networks; hybrid: hand-crafted mainnet manifest + L2 template)
   staking/                     # Staking contracts (7 networks, template pattern)
@@ -33,14 +34,14 @@ subgraphs/
 ## Tech Stack
 
 - **Language**: AssemblyScript (compiled to WASM by Graph CLI)
-- **Framework**: The Graph (graph-cli 0.98.1, graph-ts 0.38.2 — exact pins, no carets, all 13 package.json files converged)
+- **Framework**: The Graph (graph-cli 0.98.1, graph-ts 0.38.2 — exact pins, no carets, all 14 package.json files converged)
 - **Testing**: Matchstick (matchstick-as 0.6.0 — exact pin)
 - **Node**: 22.x via `.nvmrc`; `packageManager: "yarn@1.22.22"` enforced via Corepack in CI.
 - **Deployment**: CI/CD → The Graph Studio / Alchemy
 
 ## Multi-Network Patterns
 
-1. **Template Pattern** (staking, tokenomics-l2, liquidity-l2): `subgraph.template.yaml` + `networks.json` + `generate-manifests.js`. `liquidity-l2` additionally maintains hand-crafted manifests for Base (dual pool) and Celo (Ubeswap, not Balancer).
+1. **Template Pattern** (staking, tokenomics-l2, liquidity-l2, pearl-transactions): `subgraph.template.yaml` + `networks.json` + `generate-manifests.js`. `liquidity-l2` additionally maintains hand-crafted manifests for Base (dual pool) and Celo (Ubeswap, not Balancer).
 2. **Per-Network Manifests** (new-mech-fees): shared `src/` with `subgraph.<network>.yaml` per network; mappings dispatch on `dataSource.network()`.
 3. **Hybrid** (service-registry): `subgraph.mainnet.yaml` (1-param `CreateService` ABI) alongside template-generated L2 manifests (2-param `CreateService` + `configHash`); separate `mapping.ts` / `mapping-eth.ts` share `utils.ts`.
 4. **Single Network** (babydegen, governance, liquidity, legacy-mech-fees, tokenomics-eth, predict-omen, predict-polymarket): standalone `subgraph.yaml`.
@@ -57,7 +58,7 @@ yarn build                             # Build subgraph (compiles to WASM)
 yarn test                              # Run Matchstick tests
 ```
 
-CI runs on every PR via `.github/workflows/test.yaml` — a matrix over all 12 subgraph targets runs `yarn graph codegen` followed by `yarn graph test` (Matchstick) for each. Template subgraphs run `yarn generate-manifests` first; per-network subgraphs symlink a representative manifest (`subgraph.gnosis.yaml`) before testing. Deployment is handled via `.github/workflows/deploy-subgraph.yaml` (manual dispatch from main).
+CI runs on every PR via `.github/workflows/ci.yml` — a matrix over all 13 subgraph targets runs `yarn graph codegen` followed by `yarn graph test` (Matchstick) for each. Template subgraphs run `yarn generate-manifests` first; per-network subgraphs symlink a representative manifest (`subgraph.gnosis.yaml`) before testing. Deployment is handled via `.github/workflows/deploy-subgraph.yaml` (manual dispatch from main).
 
 Two additional CI workflows enforce supply-chain hygiene (advisory-only at first; promote to required-status when the team is ready):
 - `.github/workflows/supply-chain.yml` — matrix audit + install-hook + lockfile-lint over all 13 paths.

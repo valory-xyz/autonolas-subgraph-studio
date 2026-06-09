@@ -1,0 +1,36 @@
+{
+  "name": "pearl-transactions-subgraph",
+  "scripts": {
+    "codegen": "graph codegen subgraph.base.yaml",
+    "build": "graph build subgraph.base.yaml",
+    "generate-manifests": "node ../../scripts/generate-manifests.js --path=.",
+    "deploy-gnosis": "yarn generate-manifests && graph deploy pearl-gnosis-transactions subgraph.gnosis.yaml",
+    "deploy-matic": "yarn generate-manifests && graph deploy pearl-polygon-transactions subgraph.matic.yaml",
+    "deploy-optimism": "yarn generate-manifests && graph deploy pearl-optimism-transactions subgraph.optimism.yaml",
+    "deploy-base": "yarn generate-manifests && graph deploy pearl-base-transactions subgraph.base.yaml",
+    "test": "ln -s subgraph.gnosis.yaml subgraph.yaml && graph test; rm -f subgraph.yaml"
+  },
+  "dependencies": {
+    "@graphprotocol/graph-cli": "0.98.1",
+    "@graphprotocol/graph-ts": "0.38.2"
+  },
+  "devDependencies": {
+    "matchstick-as": "0.6.0"
+  },
+  "resolutions": {
+    "//": "Selective version resolutions. See subgraphs/staking/package.json for the full explainer; resolutions converge across all subgraph package.json files in this repo.",
+    "immutable": "^5.1.5",
+    "cross-spawn": "^7.0.6",
+    "semver": "^7.5.2",
+    "lodash": "^4.18.0",
+    "js-yaml": "^4.1.1",
+    "follow-redirects": "^1.16.0",
+    "ejs": "^3.1.10",
+    "tmp": "^0.2.6",
+    "undici": "^7.24.0",
+    "apisauce": "^3.2.2",
+    "**/micromatch/picomatch": "2.3.2",
+    "**/@graphprotocol/graph-cli/glob": "^11.1.0",
+    "**/@graphprotocol/graph-cli/yaml": "^2.8.3"
+  }
+}

@@ -48,6 +48,10 @@ jobs:
             path: subgraphs/service-registry
             manifest: subgraph.gnosis.yaml
             generate: true
+          - subgraph: pearl-transactions
+            path: subgraphs/pearl-transactions
+            manifest: subgraph.gnosis.yaml
+            generate: true
 
           # Per-network manifests — need symlink only
           - subgraph: new-mech-fees
@@ -148,7 +152,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 13 paths: root + 12 subgraphs. Mirrors the test matrix shape;
+        # 14 paths: root + 13 subgraphs. Mirrors the test matrix shape;
         # every yarn.lock gets linted.
         path:
           - "."
@@ -159,6 +163,7 @@ jobs:
           - "subgraphs/governance"
           - "subgraphs/staking"
           - "subgraphs/service-registry"
+          - "subgraphs/pearl-transactions"
           - "subgraphs/legacy-mech-fees"
           - "subgraphs/new-mech-fees"
           - "subgraphs/predict/predict-omen"
