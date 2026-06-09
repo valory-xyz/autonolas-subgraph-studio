@@ -588,6 +588,65 @@ describe("pearl-transactions / Phase 1b — staking", () => {
     assert.fieldEquals("FundsMovement", id2.toHexString(), "category", "SERVICE_EVICTED");
   });
 
+  test(
+    "ServicesEvicted slot id does NOT collide with another same-tx FundsMovement",
+    () => {
+      // Regression for the row-id collision the fix prevents. Fire a 2-service
+      // eviction at logIndex 2, then a RewardClaimed in the SAME tx at
+      // logIndex 3. Under the old id scheme `txHash.concatI32(logIndex + i)`
+      // the eviction's slot-1 row (2 + 1 = 3) aliased the reward row's
+      // single-segment id `txHash.concatI32(3)` and one silently overwrote the
+      // other → only 2 rows. The two-segment id keeps all three distinct.
+      const tx = mockTx(20);
+
+      const evicted = newServicesEvicted(
+        EPOCH,
+        [SERVICE_ID, SERVICE_ID_2],
+        [MASTER_SAFE, MASTER_SAFE],
+        [AGENT_SAFE, AGENT_SAFE],
+        STAKING_PROXY,
+        tx
+      );
+      evicted.logIndex = BigInt.fromI32(2);
+      handleServicesEvicted(evicted);
+
+      const claimed = newRewardClaimed(
+        SERVICE_ID,
+        EPOCH,
+        MASTER_SAFE,
+        AGENT_SAFE,
+        REWARD,
+        STAKING_PROXY,
+        tx
+      );
+      claimed.logIndex = BigInt.fromI32(3);
+      handleRewardClaimed(claimed);
+
+      // All three rows survive (would be 2 under the old colliding scheme).
+      assert.entityCount("FundsMovement", 3);
+      // Eviction rows: two-segment ids (logIndex 2, slots 0/1).
+      assert.fieldEquals(
+        "FundsMovement",
+        tx.concatI32(2).concatI32(0).toHexString(),
+        "category",
+        "SERVICE_EVICTED"
+      );
+      assert.fieldEquals(
+        "FundsMovement",
+        tx.concatI32(2).concatI32(1).toHexString(),
+        "category",
+        "SERVICE_EVICTED"
+      );
+      // The reward row at single-segment logIndex 3 is intact, NOT clobbered.
+      assert.fieldEquals(
+        "FundsMovement",
+        tx.concatI32(3).toHexString(),
+        "category",
+        "STAKING_REWARD_CLAIM"
+      );
+    }
+  );
+
   test("NFT-Transfer to a known StakingContract does NOT call getOwners()", () => {
     // Seed the StakingContract entity first.
     const sc = new StakingContract(STAKING_PROXY);
