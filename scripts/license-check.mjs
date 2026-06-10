@@ -127,19 +127,29 @@ checker.init(initOpts, (err, report) => {
   }
 
   // Scan-completeness guard (fail loud, never false-green): if the scan didn't
-  // even surface most of the repo's own direct production dependencies, the
-  // dependency-tree read is broken — do NOT report a pass.
+  // surface the repo's own direct production dependencies, the dependency-tree
+  // read is broken — do NOT report a pass.
   const scannedNames = new Set(
     Object.keys(report)
       .filter((k) => k !== SELF_PKG)
       .map((k) => (k.lastIndexOf('@') > 0 ? k.slice(0, k.lastIndexOf('@')) : k)),
   );
   if (DIRECT_PROD_DEPS.length > 0) {
-    const present = DIRECT_PROD_DEPS.filter((d) => scannedNames.has(d)).length;
-    if (present < Math.ceil(DIRECT_PROD_DEPS.length / 2)) {
+    // Two independent floors, both must hold for the scan to be trusted:
+    //   (1) EVERY direct production dependency must appear in the scan. They are
+    //       explicitly declared and installed, so a correct production scan
+    //       cannot omit one. Even a single miss means the tree read is broken
+    //       (the false-green symptom is a near-empty report). A half-floor let
+    //       a badly truncated scan through; PARANOID demands all-present.
+    //   (2) the total scanned count must be at least the direct-dep count — a
+    //       belt-and-braces absolute floor against the degenerate ~1-package read.
+    const missing = DIRECT_PROD_DEPS.filter((d) => !scannedNames.has(d));
+    if (missing.length > 0 || scannedNames.size < DIRECT_PROD_DEPS.length) {
+      const present = DIRECT_PROD_DEPS.length - missing.length;
       console.error(
         `::error::license-check: scan looks incomplete — only ${present}/${DIRECT_PROD_DEPS.length} ` +
           `direct production dependencies were found in a scan of ${scannedNames.size} package(s). ` +
+          (missing.length ? `Missing: ${missing.join(', ')}. ` : '') +
           `The dependency tree could not be read reliably (often a transitive ` +
           `read-installed-packages conflict). Refusing to report a pass. ` +
           `Try a clean reinstall (rm -rf node_modules && yarn install).`,
