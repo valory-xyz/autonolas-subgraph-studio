@@ -93,7 +93,8 @@ enum FundsCategory {
   MASTER_FUNDING_IN                   # subsequent EOA → Master Safe (after SAFE_SETUP_TRANSFER consumed)
   MASTER_WITHDRAWAL                   # Master Safe → EOA
   MASTER_TO_AGENT                     # Master Safe → Agent Safe / Agent EOA (grouped via AgentFundingEvent)
-  AGENT_TO_MASTER                     # Agent Safe → Master Safe (OLAS reward sweep)
+  AGENT_TO_MASTER                     # Agent Safe → Master Safe in native / non-OLAS token
+  AGENT_OLAS_TO_MASTER                # Agent Safe → Master Safe in OLAS (reward sweeps + any manual OLAS return). Split from AGENT_TO_MASTER so the wallet can exclude them at query time; we do NOT distinguish reward sweep vs manual return.
   AGENT_TO_APP                        # Agent Safe → known app contract (FPMM, Polymarket CTFExchange, etc.)
   APP_TO_AGENT                        # known app contract → Agent Safe (payout)
   OTHER                               # tracked address ↔ unmatched counterparty

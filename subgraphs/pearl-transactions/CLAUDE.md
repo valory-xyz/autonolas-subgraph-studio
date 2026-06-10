@@ -65,7 +65,14 @@ deploy; watch Polygon USDC.e sync (the §2.2 cost hotspot).
   `ServiceUnstaked`, `ServiceForceUnstaked`, `ServicesEvicted`.
 - **`OLAS` / `WrappedNative` / per-chain stablecoins** (`src/erc20.ts`
   `handleErc20Transfer`) — one generic ERC-20 `Transfer` handler shared by
-  all token data sources; the row's `token` is `event.address`. Stablecoin
+  all token data sources; the row's `token` is `event.address`. After
+  `classifyTransfer`, an OLAS `AGENT_TO_MASTER` hop is re-tagged
+  `AGENT_OLAS_TO_MASTER` (the reward-sweep bucket) so the wallet can exclude
+  it at query time instead of fetch-then-filter; native / non-OLAS
+  agent→master stays `AGENT_TO_MASTER`. The token isn't visible inside
+  `classifyTransfer` (it only sees from/to), so the split happens in the
+  handler. We do **not** distinguish a reward sweep from a manual OLAS
+  return — both bucket here. Stablecoin
   data sources are rendered from a per-network `erc20Tokens` array in
   `networks.json` via the `{{ erc20TokenDataSources }}` marker in
   `generate-manifests.js`.
