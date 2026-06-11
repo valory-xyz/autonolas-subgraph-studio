@@ -137,5 +137,6 @@ export function handleErc20Transfer(event: TransferEvent): void {
   if (classification.category == "MASTER_TO_AGENT") {
     upsertTokenBalance(to, token, amount, event, /* isDelta = */ true);
   }
-  // AGENT_TO_MASTER also updates Master side; handled above for "to".
+  // AGENT_TO_MASTER / AGENT_OLAS_TO_MASTER also update the Master side;
+  // handled above for "to".
 }

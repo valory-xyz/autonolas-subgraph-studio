@@ -436,6 +436,30 @@ describe("pearl-transactions / Phase 2a — raw OLAS + Safe template", () => {
       "category",
       "AGENT_OLAS_TO_MASTER"
     );
+
+    // Lock the token gate: the category only flips because the token is OLAS.
+    assert.fieldEquals(
+      "FundsMovement",
+      id.toHexString(),
+      "token",
+      OLAS_GNOSIS.toHexString()
+    );
+
+    // AGENT_OLAS_TO_MASTER must move balances exactly like AGENT_TO_MASTER —
+    // the Master Safe (to) is credited and the Agent Safe (from) debited. These
+    // assertions fail if either TokenBalance branch in erc20.ts is dropped.
+    assert.fieldEquals(
+      "TokenBalance",
+      MASTER_SAFE.concat(OLAS_GNOSIS).toHexString(),
+      "balance",
+      AMOUNT.toString()
+    );
+    assert.fieldEquals(
+      "TokenBalance",
+      AGENT_SAFE.concat(OLAS_GNOSIS).toHexString(),
+      "balance",
+      AMOUNT.neg().toString()
+    );
   });
 
   test("Agent Safe → Master Safe in a non-OLAS token stays AGENT_TO_MASTER", () => {
