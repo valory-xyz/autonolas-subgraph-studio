@@ -812,7 +812,7 @@ describe("pearl-transactions / Phase 2a — raw OLAS + Safe template", () => {
 //
 // Covers every (chain, token) tuple in getStablecoinSymbol so a typo in
 // any address literal (or a missing resolver branch) fails loudly here
-// instead of silently mapping to UNKNOWN/18 in production. Each case sets
+// instead of silently mapping to UNKNOWN/6 in production. Each case sets
 // its own network so there's no cross-test ordering dependency.
 describe("pearl-transactions / Phase 2b — stablecoins", () => {
   beforeEach(() => {
