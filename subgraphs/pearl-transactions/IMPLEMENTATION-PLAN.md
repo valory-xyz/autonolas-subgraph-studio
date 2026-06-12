@@ -1,9 +1,9 @@
 # Pearl Funds-Movement Subgraph — Implementation Plan
 
-**Status:** Implemented through Phase 2a (PRs #131/#132/#133 merged to `main`); Phase 2b (#138) in review. This plan is the design-of-record.
+**Status:** All phases implemented and merged to `main` (1a #131, 1b #132, 2a #133, 2b #138, plus follow-ups #143/#144/#147). All four networks are published on The Graph; as of 2026-06-12 Gnosis is at chain head, Optimism/Base/Polygon are still backfilling (Polygon slowest — the §6.3 USDC.e density cost; remediation proposals in [`INDEXING-PERFORMANCE.md`](./INDEXING-PERFORMANCE.md)). This plan is the design-of-record.
 **Subgraph:** `subgraphs/pearl-transactions/` (renamed from `pearl-funds` per §11 #5)
 **Target networks (v1):** Gnosis, Polygon, Optimism, Base
-**Last updated:** 2026-06-01 (Rev. 7 — Phase 2b token-set reconciliation: pUSD is a separate Polymarket contract `0xC011a7E1…`, not a USDC.e UI alias; §4.5 token table + §4.3 networks table rebuilt to the shipped per-chain set (USDC / USDC.e / pUSD); §6.3 records the ship-on-chain decision + Polygon USDC.e rollback condition; Polystrat funds in USDC + pUSD. Rev. 6 — back-propagated the PR #131/#132 producer/consumer fixes so the plan matches shipped code: §3.3 SRTU is indexed, §4.6 SRTU-before-SR event order, §5.1/§5.2 inverted bond-attribution entities + handlers, §5.1 FundsMovement/Token mutability, §5.2 dual NFT guard + handleServiceStaked null-check, §5.4/§7/§8 staleness, pearl-transactions path. Rev. 5 — product decisions finalised: OPENING_BALANCE rows removed, opening balances delegated to the frontend via historyFloorBlock; native → Agent EOA confirmed accepted gap; AC #3 = Path A. Rev. 4 addressed PR #130 review + §11 #6. Rev. 3 added §4.5/§4.6. Rev. 2 added SRTU bond indexing, agent-ID anti-hardcoding, Master EOA tracking. Rev. 1 addressed PR #129 feedback.)
+**Last updated:** 2026-06-12 (Rev. 8 — doc moved from `subgraphs/pearl-funds/` (the rename-orphaned directory) into `subgraphs/pearl-transactions/`; status refreshed to all-phases-shipped + four networks published; stale `pearl-funds` path/name references updated. Rev. 7 — Phase 2b token-set reconciliation: pUSD is a separate Polymarket contract `0xC011a7E1…`, not a USDC.e UI alias; §4.5 token table + §4.3 networks table rebuilt to the shipped per-chain set (USDC / USDC.e / pUSD); §6.3 records the ship-on-chain decision + Polygon USDC.e rollback condition; Polystrat funds in USDC + pUSD. Rev. 6 — back-propagated the PR #131/#132 producer/consumer fixes so the plan matches shipped code: §3.3 SRTU is indexed, §4.6 SRTU-before-SR event order, §5.1/§5.2 inverted bond-attribution entities + handlers, §5.1 FundsMovement/Token mutability, §5.2 dual NFT guard + handleServiceStaked null-check, §5.4/§7/§8 staleness, pearl-transactions path. Rev. 5 — product decisions finalised: OPENING_BALANCE rows removed, opening balances delegated to the frontend via historyFloorBlock; native → Agent EOA confirmed accepted gap; AC #3 = Path A. Rev. 4 addressed PR #130 review + §11 #6. Rev. 3 added §4.5/§4.6. Rev. 2 added SRTU bond indexing, agent-ID anti-hardcoding, Master EOA tracking. Rev. 1 addressed PR #129 feedback.)
 
 This document scopes a new subgraph that indexes **funds movement for the
 Master Safe and Agent Safe of Pearl predict services**. It covers Phase 1
@@ -189,7 +189,7 @@ This matches `staking` and `service-registry`.
 
 ### 4.1 New subgraph, template pattern
 
-`subgraphs/pearl-funds/` — `subgraph.template.yaml` + `networks.json` +
+`subgraphs/pearl-transactions/` — `subgraph.template.yaml` + `networks.json` +
 the shared `scripts/generate-manifests.js`, exactly like `staking`. All
 four target networks share identical data-source *shapes*; only addresses
 and start blocks differ. Per-network constants resolve via a
@@ -365,7 +365,7 @@ Notes:
 - **Other Pearl agent types (out of v1 scope) have different asset sets.**
   Optimus/babydegen on Optimism trades sDAI / MORPHO / DAI / USDC / WETH
   and is covered by `babydegen-optimism`. agents.fun and Modius have
-  their own asset sets, not enumerated here. Adding them to pearl-funds
+  their own asset sets, not enumerated here. Adding them to pearl-transactions
   in a later revision is a per-asset addition of a `Transfer` data source
   + `TrackedAddress` seeding, not a re-architecture.
 - **The service NFT (ERC-721)** is not an "asset" in the wallet-balance
@@ -375,7 +375,7 @@ Notes:
 ### 4.6 Funds-flow diagrams
 
 Three diagrams scoped to v1 (Pearl predict). All entities shown here are
-either indexed by `pearl-funds` (the boxed ones) or referenced by it
+either indexed by `pearl-transactions` (the boxed ones) or referenced by it
 (the dashed ones).
 
 #### A. Wallet hierarchy + ownership
@@ -513,7 +513,7 @@ flowchart LR
 
 The yellow/dashed `POLY` node is covered by `predict-polymarket`
 (joined on Agent Safe address); arrows entering/leaving it represent
-the boundary where pearl-funds' raw `Transfer` ledger ends and the
+the boundary where pearl-transactions' raw `Transfer` ledger ends and the
 in-market bet ledger begins. The same pattern holds for omenstrat on
 Gnosis (substitute Polymarket → Omen FPMM, USDC.e → WXDAI).
 
@@ -1215,9 +1215,9 @@ CI runs `yarn graph codegen` + `yarn graph test` via the `ci.yml` matrix.
    noting: `predict-omen` in *this* repo still has no agent-ID filter;
    the `PREDICT_AGENT_ID = 25` fix is stranded in the unmerged
    `valory-xyz/autonolas-subgraph` PR #89. Recommend porting it
-   independently. (Note: per §2.3, this `pearl-funds` subgraph
+   independently. (Note: per §2.3, this `pearl-transactions` subgraph
    deliberately does **not** gate on agent ID — so this open question
-   is orthogonal to pearl-funds and only affects the trade subgraph.)
+   is orthogonal to pearl-transactions and only affects the trade subgraph.)
 5. ~~**Subgraph name**~~ **Resolved:** renamed to `pearl-transactions`
    (PR #130 scaffold). Directory, CI matrix entry, and Studio slug all
    use `pearl-transactions`.

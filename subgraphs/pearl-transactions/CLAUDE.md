@@ -4,10 +4,10 @@ Funds-movement subgraph for Pearl **Master Safe / Agent Safe** accounts on
 Gnosis, Polygon, Optimism, Base. Powers the Pearl wallet transaction-history
 view (VLOP-73): every fund movement in/out of the Master Safe, classified
 into wallet-history rows. Design-of-record:
-[`IMPLEMENTATION-PLAN.md`](../pearl-funds/IMPLEMENTATION-PLAN.md).
+[`IMPLEMENTATION-PLAN.md`](./IMPLEMENTATION-PLAN.md).
 
 (Directory was renamed from `pearl-funds` per PR #129 review §11 #5 to match
-the consumer.)
+the consumer; the plan doc moved here with it.)
 
 ## Status — all phases implemented; deployed to Studio
 
@@ -19,13 +19,22 @@ the consumer.)
 | 2b | #138 | Per-chain stablecoin `Transfer` data sources — USDC / USDC.e / pUSD |
 
 **Deployed:** `pearl-gnosis-transactions` + `pearl-polygon-transactions`
-**v0.0.5** (Studio account `1716136`). Optimism/Base manifests build but
-aren't deployed on the company account yet (validated on a personal Studio
-account first; the 3-subgraph cap is the blocker).
+**v0.0.5** (Studio account `1716136`); Optimism/Base validated on a
+personal Studio account (the 3-subgraph cap is the company-account
+blocker). All four networks are queryable as **published** subgraphs via
+the Graph gateway (`gateway.thegraph.com/api/subgraphs/id/<ID>`):
+gnosis `29C7oxkMpkE5Pt1LPLLa5HkcAZchCFEd1pHGVTDMsZHT`, polygon
+`FAhPh2M5JXjGysCHG1RzABKXr9efmh92w9bARk5DJ5iV`, optimism
+`JDUWGET5wYQufGsk3VqV9pwDjx7gPDpeGYeWn4pRR9H3`, base
+`77FkWBy4o1LpXkFAQb1hTqzBvaYb4VXYxxYeChih4RmY`. Sync as of 2026-06-12:
+Gnosis at chain head; Optimism ≈1 day out; Base ≈11 days; Polygon ≈15
+days — it indexes ~5 blk/s through the USDC.e-dense range (the §2.2 cost
+hotspot; remediation in
+[`INDEXING-PERFORMANCE.md`](./INDEXING-PERFORMANCE.md)).
 
 **Remaining (Step 5 / 9):** on-Studio verification against real services
 (see [`STEP5-VERIFICATION.md`](./STEP5-VERIFICATION.md)); Optimism/Base
-deploy; watch Polygon USDC.e sync (the §2.2 cost hotspot).
+company-account deploy; watch Polygon USDC.e sync.
 
 ## Entities (`schema.graphql`)
 
