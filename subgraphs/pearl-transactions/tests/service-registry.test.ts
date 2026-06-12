@@ -74,6 +74,11 @@ const PEARL_AGENT_ID = BigInt.fromI32(25); // Gnosis omenstrat
 const OTHER_AGENT_ID = BigInt.fromI32(99); // any non-Pearl agent
 const SERVICE_ID = BigInt.fromI32(42);
 const OTHER_SERVICE_ID = BigInt.fromI32(43);
+// Service.id is the serviceId as Bytes — compute it the mapping's way so
+// assertions match the stored id regardless of byte layout.
+const SERVICE_ID_HEX = Bytes.fromByteArray(
+  Bytes.fromBigInt(SERVICE_ID)
+).toHexString();
 
 const SECURITY_DEPOSIT = BigInt.fromString("10000000000000000000"); // 10 OLAS
 const AGENT_BOND = BigInt.fromString("30000000000000000000"); // 30 OLAS
@@ -413,18 +418,18 @@ describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds",
     );
 
     assert.entityCount("Service", 1);
-    assert.fieldEquals("Service", "42", "serviceId", "42");
-    assert.fieldEquals("Service", "42", "agentIds", "[25]");
+    assert.fieldEquals("Service", SERVICE_ID_HEX, "serviceId", "42");
+    assert.fieldEquals("Service", SERVICE_ID_HEX, "agentIds", "[25]");
     assert.fieldEquals(
       "Service",
-      "42",
+      SERVICE_ID_HEX,
       "operators",
       "[" + OPERATOR.toHexString() + "]"
     );
-    assert.fieldEquals("Service", "42", "state", "DEPLOYED");
+    assert.fieldEquals("Service", SERVICE_ID_HEX, "state", "DEPLOYED");
     assert.fieldEquals(
       "Service",
-      "42",
+      SERVICE_ID_HEX,
       "agentSafe",
       AGENT_SAFE.toHexString()
     );
@@ -451,7 +456,7 @@ describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds",
     // The non-Pearl service is fully indexed; cohort filtering is the
     // consumer's job (Service.agentIds is queryable).
     assert.entityCount("Service", 1);
-    assert.fieldEquals("Service", "42", "agentIds", "[99]");
+    assert.fieldEquals("Service", SERVICE_ID_HEX, "agentIds", "[99]");
   });
 
   test("Multiple RegisterInstance events dedupe agentIds + operators", () => {
@@ -480,10 +485,10 @@ describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds",
       newCreateMultisig(SERVICE_ID, AGENT_SAFE, tx, 2)
     );
 
-    assert.fieldEquals("Service", "42", "agentIds", "[25]");
+    assert.fieldEquals("Service", SERVICE_ID_HEX, "agentIds", "[25]");
     assert.fieldEquals(
       "Service",
-      "42",
+      SERVICE_ID_HEX,
       "operators",
       "[" + OPERATOR.toHexString() + "]"
     );
@@ -577,7 +582,7 @@ describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds",
       assert.entityCount("FundsMovement", 1);
       assert.fieldEquals(
         "Service",
-        "42",
+        SERVICE_ID_HEX,
         "masterSafe",
         MASTER_SAFE.toHexString()
       );
@@ -592,7 +597,7 @@ describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds",
       assert.entityCount("FundsMovement", 1);
       assert.fieldEquals(
         "Service",
-        "42",
+        SERVICE_ID_HEX,
         "masterSafe",
         MASTER_SAFE.toHexString()
       );
@@ -600,7 +605,7 @@ describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds",
       assert.entityCount("ServiceNftCustodyChange", 2);
       assert.fieldEquals(
         "Service",
-        "42",
+        SERVICE_ID_HEX,
         "nftCustodian",
         STAKING_PROXY.toHexString()
       );
@@ -643,13 +648,13 @@ describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds",
 
       // Exactly the two SRTU deposit rows (no SAFE_DEPLOYED here —
       // CreateMultisigWithAgents doesn't touch getOrCreateMasterSafe).
-      assert.entityCount("FundsMovement", 2);
+      assert.entityCount("BondMovement", 2);
       assertBondRow(
         tx,
         1,
         "SERVICE_BOND_DEPOSIT",
         "SECURITY_DEPOSIT",
-        "42",
+        SERVICE_ID_HEX,
         SECURITY_DEPOSIT.toString()
       );
       assertBondRow(
@@ -657,7 +662,7 @@ describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds",
         3,
         "SERVICE_BOND_DEPOSIT",
         "AGENT_BOND",
-        "42",
+        SERVICE_ID_HEX,
         AGENT_BOND.toString()
       );
     }
@@ -697,13 +702,13 @@ describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds",
         )
       );
 
-      assert.entityCount("FundsMovement", 1);
+      assert.entityCount("BondMovement", 1);
       assertBondRow(
         tx,
         0,
         "SERVICE_BOND_DEPOSIT",
         "AGENT_BOND",
-        "42",
+        SERVICE_ID_HEX,
         AGENT_BOND.toString()
       );
     }
@@ -730,13 +735,13 @@ describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds",
         newOperatorUnbond(OPERATOR, SERVICE_ID, tx, 3)
       );
 
-      assert.entityCount("FundsMovement", 2);
+      assert.entityCount("BondMovement", 2);
       assertBondRow(
         tx,
         0,
         "SERVICE_BOND_REFUND",
         "SECURITY_DEPOSIT",
-        "42",
+        SERVICE_ID_HEX,
         SECURITY_DEPOSIT.toString()
       );
       assertBondRow(
@@ -744,7 +749,7 @@ describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds",
         2,
         "SERVICE_BOND_REFUND",
         "AGENT_BOND",
-        "42",
+        SERVICE_ID_HEX,
         AGENT_BOND.toString()
       );
     }
@@ -783,17 +788,17 @@ describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds",
         0,
         "SERVICE_BOND_REFUND",
         "AGENT_BOND",
-        "42",
+        SERVICE_ID_HEX,
         AGENT_BOND.toString()
       );
       assert.fieldEquals(
-        "FundsMovement",
+        "BondMovement",
         id.toHexString(),
         "masterSafe",
         MASTER_SAFE.toHexString()
       );
       assert.fieldEquals(
-        "FundsMovement",
+        "BondMovement",
         id.toHexString(),
         "agentSafe",
         AGENT_SAFE.toHexString()
@@ -813,16 +818,16 @@ describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds",
         newTokenDeposit(MASTER_SAFE, OLAS_GNOSIS, SECURITY_DEPOSIT, tx, 0)
       );
 
-      assert.entityCount("FundsMovement", 1);
+      assert.entityCount("BondMovement", 1);
       const id = tx.concatI32(0);
       assert.fieldEquals(
-        "FundsMovement",
+        "BondMovement",
         id.toHexString(),
         "category",
         "SERVICE_BOND_DEPOSIT"
       );
       assert.fieldEquals(
-        "FundsMovement",
+        "BondMovement",
         id.toHexString(),
         "amount",
         SECURITY_DEPOSIT.toString()
@@ -858,13 +863,13 @@ describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds",
         newActivateRegistration(SERVICE_ID, txA, 1)
       );
 
-      assert.entityCount("FundsMovement", 1);
+      assert.entityCount("BondMovement", 1);
       assertBondRow(
         txA,
         0,
         "SERVICE_BOND_DEPOSIT",
         "SECURITY_DEPOSIT",
-        "42",
+        SERVICE_ID_HEX,
         SECURITY_DEPOSIT.toString()
       );
     }
@@ -882,26 +887,29 @@ function assertBondRow(
   expectedAmount: string
 ): void {
   const id = txHash.concatI32(logIndex);
+  // Bond rows live in BondMovement now (split out so FundsMovement is immutable).
   assert.fieldEquals(
-    "FundsMovement",
+    "BondMovement",
     id.toHexString(),
     "category",
     expectedCategory
   );
   assert.fieldEquals(
-    "FundsMovement",
+    "BondMovement",
     id.toHexString(),
     "bondType",
     expectedBondType
   );
+  // Service.id is Bytes now — caller passes the already-computed hex
+  // (SERVICE_ID_HEX) so the width matches the event-derived serviceId.
   assert.fieldEquals(
-    "FundsMovement",
+    "BondMovement",
     id.toHexString(),
     "service",
     expectedServiceId
   );
   assert.fieldEquals(
-    "FundsMovement",
+    "BondMovement",
     id.toHexString(),
     "amount",
     expectedAmount

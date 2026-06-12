@@ -47,8 +47,8 @@ type AgentSafe @entity(immutable: false) {
 }
 
 type Service @entity(immutable: false) {
-  id: ID!                             # serviceId as string
-  serviceId: BigInt!
+  id: Bytes!                          # serviceId as Bytes (Bytes.fromBigInt(serviceId)) — halves FK storage vs the old string id
+  serviceId: BigInt!                  # numeric service id (use this for display)
   agentIds: [Int!]!                   # deduplicated; from RegisterInstance — consumer filter
   operators: [Bytes!]!                # deduplicated; sub-cohort filter
   masterSafe: MasterSafe
@@ -64,8 +64,8 @@ type Service @entity(immutable: false) {
 # Staking proxy / "staking contract" — created on
 # StakingFactory.InstanceCreated for any allowed implementation. Config
 # snapshot is captured via contract calls at creation time; nothing
-# updates afterward.
-type StakingContract @entity(immutable: false) {
+# updates afterward — hence immutable.
+type StakingContract @entity(immutable: true) {
   id: Bytes!                          # staking proxy address
   implementation: Bytes!
   minStakingDeposit: BigInt!
@@ -117,12 +117,12 @@ enum FundsSource {
   RAW_TRANSFER                        # Direct ERC-20 / native Transfer (Phase 2)
 }
 
-type FundsMovement @entity(immutable: false) {
-  # Mutable: SRTU TokenDeposit/TokenRefund rows are created bondType/
-  # service-less and backfilled by the matching ServiceRegistryL2 handler
-  # later in the same tx (see PendingBondRow). All other rows are
-  # write-once in practice.
-  id: Bytes!                          # see §5.1; tx.hash.concatI32(logIndex) or a stable sub-index for synthetic rows
+type FundsMovement @entity(immutable: true) {
+  # Immutable: every FundsMovement is write-once. The only rows that were ever
+  # backfilled (SRTU bond deposit/refund) now live in BondMovement, so this
+  # high-cardinality ledger skips block-range versioning — cheaper writes AND
+  # cheaper reads (the consumer-facing queries).
+  id: Bytes!                          # tx.hash.concatI32(logIndex) or a stable sub-index for synthetic rows
   service: Service
   masterSafe: MasterSafe
   agentSafe: AgentSafe
@@ -130,10 +130,33 @@ type FundsMovement @entity(immutable: false) {
   epoch: BigInt                       # staking-side row only; from the StakingProxy event
   category: FundsCategory!
   source: FundsSource!
-  bondType: ServiceBondType           # nullable; populated for SERVICE_BOND_DEPOSIT/REFUND when attribution succeeds
   agentFundingEvent: AgentFundingEvent # Phase 2a backref — set for MASTER_TO_AGENT rows grouped by same-tx funding action
   token: Bytes                        # token address (null for SAFE_DEPLOYED / SERVICE_EVICTED / native rows where Token entity is implicit)
   amount: BigInt!                     # 0 for SAFE_DEPLOYED / SERVICE_EVICTED informational rows
+  from: Bytes!
+  to: Bytes!
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+# SRTU bond deposit / refund rows. Split out of FundsMovement because they are
+# the only rows that get mutated: the SRTU producer creates the row
+# serviceId/bondType-less and the matching ServiceRegistryL2 consumer backfills
+# serviceId + bondType + agentSafe later in the same tx (see PendingBondRow).
+# Isolating this small mutable entity lets FundsMovement stay immutable.
+# Consumer note: the wallet must union FundsMovement + BondMovement for a
+# complete ledger (bond rows are no longer in FundsMovement).
+type BondMovement @entity(immutable: false) {
+  id: Bytes!                          # tx.hash.concatI32(logIndex)
+  service: Service
+  masterSafe: MasterSafe
+  agentSafe: AgentSafe
+  category: FundsCategory!            # SERVICE_BOND_DEPOSIT | SERVICE_BOND_REFUND
+  source: FundsSource!
+  bondType: ServiceBondType           # nullable; populated when attribution succeeds
+  token: Bytes
+  amount: BigInt!
   from: Bytes!
   to: Bytes!
   blockNumber: BigInt!
@@ -205,7 +228,7 @@ type PendingBondCounter @entity(immutable: false) {
 # OperatorUnbond) backfills the row's serviceId + bondType.
 type PendingBondRow @entity(immutable: false) {
   id: Bytes!                          # tx.hash.concatI32(slot)
-  fundsMovement: Bytes!               # FundsMovement id awaiting serviceId + bondType
+  bondMovement: Bytes!                # BondMovement id awaiting serviceId + bondType
   attributed: Boolean!
 }
 
@@ -220,31 +243,23 @@ type AgentBondAttributionGuard @entity(immutable: true) {
 
 # --- Phase 2a — raw token / native ledger ----------------------------
 
-# Token metadata snapshot. Populated lazily on first encounter.
-type Token @entity(immutable: false) {
+# Token metadata snapshot. Populated lazily on first encounter, first-write-
+# wins — never updated, hence immutable.
+type Token @entity(immutable: true) {
   id: Bytes!                          # token address
   symbol: String!
   decimals: Int!
 }
 
-# A Master Safe or Agent Safe we actively watch. Populated when the
-# entity becomes known via the registry / staking path. Lookup of
-# from/to in the OLAS Transfer handler routes through this table.
-type TrackedSafe @entity(immutable: false) {
-  id: Bytes!                          # Safe address
-  role: String!                       # MASTER | AGENT
-  service: Service                    # null for MASTER (a Master Safe owns multiple services)
-  masterSafe: MasterSafe!
-}
-
-# A Master EOA or Agent EOA we actively watch. Master EOAs are added
-# in Phase 1a via getOrCreateMasterSafe's getOwners(); agent EOAs come
-# from RegisterInstance.agentInstance.
-type TrackedEOA @entity(immutable: false) {
-  id: Bytes!                          # EOA address
-  role: String!                       # MASTER_EOA | AGENT_EOA
-  masterSafe: MasterSafe              # null for AGENT_EOA shared across services
-  service: Service                    # null for MASTER_EOA
+# Every address we actively watch — Master/Agent Safe, Master/Agent EOA, and
+# staking proxy — collapsed into one table so the hot path (classifyTransfer)
+# does TWO loads per transfer (from + to) instead of six. Write-once, hence
+# immutable: upserts early-return on an existing row and nothing mutates it.
+type TrackedAddress @entity(immutable: true) {
+  id: Bytes!                          # tracked address
+  role: String!                       # MASTER | AGENT | MASTER_EOA | AGENT_EOA | STAKING
+  masterSafe: MasterSafe              # null for STAKING (and any AGENT_EOA not yet linked)
+  service: Service                    # null for MASTER / MASTER_EOA / STAKING
   firstTrackedBlock: BigInt!
 }
 

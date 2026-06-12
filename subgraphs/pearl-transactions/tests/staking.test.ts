@@ -59,6 +59,11 @@ const DISALLOWED_IMPL = Address.fromString(
 );
 
 const SERVICE_ID = BigInt.fromI32(42);
+// Service.id is the serviceId as Bytes — compute it the same way the mapping
+// does so assertions match the stored id regardless of byte layout.
+const SERVICE_ID_HEX = Bytes.fromByteArray(
+  Bytes.fromBigInt(SERVICE_ID)
+).toHexString();
 const SERVICE_ID_2 = BigInt.fromI32(43);
 const EPOCH = BigInt.fromI32(7);
 const REWARD = BigInt.fromString("1500000000000000000"); // 1.5 OLAS
@@ -462,22 +467,22 @@ describe("pearl-transactions / Phase 1b — staking", () => {
       newServiceStaked(SERVICE_ID, EPOCH, MASTER_SAFE, AGENT_SAFE, STAKING_PROXY, tx)
     );
 
-    assert.fieldEquals("Service", "42", "state", "STAKED");
+    assert.fieldEquals("Service", SERVICE_ID_HEX, "state", "STAKED");
     assert.fieldEquals(
       "Service",
-      "42",
+      SERVICE_ID_HEX,
       "masterSafe",
       MASTER_SAFE.toHexString()
     );
     assert.fieldEquals(
       "Service",
-      "42",
+      SERVICE_ID_HEX,
       "agentSafe",
       AGENT_SAFE.toHexString()
     );
     assert.fieldEquals(
       "Service",
-      "42",
+      SERVICE_ID_HEX,
       "currentStakingContract",
       STAKING_PROXY.toHexString()
     );
@@ -527,7 +532,7 @@ describe("pearl-transactions / Phase 1b — staking", () => {
 
     assert.fieldEquals(
       "Service",
-      "42",
+      SERVICE_ID_HEX,
       "totalOlasRewardsClaimed",
       REWARD.toString()
     );
@@ -553,7 +558,7 @@ describe("pearl-transactions / Phase 1b — staking", () => {
       )
     );
 
-    assert.fieldEquals("Service", "42", "state", "UNSTAKED");
+    assert.fieldEquals("Service", SERVICE_ID_HEX, "state", "UNSTAKED");
     // currentStakingContract should be cleared (null).
     const id = tx2.concatI32(0);
     assert.fieldEquals(
@@ -609,7 +614,7 @@ describe("pearl-transactions / Phase 1b — staking", () => {
     // Service still gets nftCustodian updated.
     assert.fieldEquals(
       "Service",
-      "42",
+      SERVICE_ID_HEX,
       "nftCustodian",
       STAKING_PROXY.toHexString()
     );
@@ -687,7 +692,7 @@ describe("pearl-transactions / Phase 1b — staking", () => {
     // Service.totalOlasRewardsClaimed = 2x reward.
     assert.fieldEquals(
       "Service",
-      "42",
+      SERVICE_ID_HEX,
       "totalOlasRewardsClaimed",
       REWARD.plus(REWARD).toString()
     );
@@ -698,7 +703,7 @@ describe("pearl-transactions / Phase 1b — staking", () => {
     handleServiceStaked(
       newServiceStaked(SERVICE_ID, EPOCH, MASTER_SAFE, AGENT_SAFE, STAKING_PROXY, tx1)
     );
-    assert.fieldEquals("Service", "42", "state", "STAKED");
+    assert.fieldEquals("Service", SERVICE_ID_HEX, "state", "STAKED");
 
     // Three reward claims across epochs.
     const tx2 = mockTx(14);
@@ -753,12 +758,12 @@ describe("pearl-transactions / Phase 1b — staking", () => {
     // Cumulative: 4 × REWARD.
     assert.fieldEquals(
       "Service",
-      "42",
+      SERVICE_ID_HEX,
       "totalOlasRewardsClaimed",
       REWARD.times(BigInt.fromI32(4)).toString()
     );
 
     // Final state.
-    assert.fieldEquals("Service", "42", "state", "UNSTAKED");
+    assert.fieldEquals("Service", SERVICE_ID_HEX, "state", "UNSTAKED");
   });
 });

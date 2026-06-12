@@ -102,11 +102,11 @@ function emitNativeOutPlaceholder(
 ): void {
   // Only emit if `safeAddr` is a tracked safe — otherwise the event
   // came from an unrelated Safe that shares the template.
-  // (TrackedSafe.load is checked indirectly via classifyTransfer
+  // (TrackedAddress.load is checked indirectly via classifyTransfer
   // when from/to side matters; for placeholder we just need the safe
   // tracked-ness.)
   const masterSafe = MasterSafe.load(safeAddr);
-  // TrackedSafe lookup is more direct but a MasterSafe entity exists
+  // TrackedAddress lookup is more direct but a MasterSafe entity exists
   // iff the safe was first-sighted as a Master Safe. Agent Safes
   // don't get MasterSafe entities, so we'd miss them here. Use
   // classifyTransfer with a synthetic zero-address "from" instead

@@ -3,7 +3,7 @@ import {
   TokenDeposit as TokenDepositEvent,
   TokenRefund as TokenRefundEvent,
 } from "../generated/ServiceRegistryTokenUtility/ServiceRegistryTokenUtility";
-import { FundsMovement, TrackedSafe } from "../generated/schema";
+import { BondMovement, TrackedAddress } from "../generated/schema";
 import {
   CATEGORY_SERVICE_BOND_DEPOSIT,
   CATEGORY_SERVICE_BOND_REFUND,
@@ -13,12 +13,12 @@ import { enqueuePendingBondRow, fundsMovementId } from "./utils";
 
 // linkBondMasterSafe — the SRTU `account` is the bond payer, which in
 // Pearl is the Master Safe. Stamp it onto the SEMANTIC bond row so the
-// wallet (which filters FundsMovement by masterSafe) surfaces this row
+// wallet (which filters BondMovement by masterSafe) surfaces this row
 // directly — the RAW_TRANSFER duplicate that used to carry the link is
 // now suppressed in classifyTransfer. Guarded to addresses already
 // tracked as MASTER so non-Pearl bonds stay unlinked.
-function linkBondMasterSafe(row: FundsMovement, account: Address): void {
-  const tracked = TrackedSafe.load(account);
+function linkBondMasterSafe(row: BondMovement, account: Address): void {
+  const tracked = TrackedAddress.load(account);
   if (tracked != null && tracked.role == "MASTER") {
     row.masterSafe = tracked.masterSafe;
   }
@@ -33,7 +33,7 @@ function linkBondMasterSafe(row: FundsMovement, account: Address): void {
 // backfills serviceId + bondType via dequeueAndAttribute. If no such
 // event follows, the row stays attribution-less (amount preserved).
 export function handleTokenDeposit(event: TokenDepositEvent): void {
-  const row = new FundsMovement(fundsMovementId(event));
+  const row = new BondMovement(fundsMovementId(event));
   row.category = CATEGORY_SERVICE_BOND_DEPOSIT;
   row.source = SOURCE_SEMANTIC;
   row.token = event.params.token;
@@ -53,7 +53,7 @@ export function handleTokenDeposit(event: TokenDepositEvent): void {
 // cycle. Backfilled by the following TerminateService (SECURITY_DEPOSIT)
 // or OperatorUnbond (AGENT_BOND) ServiceRegistryL2 event in the same tx.
 export function handleTokenRefund(event: TokenRefundEvent): void {
-  const row = new FundsMovement(fundsMovementId(event));
+  const row = new BondMovement(fundsMovementId(event));
   row.category = CATEGORY_SERVICE_BOND_REFUND;
   row.source = SOURCE_SEMANTIC;
   row.token = event.params.token;

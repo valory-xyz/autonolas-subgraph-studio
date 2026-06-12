@@ -17,12 +17,7 @@ import {
   RemovedOwner,
   SafeReceived,
 } from "../generated/templates/Safe/GnosisSafe";
-import {
-  MasterSafe,
-  StakingContract,
-  TrackedEOA,
-  TrackedSafe,
-} from "../generated/schema";
+import { MasterSafe, TrackedAddress } from "../generated/schema";
 import { handleErc20Transfer } from "../src/erc20";
 import {
   handleSafeAddedOwner,
@@ -292,31 +287,33 @@ function seedMasterSafe(setupTransferSeen: boolean): void {
   ms.setupTransferSeen = setupTransferSeen;
   ms.save();
 
-  const trackedSafe = new TrackedSafe(MASTER_SAFE);
-  trackedSafe.role = "MASTER";
-  trackedSafe.masterSafe = MASTER_SAFE;
-  trackedSafe.save();
+  seedTrackedAddress(MASTER_SAFE, "MASTER", MASTER_SAFE, null);
+  seedTrackedAddress(MASTER_EOA, "MASTER_EOA", MASTER_SAFE, null);
+}
 
-  const trackedEoa = new TrackedEOA(MASTER_EOA);
-  trackedEoa.role = "MASTER_EOA";
-  trackedEoa.masterSafe = MASTER_SAFE;
-  trackedEoa.firstTrackedBlock = BigInt.fromI32(1);
-  trackedEoa.save();
+// serviceEntityId equivalent for tests — Service.id is the serviceId as Bytes.
+function serviceBytes(serviceId: string): Bytes {
+  return Bytes.fromByteArray(Bytes.fromBigInt(BigInt.fromString(serviceId)));
+}
+
+function seedTrackedAddress(
+  address: Address,
+  role: string,
+  masterSafe: Address | null,
+  service: Bytes | null
+): void {
+  const tracked = new TrackedAddress(address);
+  tracked.role = role;
+  if (masterSafe !== null) tracked.masterSafe = masterSafe;
+  if (service !== null) tracked.service = service;
+  tracked.firstTrackedBlock = BigInt.fromI32(1);
+  tracked.save();
 }
 
 function seedAgentSafe(serviceId: string): void {
-  const trackedSafe = new TrackedSafe(AGENT_SAFE);
-  trackedSafe.role = "AGENT";
-  trackedSafe.masterSafe = MASTER_SAFE;
-  trackedSafe.service = serviceId;
-  trackedSafe.save();
-
-  const trackedEoa = new TrackedEOA(AGENT_EOA);
-  trackedEoa.role = "AGENT_EOA";
-  trackedEoa.masterSafe = MASTER_SAFE;
-  trackedEoa.service = serviceId;
-  trackedEoa.firstTrackedBlock = BigInt.fromI32(1);
-  trackedEoa.save();
+  const svc = serviceBytes(serviceId);
+  seedTrackedAddress(AGENT_SAFE, "AGENT", MASTER_SAFE, svc);
+  seedTrackedAddress(AGENT_EOA, "AGENT_EOA", MASTER_SAFE, svc);
 }
 
 // ----------------- Tests -----------------
@@ -617,20 +614,12 @@ describe("pearl-transactions / Phase 2a — raw OLAS + Safe template", () => {
   test("StakingProxy → Agent Safe OLAS Transfer = STAKING_REWARD_CLAIM raw reconciliation", () => {
     seedMasterSafe(true);
     seedAgentSafe("42");
-    // Seed a StakingContract entity at STAKING_PROXY (any Bytes works
-    // for the classify lookup).
+    // Seed the staking proxy as a TrackedAddress(STAKING) — classifyTransfer
+    // now keys the reward-claim path on the merged tracked-address table.
     const STAKING_PROXY = Address.fromString(
       "0x9999999999999999999999999999999999999999"
     );
-    const sc = new StakingContract(STAKING_PROXY);
-    sc.implementation = Address.fromString(
-      "0xEa00be6690a871827fAfD705440D20dd75e67AB1"
-    );
-    sc.minStakingDeposit = BigInt.fromI32(10);
-    sc.numAgentInstances = BigInt.fromI32(1);
-    sc.createdBlock = BigInt.fromI32(1);
-    sc.createdTimestamp = BigInt.fromI32(1);
-    sc.save();
+    seedTrackedAddress(STAKING_PROXY, "STAKING", null, null);
 
     const tx = mockTx(23);
     handleErc20Transfer(newOlasTransfer(STAKING_PROXY, AGENT_SAFE, AMOUNT, tx, 0));

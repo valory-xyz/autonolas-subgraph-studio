@@ -1,4 +1,4 @@
-specVersion: 1.0.0
+specVersion: 1.3.0
 indexerHints:
   prune: auto
 schema:
@@ -13,7 +13,7 @@ dataSources:
       startBlock: {{ ServiceRegistryL2.startBlock }}
     mapping:
       kind: ethereum/events
-      apiVersion: 0.0.7
+      apiVersion: 0.0.9
       language: wasm/assemblyscript
       entities:
         - Service
@@ -56,7 +56,7 @@ dataSources:
       startBlock: {{ ServiceRegistryTokenUtility.startBlock }}
     mapping:
       kind: ethereum/events
-      apiVersion: 0.0.7
+      apiVersion: 0.0.9
       language: wasm/assemblyscript
       entities:
         - FundsMovement
@@ -80,7 +80,7 @@ dataSources:
       startBlock: {{ StakingFactory.startBlock }}
     mapping:
       kind: ethereum/events
-      apiVersion: 0.0.7
+      apiVersion: 0.0.9
       language: wasm/assemblyscript
       entities:
         - StakingContract
@@ -102,7 +102,7 @@ dataSources:
       startBlock: {{ OLAS.startBlock }}
     mapping:
       kind: ethereum/events
-      apiVersion: 0.0.7
+      apiVersion: 0.0.9
       language: wasm/assemblyscript
       entities:
         - FundsMovement
@@ -125,7 +125,7 @@ dataSources:
       startBlock: {{ WrappedNative.startBlock }}
     mapping:
       kind: ethereum/events
-      apiVersion: 0.0.7
+      apiVersion: 0.0.9
       language: wasm/assemblyscript
       entities:
         - FundsMovement
@@ -151,7 +151,7 @@ templates:
       abi: StakingProxy
     mapping:
       kind: ethereum/events
-      apiVersion: 0.0.7
+      apiVersion: 0.0.9
       language: wasm/assemblyscript
       entities:
         - Service
@@ -187,7 +187,7 @@ templates:
       abi: GnosisSafe
     mapping:
       kind: ethereum/events
-      apiVersion: 0.0.7
+      apiVersion: 0.0.9
       language: wasm/assemblyscript
       entities:
         - FundsMovement

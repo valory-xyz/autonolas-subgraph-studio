@@ -33,10 +33,16 @@ deploy; watch Polygon USDC.e sync (the §2.2 cost hotspot).
   `historyFloorBlock`, `setupTransferSeen`), `AgentSafe`, `Service`
   (`agentIds`/`operators` consumer-filter lists, `state`, `nftCustodian`,
   `currentStakingContract`, `totalOlasRewardsClaimed`), `StakingContract`.
-- **Ledger:** `FundsMovement` (**`immutable: false`** — see bond queue
-  below), `DailyServiceFunds`, `ServiceNftCustodyChange`,
-  `AgentFundingEvent`.
-- **Phase-2 tracking:** `Token`, `TrackedSafe`, `TrackedEOA`, `TokenBalance`.
+- **Ledger:** `FundsMovement` (**`immutable: true`** — the bond rows that used
+  to be backfilled now live in a separate mutable `BondMovement` entity, so the
+  high-cardinality ledger skips block-range versioning), `BondMovement`
+  (SRTU bond deposit/refund; mutable, backfilled via the queue),
+  `DailyServiceFunds`, `ServiceNftCustodyChange`, `AgentFundingEvent`.
+  **Consumer note:** a complete ledger is `FundsMovement` **∪** `BondMovement`.
+- **Phase-2 tracking:** `Token` (immutable), `TrackedAddress` (immutable —
+  one table for MASTER / AGENT / MASTER_EOA / AGENT_EOA / STAKING roles,
+  replacing the old `TrackedSafe`+`TrackedEOA`; halves `classifyTransfer`'s
+  hot-path loads from 6 → 2), `TokenBalance`.
 - **Internal helpers:** `ServiceIndex`, `PendingRegistration`,
   `PendingBondCounter`, `PendingBondRow`, `AgentBondAttributionGuard`.
 - **Enums:** `FundsCategory`, `ServiceBondType`, `FundsSource`.
@@ -93,12 +99,13 @@ deploy; watch Polygon USDC.e sync (the §2.2 cost hotspot).
   on-chain the SRTU event fires **before** its `ServiceRegistryL2`
   counterpart in every path (`ServiceManager` calls `*TokenDeposit`/
   `*TokenRefund` before the registry fn), so the **SRTU handler is the
-  producer** (creates the `FundsMovement` row + enqueues its id) and the
+  producer** (creates the `BondMovement` row + enqueues its id) and the
   **`ServiceRegistryL2` handler is the consumer** (dequeues + backfills
-  `serviceId` + `bondType`). Hence `FundsMovement` is mutable. `bondType`
-  stays null when no SR event follows.
-- **`classifyTransfer`** — routes `(from, to)` against `TrackedSafe` /
-  `TrackedEOA` / `StakingContract` / SRTU / ServiceRegistryL2, most-specific
+  `serviceId` + `bondType`). Bond rows are the only backfilled rows, so they
+  live in the mutable `BondMovement` entity (letting `FundsMovement` stay
+  immutable). `bondType` stays null when no SR event follows.
+- **`classifyTransfer`** — two `TrackedAddress` loads (`from` + `to`) route
+  `(from, to)` by role against SRTU / ServiceRegistryL2, most-specific
   first, into the `FundsCategory` (`MASTER_FUNDING_IN`, `MASTER_TO_AGENT`,
   `AGENT_TO_MASTER`, `MASTER_WITHDRAWAL`, `STAKING_REWARD_CLAIM`,
   `SAFE_SETUP_TRANSFER`, …). Returns null for untracked counterparties (row

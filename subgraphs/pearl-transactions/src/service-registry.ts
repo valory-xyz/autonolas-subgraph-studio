@@ -25,6 +25,7 @@ import {
   getOrCreateMasterSafe,
   getOrCreateService,
   isStakingContract,
+  serviceEntityId,
   setServiceIndex,
 } from "./utils";
 
@@ -42,7 +43,7 @@ export function handleRegisterInstance(event: RegisterInstanceEvent): void {
   const agentId = event.params.agentId.toI32();
   const operator = event.params.operator;
 
-  const existing = Service.load(serviceId.toString());
+  const existing = Service.load(serviceEntityId(serviceId));
   if (existing != null) {
     appendServiceRegistration(existing, agentId, operator);
     existing.updatedTimestamp = event.block.timestamp;
@@ -90,8 +91,9 @@ export function handleCreateMultisigWithAgents(
   service.state = SERVICE_STATE_DEPLOYED;
   service.updatedTimestamp = event.block.timestamp;
   drainPendingRegistration(service, serviceId);
-  service.save();
 
+  // Single save: getOrCreateAgentSafe reads the in-memory `service`, not the
+  // store, so persist once after both mutations land.
   const agentSafe = getOrCreateAgentSafe(multisig, service, event);
   service.agentSafe = agentSafe.id;
   service.save();

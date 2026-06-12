@@ -3,7 +3,7 @@ import { InstanceCreated as InstanceCreatedEvent } from "../generated/StakingFac
 import { StakingProxy as StakingProxyTemplate } from "../generated/templates";
 import { StakingProxy as StakingProxyContract } from "../generated/templates/StakingProxy/StakingProxy";
 import { isAllowedImplementation } from "./constants";
-import { getOrCreateStakingContract } from "./utils";
+import { getOrCreateStakingContract, upsertTrackedAddress } from "./utils";
 
 // handleInstanceCreated — fires on every StakingFactory.InstanceCreated.
 //
@@ -49,6 +49,17 @@ export function handleInstanceCreated(event: InstanceCreatedEvent): void {
     minStakingDepositResult.value,
     numAgentInstancesResult.value,
     event
+  );
+
+  // Register the proxy as a TrackedAddress(STAKING) so classifyTransfer's hot
+  // path recognises staking-reward sends via the single tracked-address load
+  // (StakingContract stays as the config entity / NFT-guard lookup).
+  upsertTrackedAddress(
+    proxyAddress,
+    "STAKING",
+    null,
+    null,
+    event.block.number
   );
 
   StakingProxyTemplate.create(proxyAddress);
