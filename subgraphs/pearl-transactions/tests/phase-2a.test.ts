@@ -420,12 +420,67 @@ describe("pearl-transactions / Phase 2a — raw OLAS + Safe template", () => {
     );
   });
 
-  test("Agent Safe → Master Safe classifies as AGENT_TO_MASTER (reward sweep)", () => {
+  test("Agent Safe → Master Safe in OLAS classifies as AGENT_OLAS_TO_MASTER", () => {
     seedMasterSafe(true);
     seedAgentSafe(SERVICE_ID);
 
     const tx = mockTx(4);
     handleErc20Transfer(newOlasTransfer(AGENT_SAFE, MASTER_SAFE, AMOUNT, tx, 0));
+
+    // OLAS agent→master (the reward-sweep bucket) gets its own category so
+    // the wallet can exclude it at query time.
+    const id = tx.concatI32(0);
+    assert.fieldEquals(
+      "FundsMovement",
+      id.toHexString(),
+      "category",
+      "AGENT_OLAS_TO_MASTER"
+    );
+
+    // Lock the token gate: the category only flips because the token is OLAS.
+    assert.fieldEquals(
+      "FundsMovement",
+      id.toHexString(),
+      "token",
+      OLAS_GNOSIS.toHexString()
+    );
+
+    // AGENT_OLAS_TO_MASTER must move balances exactly like AGENT_TO_MASTER —
+    // the Master Safe (to) is credited and the Agent Safe (from) debited. These
+    // assertions fail if either TokenBalance branch in erc20.ts is dropped.
+    assert.fieldEquals(
+      "TokenBalance",
+      MASTER_SAFE.concat(OLAS_GNOSIS).toHexString(),
+      "balance",
+      AMOUNT.toString()
+    );
+    assert.fieldEquals(
+      "TokenBalance",
+      AGENT_SAFE.concat(OLAS_GNOSIS).toHexString(),
+      "balance",
+      AMOUNT.neg().toString()
+    );
+  });
+
+  test("Agent Safe → Master Safe in a non-OLAS token stays AGENT_TO_MASTER", () => {
+    seedMasterSafe(true);
+    seedAgentSafe(SERVICE_ID);
+
+    // The split is token-gated: only OLAS becomes AGENT_OLAS_TO_MASTER.
+    const usdc = Address.fromString(
+      "0xDDAfbb505ad214D7b80b1f830fcCc89B60fb7A83"
+    );
+    const tx = mockTx(41);
+    handleErc20Transfer(
+      newErc20TransferAt(
+        usdc,
+        AGENT_SAFE,
+        MASTER_SAFE,
+        BigInt.fromString("1000000"),
+        tx,
+        0
+      )
+    );
 
     const id = tx.concatI32(0);
     assert.fieldEquals(
@@ -757,7 +812,7 @@ describe("pearl-transactions / Phase 2a — raw OLAS + Safe template", () => {
 //
 // Covers every (chain, token) tuple in getStablecoinSymbol so a typo in
 // any address literal (or a missing resolver branch) fails loudly here
-// instead of silently mapping to UNKNOWN/18 in production. Each case sets
+// instead of silently mapping to UNKNOWN/6 in production. Each case sets
 // its own network so there's no cross-test ordering dependency.
 describe("pearl-transactions / Phase 2b — stablecoins", () => {
   beforeEach(() => {

@@ -648,16 +648,19 @@ export function getOrCreateToken(tokenAddress: Address): Token {
       // Reached here only via a tracked Transfer, so this is an indexed
       // token with no metadata resolver — almost certainly an
       // `erc20Tokens` entry in networks.json without a matching
-      // getStablecoinSymbol branch. UNKNOWN/18 would silently misformat a
-      // 6-decimal stablecoin by 10^12 in every consumer, and first-write-
-      // wins makes it permanent. Loud on purpose so it surfaces in
-      // indexing logs, not in the wallet UI.
+      // getStablecoinSymbol branch. Every such indexed token (OLAS and
+      // wrapped-native are handled above) is a stablecoin, so default to
+      // 6 decimals — NOT 18: an 18-decimal fallback would silently
+      // misformat the amount by 10^12 in every consumer, and first-write-
+      // wins makes it permanent. log.critical is loud on purpose (drift
+      // canary), but we must not rely on it aborting — graph-node may
+      // continue — so the persisted value has to be safe by itself.
       log.critical(
-        "getOrCreateToken: no symbol/decimals resolver for indexed token {} on {} — add a getStablecoinSymbol branch (networks.json `erc20Tokens` and the resolver are out of sync). Falling back to UNKNOWN/18.",
+        "getOrCreateToken: no symbol/decimals resolver for indexed token {} on {} — add a getStablecoinSymbol branch (networks.json `erc20Tokens` and the resolver are out of sync). Defaulting to UNKNOWN/6.",
         [tokenAddress.toHexString(), network]
       );
       token.symbol = "UNKNOWN";
-      token.decimals = 18;
+      token.decimals = 6;
     }
   }
   token.save();
@@ -680,7 +683,9 @@ export function upsertTokenBalance(
     bal = new TokenBalance(id);
     bal.safe = safe;
     bal.token = getOrCreateToken(tokenAddress).id;
-    bal.balance = isDelta ? amount : amount;
+    // First sighting: the initial balance is `amount` whether it's the
+    // first signed delta or an absolute baseline write.
+    bal.balance = amount;
   } else {
     bal.balance = isDelta ? bal.balance.plus(amount) : amount;
   }
@@ -721,8 +726,7 @@ export class ClassifyResult {
 // silently dropped").
 export function classifyTransfer(
   from: Address,
-  to: Address,
-  masterSafePtr: MasterSafe | null
+  to: Address
 ): ClassifyResult | null {
   const fromMaster = TrackedSafe.load(from);
   const toMaster = TrackedSafe.load(to);
@@ -778,7 +782,10 @@ export function classifyTransfer(
     );
   }
 
-  // Agent Safe → Master Safe → AGENT_TO_MASTER (OLAS reward sweep).
+  // Agent Safe → Master Safe → AGENT_TO_MASTER. The OLAS leg (reward sweeps +
+  // manual OLAS returns) is re-tagged AGENT_OLAS_TO_MASTER in
+  // handleErc20Transfer after classification (the token isn't visible here);
+  // native / non-OLAS stays AGENT_TO_MASTER.
   if (
     fromMaster != null &&
     fromMaster.role == "AGENT" &&
