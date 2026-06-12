@@ -19,6 +19,7 @@ dataSources:
         - Service
         - AgentSafe
         - MasterSafe
+        - TrackedAddress
         - ServiceIndex
         - PendingRegistration
         - PendingBondCounter
@@ -26,6 +27,7 @@ dataSources:
         - AgentBondAttributionGuard
         - ServiceNftCustodyChange
         - FundsMovement
+        - BondMovement
       abis:
         - name: ServiceRegistryL2
           file: ../../abis/ServiceRegistryL2.json
@@ -59,7 +61,7 @@ dataSources:
       apiVersion: 0.0.9
       language: wasm/assemblyscript
       entities:
-        - FundsMovement
+        - BondMovement
         - PendingBondCounter
         - PendingBondRow
       abis:
@@ -84,6 +86,7 @@ dataSources:
       language: wasm/assemblyscript
       entities:
         - StakingContract
+        - TrackedAddress
       abis:
         - name: StakingFactory
           file: ../../abis/StakingFactory.json
@@ -156,6 +159,8 @@ templates:
       entities:
         - Service
         - MasterSafe
+        - AgentSafe
+        - TrackedAddress
         - FundsMovement
         - DailyServiceFunds
       abis:

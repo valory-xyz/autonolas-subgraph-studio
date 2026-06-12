@@ -451,6 +451,18 @@ describe("pearl-transactions / Phase 1b — staking", () => {
       "numAgentInstances",
       NUM_AGENT_INSTANCES.toString()
     );
+    // The proxy must ALSO land in the merged tracked-address table —
+    // classifyTransfer keys the reward-claim path on TrackedAddress(STAKING),
+    // not on StakingContract. The classification tests seed TrackedAddress
+    // manually, so without this assertion the producer→classifier wiring is
+    // uncovered (dropping the upsert would leave every test green while
+    // breaking reward-claim classification in production).
+    assert.fieldEquals(
+      "TrackedAddress",
+      STAKING_PROXY.toHexString(),
+      "role",
+      "STAKING"
+    );
   });
 
   test("InstanceCreated with disallowed implementation is skipped", () => {
@@ -459,6 +471,7 @@ describe("pearl-transactions / Phase 1b — staking", () => {
       newInstanceCreated(MASTER_SAFE, STAKING_PROXY, DISALLOWED_IMPL, tx)
     );
     assert.entityCount("StakingContract", 0);
+    assert.entityCount("TrackedAddress", 0);
   });
 
   test("ServiceStaked sets masterSafe + agentSafe + state + currentStakingContract", () => {

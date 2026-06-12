@@ -236,9 +236,17 @@ export function getOrCreateAgentSafe(
   agentSafe.save();
 
   // Phase 2a: track as TrackedAddress (role=AGENT), spawn Safe template,
-  // and add any operators recorded on the Service so far as TrackedAddress
-  // (role=AGENT_EOA). Additional operators registered later are picked up
-  // incrementally in handleRegisterInstance.
+  // and add the operators recorded on the Service SO FAR as TrackedAddress
+  // (role=AGENT_EOA). Operators registered after this point are not added
+  // retroactively (handleRegisterInstance only appends to Service.operators)
+  // — accepted: Pearl's flow registers all instances before the multisig.
+  //
+  // LOAD-BEARING write-order invariant: in Pearl the Master Safe is also the
+  // service *operator*, so the loop below tries to write it as AGENT_EOA.
+  // That's safe only because TrackedAddress is write-once (upsert
+  // early-returns) and the MASTER row always lands first — the service-NFT
+  // mint / ServiceStaked path runs getOrCreateMasterSafe before any
+  // CreateMultisigWithAgents can reach this function. Don't reorder.
   if (service.masterSafe !== null) {
     upsertTrackedAddress(
       address,

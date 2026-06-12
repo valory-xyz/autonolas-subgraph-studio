@@ -13,12 +13,16 @@ transaction-history view (VLOP-73).
 
 ## What it covers
 
-A single `FundsMovement` ledger, classified per row, plus the entity graph
-(`MasterSafe` / `AgentSafe` / `Service` / `StakingContract`) and helpers
-(`AgentFundingEvent`, `TokenBalance`, `DailyServiceFunds`,
-`ServiceNftCustodyChange`).
+An immutable `FundsMovement` ledger, classified per row, plus a small mutable
+`BondMovement` ledger for SRTU bond deposits/refunds (the only rows that get
+backfilled — split out so `FundsMovement` can stay immutable). **A complete
+wallet ledger is `fundsMovements` ∪ `bondMovements`.** Entity graph:
+`MasterSafe` / `AgentSafe` / `Service` / `StakingContract`; helpers:
+`AgentFundingEvent`, `TokenBalance`, `DailyServiceFunds`,
+`ServiceNftCustodyChange`.
 
-`FundsMovement.category` values:
+Category values (`FundsCategory`, shared by both ledgers — the
+`SERVICE_BOND_*` values appear only on `BondMovement`):
 
 | Category | Meaning |
 |---|---|
@@ -29,7 +33,7 @@ A single `FundsMovement` ledger, classified per row, plus the entity graph
 | `MASTER_TO_AGENT` | Master Safe → Agent Safe/EOA (grouped via `AgentFundingEvent`) |
 | `AGENT_TO_MASTER` | Agent Safe → Master Safe in native / non-OLAS token |
 | `AGENT_OLAS_TO_MASTER` | Agent Safe → Master Safe in OLAS (reward sweeps + manual returns; split out so the wallet can exclude it at query time) |
-| `SERVICE_BOND_DEPOSIT` / `SERVICE_BOND_REFUND` | SRTU bond posted / refunded (with `bondType`) |
+| `SERVICE_BOND_DEPOSIT` / `SERVICE_BOND_REFUND` | SRTU bond posted / refunded (with `bondType`) — **`BondMovement` rows, not `FundsMovement`** |
 | `STAKING_REWARD_CLAIM` / `UNSTAKE_REWARD` / `SERVICE_EVICTED` | Staking events |
 | `AGENT_TO_APP` / `APP_TO_AGENT` / `OTHER` | App-contract flows / untyped |
 
@@ -44,6 +48,9 @@ Studio: `https://api.studio.thegraph.com/query/1716136/pearl-<network>-transacti
 
 ### Wallet history for a Master Safe
 
+A complete history is the union of the two ledgers — `bondType` lives only on
+`bondMovements`, and `Service.id` is Bytes, so read the numeric `serviceId`:
+
 ```graphql
 query History($safe: Bytes!) {
   fundsMovements(
@@ -56,10 +63,26 @@ query History($safe: Bytes!) {
     source
     amount
     token            # null = native coin
-    bondType
     from
     to
-    service { id }
+    service { serviceId }
+    agentSafe { id }
+    blockTimestamp
+    transactionHash
+  }
+  bondMovements(
+    where: { masterSafe: $safe }
+    orderBy: blockTimestamp
+    orderDirection: desc
+    first: 100
+  ) {
+    category         # SERVICE_BOND_DEPOSIT | SERVICE_BOND_REFUND
+    bondType         # SECURITY_DEPOSIT | AGENT_BOND (null if unattributed)
+    amount
+    token
+    from
+    to
+    service { serviceId }
     agentSafe { id }
     blockTimestamp
     transactionHash
@@ -104,7 +127,7 @@ emits no opening-balance row).
 yarn install
 yarn generate-manifests   # render per-network manifests
 yarn codegen
-yarn test                 # 44 Matchstick tests
+yarn test                 # 48 Matchstick tests
 ```
 
 See [`CLAUDE.md`](./CLAUDE.md) for architecture and

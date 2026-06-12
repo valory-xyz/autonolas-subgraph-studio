@@ -2,7 +2,7 @@
 #
 # Matches IMPLEMENTATION-PLAN.md §5.1 (semantic ledger) + §6.5 (raw
 # ledger). Phase 2b additions (USDC/USDC.e Transfer data sources) reuse
-# Token / TrackedSafe / TokenBalance and add no new schema; they
+# Token / TrackedAddress / TokenBalance and add no new schema; they
 # arrive in their own PR (benchmark + product-gated per §6.3).
 
 # --- Structural -------------------------------------------------------

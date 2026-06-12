@@ -168,7 +168,7 @@ deploy; watch Polygon USDC.e sync (the §2.2 cost hotspot).
 
 ## Tests
 
-46 Matchstick tests across `tests/service-registry.test.ts` (Phase 1a),
+48 Matchstick tests across `tests/service-registry.test.ts` (Phase 1a),
 `tests/staking.test.ts` (Phase 1b), `tests/phase-2a.test.ts` (Phase 2a + the
 Phase-2b stablecoin suite — all 8 (chain, token) tuples). `yarn test`.
 
