@@ -128,6 +128,18 @@ deploy; watch Polygon USDC.e sync (the §2.2 cost hotspot).
 
 - `bondType` attribution is best-effort; unmodeled call orderings leave it
   null but preserve the amount.
+- **Master Safe → Master Safe transfers** (funds migration between Pearl
+  installs) classify `MASTER_FUNDING_IN` for the recipient; both sides'
+  `TokenBalance` are updated (the sender debit rides on
+  `ClassifyResult.senderMasterId`), but the sender's masterSafe-filtered
+  HISTORY shows no outgoing row — same accepted shape as the native-out gap.
+- **`AgentFundingEvent.totalOlasAmount` is OLAS-only** (the bump is gated on
+  the token); same-tx stablecoin funding legs link via `transfers` but don't
+  contribute to either total.
+- The **bond legs' `TokenBalance` deltas are booked by the SRTU handlers**
+  (`handleTokenDeposit` debit / `handleTokenRefund` credit) — the raw
+  Master ↔ SRTU `Transfer` is suppressed in `classifyTransfer`, so the
+  balance effect lands exactly once.
 - SRTU bond rows are **token-secured-only**. Every `TokenDeposit` /
   `TokenRefund` emit in `ServiceRegistryTokenUtility` sits inside an
   `if (token != address(0))` guard, so ETH/native-secured services emit no
@@ -168,7 +180,7 @@ deploy; watch Polygon USDC.e sync (the §2.2 cost hotspot).
 
 ## Tests
 
-48 Matchstick tests across `tests/service-registry.test.ts` (Phase 1a),
+53 Matchstick tests across `tests/service-registry.test.ts` (Phase 1a),
 `tests/staking.test.ts` (Phase 1b), `tests/phase-2a.test.ts` (Phase 2a + the
 Phase-2b stablecoin suite — all 8 (chain, token) tuples). `yarn test`.
 

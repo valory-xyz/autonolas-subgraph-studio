@@ -127,7 +127,7 @@ emits no opening-balance row).
 yarn install
 yarn generate-manifests   # render per-network manifests
 yarn codegen
-yarn test                 # 48 Matchstick tests
+yarn test                 # 53 Matchstick tests
 ```
 
 See [`CLAUDE.md`](./CLAUDE.md) for architecture and

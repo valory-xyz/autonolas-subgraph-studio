@@ -874,6 +874,130 @@ describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds",
       );
     }
   );
+
+  test(
+    "a Safe first seen as operator of a masterless service can still become a Master Safe",
+    () => {
+      // Review #149 finding 2 (role poisoning): the registry is
+      // permissionless, so an address operating a non-Pearl (masterless)
+      // service today may become a Pearl Master Safe tomorrow. TrackedAddress
+      // is write-once + immutable — if the operator loop wrote it AGENT_EOA
+      // first, the later MASTER upsert would no-op and the user's entire
+      // wallet history would classify OTHER forever. The fix: operator rows
+      // are only written for services WITH a masterSafe link.
+      const POISONED_SAFE = Address.fromString(
+        "0x1234123412341234123412341234123412341234"
+      );
+      const OTHER_MULTISIG = Address.fromString(
+        "0xffffffffffffffffffffffffffffffffffffffff"
+      );
+
+      // 1. Masterless service: operator-first write order.
+      const tx1 = mockTx(701);
+      handleRegisterInstance(
+        newRegisterInstance(
+          POISONED_SAFE,
+          SERVICE_ID,
+          AGENT_INSTANCE_1,
+          PEARL_AGENT_ID,
+          tx1,
+          0
+        )
+      );
+      handleCreateMultisigWithAgents(
+        newCreateMultisig(SERVICE_ID, OTHER_MULTISIG, tx1, 1)
+      );
+      // The masterless service's operator must NOT be pre-claimed.
+      assert.notInStore("TrackedAddress", POISONED_SAFE.toHexString());
+
+      // 2. The same Safe later onboards Pearl: service #2's NFT mints to it.
+      mockGetOwners(POISONED_SAFE, [MASTER_EOA, BACKUP_EOA]);
+      mockGetThreshold(POISONED_SAFE, 1);
+      const tx2 = mockTx(702);
+      handleServiceNftTransfer(
+        newNftTransfer(ZERO, POISONED_SAFE, OTHER_SERVICE_ID, tx2, 0)
+      );
+
+      assert.fieldEquals(
+        "MasterSafe",
+        POISONED_SAFE.toHexString(),
+        "setupTransferSeen",
+        "false"
+      );
+      // The MASTER role lands — classification for this wallet works.
+      assert.fieldEquals(
+        "TrackedAddress",
+        POISONED_SAFE.toHexString(),
+        "role",
+        "MASTER"
+      );
+    }
+  );
+
+  test(
+    "NFT transfer to an existing Agent Safe reaches the shared template guard",
+    () => {
+      // Review #149 finding 1: SafeTemplate.create was guarded on MasterSafe
+      // in one path and AgentSafe in the other, so an Agent Safe receiving a
+      // service NFT (it passes the getOwners() probe) got a SECOND template
+      // instance — every SafeReceived would then be processed twice, and the
+      // duplicate FundsMovement save is a deterministic halt now that the
+      // entity is immutable. The fix is the cross-entity guard in
+      // getOrCreateMasterSafe / getOrCreateAgentSafe.
+      //
+      // NB: matchstick counts UNIQUE created data-source addresses, so a
+      // duplicate create on the SAME address is invisible to
+      // assert.dataSourceCount — this test drives the exact scenario and
+      // asserts the state that makes the guard load-bearing: the address
+      // ends up in BOTH MasterSafe and AgentSafe tables (i.e. the second
+      // create WOULD have fired without the guard).
+      mockGetOwners(MASTER_SAFE, [MASTER_EOA, BACKUP_EOA]);
+      mockGetThreshold(MASTER_SAFE, 1);
+
+      // Full Pearl flow: mint to the Master Safe, then deploy the agent
+      // multisig.
+      const tx1 = mockTx(703);
+      handleServiceNftTransfer(
+        newNftTransfer(ZERO, MASTER_SAFE, SERVICE_ID, tx1, 0)
+      );
+      handleRegisterInstance(
+        newRegisterInstance(
+          OPERATOR,
+          SERVICE_ID,
+          AGENT_INSTANCE_1,
+          PEARL_AGENT_ID,
+          tx1,
+          1
+        )
+      );
+      handleCreateMultisigWithAgents(
+        newCreateMultisig(SERVICE_ID, AGENT_SAFE, tx1, 2)
+      );
+      assert.entityCount("AgentSafe", 1);
+
+      // Permissionless oddity: the service NFT is transferred to the Agent
+      // Safe. It IS a Gnosis Safe, so getOrCreateMasterSafe proceeds and the
+      // address lands in both tables — the guard must keep the template
+      // single-instance.
+      mockGetOwners(AGENT_SAFE, [MASTER_EOA]);
+      mockGetThreshold(AGENT_SAFE, 1);
+      const tx2 = mockTx(704);
+      handleServiceNftTransfer(
+        newNftTransfer(MASTER_SAFE, AGENT_SAFE, SERVICE_ID, tx2, 0)
+      );
+
+      // The collision scenario is real: AGENT_SAFE is now BOTH an AgentSafe
+      // and a MasterSafe — exactly the state where the old per-entity guards
+      // spawned a second template.
+      assert.entityCount("AgentSafe", 1);
+      assert.fieldEquals(
+        "MasterSafe",
+        AGENT_SAFE.toHexString(),
+        "setupTransferSeen",
+        "false"
+      );
+    }
+  );
 });
 
 // ----------------- Helpers -----------------

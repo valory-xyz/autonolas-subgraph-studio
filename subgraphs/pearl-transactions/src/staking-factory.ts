@@ -2,7 +2,7 @@ import { log } from "@graphprotocol/graph-ts";
 import { InstanceCreated as InstanceCreatedEvent } from "../generated/StakingFactory/StakingFactory";
 import { StakingProxy as StakingProxyTemplate } from "../generated/templates";
 import { StakingProxy as StakingProxyContract } from "../generated/templates/StakingProxy/StakingProxy";
-import { isAllowedImplementation } from "./constants";
+import { ROLE_STAKING, isAllowedImplementation } from "./constants";
 import { getOrCreateStakingContract, upsertTrackedAddress } from "./utils";
 
 // handleInstanceCreated — fires on every StakingFactory.InstanceCreated.
@@ -56,7 +56,7 @@ export function handleInstanceCreated(event: InstanceCreatedEvent): void {
   // (StakingContract stays as the config entity / NFT-guard lookup).
   upsertTrackedAddress(
     proxyAddress,
-    "STAKING",
+    ROLE_STAKING,
     null,
     null,
     event.block.number

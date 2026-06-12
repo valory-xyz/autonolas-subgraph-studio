@@ -37,6 +37,15 @@ export const BOND_TYPE_AGENT_BOND = "AGENT_BOND";
 export const SOURCE_SEMANTIC = "SEMANTIC";
 export const SOURCE_RAW_TRANSFER = "RAW_TRANSFER";
 
+// TrackedAddress role string values. Roles are write-once (the entity is
+// immutable), so a typo'd literal would be a permanent silent
+// misclassification — always use these constants.
+export const ROLE_MASTER = "MASTER";
+export const ROLE_AGENT = "AGENT";
+export const ROLE_MASTER_EOA = "MASTER_EOA";
+export const ROLE_AGENT_EOA = "AGENT_EOA";
+export const ROLE_STAKING = "STAKING";
+
 // OLAS token address resolver. Used to tag the SAFE_DEPLOYED row's
 // `token` field as null (no token) and later for raw-transfer
 // classification in Phase 2a.

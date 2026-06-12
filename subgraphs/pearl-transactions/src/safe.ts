@@ -1,4 +1,4 @@
-import { Address, BigInt, Bytes, ethereum, log } from "@graphprotocol/graph-ts";
+import { Bytes } from "@graphprotocol/graph-ts";
 import {
   AddedOwner as AddedOwnerEvent,
   ChangedThreshold as ChangedThresholdEvent,
@@ -10,6 +10,7 @@ import {
 import { FundsMovement, MasterSafe } from "../generated/schema";
 import {
   CATEGORY_MASTER_FUNDING_IN,
+  CATEGORY_MASTER_TO_AGENT,
   CATEGORY_SAFE_SETUP_TRANSFER,
   SOURCE_RAW_TRANSFER,
 } from "./constants";
@@ -60,7 +61,7 @@ export function handleSafeReceived(event: SafeReceivedEvent): void {
     markSetupTransferSeen(classification.masterSafeId!);
   }
   if (
-    classification.category == "MASTER_TO_AGENT" &&
+    classification.category == CATEGORY_MASTER_TO_AGENT &&
     classification.masterSafeId !== null &&
     classification.service !== null
   ) {
@@ -78,45 +79,23 @@ export function handleSafeReceived(event: SafeReceivedEvent): void {
 }
 
 // handleSafeExecutionSuccess / handleSafeExecutionFromModuleSuccess
-// — native OUT events. Approximate per plan §6.2 / babydegen pattern:
-// Safes executing via a relayer carry value=0 on the outer tx, so we
-// cannot read the moved amount from these events alone. We record a
-// zero-amount placeholder row so the consumer wallet UI can show
-// "Safe executed an outbound tx" without claiming a precise amount.
-// Phase 2b+ could swap this for call/trace handlers if cost permits.
+// — native OUT events. Intentional no-ops for v1: ExecutionSuccess carries
+// no amount/recipient (Safes executing via a relayer carry value=0 on the
+// outer tx), so precise native-out tracking requires call/trace handlers —
+// see plan §6.2 honest-limits doc and the Phase 2b+ option. Deliberately
+// NO store access here: these fire on every execution of every Safe that
+// shares the template, so even a single load would be pure hot-path waste.
 export function handleSafeExecutionSuccess(
   event: ExecutionSuccessEvent
 ): void {
-  emitNativeOutPlaceholder(event.address, event);
+  // no-op (see above)
 }
 
 export function handleSafeExecutionFromModuleSuccess(
   event: ExecutionFromModuleSuccessEvent
 ): void {
-  emitNativeOutPlaceholder(event.address, event);
+  // no-op (see above)
 }
-
-function emitNativeOutPlaceholder(
-  safeAddr: Address,
-  event: ethereum.Event
-): void {
-  // Only emit if `safeAddr` is a tracked safe — otherwise the event
-  // came from an unrelated Safe that shares the template.
-  // (TrackedAddress.load is checked indirectly via classifyTransfer
-  // when from/to side matters; for placeholder we just need the safe
-  // tracked-ness.)
-  const masterSafe = MasterSafe.load(safeAddr);
-  // TrackedAddress lookup is more direct but a MasterSafe entity exists
-  // iff the safe was first-sighted as a Master Safe. Agent Safes
-  // don't get MasterSafe entities, so we'd miss them here. Use
-  // classifyTransfer with a synthetic zero-address "from" instead
-  // to determine tracked-ness; for now, skip the placeholder if
-  // neither MasterSafe nor an AgentSafe entity exists — the
-  // refinement is a Phase 2a.ii follow-up.
-}
-// NOTE: emitNativeOutPlaceholder is intentionally a no-op for v1.
-// Precise native-out tracking requires call/trace handlers — see
-// plan §6.2 honest-limits doc and the Phase 2b+ option.
 
 // handleSafeAddedOwner / handleSafeRemovedOwner /
 // handleSafeChangedThreshold — keep MasterSafe.owners / masterEoa /

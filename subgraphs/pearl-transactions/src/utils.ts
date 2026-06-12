@@ -28,9 +28,21 @@ import { GnosisSafe } from "../generated/ServiceRegistryL2/GnosisSafe";
 import { Safe as SafeTemplate } from "../generated/templates";
 import {
   BOND_TYPE_AGENT_BOND,
+  CATEGORY_AGENT_TO_APP,
+  CATEGORY_AGENT_TO_MASTER,
+  CATEGORY_APP_TO_AGENT,
+  CATEGORY_MASTER_FUNDING_IN,
+  CATEGORY_MASTER_TO_AGENT,
+  CATEGORY_MASTER_WITHDRAWAL,
   CATEGORY_OTHER,
   CATEGORY_SAFE_DEPLOYED,
   CATEGORY_SAFE_SETUP_TRANSFER,
+  CATEGORY_STAKING_REWARD_CLAIM,
+  ROLE_AGENT,
+  ROLE_AGENT_EOA,
+  ROLE_MASTER,
+  ROLE_MASTER_EOA,
+  ROLE_STAKING,
   SERVICE_STATE_REGISTERED,
   SOURCE_SEMANTIC,
   getOlasAddress,
@@ -57,25 +69,27 @@ export function safeDeployedId(masterSafe: Bytes): Bytes {
   return Bytes.fromUTF8("safe-deployed:").concat(masterSafe);
 }
 
-export function serviceIndexId(serviceId: BigInt): Bytes {
-  return Bytes.fromByteArray(Bytes.fromBigInt(serviceId));
-}
-
-// Service.id is now Bytes (serviceId as Bytes) — halves FK storage / speeds
-// comparisons vs the old string id. Same byte layout as serviceIndexId.
+// Service.id is Bytes (serviceId as Bytes) — halves FK storage / speeds
+// comparisons vs the old string id. serviceIndexId / pendingRegistrationId
+// share the same byte layout; they alias this helper so the encoding has a
+// single source of truth.
 export function serviceEntityId(serviceId: BigInt): Bytes {
   return Bytes.fromByteArray(Bytes.fromBigInt(serviceId));
 }
 
+export function serviceIndexId(serviceId: BigInt): Bytes {
+  return serviceEntityId(serviceId);
+}
+
 export function pendingRegistrationId(serviceId: BigInt): Bytes {
-  return Bytes.fromByteArray(Bytes.fromBigInt(serviceId));
+  return serviceEntityId(serviceId);
 }
 
 export function agentBondAttributionGuardId(
   txHash: Bytes,
   serviceId: BigInt
 ): Bytes {
-  return txHash.concat(Bytes.fromByteArray(Bytes.fromBigInt(serviceId)));
+  return txHash.concat(serviceEntityId(serviceId));
 }
 
 export function pendingBondRowId(txHash: Bytes, slot: i32): Bytes {
@@ -172,7 +186,7 @@ export function getOrCreateMasterSafe(
   // MASTER_FUNDING_IN.
   upsertTrackedAddress(
     address,
-    "MASTER",
+    ROLE_MASTER,
     masterSafe.id,
     null,
     event.block.number
@@ -180,13 +194,22 @@ export function getOrCreateMasterSafe(
   if (masterSafe.masterEoa.length > 0 && !masterSafe.masterEoa.equals(Address.zero())) {
     upsertTrackedAddress(
       Address.fromBytes(masterSafe.masterEoa),
-      "MASTER_EOA",
+      ROLE_MASTER_EOA,
       masterSafe.id,
       null,
       event.block.number
     );
   }
-  SafeTemplate.create(address);
+  // Spawn the per-Safe template ONCE per address. The MasterSafe.load guard
+  // at the top of this function doesn't cover an address already spawned via
+  // getOrCreateAgentSafe (guarded on AgentSafe.load) — e.g. a service NFT
+  // transferred to an existing Agent Safe (it passes the getOwners() probe).
+  // A second template instance would process every SafeReceived log twice,
+  // and the duplicate FundsMovement save is a deterministic store error now
+  // that the entity is immutable (it was a silent overwrite before).
+  if (AgentSafe.load(address) == null) {
+    SafeTemplate.create(address);
+  }
 
   return masterSafe;
 }
@@ -240,32 +263,40 @@ export function getOrCreateAgentSafe(
   // (role=AGENT_EOA). Operators registered after this point are not added
   // retroactively (handleRegisterInstance only appends to Service.operators)
   // — accepted: Pearl's flow registers all instances before the multisig.
-  //
-  // LOAD-BEARING write-order invariant: in Pearl the Master Safe is also the
-  // service *operator*, so the loop below tries to write it as AGENT_EOA.
-  // That's safe only because TrackedAddress is write-once (upsert
-  // early-returns) and the MASTER row always lands first — the service-NFT
-  // mint / ServiceStaked path runs getOrCreateMasterSafe before any
-  // CreateMultisigWithAgents can reach this function. Don't reorder.
   if (service.masterSafe !== null) {
     upsertTrackedAddress(
       address,
-      "AGENT",
+      ROLE_AGENT,
       service.masterSafe,
       service.id,
       event.block.number
     );
   }
-  SafeTemplate.create(address);
-  const operators = service.operators;
-  for (let i = 0; i < operators.length; i++) {
-    upsertTrackedAddress(
-      Address.fromBytes(operators[i]),
-      "AGENT_EOA",
-      service.masterSafe,
-      service.id,
-      event.block.number
-    );
+  // Spawn the per-Safe template ONCE per address (see the matching guard in
+  // getOrCreateMasterSafe): a duplicate template instance would double-process
+  // SafeReceived logs and crash on the immutable FundsMovement re-save.
+  if (MasterSafe.load(address) == null) {
+    SafeTemplate.create(address);
+  }
+  // Operator rows are written ONLY for Pearl-linked services (masterSafe set),
+  // and the master safe itself is skipped — in Pearl the Master Safe is the
+  // service operator, and TrackedAddress is write-once + immutable, so writing
+  // it as AGENT_EOA before its MASTER row lands would permanently poison the
+  // role and route the user's entire wallet history to OTHER. The registry is
+  // permissionless, so a masterless (non-Pearl) service must not be able to
+  // pre-claim an address that later becomes a Pearl Master Safe.
+  if (service.masterSafe !== null) {
+    const operators = service.operators;
+    for (let i = 0; i < operators.length; i++) {
+      if (operators[i].equals(service.masterSafe!)) continue;
+      upsertTrackedAddress(
+        Address.fromBytes(operators[i]),
+        ROLE_AGENT_EOA,
+        service.masterSafe,
+        service.id,
+        event.block.number
+      );
+    }
   }
   return agentSafe;
 }
@@ -602,11 +633,17 @@ export function getOrCreateStakingContract(
 
 // --- Phase 2a — TrackedAddress / Token / TokenBalance ----------------
 
-// upsertTrackedAddress — idempotent, write-once. The single tracked-address
-// table behind classifyTransfer's hot path. `role` is MASTER | AGENT |
-// MASTER_EOA | AGENT_EOA | STAKING. `masterSafeId` is null for STAKING;
+// upsertTrackedAddress — idempotent, write-once (the entity is immutable).
+// The single tracked-address table behind classifyTransfer's hot path.
+// `role` is one of the ROLE_* constants. `masterSafeId` is null for STAKING;
 // `serviceId` is null for MASTER / MASTER_EOA / STAKING. Both ids are Bytes
 // (the related entity's id).
+//
+// First-write-wins caveat (accepted): an AGENT_EOA shared across services
+// keeps the FIRST service it was seen with — a second service's funding rows
+// to that EOA attribute to service #1. Harmless for masterSafe-filtered
+// wallet queries (the masterSafe link is the same); revisit only if
+// per-service attribution of shared operators ever matters.
 export function upsertTrackedAddress(
   address: Address,
   role: string,
@@ -707,11 +744,16 @@ export function upsertTokenBalance(
 // ClassifyResult — output of classifyTransfer. Carries category +
 // resolved service/masterSafe/agentSafe IDs so the OLAS handler
 // doesn't repeat the lookup. `service` is the Service.id (Bytes) or null.
+// `senderMasterId` is set ONLY for Master Safe → Master Safe transfers
+// (funds migration between Pearl installs): the row classifies as
+// MASTER_FUNDING_IN for the recipient, and this field carries the sending
+// Master Safe so handleErc20Transfer can debit its TokenBalance too.
 export class ClassifyResult {
   category: string;
   service: Bytes | null;
   masterSafeId: Bytes | null;
   agentSafeId: Bytes | null;
+  senderMasterId: Bytes | null = null;
   constructor(
     category: string,
     service: Bytes | null,
@@ -755,18 +797,23 @@ export function classifyTransfer(
   // Master Safe ↔ SRTU OLAS transfers are the on-chain bond movement, already
   // booked as the canonical SEMANTIC BondMovement row (and backfilled by the
   // consumer). A second RAW_TRANSFER row here would double-count in any
-  // masterSafe-filtered wallet query, so drop it. The OLAS TokenBalance delta
-  // is updated separately in handleErc20Transfer and is unaffected.
-  if (fromRole == "MASTER" && toIsSrtu) return null;
-  if (fromIsSrtu && toRole == "MASTER") return null;
+  // masterSafe-filtered wallet query, so drop it. NB: the early null return
+  // means handleErc20Transfer applies NO TokenBalance delta for these legs —
+  // the bond's balance effect is booked by the SRTU handlers
+  // (handleTokenDeposit / handleTokenRefund) instead, exactly once.
+  if (fromRole == ROLE_MASTER && toIsSrtu) return null;
+  if (fromIsSrtu && toRole == ROLE_MASTER) return null;
 
   // Master Safe → Agent Safe / Agent EOA → MASTER_TO_AGENT (grouped).
-  if (fromRole == "MASTER" && (toRole == "AGENT" || toRole == "AGENT_EOA")) {
+  if (
+    fromRole == ROLE_MASTER &&
+    (toRole == ROLE_AGENT || toRole == ROLE_AGENT_EOA)
+  ) {
     return new ClassifyResult(
-      "MASTER_TO_AGENT",
+      CATEGORY_MASTER_TO_AGENT,
       toT!.service,
       fromT!.masterSafe,
-      toRole == "AGENT" ? toT!.id : null
+      toRole == ROLE_AGENT ? toT!.id : null
     );
   }
 
@@ -774,9 +821,9 @@ export function classifyTransfer(
   // manual OLAS returns) is re-tagged AGENT_OLAS_TO_MASTER in
   // handleErc20Transfer after classification (the token isn't visible here);
   // native / non-OLAS stays AGENT_TO_MASTER.
-  if (fromRole == "AGENT" && toRole == "MASTER") {
+  if (fromRole == ROLE_AGENT && toRole == ROLE_MASTER) {
     return new ClassifyResult(
-      "AGENT_TO_MASTER",
+      CATEGORY_AGENT_TO_MASTER,
       fromT!.service,
       toT!.id,
       fromT!.id
@@ -785,17 +832,17 @@ export function classifyTransfer(
 
   // Staking proxy → Agent Safe — STAKING_REWARD_CLAIM (RAW_TRANSFER reconcile
   // of the semantically-booked Phase-1b row).
-  if (fromRole == "STAKING" && toRole == "AGENT") {
+  if (fromRole == ROLE_STAKING && toRole == ROLE_AGENT) {
     return new ClassifyResult(
-      "STAKING_REWARD_CLAIM",
+      CATEGORY_STAKING_REWARD_CLAIM,
       toT!.service,
       toT!.masterSafe,
       toT!.id
     );
   }
 
-  // EOA (Master EOA / other) → Master Safe.
-  if (toRole == "MASTER") {
+  // Anything → Master Safe (EOA deposit, app payout, another Master Safe).
+  if (toRole == ROLE_MASTER) {
     // ServiceRegistryL2 sends tiny native dust to the Master Safe during
     // terminate / unbond (1-wei xDAI refunds sharing a tx with a bond refund).
     // Protocol bookkeeping, not a user deposit → OTHER. The registry address is
@@ -803,31 +850,55 @@ export function classifyTransfer(
     if (from.equals(getServiceRegistryAddress(currentNetwork()))) {
       return new ClassifyResult(CATEGORY_OTHER, null, toT!.id, null);
     }
-    const ms = MasterSafe.load(toT!.id);
-    if (ms != null && !ms.setupTransferSeen && fromRole == "MASTER_EOA") {
-      // First Master EOA → Master Safe hop after creation.
-      return new ClassifyResult("SAFE_SETUP_TRANSFER", null, toT!.id, null);
+    // Check fromRole BEFORE loading MasterSafe — the load is only needed for
+    // the once-per-Safe setup-transfer gate, and this branch runs on every
+    // ordinary deposit.
+    if (fromRole == ROLE_MASTER_EOA) {
+      const ms = MasterSafe.load(toT!.id);
+      if (ms != null && !ms.setupTransferSeen) {
+        // First Master EOA → Master Safe hop after creation.
+        return new ClassifyResult(
+          CATEGORY_SAFE_SETUP_TRANSFER,
+          null,
+          toT!.id,
+          null
+        );
+      }
     }
-    return new ClassifyResult("MASTER_FUNDING_IN", null, toT!.id, null);
+    const result = new ClassifyResult(
+      CATEGORY_MASTER_FUNDING_IN,
+      null,
+      toT!.id,
+      null
+    );
+    // Master Safe → Master Safe (funds migration between Pearl installs):
+    // the row belongs to the recipient, but the sender's TokenBalance must
+    // be debited too — surface the sender so handleErc20Transfer can.
+    // (The sender's masterSafe-filtered HISTORY intentionally shows no row —
+    // same shape as the accepted native-out gap; documented in CLAUDE.md.)
+    if (fromRole == ROLE_MASTER) {
+      result.senderMasterId = fromT!.id;
+    }
+    return result;
   }
 
   // Master Safe → EOA.
-  if (fromRole == "MASTER") {
-    return new ClassifyResult("MASTER_WITHDRAWAL", null, fromT!.id, null);
+  if (fromRole == ROLE_MASTER) {
+    return new ClassifyResult(CATEGORY_MASTER_WITHDRAWAL, null, fromT!.id, null);
   }
 
   // Agent Safe ↔ unknown (treated as app-contract interactions).
-  if (fromRole == "AGENT") {
+  if (fromRole == ROLE_AGENT) {
     return new ClassifyResult(
-      "AGENT_TO_APP",
+      CATEGORY_AGENT_TO_APP,
       fromT!.service,
       fromT!.masterSafe,
       fromT!.id
     );
   }
-  if (toRole == "AGENT") {
+  if (toRole == ROLE_AGENT) {
     return new ClassifyResult(
-      "APP_TO_AGENT",
+      CATEGORY_APP_TO_AGENT,
       toT!.service,
       toT!.masterSafe,
       toT!.id
@@ -882,7 +953,8 @@ export function getOrCreateAgentFundingEvent(
   afe.blockTimestamp = event.block.timestamp;
   afe.totalNativeAmount = BigInt.zero();
   afe.totalOlasAmount = BigInt.zero();
-  afe.save();
+  // No save here — both call sites (erc20.ts / safe.ts) immediately call
+  // addToAgentFundingEvent, which saves after bumping a total.
   return afe;
 }
 
