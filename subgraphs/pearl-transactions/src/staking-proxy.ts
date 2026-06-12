@@ -39,7 +39,8 @@ export function handleServiceStaked(event: ServiceStakedEvent): void {
   service.state = SERVICE_STATE_STAKED;
   service.currentStakingContract = event.address;
   service.updatedTimestamp = event.block.timestamp;
-  service.save();
+  // Single save: neither getOrCreateMasterSafe nor getOrCreateAgentSafe reloads
+  // Service from the store, so persist once at the end (below).
 
   // `owner` is the Master Safe (ServiceStaked carries it explicitly), so
   // this is the canonical discovery path. getOrCreateMasterSafe returns

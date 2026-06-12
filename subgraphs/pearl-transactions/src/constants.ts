@@ -37,6 +37,15 @@ export const BOND_TYPE_AGENT_BOND = "AGENT_BOND";
 export const SOURCE_SEMANTIC = "SEMANTIC";
 export const SOURCE_RAW_TRANSFER = "RAW_TRANSFER";
 
+// TrackedAddress role string values. Roles are write-once (the entity is
+// immutable), so a typo'd literal would be a permanent silent
+// misclassification — always use these constants.
+export const ROLE_MASTER = "MASTER";
+export const ROLE_AGENT = "AGENT";
+export const ROLE_MASTER_EOA = "MASTER_EOA";
+export const ROLE_AGENT_EOA = "AGENT_EOA";
+export const ROLE_STAKING = "STAKING";
+
 // OLAS token address resolver. Used to tag the SAFE_DEPLOYED row's
 // `token` field as null (no token) and later for raw-transfer
 // classification in Phase 2a.
@@ -72,21 +81,34 @@ const SRTU_POLYGON = "0xa45E64d13A30a51b91ae0eb182e88a40e9b18eD8";
 const SRTU_OPTIMISM = "0xBb7e1D6Cb6F243D6bdE81CE92a9f2aFF7Fbe7eac";
 const SRTU_BASE = "0x34C895f302D0b5cf52ec0Edd3945321EB0f83dd5";
 
+// Memoized: classifyTransfer calls this on EVERY indexed transfer (millions
+// of chain-wide noise events), and Address.fromString re-parses the hex
+// literal each call. The network is fixed per deployment, so cache the
+// resolved address; keyed by network string so tests that switch networks
+// (dataSourceMock.setNetwork) stay correct.
+let srtuCacheNetwork: string = "";
+let srtuCacheAddr: Address | null = null;
+
 export function getSrtuAddress(network: string): Address {
+  if (srtuCacheAddr !== null && srtuCacheNetwork == network) {
+    return srtuCacheAddr as Address;
+  }
+  let addr: Address;
   if (network == "gnosis" || network == "xdai") {
-    return Address.fromString(SRTU_GNOSIS);
+    addr = Address.fromString(SRTU_GNOSIS);
+  } else if (network == "matic" || network == "polygon") {
+    addr = Address.fromString(SRTU_POLYGON);
+  } else if (network == "optimism") {
+    addr = Address.fromString(SRTU_OPTIMISM);
+  } else if (network == "base") {
+    addr = Address.fromString(SRTU_BASE);
+  } else {
+    log.critical("Unsupported network in getSrtuAddress: {}", [network]);
+    addr = Address.zero();
   }
-  if (network == "matic" || network == "polygon") {
-    return Address.fromString(SRTU_POLYGON);
-  }
-  if (network == "optimism") {
-    return Address.fromString(SRTU_OPTIMISM);
-  }
-  if (network == "base") {
-    return Address.fromString(SRTU_BASE);
-  }
-  log.critical("Unsupported network in getSrtuAddress: {}", [network]);
-  return Address.zero();
+  srtuCacheNetwork = network;
+  srtuCacheAddr = addr;
+  return addr;
 }
 
 // ServiceRegistryL2 address resolver (mirrors networks.json). Used by
