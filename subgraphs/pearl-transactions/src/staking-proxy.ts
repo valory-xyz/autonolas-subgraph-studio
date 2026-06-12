@@ -186,8 +186,13 @@ export function handleServicesEvicted(event: ServicesEvictedEvent): void {
     const service = getOrCreateService(serviceId, event);
 
     // Unique-id per (tx, logIndex, serviceId-slot) since ServicesEvicted
-    // is one event affecting many services. Use logIndex + i.
-    const id = event.transaction.hash.concatI32(event.logIndex.toI32() + i);
+    // is one event affecting many services. Compose logIndex AND the slot
+    // index as separate segments — `logIndex + i` would collide with any
+    // other event in the same tx whose logIndex falls in [logIndex+1,
+    // logIndex+K-1] and silently overwrite its FundsMovement row.
+    const id = event.transaction.hash
+      .concatI32(event.logIndex.toI32())
+      .concatI32(i);
     const row = new FundsMovement(id);
     row.service = service.id;
     if (service.masterSafe !== null) {

@@ -116,7 +116,7 @@ deploy; watch Polygon USDC.e sync (the §2.2 cost hotspot).
   in constants.ts).
 - **`getOrCreateToken`** — OLAS / wrapped-native 18 decimals; stablecoins
   (USDC / USDC.e / pUSD) 6 decimals via `getStablecoinSymbol` (constants.ts);
-  `log.critical` + UNKNOWN/18 if an indexed token has no resolver branch.
+  `log.critical` + UNKNOWN/6 if an indexed token has no resolver branch.
 - **`AgentFundingEvent`** — groups same-tx `MASTER_TO_AGENT` rows so one
   funding action is one consumer row.
 - **`SAFE_SETUP_TRANSFER` / Path A** — the first live Master-EOA → Master-Safe

@@ -38,7 +38,7 @@ export function handleErc20Transfer(event: TransferEvent): void {
   const amount = event.params.value;
   const token = event.address;
 
-  const classification = classifyTransfer(from, to, null);
+  const classification = classifyTransfer(from, to);
   if (classification === null) {
     return;
   }

@@ -30,7 +30,7 @@ export function handleSafeReceived(event: SafeReceivedEvent): void {
   const to = event.address;
   const amount = event.params.value;
 
-  const classification = classifyTransfer(from, to, null);
+  const classification = classifyTransfer(from, to);
   if (classification === null) return;
 
   const row = new FundsMovement(fundsMovementId(event));
