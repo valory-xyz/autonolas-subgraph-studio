@@ -732,7 +732,7 @@ export class ClassifyResult {
 // noise case exits at the first guard. If one side is tracked but no specific
 // pattern matches, returns OTHER so the row is kept for the forensic view
 // (plan §10: "Master EOA → unrelated EOA classified OTHER, not silently
-// dropped"). `masterSafePtr` is unused (kept for call-site compatibility).
+// dropped").
 export function classifyTransfer(
   from: Address,
   to: Address
