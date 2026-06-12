@@ -1,10 +1,16 @@
 import { Address, BigInt } from "@graphprotocol/graph-ts";
 import { Transfer as TransferEvent } from "../generated/OLAS/ERC20";
 import { FundsMovement } from "../generated/schema";
-import { SOURCE_RAW_TRANSFER } from "./constants";
+import {
+  CATEGORY_AGENT_OLAS_TO_MASTER,
+  CATEGORY_AGENT_TO_MASTER,
+  SOURCE_RAW_TRANSFER,
+  getOlasAddress,
+} from "./constants";
 import {
   addToAgentFundingEvent,
   classifyTransfer,
+  currentNetwork,
   fundsMovementId,
   getOrCreateAgentFundingEvent,
   markSetupTransferSeen,
@@ -35,6 +41,19 @@ export function handleErc20Transfer(event: TransferEvent): void {
   const classification = classifyTransfer(from, to);
   if (classification === null) {
     return;
+  }
+
+  // OLAS Agent Safe → Master Safe gets its own category so the wallet can
+  // exclude it at query time instead of fetch-then-filter. These dominate the
+  // ledger (staking-reward sweeps) and aren't user actions; we do NOT try to
+  // tell a reward sweep from a manual OLAS return — both bucket here. Native /
+  // non-OLAS agent→master stays AGENT_TO_MASTER. The token isn't visible inside
+  // classifyTransfer (it only sees from/to), so the split happens here.
+  if (
+    classification.category == CATEGORY_AGENT_TO_MASTER &&
+    token.equals(getOlasAddress(currentNetwork()))
+  ) {
+    classification.category = CATEGORY_AGENT_OLAS_TO_MASTER;
   }
 
   const row = new FundsMovement(fundsMovementId(event));
@@ -84,11 +103,14 @@ export function handleErc20Transfer(event: TransferEvent): void {
 
   row.save();
 
-  // Update TokenBalance for both sides if they're tracked.
+  // Update TokenBalance for both sides if they're tracked. AGENT_OLAS_TO_MASTER
+  // moves balances exactly like AGENT_TO_MASTER (only the category label
+  // differs), so it appears in the same branches.
   if (
     classification.category == "SAFE_SETUP_TRANSFER" ||
     classification.category == "MASTER_FUNDING_IN" ||
     classification.category == "AGENT_TO_MASTER" ||
+    classification.category == "AGENT_OLAS_TO_MASTER" ||
     classification.category == "APP_TO_AGENT" ||
     classification.category == "STAKING_REWARD_CLAIM"
   ) {
@@ -99,7 +121,8 @@ export function handleErc20Transfer(event: TransferEvent): void {
     classification.category == "MASTER_WITHDRAWAL" ||
     classification.category == "MASTER_TO_AGENT" ||
     classification.category == "AGENT_TO_APP" ||
-    classification.category == "AGENT_TO_MASTER"
+    classification.category == "AGENT_TO_MASTER" ||
+    classification.category == "AGENT_OLAS_TO_MASTER"
   ) {
     // "from" sends funds; bump down.
     upsertTokenBalance(
@@ -114,5 +137,6 @@ export function handleErc20Transfer(event: TransferEvent): void {
   if (classification.category == "MASTER_TO_AGENT") {
     upsertTokenBalance(to, token, amount, event, /* isDelta = */ true);
   }
-  // AGENT_TO_MASTER also updates Master side; handled above for "to".
+  // AGENT_TO_MASTER / AGENT_OLAS_TO_MASTER also update the Master side;
+  // handled above for "to".
 }

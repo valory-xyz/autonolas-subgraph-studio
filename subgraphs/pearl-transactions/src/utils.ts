@@ -782,7 +782,10 @@ export function classifyTransfer(
     );
   }
 
-  // Agent Safe → Master Safe → AGENT_TO_MASTER (OLAS reward sweep).
+  // Agent Safe → Master Safe → AGENT_TO_MASTER. The OLAS leg (reward sweeps +
+  // manual OLAS returns) is re-tagged AGENT_OLAS_TO_MASTER in
+  // handleErc20Transfer after classification (the token isn't visible here);
+  // native / non-OLAS stays AGENT_TO_MASTER.
   if (
     fromMaster != null &&
     fromMaster.role == "AGENT" &&

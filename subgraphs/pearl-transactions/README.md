@@ -27,7 +27,8 @@ A single `FundsMovement` ledger, classified per row, plus the entity graph
 | `MASTER_FUNDING_IN` | Later EOA → Master Safe top-ups |
 | `MASTER_WITHDRAWAL` | Master Safe → external EOA (tokens; native-out not indexed) |
 | `MASTER_TO_AGENT` | Master Safe → Agent Safe/EOA (grouped via `AgentFundingEvent`) |
-| `AGENT_TO_MASTER` | Agent Safe → Master Safe (reward sweep) |
+| `AGENT_TO_MASTER` | Agent Safe → Master Safe in native / non-OLAS token |
+| `AGENT_OLAS_TO_MASTER` | Agent Safe → Master Safe in OLAS (reward sweeps + manual returns; split out so the wallet can exclude it at query time) |
 | `SERVICE_BOND_DEPOSIT` / `SERVICE_BOND_REFUND` | SRTU bond posted / refunded (with `bondType`) |
 | `STAKING_REWARD_CLAIM` / `UNSTAKE_REWARD` / `SERVICE_EVICTED` | Staking events |
 | `AGENT_TO_APP` / `APP_TO_AGENT` / `OTHER` | App-contract flows / untyped |
