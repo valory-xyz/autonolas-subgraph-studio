@@ -7,13 +7,16 @@
   "scripts": {
     "audit:prod": "node scripts/audit.mjs",
     "audit:install-hooks": "node scripts/audit-install-hooks.mjs",
-    "audit:install-hooks:update": "node scripts/audit-install-hooks.mjs --update"
+    "audit:install-hooks:update": "node scripts/audit-install-hooks.mjs --update",
+    "license-check": "node scripts/license-check.mjs",
+    "license-check:test": "node --test scripts/license-check.test.mjs"
   },
   "dependencies": {
     "@graphprotocol/graph-cli": "0.98.1",
     "@graphprotocol/graph-ts": "0.38.2"
   },
   "devDependencies": {
+    "license-checker-rseidelsohn": "5.0.1",
     "matchstick-as": "0.6.0"
   },
   "resolutions": {
