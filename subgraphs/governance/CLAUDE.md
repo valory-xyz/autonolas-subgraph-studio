@@ -1,6 +1,6 @@
 # Governance Subgraph
 
-Tracks the OLAS token governance system on Ethereum mainnet. Indexes two GovernorOLAS contract versions, covering the full proposal lifecycle (creation, voting, queuing, execution, cancellation), governance parameter changes, and timelock management.
+Tracks the OLAS token governance system on Ethereum mainnet. Indexes three GovernorOLAS contract versions, covering the full proposal lifecycle (creation, voting, queuing, execution, cancellation), governance parameter changes, and timelock management.
 
 ## Architecture Overview
 
@@ -8,7 +8,7 @@ Tracks the OLAS token governance system on Ethereum mainnet. Indexes two Governo
 ```
 subgraphs/governance/
 ├── schema.graphql          # Entity definitions (11 entities)
-├── subgraph.yaml           # Manifest with 2 GovernorOLAS data sources
+├── subgraph.yaml           # Manifest with 3 GovernorOLAS data sources
 ├── package.json            # graph-cli ^0.97.0, graph-ts ^0.38.0, matchstick-as 0.5.0
 ├── src/
 │   ├── governor-olas.ts    # All 11 event handlers
@@ -20,9 +20,10 @@ subgraphs/governance/
 | Contract | Address | Blocks | Status |
 |----------|---------|--------|--------|
 | GovernorOLAS V1 | `0x34C895f302D0b5cf52ec0Edd3945321EB0f83dd5` | 15050305 → 17527057 | Archived |
-| GovernorOLAS V2 | `0x8e84b5055492901988b831817e4ace5275a3b401` | 17527057 → present | Active |
+| GovernorOLAS V2 | `0x8e84b5055492901988b831817e4ace5275a3b401` | 17527057 → 25200699 | Archived |
+| GovernorOLAS V3 | `0x060D0CBdDFb0498d610E2EF55C01516B5B1251E6` | 25200699 → present | Active |
 
-Both contracts share the same ABI (`abis/GovernorOLAS.json`) and the same set of 11 event handlers. V1 has an `endBlock` set at the upgrade point.
+All three contracts share the same ABI (`abis/GovernorOLAS.json`) and the same set of 11 event handlers. V1 and V2 have an `endBlock` set at their respective upgrade points.
 
 ---
 
@@ -140,7 +141,7 @@ yarn test                   # Run Matchstick tests (no tests currently)
 ## AI Summary
 
 ### Critical Points
-1. **Two contract versions**: V1 archived at block 17527057, V2 active from same block. Both use identical handlers and ABI.
+1. **Three contract versions**: V1 archived at block 17527057, V2 archived at block 25200699, V3 active from block 25200699. All use identical handlers and ABI.
 2. **Vote accumulation asymmetry**: `handleVoteCast` updates proposal vote tallies; `handleVoteCastWithParams` does not.
 3. **Lazy quorum**: Quorum is not set at proposal creation — it's backfilled on first lifecycle event (cancel/execute/queue) when `currentBlock > startBlock`.
 4. **Proposal entity is mutable**: Updated by VoteCast (tallies), ProposalCanceled/Executed/Queued (status flags), and quorum calculation.
