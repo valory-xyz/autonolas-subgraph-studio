@@ -1,4 +1,4 @@
-specVersion: 1.0.0
+specVersion: 1.3.0
 indexerHints:
   prune: auto
 schema:
@@ -13,12 +13,13 @@ dataSources:
       startBlock: 10827380
     mapping:
       kind: ethereum/events
-      apiVersion: 0.0.7
+      apiVersion: 0.0.9
       language: wasm/assemblyscript
       entities:
         - Service
         - AgentSafe
         - MasterSafe
+        - TrackedAddress
         - ServiceIndex
         - PendingRegistration
         - PendingBondCounter
@@ -26,6 +27,7 @@ dataSources:
         - AgentBondAttributionGuard
         - ServiceNftCustodyChange
         - FundsMovement
+        - BondMovement
       abis:
         - name: ServiceRegistryL2
           file: ../../abis/ServiceRegistryL2.json
@@ -56,10 +58,10 @@ dataSources:
       startBlock: 10827475
     mapping:
       kind: ethereum/events
-      apiVersion: 0.0.7
+      apiVersion: 0.0.9
       language: wasm/assemblyscript
       entities:
-        - FundsMovement
+        - BondMovement
         - PendingBondCounter
         - PendingBondRow
       abis:
@@ -80,10 +82,11 @@ dataSources:
       startBlock: 17310019
     mapping:
       kind: ethereum/events
-      apiVersion: 0.0.7
+      apiVersion: 0.0.9
       language: wasm/assemblyscript
       entities:
         - StakingContract
+        - TrackedAddress
       abis:
         - name: StakingFactory
           file: ../../abis/StakingFactory.json
@@ -102,7 +105,7 @@ dataSources:
       startBlock: 10827380
     mapping:
       kind: ethereum/events
-      apiVersion: 0.0.7
+      apiVersion: 0.0.9
       language: wasm/assemblyscript
       entities:
         - FundsMovement
@@ -125,7 +128,7 @@ dataSources:
       startBlock: 10827380
     mapping:
       kind: ethereum/events
-      apiVersion: 0.0.7
+      apiVersion: 0.0.9
       language: wasm/assemblyscript
       entities:
         - FundsMovement
@@ -173,11 +176,13 @@ templates:
       abi: StakingProxy
     mapping:
       kind: ethereum/events
-      apiVersion: 0.0.7
+      apiVersion: 0.0.9
       language: wasm/assemblyscript
       entities:
         - Service
         - MasterSafe
+        - AgentSafe
+        - TrackedAddress
         - FundsMovement
         - DailyServiceFunds
       abis:
@@ -209,7 +214,7 @@ templates:
       abi: GnosisSafe
     mapping:
       kind: ethereum/events
-      apiVersion: 0.0.7
+      apiVersion: 0.0.9
       language: wasm/assemblyscript
       entities:
         - FundsMovement

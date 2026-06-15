@@ -17,12 +17,8 @@ import {
   RemovedOwner,
   SafeReceived,
 } from "../generated/templates/Safe/GnosisSafe";
-import {
-  MasterSafe,
-  StakingContract,
-  TrackedEOA,
-  TrackedSafe,
-} from "../generated/schema";
+import { TokenDeposit } from "../generated/ServiceRegistryTokenUtility/ServiceRegistryTokenUtility";
+import { MasterSafe, TrackedAddress } from "../generated/schema";
 import { handleErc20Transfer } from "../src/erc20";
 import {
   handleSafeAddedOwner,
@@ -30,6 +26,7 @@ import {
   handleSafeReceived,
   handleSafeRemovedOwner,
 } from "../src/safe";
+import { handleTokenDeposit } from "../src/service-registry-token-utility";
 
 // ----------------- Fixtures -----------------
 
@@ -57,6 +54,9 @@ const RANDOM_EOA = Address.fromString(
 );
 const OLAS_GNOSIS = Address.fromString(
   "0xcE11e14225575945b8E6Dc0D4F2dD4C570f79d9f"
+);
+const SRTU_GNOSIS = Address.fromString(
+  "0xa45E64d13A30a51b91ae0eb182e88a40e9b18eD8"
 );
 const AMOUNT = BigInt.fromString("5000000000000000000"); // 5 OLAS
 const SERVICE_ID = "42";
@@ -113,6 +113,43 @@ function newOlasTransfer(
     )
   );
   return setMockEventBoilerplate(e, txHash, logIndex, OLAS_GNOSIS);
+}
+
+// newTokenDeposit — SRTU TokenDeposit(account, token, amount). Used to
+// verify the bond legs' TokenBalance booking (the raw Master ↔ SRTU
+// Transfer is suppressed; the SRTU handler owns the balance delta).
+function newTokenDeposit(
+  account: Address,
+  token: Address,
+  amount: BigInt,
+  txHash: Bytes,
+  logIndex: i32
+): TokenDeposit {
+  const mock = newMockEvent();
+  const e = new TokenDeposit(
+    mock.address,
+    mock.logIndex,
+    mock.transactionLogIndex,
+    mock.logType,
+    mock.block,
+    mock.transaction,
+    mock.parameters,
+    mock.receipt
+  );
+  e.parameters = new Array();
+  e.parameters.push(
+    new ethereum.EventParam("account", ethereum.Value.fromAddress(account))
+  );
+  e.parameters.push(
+    new ethereum.EventParam("token", ethereum.Value.fromAddress(token))
+  );
+  e.parameters.push(
+    new ethereum.EventParam(
+      "amount",
+      ethereum.Value.fromUnsignedBigInt(amount)
+    )
+  );
+  return setMockEventBoilerplate(e, txHash, logIndex, SRTU_GNOSIS);
 }
 
 // newErc20TransferAt — a Transfer event whose `event.address` is an
@@ -292,31 +329,33 @@ function seedMasterSafe(setupTransferSeen: boolean): void {
   ms.setupTransferSeen = setupTransferSeen;
   ms.save();
 
-  const trackedSafe = new TrackedSafe(MASTER_SAFE);
-  trackedSafe.role = "MASTER";
-  trackedSafe.masterSafe = MASTER_SAFE;
-  trackedSafe.save();
+  seedTrackedAddress(MASTER_SAFE, "MASTER", MASTER_SAFE, null);
+  seedTrackedAddress(MASTER_EOA, "MASTER_EOA", MASTER_SAFE, null);
+}
 
-  const trackedEoa = new TrackedEOA(MASTER_EOA);
-  trackedEoa.role = "MASTER_EOA";
-  trackedEoa.masterSafe = MASTER_SAFE;
-  trackedEoa.firstTrackedBlock = BigInt.fromI32(1);
-  trackedEoa.save();
+// serviceEntityId equivalent for tests — Service.id is the serviceId as Bytes.
+function serviceBytes(serviceId: string): Bytes {
+  return Bytes.fromByteArray(Bytes.fromBigInt(BigInt.fromString(serviceId)));
+}
+
+function seedTrackedAddress(
+  address: Address,
+  role: string,
+  masterSafe: Address | null,
+  service: Bytes | null
+): void {
+  const tracked = new TrackedAddress(address);
+  tracked.role = role;
+  if (masterSafe !== null) tracked.masterSafe = masterSafe;
+  if (service !== null) tracked.service = service;
+  tracked.firstTrackedBlock = BigInt.fromI32(1);
+  tracked.save();
 }
 
 function seedAgentSafe(serviceId: string): void {
-  const trackedSafe = new TrackedSafe(AGENT_SAFE);
-  trackedSafe.role = "AGENT";
-  trackedSafe.masterSafe = MASTER_SAFE;
-  trackedSafe.service = serviceId;
-  trackedSafe.save();
-
-  const trackedEoa = new TrackedEOA(AGENT_EOA);
-  trackedEoa.role = "AGENT_EOA";
-  trackedEoa.masterSafe = MASTER_SAFE;
-  trackedEoa.service = serviceId;
-  trackedEoa.firstTrackedBlock = BigInt.fromI32(1);
-  trackedEoa.save();
+  const svc = serviceBytes(serviceId);
+  seedTrackedAddress(AGENT_SAFE, "AGENT", MASTER_SAFE, svc);
+  seedTrackedAddress(AGENT_EOA, "AGENT_EOA", MASTER_SAFE, svc);
 }
 
 // ----------------- Tests -----------------
@@ -617,20 +656,12 @@ describe("pearl-transactions / Phase 2a — raw OLAS + Safe template", () => {
   test("StakingProxy → Agent Safe OLAS Transfer = STAKING_REWARD_CLAIM raw reconciliation", () => {
     seedMasterSafe(true);
     seedAgentSafe("42");
-    // Seed a StakingContract entity at STAKING_PROXY (any Bytes works
-    // for the classify lookup).
+    // Seed the staking proxy as a TrackedAddress(STAKING) — classifyTransfer
+    // now keys the reward-claim path on the merged tracked-address table.
     const STAKING_PROXY = Address.fromString(
       "0x9999999999999999999999999999999999999999"
     );
-    const sc = new StakingContract(STAKING_PROXY);
-    sc.implementation = Address.fromString(
-      "0xEa00be6690a871827fAfD705440D20dd75e67AB1"
-    );
-    sc.minStakingDeposit = BigInt.fromI32(10);
-    sc.numAgentInstances = BigInt.fromI32(1);
-    sc.createdBlock = BigInt.fromI32(1);
-    sc.createdTimestamp = BigInt.fromI32(1);
-    sc.save();
+    seedTrackedAddress(STAKING_PROXY, "STAKING", null, null);
 
     const tx = mockTx(23);
     handleErc20Transfer(newOlasTransfer(STAKING_PROXY, AGENT_SAFE, AMOUNT, tx, 0));
@@ -701,6 +732,151 @@ describe("pearl-transactions / Phase 2a — raw OLAS + Safe template", () => {
       id.toHexString(),
       "balance",
       AMOUNT.plus(AMOUNT).toString()
+    );
+  });
+
+  test("Master Safe → SRTU bond leg debits the OLAS TokenBalance exactly once", () => {
+    // Review #149 finding 3: the raw Master ↔ SRTU Transfer is suppressed in
+    // classifyTransfer (deduped against the SEMANTIC BondMovement row), so
+    // handleErc20Transfer applies NO balance delta for it — the SRTU handler
+    // books the bond's balance effect instead. Without that, the Master
+    // Safe's balance overstates by the bonded amount for the whole staking
+    // period. On-chain both events fire in the same tx; mirror that here.
+    seedMasterSafe(true);
+    const balId = MASTER_SAFE.concat(OLAS_GNOSIS);
+
+    // Fund the Master Safe with 5 OLAS.
+    const tx1 = mockTx(280);
+    handleErc20Transfer(newOlasTransfer(MASTER_EOA, MASTER_SAFE, AMOUNT, tx1, 0));
+    assert.fieldEquals(
+      "TokenBalance",
+      balId.toHexString(),
+      "balance",
+      AMOUNT.toString()
+    );
+
+    // Post a 1 OLAS bond: raw Transfer (suppressed) + TokenDeposit (booked).
+    const bond = BigInt.fromString("1000000000000000000");
+    const tx2 = mockTx(281);
+    handleErc20Transfer(newOlasTransfer(MASTER_SAFE, SRTU_GNOSIS, bond, tx2, 0));
+    handleTokenDeposit(
+      newTokenDeposit(MASTER_SAFE, OLAS_GNOSIS, bond, tx2, 1)
+    );
+
+    // The raw leg produced no FundsMovement (deduped)…
+    assert.notInStore("FundsMovement", tx2.concatI32(0).toHexString());
+    // …the SEMANTIC bond row exists…
+    assert.fieldEquals(
+      "BondMovement",
+      tx2.concatI32(1).toHexString(),
+      "category",
+      "SERVICE_BOND_DEPOSIT"
+    );
+    // …and the balance reflects the bond debit exactly once.
+    assert.fieldEquals(
+      "TokenBalance",
+      balId.toHexString(),
+      "balance",
+      AMOUNT.minus(bond).toString()
+    );
+  });
+
+  test("Master Safe A → Master Safe B credits B and debits A", () => {
+    // Review #149 finding 4: master→master (funds migration between Pearl
+    // installs) classifies as MASTER_FUNDING_IN for the recipient; the
+    // sender's debit rides on ClassifyResult.senderMasterId. (A's
+    // masterSafe-filtered HISTORY intentionally shows no outgoing row —
+    // documented limitation, same shape as the native-out gap.)
+    seedMasterSafe(true); // A = MASTER_SAFE
+
+    const MASTER_B = Address.fromString(
+      "0x9999999999999999999999999999999999999999"
+    );
+    const msB = new MasterSafe(MASTER_B);
+    msB.network = "gnosis";
+    msB.masterEoa = NEW_OWNER;
+    msB.owners = [NEW_OWNER];
+    msB.threshold = BigInt.fromI32(1);
+    msB.firstSeenTimestamp = BigInt.fromI32(1);
+    msB.firstSeenBlock = BigInt.fromI32(1);
+    msB.historyFloorBlock = BigInt.fromI32(1);
+    msB.historyFloorTimestamp = BigInt.fromI32(1);
+    msB.lastActivityTimestamp = BigInt.fromI32(1);
+    msB.setupTransferSeen = true;
+    msB.save();
+    seedTrackedAddress(MASTER_B, "MASTER", MASTER_B, null);
+
+    // Fund A with 5 OLAS, then migrate all of it to B.
+    const tx1 = mockTx(282);
+    handleErc20Transfer(newOlasTransfer(MASTER_EOA, MASTER_SAFE, AMOUNT, tx1, 0));
+    const tx2 = mockTx(283);
+    handleErc20Transfer(newOlasTransfer(MASTER_SAFE, MASTER_B, AMOUNT, tx2, 0));
+
+    // The row belongs to the recipient.
+    assert.fieldEquals(
+      "FundsMovement",
+      tx2.concatI32(0).toHexString(),
+      "category",
+      "MASTER_FUNDING_IN"
+    );
+    // B is credited…
+    assert.fieldEquals(
+      "TokenBalance",
+      MASTER_B.concat(OLAS_GNOSIS).toHexString(),
+      "balance",
+      AMOUNT.toString()
+    );
+    // …and A is debited (senderMasterId path).
+    assert.fieldEquals(
+      "TokenBalance",
+      MASTER_SAFE.concat(OLAS_GNOSIS).toHexString(),
+      "balance",
+      "0"
+    );
+  });
+
+  test("same-tx OLAS + USDC Master → Agent funding keeps totalOlasAmount OLAS-only", () => {
+    // Review #149 finding 5: handleErc20Transfer serves every ERC-20 data
+    // source, and AgentFundingEvent groups per (tx, masterSafe, service) —
+    // not per token. totalOlasAmount is documented OLAS-only, so the bump is
+    // gated on the token; non-OLAS legs still link via `transfers`.
+    seedMasterSafe(true);
+    seedAgentSafe(SERVICE_ID);
+    const usdc = Address.fromString(
+      "0xDDAfbb505ad214D7b80b1f830fcCc89B60fb7A83" // gnosis USDC, 6 dec
+    );
+
+    const tx = mockTx(284);
+    const olasLeg = BigInt.fromString("1000000000000000000"); // 1 OLAS (1e18)
+    const usdcLeg = BigInt.fromString("100000000"); // 100 USDC (1e8)
+    handleErc20Transfer(newOlasTransfer(MASTER_SAFE, AGENT_SAFE, olasLeg, tx, 0));
+    handleErc20Transfer(
+      newErc20TransferAt(usdc, MASTER_SAFE, AGENT_SAFE, usdcLeg, tx, 1)
+    );
+
+    // Both legs group under one event…
+    assert.entityCount("AgentFundingEvent", 1);
+    const afeId = tx.concat(MASTER_SAFE).concat(serviceBytes(SERVICE_ID));
+    // …both rows link to it…
+    assert.fieldEquals(
+      "FundsMovement",
+      tx.concatI32(0).toHexString(),
+      "agentFundingEvent",
+      afeId.toHexString()
+    );
+    assert.fieldEquals(
+      "FundsMovement",
+      tx.concatI32(1).toHexString(),
+      "agentFundingEvent",
+      afeId.toHexString()
+    );
+    // …but the OLAS total contains ONLY the OLAS leg, not mixed-decimal raw
+    // units (1e18 + 1e8 summed across tokens).
+    assert.fieldEquals(
+      "AgentFundingEvent",
+      afeId.toHexString(),
+      "totalOlasAmount",
+      olasLeg.toString()
     );
   });
 

@@ -68,11 +68,19 @@ For one Master Safe + service:
 query Rows($safe: Bytes!) {
   fundsMovements(where: { masterSafe: $safe }, orderBy: blockTimestamp,
                  orderDirection: desc, first: 100) {
-    category source amount token bondType from to
-    service { id } blockNumber transactionHash
+    category source amount token from to
+    service { serviceId } blockNumber transactionHash
+  }
+  bondMovements(where: { masterSafe: $safe }, orderBy: blockTimestamp,
+                orderDirection: desc, first: 100) {
+    category bondType amount token from to
+    service { serviceId } blockNumber transactionHash
   }
 }
 ```
+(Bond rows live in `bondMovements` — `bondType` no longer exists on
+`fundsMovements`, and `Service.id` is Bytes, so read the numeric `serviceId`.)
+
 Pick a service that has staked at least once and verify against the explorer:
 - [ ] **Stake:** two `SERVICE_BOND_DEPOSIT` rows (SECURITY_DEPOSIT + AGENT_BOND);
       amounts match the SRTU `TokenDeposit` logs in that tx

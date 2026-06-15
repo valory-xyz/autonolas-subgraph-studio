@@ -15,7 +15,7 @@ the consumer; the plan doc moved here with it.)
 |---|---|---|
 | 1a | #131 | `ServiceRegistryL2` + `ServiceRegistryTokenUtility`; `Service` / `MasterSafe` / `AgentSafe`; Master EOA via `getOwners()`; `SAFE_DEPLOYED`; SRTU bond deposit/refund rows |
 | 1b | #132 | `StakingFactory` + `StakingProxy` template; reward / unstake / eviction rows; `DailyServiceFunds` |
-| 2a | #133 | OLAS + WrappedNative `Transfer` + per-Safe `Safe` template; `classifyTransfer`; `TrackedSafe`/`TrackedEOA`/`TokenBalance`/`Token`; `AgentFundingEvent`; `SAFE_SETUP_TRANSFER` + `historyFloorBlock` (Path A) |
+| 2a | #133 | OLAS + WrappedNative `Transfer` + per-Safe `Safe` template; `classifyTransfer`; `TrackedAddress` (consolidated from the original `TrackedSafe`+`TrackedEOA`)/`TokenBalance`/`Token`; `AgentFundingEvent`; `SAFE_SETUP_TRANSFER` + `historyFloorBlock` (Path A) |
 | 2b | #138 | Per-chain stablecoin `Transfer` data sources — USDC / USDC.e / pUSD |
 
 **Deployed:** `pearl-gnosis-transactions` + `pearl-polygon-transactions`
@@ -42,10 +42,16 @@ company-account deploy; watch Polygon USDC.e sync.
   `historyFloorBlock`, `setupTransferSeen`), `AgentSafe`, `Service`
   (`agentIds`/`operators` consumer-filter lists, `state`, `nftCustodian`,
   `currentStakingContract`, `totalOlasRewardsClaimed`), `StakingContract`.
-- **Ledger:** `FundsMovement` (**`immutable: false`** — see bond queue
-  below), `DailyServiceFunds`, `ServiceNftCustodyChange`,
-  `AgentFundingEvent`.
-- **Phase-2 tracking:** `Token`, `TrackedSafe`, `TrackedEOA`, `TokenBalance`.
+- **Ledger:** `FundsMovement` (**`immutable: true`** — the bond rows that used
+  to be backfilled now live in a separate mutable `BondMovement` entity, so the
+  high-cardinality ledger skips block-range versioning), `BondMovement`
+  (SRTU bond deposit/refund; mutable, backfilled via the queue),
+  `DailyServiceFunds`, `ServiceNftCustodyChange`, `AgentFundingEvent`.
+  **Consumer note:** a complete ledger is `FundsMovement` **∪** `BondMovement`.
+- **Phase-2 tracking:** `Token` (immutable), `TrackedAddress` (immutable —
+  one table for MASTER / AGENT / MASTER_EOA / AGENT_EOA / STAKING roles,
+  replacing the old `TrackedSafe`+`TrackedEOA`; halves `classifyTransfer`'s
+  hot-path loads from 6 → 2), `TokenBalance`.
 - **Internal helpers:** `ServiceIndex`, `PendingRegistration`,
   `PendingBondCounter`, `PendingBondRow`, `AgentBondAttributionGuard`.
 - **Enums:** `FundsCategory`, `ServiceBondType`, `FundsSource`.
@@ -102,12 +108,13 @@ company-account deploy; watch Polygon USDC.e sync.
   on-chain the SRTU event fires **before** its `ServiceRegistryL2`
   counterpart in every path (`ServiceManager` calls `*TokenDeposit`/
   `*TokenRefund` before the registry fn), so the **SRTU handler is the
-  producer** (creates the `FundsMovement` row + enqueues its id) and the
+  producer** (creates the `BondMovement` row + enqueues its id) and the
   **`ServiceRegistryL2` handler is the consumer** (dequeues + backfills
-  `serviceId` + `bondType`). Hence `FundsMovement` is mutable. `bondType`
-  stays null when no SR event follows.
-- **`classifyTransfer`** — routes `(from, to)` against `TrackedSafe` /
-  `TrackedEOA` / `StakingContract` / SRTU / ServiceRegistryL2, most-specific
+  `serviceId` + `bondType`). Bond rows are the only backfilled rows, so they
+  live in the mutable `BondMovement` entity (letting `FundsMovement` stay
+  immutable). `bondType` stays null when no SR event follows.
+- **`classifyTransfer`** — two `TrackedAddress` loads (`from` + `to`) route
+  `(from, to)` by role against SRTU / ServiceRegistryL2, most-specific
   first, into the `FundsCategory` (`MASTER_FUNDING_IN`, `MASTER_TO_AGENT`,
   `AGENT_TO_MASTER`, `MASTER_WITHDRAWAL`, `STAKING_REWARD_CLAIM`,
   `SAFE_SETUP_TRANSFER`, …). Returns null for untracked counterparties (row
@@ -130,6 +137,18 @@ company-account deploy; watch Polygon USDC.e sync.
 
 - `bondType` attribution is best-effort; unmodeled call orderings leave it
   null but preserve the amount.
+- **Master Safe → Master Safe transfers** (funds migration between Pearl
+  installs) classify `MASTER_FUNDING_IN` for the recipient; both sides'
+  `TokenBalance` are updated (the sender debit rides on
+  `ClassifyResult.senderMasterId`), but the sender's masterSafe-filtered
+  HISTORY shows no outgoing row — same accepted shape as the native-out gap.
+- **`AgentFundingEvent.totalOlasAmount` is OLAS-only** (the bump is gated on
+  the token); same-tx stablecoin funding legs link via `transfers` but don't
+  contribute to either total.
+- The **bond legs' `TokenBalance` deltas are booked by the SRTU handlers**
+  (`handleTokenDeposit` debit / `handleTokenRefund` credit) — the raw
+  Master ↔ SRTU `Transfer` is suppressed in `classifyTransfer`, so the
+  balance effect lands exactly once.
 - SRTU bond rows are **token-secured-only**. Every `TokenDeposit` /
   `TokenRefund` emit in `ServiceRegistryTokenUtility` sits inside an
   `if (token != address(0))` guard, so ETH/native-secured services emit no
@@ -170,7 +189,7 @@ company-account deploy; watch Polygon USDC.e sync.
 
 ## Tests
 
-46 Matchstick tests across `tests/service-registry.test.ts` (Phase 1a),
+53 Matchstick tests across `tests/service-registry.test.ts` (Phase 1a),
 `tests/staking.test.ts` (Phase 1b), `tests/phase-2a.test.ts` (Phase 2a + the
 Phase-2b stablecoin suite — all 8 (chain, token) tuples). `yarn test`.
 
