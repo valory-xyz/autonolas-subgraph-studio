@@ -110,11 +110,22 @@ describe("UMA Mapping - extractBinaryOutcomes function", () => {
     assert.stringEquals(outcomes[1], "No");
   });
 
-  test("Should return empty array for non Yes/No outcomes", () => {
+  test("Should extract team-name outcomes from head-to-head format", () => {
     let rawData = "res_data: p1: 0, p2: 1, p3: 0.5. Outcome Mapping: Where p1 corresponds to Team WE, p2 to EDward Gaming, p3 to unknown/50-50";
     let outcomes = extractBinaryOutcomes(rawData);
 
-    assert.i32Equals(outcomes.length, 0);
+    assert.i32Equals(outcomes.length, 2);
+    assert.stringEquals(outcomes[0], "Team WE");
+    assert.stringEquals(outcomes[1], "EDward Gaming");
+  });
+
+  test("Should preserve outcome labels containing periods", () => {
+    let rawData = "res_data: p1: 0, p2: 1, p3: 0.5. Where p1 corresponds to Gen.G, p2 to St. Louis Cardinals, p3 to unknown/50-50";
+    let outcomes = extractBinaryOutcomes(rawData);
+
+    assert.i32Equals(outcomes.length, 2);
+    assert.stringEquals(outcomes[0], "Gen.G");
+    assert.stringEquals(outcomes[1], "St. Louis Cardinals");
   });
 
   test("Should return [ Yes , No ] when no outcomes found", () => {
@@ -181,7 +192,7 @@ describe("UMA Mapping - handleOOQuestionInitialized", () => {
     assert.fieldEquals("MarketMetadata", questionIdHex, "outcomes", "[Yes, No]");
   });
 
-  test("Should not create entities for non Yes/No outcomes array format", () => {
+  test("Should create entities for 2-outcome non Yes/No outcomes array format", () => {
     createBridge(QUESTION_ID, CONDITION_ID);
 
     let ancillaryDataString = "q: title: Simple Question, outcomes: [Option A, Option B], res_data: test";
@@ -200,7 +211,9 @@ describe("UMA Mapping - handleOOQuestionInitialized", () => {
     handleOOQuestionInitialized(event);
 
     let questionIdHex = QUESTION_ID.toHexString();
-    assert.notInStore("MarketMetadata", questionIdHex);
+    assert.fieldEquals("MarketMetadata", questionIdHex, "title", "Simple Question");
+    assert.fieldEquals("MarketMetadata", questionIdHex, "outcomes", "[Option A, Option B]");
+    assert.fieldEquals("Question", CONDITION_ID.toHexString(), "questionId", questionIdHex);
   });
 
   test("Should create MarketMetadata with 'some_field: value' title when title not found", () => {
@@ -270,7 +283,7 @@ describe("UMA Mapping - handleOOQuestionInitialized", () => {
     assert.fieldEquals("MarketMetadata", questionIdHex, "outcomes", "[Yes, No]");
   });
 
-  test("Should not create entities for non Yes/No team-based market format", () => {
+  test("Should create entities for head-to-head team-based market format", () => {
     createBridge(QUESTION_ID, CONDITION_ID);
 
     let ancillaryDataString = "q: title: Who will win the match?, res_data: p1: 0, p2: 1, p3: 0.5. Outcome Mapping: Where p1 corresponds to Team Alpha, p2 to Team Beta, p3 to unknown/50-50";
@@ -289,7 +302,33 @@ describe("UMA Mapping - handleOOQuestionInitialized", () => {
     handleOOQuestionInitialized(event);
 
     let questionIdHex = QUESTION_ID.toHexString();
-    assert.notInStore("MarketMetadata", questionIdHex);
+    assert.fieldEquals("MarketMetadata", questionIdHex, "title", "Who will win the match?");
+    assert.fieldEquals("MarketMetadata", questionIdHex, "outcomes", "[Team Alpha, Team Beta]");
+    assert.fieldEquals("Question", CONDITION_ID.toHexString(), "questionId", questionIdHex);
+  });
+
+  test("Should handle real head-to-head e-sports ancillary data (issue #128)", () => {
+    createBridge(QUESTION_ID, CONDITION_ID);
+
+    let ancillaryDataString = "q: title: Dota 2: Team Nemesis vs Zero Tenacity (BO3) - 1win Essence Group B, description: This market refers to the Dota 2 match between Team Nemesis and Zero Tenacity. res_data: p1: 0, p2: 1, p3: 0.5. Where p1 corresponds to Team Nemesis, p2 to Zero Tenacity, p3 to unknown/50-50";
+    let ancillaryData = Bytes.fromUTF8(ancillaryDataString);
+
+    let event = createQuestionInitializedEvent(
+      QUESTION_ID,
+      TIMESTAMP,
+      REQUESTER,
+      ancillaryData,
+      CURRENCY,
+      REWARD,
+      BigInt.fromI32(1000)
+    );
+
+    handleOOQuestionInitialized(event);
+
+    let questionIdHex = QUESTION_ID.toHexString();
+    assert.fieldEquals("MarketMetadata", questionIdHex, "title", "Dota 2: Team Nemesis vs Zero Tenacity (BO3) - 1win Essence Group B");
+    assert.fieldEquals("MarketMetadata", questionIdHex, "outcomes", "[Team Nemesis, Zero Tenacity]");
+    assert.fieldEquals("Question", CONDITION_ID.toHexString(), "questionId", questionIdHex);
   });
 
   test("Should use questionID as entity ID", () => {

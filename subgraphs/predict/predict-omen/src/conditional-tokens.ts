@@ -10,8 +10,13 @@ import {
 } from "./utils";
 
 export function handleConditionPreparation(event: ConditionPreparationEvent): void {
+  // Only save conditions for our markets (whitelisted-creator questions).
+  // Event ordering is guaranteed: LogNewQuestion always fires before
+  // ConditionPreparation (the questionId comes from Reality.eth), which in turn
+  // precedes FixedProductMarketMakerCreation — so the Question entity already
+  // exists here for every market we track. Saving unconditionally would store a
+  // condition for every CTF condition ever prepared on Gnosis, bloating the DB.
   let question = Question.load(event.params.questionId.toHexString());
-  // only safe conditions for our markets
   if (question === null) {
     return;
   }

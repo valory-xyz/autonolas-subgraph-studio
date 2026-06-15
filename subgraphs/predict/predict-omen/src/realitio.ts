@@ -2,6 +2,8 @@ import { BigInt, log } from "@graphprotocol/graph-ts";
 import {
   LogNewQuestion as LogNewQuestionEvent,
   LogNewAnswer as LogNewAnswerEvent,
+  LogFinalize as LogFinalizeEvent,
+  LogNotifyOfArbitrationRequest as LogNotifyOfArbitrationRequestEvent,
 } from "../generated/Realitio/Realitio";
 import {
   Bet,
@@ -11,7 +13,7 @@ import {
   DailyProfitStatistic,
 } from "../generated/schema";
 import { CREATOR_ADDRESSES } from "./constants";
-import { addProfitParticipant, removeProfitParticipant, bytesToBigInt, getDailyProfitStatistic, getDayTimestamp, getGlobal, saveMapValues } from "./utils";
+import { actualForOutcome, addProfitParticipant, brierContribution, bytesToBigInt, getDailyProfitStatistic, getDayTimestamp, getGlobal, removeProfitParticipant, saveMapValues } from "./utils";
 
 export function handleLogNewQuestion(event: LogNewQuestionEvent): void {
   // only safe questions for our creators
@@ -21,6 +23,7 @@ export function handleLogNewQuestion(event: LogNewQuestionEvent): void {
 
   let entity = new Question(event.params.question_id.toHexString());
   entity.question = event.params.question;
+  entity.timeout = event.params.timeout;
   entity.save();
 }
 
@@ -51,6 +54,13 @@ export function handleLogNewAnswer(event: LogNewAnswerEvent): void {
   let previousAnswerTimestamp = fpmm.currentAnswerTimestamp;
   fpmm.currentAnswer = event.params.answer;
   fpmm.currentAnswerTimestamp = event.block.timestamp;
+  // Scheduled finalization: the answer becomes final at ts + timeout unless a new
+  // answer (or arbitration) supersedes it. Recomputed on every answer, so re-answers
+  // push the finalization time out — matching Reality.eth semantics.
+  let timeout = question.timeout;
+  if (timeout !== null) {
+    fpmm.answerFinalizedTimestamp = event.params.ts.plus(timeout);
+  }
   fpmm.save();
 
   let isReAnswer = previousAnswer !== null && previousAnswer != event.params.answer;
@@ -67,6 +77,10 @@ export function handleLogNewAnswer(event: LogNewAnswerEvent): void {
   let answerBigInt = bytesToBigInt(event.params.answer);
   let isAnswer0 = answerBigInt.equals(BigInt.zero());
   let isAnswer1 = answerBigInt.equals(BigInt.fromI32(1));
+  let isInvalid = !isAnswer0 && !isAnswer1;
+  // For Brier: which outcome resolved true. Only meaningful when !isInvalid —
+  // actualForOutcome() short-circuits on isInvalid and ignores this value.
+  let winningOutcome = isAnswer1 ? BigInt.fromI32(1) : BigInt.zero();
   let TWO = BigInt.fromI32(2);
 
   let global = getGlobal();
@@ -132,6 +146,17 @@ export function handleLogNewAnswer(event: LogNewAnswerEvent): void {
         ? dailyStatsCache.get(oldStatId)!
         : getDailyProfitStatistic(participant.traderAgent, oldTimestamp);
       oldDailyStat.dailyProfit = oldDailyStat.dailyProfit.minus(oldProfit);
+      // Invariant: after every settlement, `participant.totalTradedSettled`/`totalFeesSettled`
+      // equal the cost basis attributed to a daily stat. Subtracting them here always reverses
+      // the exact amount added on the previous settlement, regardless of chain length.
+      oldDailyStat.dailyTradedSettled = oldDailyStat.dailyTradedSettled.minus(participant.totalTradedSettled);
+      oldDailyStat.dailyFeesSettled = oldDailyStat.dailyFeesSettled.minus(participant.totalFeesSettled);
+      // Reverse exactly the Brier contribution credited at the previous settlement. Stored
+      // on the participant so this works even if bets were placed between answers.
+      // Pre-Brier participants (indexed before this deploy) default to zero, so the reversal
+      // is a no-op — which is correct, since no Brier was tracked for them.
+      oldDailyStat.brierSum = oldDailyStat.brierSum.minus(participant.brierSumApplied);
+      oldDailyStat.brierCount = oldDailyStat.brierCount - participant.brierCountApplied;
       removeProfitParticipant(oldDailyStat, fpmm.id);
       dailyStatsCache.set(oldStatId, oldDailyStat);
 
@@ -141,6 +166,9 @@ export function handleLogNewAnswer(event: LogNewAnswerEvent): void {
         ? dailyStatsCache.get(newStatId)!
         : getDailyProfitStatistic(participant.traderAgent, event.block.timestamp);
       newDailyStat.dailyProfit = newDailyStat.dailyProfit.plus(newProfit);
+      // Mirror newProfit's full-cost basis: attribute the entire current cost to the new day.
+      newDailyStat.dailyTradedSettled = newDailyStat.dailyTradedSettled.plus(participant.totalTraded);
+      newDailyStat.dailyFeesSettled = newDailyStat.dailyFeesSettled.plus(participant.totalFees);
       addProfitParticipant(newDailyStat, fpmm.id);
       dailyStatsCache.set(newStatId, newDailyStat);
 
@@ -164,16 +192,33 @@ export function handleLogNewAnswer(event: LogNewAnswerEvent): void {
       globalTradedSettledDelta = globalTradedSettledDelta.plus(newAmountToSettle);
       globalFeesSettledDelta = globalFeesSettledDelta.plus(newFeesToSettle);
 
-      // 10. Mark any new bets as counted
+      // 10. Mark any new bets as counted AND accumulate Brier for new answer
       let reBetIds = participant.bets;
+      let reBrierSum = BigInt.zero();
+      let reBrierCount = 0;
       for (let j = 0; j < reBetIds.length; j++) {
         let bet = Bet.load(reBetIds[j]);
-        if (bet !== null && !bet.countedInProfit) {
+        if (bet === null) continue;
+        if (!bet.countedInProfit) {
           bet.countedInProfit = true;
           bet.countedInTotal = true;
           bet.save();
         }
+        // Buy-side bets with a recorded implied probability contribute to Brier.
+        // Zero-probability is sentinel for "no recorded price" (legacy / degenerate); skip those.
+        let reImp = bet.impliedProbability;
+        if (reImp.gt(BigInt.zero()) && bet.amount.gt(BigInt.zero())) {
+          let reActual = actualForOutcome(bet.outcomeIndex, winningOutcome, isInvalid);
+          let reContribution = brierContribution(reImp, reActual);
+          reBrierSum = reBrierSum.plus(reContribution);
+          reBrierCount += 1;
+        }
       }
+      newDailyStat.brierSum = newDailyStat.brierSum.plus(reBrierSum);
+      newDailyStat.brierCount = newDailyStat.brierCount + reBrierCount;
+      dailyStatsCache.set(newStatId, newDailyStat);
+      participant.brierSumApplied = reBrierSum;
+      participant.brierCountApplied = reBrierCount;
 
       participant.save();
       continue;
@@ -228,6 +273,8 @@ export function handleLogNewAnswer(event: LogNewAnswerEvent): void {
       ? dailyStatsCache.get(statId)!
       : getDailyProfitStatistic(participant.traderAgent, event.block.timestamp);
     dailyStat.dailyProfit = dailyStat.dailyProfit.plus(profit);
+    dailyStat.dailyTradedSettled = dailyStat.dailyTradedSettled.plus(amountToSettle);
+    dailyStat.dailyFeesSettled = dailyStat.dailyFeesSettled.plus(feesToSettle);
     addProfitParticipant(dailyStat, fpmm.id);
     dailyStatsCache.set(statId, dailyStat);
 
@@ -237,15 +284,33 @@ export function handleLogNewAnswer(event: LogNewAnswerEvent): void {
     globalExpectedPayoutDelta = globalExpectedPayoutDelta.plus(expectedPayout);
 
     // 10. Mark individual bets via participant.bets (stored array, not derived)
+    //     and accumulate Brier contribution for this participant.
     let betIds = participant.bets;
+    let brierSum = BigInt.zero();
+    let brierCount = 0;
     for (let j = 0; j < betIds.length; j++) {
       let bet = Bet.load(betIds[j]);
-      if (bet !== null && !bet.countedInProfit) {
+      if (bet === null) continue;
+      if (!bet.countedInProfit) {
         bet.countedInProfit = true;
         bet.countedInTotal = true;
         bet.save();
       }
+      // Buy-side bets with a recorded implied probability contribute to Brier.
+      // Zero-probability is sentinel for "no recorded price" (legacy / degenerate); skip those.
+      let imp = bet.impliedProbability;
+      if (imp.gt(BigInt.zero()) && bet.amount.gt(BigInt.zero())) {
+        let actual = actualForOutcome(bet.outcomeIndex, winningOutcome, isInvalid);
+        let contribution = brierContribution(imp, actual);
+        brierSum = brierSum.plus(contribution);
+        brierCount += 1;
+      }
     }
+    dailyStat.brierSum = dailyStat.brierSum.plus(brierSum);
+    dailyStat.brierCount = dailyStat.brierCount + brierCount;
+    dailyStatsCache.set(statId, dailyStat);
+    participant.brierSumApplied = brierSum;
+    participant.brierCountApplied = brierCount;
 
     participant.save();
   }
@@ -261,4 +326,38 @@ export function handleLogNewAnswer(event: LogNewAnswerEvent): void {
     global.totalExpectedPayout = global.totalExpectedPayout.plus(globalExpectedPayoutDelta);
     global.save();
   }
+}
+
+
+export function handleLogFinalize(event: LogFinalizeEvent): void {
+  let question = Question.load(event.params.question_id.toHexString());
+  if (question === null) return;
+
+  let id = question.fixedProductMarketMaker;
+  if (id === null) return;
+
+  let fpmm = FixedProductMarketMakerCreation.load(id);
+  if (fpmm === null) return;
+
+  // Arbitrator finalization is immediate. The answer itself was already applied by
+  // the LogNewAnswer emitted earlier in the same transaction (submitAnswerByArbitrator
+  // emits both), so settlement/re-answer logic has run — only the finality changes.
+  fpmm.answerFinalizedTimestamp = event.block.timestamp;
+  fpmm.save();
+}
+
+export function handleLogNotifyOfArbitrationRequest(event: LogNotifyOfArbitrationRequestEvent): void {
+  let question = Question.load(event.params.question_id.toHexString());
+  if (question === null) return;
+
+  let id = question.fixedProductMarketMaker;
+  if (id === null) return;
+
+  let fpmm = FixedProductMarketMakerCreation.load(id);
+  if (fpmm === null) return;
+
+  // Finalization is frozen while arbitration is pending; the arbitrator's LogFinalize
+  // (or a post-arbitration answer) sets it again.
+  fpmm.answerFinalizedTimestamp = null;
+  fpmm.save();
 }

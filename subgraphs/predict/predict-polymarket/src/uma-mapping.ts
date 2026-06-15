@@ -77,22 +77,18 @@ export function extractTitle(rawData: string): string {
 }
 
 /**
- * Helper to verify the outcome pair is strictly binary Yes/No
- */
-function isYesNoPair(out1: string, out2: string): boolean {
-  let val1 = out1.toLowerCase();
-  let val2 = out2.toLowerCase();
-
-  return (val1 == "yes" && val2 == "no") || (val1 == "no" && val2 == "yes");
-}
-
-/**
  * Extracts the outcomes array.
  * Example input: "... outcomes: [Yes, No]" or
  * res_data: p1: 0, p2: 1, p3: 0.5. Outcome Mapping: Where p1 corresponds to Team WE, p2 to EDward Gaming, p3 to unknown/50-50
+ *
+ * Any 2-outcome market is accepted — labels don't have to be Yes/No.
+ * Head-to-head markets (e.g. "Dota 2: Team A vs Team B") use competitor names
+ * as outcome labels; the labels are purely descriptive and nothing downstream
+ * branches on them (winner comes from payouts, outcomeIndex from TokenRegistry).
+ * Markets with more than 2 outcomes are rejected.
  */
 export function extractBinaryOutcomes(rawData: string): string[] {
-  // 1. Try to find explicit mappings (p1: No, p2: Yes, etc.)
+  // 1. Try to find explicit mappings (p1 corresponds to X, p2 to Y)
   let p1Key = "p1 corresponds to ";
   let p2Key = "p2 to ";
   let p1Idx = rawData.indexOf(p1Key);
@@ -102,22 +98,23 @@ export function extractBinaryOutcomes(rawData: string): string[] {
     let p1Start = p1Idx + p1Key.length;
     let p1End = rawData.indexOf(",", p1Start);
     let p2Start = p2Idx + p2Key.length;
-    let p2End = rawData.indexOf(",", p2Start);
+    // Truncate at the ", p3" clause first — labels like "Gen.G" or "St. Louis"
+    // contain periods, so the "." fallback must come last.
+    let p2End = rawData.indexOf(", p3", p2Start);
+    if (p2End == -1) p2End = rawData.indexOf(",", p2Start);
     if (p2End == -1) p2End = rawData.indexOf(".", p2Start);
     if (p2End == -1) p2End = rawData.length;
 
     let out1 = rawData.substring(p1Start, p1End != -1 ? p1End : rawData.length).trim();
-    let out2 = rawData.substring(p2Start, p2End != -1 ? p2End : rawData.length).trim();
-    
-    // If we found outcomes but they AREN'T Yes/No, we reject the market.
-    if (isYesNoPair(out1, out2)) {
-      return [out1, out2];
-    } else {
-      return []; // Reject categorical markets
+    let out2 = rawData.substring(p2Start, p2End).trim();
+
+    if (out1.length == 0 || out2.length == 0) {
+      return [];
     }
+    return [out1, out2];
   }
 
-  // 2. Try the "outcomes: [Yes, No]" pattern
+  // 2. Try the "outcomes: [A, B]" pattern — accept exactly 2 outcomes
   let outcomesKey = "outcomes: [";
   let oStart = rawData.indexOf(outcomesKey);
   if (oStart != -1) {
@@ -127,12 +124,12 @@ export function extractBinaryOutcomes(rawData: string): string[] {
       if (list.length == 2) {
         let out1 = list[0].trim();
         let out2 = list[1].trim();
-        if (isYesNoPair(out1, out2)) {
+        if (out1.length > 0 && out2.length > 0) {
           return [out1, out2];
         }
       }
     }
-    // If outcomes tag exists but isn't Yes/No, reject.
+    // outcomes tag exists but isn't a 2-outcome list — reject.
     return [];
   }
 

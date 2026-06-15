@@ -2,6 +2,11 @@ import { Address, BigInt, Bytes } from "@graphprotocol/graph-ts";
 import { Global, TraderAgent, MarketParticipant, DailyProfitStatistic } from "../generated/schema";
 import { ONE_DAY } from "./constants";
 
+// 1e18 — fixed-point scale for impliedProbability and Brier sum.
+export const PROBABILITY_SCALE = BigInt.fromString("1000000000000000000");
+// 5e17 — half scale, used as the "actual" for invalid-answer markets where payouts are [1, 1].
+export const HALF_PROBABILITY_SCALE = BigInt.fromString("500000000000000000");
+
 /**
  * Return global entity for updates
  * Create new if doesn't exist
@@ -63,11 +68,58 @@ export function getDailyProfitStatistic(agentAddress: Bytes, timestamp: BigInt):
     statistic.totalTraded = BigInt.zero();
     statistic.totalFees = BigInt.zero();
     statistic.totalPayout = BigInt.zero();
+    statistic.dailyTradedSettled = BigInt.zero();
+    statistic.dailyFeesSettled = BigInt.zero();
     statistic.dailyProfit = BigInt.zero();
+    statistic.brierSum = BigInt.zero();
+    statistic.brierCount = 0;
 
     statistic.profitParticipants = [];
   }
   return statistic as DailyProfitStatistic;
+}
+
+/**
+ * Implied probability for a trade: amount / outcomeTokenAmount, 1e18-scaled.
+ *
+ * Expected range: [0, PROBABILITY_SCALE] (i.e. [0, 1e18]). FPMM invariants guarantee
+ * the trade price is in [0, 1] collateral per outcome token:
+ *   - Buy:  outcomeTokensBought >= investmentAmount (per-token cost ≤ 1)
+ *   - Sell: outcomeTokensSold   >= returnAmount     (per-token return ≤ 1)
+ * so the ratio cannot exceed 1e18 for any well-formed FPMM trade. No explicit clamp:
+ * if the invariant is ever violated upstream we want it to surface, not get masked.
+ *
+ * Returns zero when the denominator is zero (degenerate — should not happen for valid trades).
+ * Brier aggregation skips zero-probability bets.
+ */
+export function computeImpliedProbability(amount: BigInt, outcomeTokenAmount: BigInt): BigInt {
+  if (outcomeTokenAmount.equals(BigInt.zero())) {
+    return BigInt.zero();
+  }
+  return amount.times(PROBABILITY_SCALE).div(outcomeTokenAmount);
+}
+
+/**
+ * Brier contribution for a single bet, 1e18-scaled. `actual` is in the same 1e18 scale
+ * (0, 5e17, or 1e18). Returned value is ((p - actual)^2) / 1e18, in [0, 1e18].
+ */
+export function brierContribution(impliedProbability: BigInt, actual: BigInt): BigInt {
+  let diff = impliedProbability.minus(actual);
+  return diff.times(diff).div(PROBABILITY_SCALE);
+}
+
+/**
+ * Resolve the per-bet `actual` (1e18-scaled) for a given market outcome.
+ * Invalid answers use 0.5 (half-scale) per the [1, 1] payout split.
+ */
+export function actualForOutcome(betOutcomeIndex: BigInt, winningOutcome: BigInt, isInvalid: boolean): BigInt {
+  if (isInvalid) {
+    return HALF_PROBABILITY_SCALE;
+  }
+  if (betOutcomeIndex.equals(winningOutcome)) {
+    return PROBABILITY_SCALE;
+  }
+  return BigInt.zero();
 }
 
 /**
@@ -142,6 +194,8 @@ export function processTradeActivity(
     participant.outcomeTokenBalance0 = BigInt.zero();
     participant.outcomeTokenBalance1 = BigInt.zero();
     participant.expectedPayout = BigInt.zero();
+    participant.brierSumApplied = BigInt.zero();
+    participant.brierCountApplied = 0;
     participant.settled = false;
     participant.createdAt = timestamp;
     participant.bets = [];

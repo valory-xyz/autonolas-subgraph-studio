@@ -1,11 +1,30 @@
 import { BigInt } from "@graphprotocol/graph-ts";
-import { CreateMultisigWithAgents as CreateMultisigWithAgentsEvent } from "../generated/ServiceRegistryL2/ServiceRegistryL2";
-import { TraderAgent } from "../generated/schema";
+import {
+  CreateMultisigWithAgents as CreateMultisigWithAgentsEvent,
+  RegisterInstance as RegisterInstanceEvent,
+} from "../generated/ServiceRegistryL2/ServiceRegistryL2";
+import { TraderAgent, TraderService } from "../generated/schema";
 import { getGlobal } from "./utils";
+import { PREDICT_AGENT_IDS } from "./constants";
+
+export function handleRegisterInstance(event: RegisterInstanceEvent): void {
+  let agentId = event.params.agentId.toI32();
+  if (PREDICT_AGENT_IDS.indexOf(agentId) === -1) return;
+
+  let serviceId = event.params.serviceId.toHexString();
+  let traderService = TraderService.load(serviceId);
+  if (traderService !== null) return;
+
+  traderService = new TraderService(serviceId);
+  traderService.save();
+}
 
 export function handleCreateMultisigWithAgents(
   event: CreateMultisigWithAgentsEvent
 ): void {
+  let traderService = TraderService.load(event.params.serviceId.toHexString());
+  if (traderService === null) return;
+
   let traderAgent = TraderAgent.load(event.params.multisig);
   if (traderAgent === null) {
     traderAgent = new TraderAgent(event.params.multisig);
