@@ -63,7 +63,7 @@ dataSources:
       address: "0x8e84b5055492901988b831817e4ace5275a3b401"
       abi: GovernorOLAS
       startBlock: 17527057
-      endBlock: 25200699
+      endBlock: 25322326
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
@@ -81,7 +81,7 @@ dataSources:
     source:
       address: "0x060D0CBdDFb0498d610E2EF55C01516B5B1251E6"
       abi: GovernorOLAS
-      startBlock: 25200699
+      startBlock: 25322326
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
