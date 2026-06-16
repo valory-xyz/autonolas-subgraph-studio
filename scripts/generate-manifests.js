@@ -89,7 +89,7 @@ function renderErc20TokenDataSources(graphNetwork, networkData) {
       startBlock: ${startBlock}
     mapping:
       kind: ethereum/events
-      apiVersion: 0.0.7
+      apiVersion: 0.0.9
       language: wasm/assemblyscript
       entities:
         - FundsMovement
