@@ -154,7 +154,7 @@ dataSources:
       startBlock: 80360433
     mapping:
       kind: ethereum/events
-      apiVersion: 0.0.7
+      apiVersion: 0.0.9
       language: wasm/assemblyscript
       entities:
         - FundsMovement
@@ -177,7 +177,7 @@ dataSources:
       startBlock: 80360433
     mapping:
       kind: ethereum/events
-      apiVersion: 0.0.7
+      apiVersion: 0.0.9
       language: wasm/assemblyscript
       entities:
         - FundsMovement
@@ -200,7 +200,7 @@ dataSources:
       startBlock: 80360433
     mapping:
       kind: ethereum/events
-      apiVersion: 0.0.7
+      apiVersion: 0.0.9
       language: wasm/assemblyscript
       entities:
         - FundsMovement
