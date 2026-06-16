@@ -4,12 +4,12 @@ Indexes **funds movement for Pearl Master Safe and Agent Safe accounts** on
 Gnosis, Polygon, Optimism, Base. The on-chain backend for the Pearl wallet
 transaction-history view (VLOP-73).
 
-> **Status — implemented (phases 1a/1b/2a/2b), deployed.** Gnosis + Polygon
-> are live on Studio (`pearl-gnosis-transactions`, `pearl-polygon-transactions`,
-> v0.0.5). Optimism/Base manifests build but aren't deployed on the company
-> account yet. See
+> **Status — implemented (phases 1a/1b/2a/2b); all four networks published
+> on The Graph.** As of 2026-06-12 Gnosis is at chain head; Optimism, Base
+> and Polygon are still backfilling (Polygon slowest — the USDC.e-dense
+> range; see [`INDEXING-PERFORMANCE.md`](./INDEXING-PERFORMANCE.md)). See
 > [`CLAUDE.md`](./CLAUDE.md) for architecture and
-> [`IMPLEMENTATION-PLAN.md`](../pearl-funds/IMPLEMENTATION-PLAN.md) for the design.
+> [`IMPLEMENTATION-PLAN.md`](./IMPLEMENTATION-PLAN.md) for the design.
 
 ## What it covers
 
@@ -136,7 +136,7 @@ verification checklist.
 
 ## Related
 
-- [`IMPLEMENTATION-PLAN.md`](../pearl-funds/IMPLEMENTATION-PLAN.md) — full design.
+- [`IMPLEMENTATION-PLAN.md`](./IMPLEMENTATION-PLAN.md) — full design.
 - [`subgraphs/staking`](../staking) — `StakingFactory`/`StakingProxy` source.
 - [`subgraphs/service-registry`](../service-registry) — `ServiceRegistryL2` source.
 - [`predict-polymarket`](../predict/predict-polymarket) / [`predict-omen`](../predict/predict-omen)
