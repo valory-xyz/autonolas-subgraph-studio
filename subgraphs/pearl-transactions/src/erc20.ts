@@ -3,7 +3,14 @@ import { Transfer as TransferEvent } from "../generated/OLAS/ERC20";
 import { FundsMovement } from "../generated/schema";
 import {
   CATEGORY_AGENT_OLAS_TO_MASTER,
+  CATEGORY_AGENT_TO_APP,
   CATEGORY_AGENT_TO_MASTER,
+  CATEGORY_APP_TO_AGENT,
+  CATEGORY_MASTER_FUNDING_IN,
+  CATEGORY_MASTER_TO_AGENT,
+  CATEGORY_MASTER_WITHDRAWAL,
+  CATEGORY_SAFE_SETUP_TRANSFER,
+  CATEGORY_STAKING_REWARD_CLAIM,
   SOURCE_RAW_TRANSFER,
   getOlasAddress,
 } from "./constants";
@@ -79,7 +86,7 @@ export function handleErc20Transfer(event: TransferEvent): void {
   // SAFE_SETUP_TRANSFER → flip the MasterSafe flag so subsequent
   // hops are MASTER_FUNDING_IN.
   if (
-    classification.category == "SAFE_SETUP_TRANSFER" &&
+    classification.category == CATEGORY_SAFE_SETUP_TRANSFER &&
     classification.masterSafeId !== null
   ) {
     markSetupTransferSeen(classification.masterSafeId!);
@@ -87,7 +94,7 @@ export function handleErc20Transfer(event: TransferEvent): void {
 
   // MASTER_TO_AGENT → group under AgentFundingEvent.
   if (
-    classification.category == "MASTER_TO_AGENT" &&
+    classification.category == CATEGORY_MASTER_TO_AGENT &&
     classification.masterSafeId !== null &&
     classification.service !== null
   ) {
@@ -98,7 +105,15 @@ export function handleErc20Transfer(event: TransferEvent): void {
       event
     );
     row.agentFundingEvent = afe.id;
-    addToAgentFundingEvent(afe, amount, /* isNative = */ false);
+    // totalOlasAmount is documented as OLAS-only, but this handler serves
+    // every ERC-20 data source — gate the bump on the token actually being
+    // OLAS so a same-tx OLAS + stablecoin funding doesn't sum mixed-decimal
+    // raw units into one number. Non-OLAS legs still link via `transfers`.
+    if (token.equals(getOlasAddress(currentNetwork()))) {
+      addToAgentFundingEvent(afe, amount, /* isNative = */ false);
+    } else {
+      afe.save();
+    }
   }
 
   row.save();
@@ -107,22 +122,22 @@ export function handleErc20Transfer(event: TransferEvent): void {
   // moves balances exactly like AGENT_TO_MASTER (only the category label
   // differs), so it appears in the same branches.
   if (
-    classification.category == "SAFE_SETUP_TRANSFER" ||
-    classification.category == "MASTER_FUNDING_IN" ||
-    classification.category == "AGENT_TO_MASTER" ||
-    classification.category == "AGENT_OLAS_TO_MASTER" ||
-    classification.category == "APP_TO_AGENT" ||
-    classification.category == "STAKING_REWARD_CLAIM"
+    classification.category == CATEGORY_SAFE_SETUP_TRANSFER ||
+    classification.category == CATEGORY_MASTER_FUNDING_IN ||
+    classification.category == CATEGORY_AGENT_TO_MASTER ||
+    classification.category == CATEGORY_AGENT_OLAS_TO_MASTER ||
+    classification.category == CATEGORY_APP_TO_AGENT ||
+    classification.category == CATEGORY_STAKING_REWARD_CLAIM
   ) {
     // "to" is the tracked safe receiving funds.
     upsertTokenBalance(to, token, amount, event, /* isDelta = */ true);
   }
   if (
-    classification.category == "MASTER_WITHDRAWAL" ||
-    classification.category == "MASTER_TO_AGENT" ||
-    classification.category == "AGENT_TO_APP" ||
-    classification.category == "AGENT_TO_MASTER" ||
-    classification.category == "AGENT_OLAS_TO_MASTER"
+    classification.category == CATEGORY_MASTER_WITHDRAWAL ||
+    classification.category == CATEGORY_MASTER_TO_AGENT ||
+    classification.category == CATEGORY_AGENT_TO_APP ||
+    classification.category == CATEGORY_AGENT_TO_MASTER ||
+    classification.category == CATEGORY_AGENT_OLAS_TO_MASTER
   ) {
     // "from" sends funds; bump down.
     upsertTokenBalance(
@@ -134,8 +149,14 @@ export function handleErc20Transfer(event: TransferEvent): void {
     );
   }
   // MASTER_TO_AGENT updates both sides.
-  if (classification.category == "MASTER_TO_AGENT") {
+  if (classification.category == CATEGORY_MASTER_TO_AGENT) {
     upsertTokenBalance(to, token, amount, event, /* isDelta = */ true);
+  }
+  // Master Safe → Master Safe (funds migration): the row classifies as
+  // MASTER_FUNDING_IN for the recipient (credited above); senderMasterId
+  // carries the sending Master Safe so its balance is debited too.
+  if (classification.senderMasterId !== null) {
+    upsertTokenBalance(from, token, amount.neg(), event, /* isDelta = */ true);
   }
   // AGENT_TO_MASTER / AGENT_OLAS_TO_MASTER also update the Master side;
   // handled above for "to".
