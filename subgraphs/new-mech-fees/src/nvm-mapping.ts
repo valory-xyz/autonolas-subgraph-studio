@@ -1,7 +1,8 @@
-import { BigInt, dataSource } from "@graphprotocol/graph-ts"
+import { BigDecimal, BigInt, dataSource } from "@graphprotocol/graph-ts"
 import {
   MechBalanceAdjusted,
-  Withdraw
+  Withdraw,
+  Drained
 } from "../generated/BalanceTrackerNvmSubscription/BalanceTrackerNvmSubscription"
 import { Mech } from "../generated/schema"
 import {
@@ -30,11 +31,22 @@ import {
   updateDailyTotalsIn,
   updateDailyTotalsOut,
   updateMechDailyIn,
-  updateMechDailyOut
+  updateMechDailyOut,
+  recordDrain
 } from "./utils"
 
 const BURN_ADDRESS = getBurnAddressMechFees();
 const MODEL = "nvm";
+
+// Converts an NVM drained amount (collectedFees, in credits — the same unit as the NVM
+// delivery rate / mech balance) to USD, mirroring the FEE_IN conversion per network.
+function drainNvmCreditsToUsd(credits: BigInt): BigDecimal {
+  const network = dataSource.network();
+  if (network == "xdai" || network == "gnosis") return calculateGnosisNvmFeesIn(credits);
+  if (network == "matic") return calculatePolygonNvmFeesIn(credits);
+  if (network == "optimism") return calculateOptimismNvmFeesIn(credits);
+  return calculateBaseNvmFeesIn(credits);
+}
 
 export function handleMechBalanceAdjustedForNvm(event: MechBalanceAdjusted): void {
   const deliveryRateCredits = event.params.deliveryRate;
@@ -114,4 +126,15 @@ export function handleWithdrawForNvm(event: Withdraw): void {
       MODEL
     );
   }
+}
+
+export function handleDrainedForNvm(event: Drained): void {
+  const credits = event.params.collectedFees;
+  recordDrain(
+    event,
+    MODEL,
+    event.params.token,
+    credits.toBigDecimal(),
+    drainNvmCreditsToUsd(credits)
+  );
 }

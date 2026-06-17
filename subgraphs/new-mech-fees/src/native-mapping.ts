@@ -1,7 +1,8 @@
-import { Address, BigDecimal, dataSource, log } from "@graphprotocol/graph-ts"
+import { Address, BigDecimal, BigInt, dataSource, log } from "@graphprotocol/graph-ts"
 import {
   MechBalanceAdjusted,
-  Withdraw
+  Withdraw,
+  Drained
 } from "../generated/BalanceTrackerFixedPriceNative/BalanceTrackerFixedPriceNative"
 import { AggregatorV3Interface } from "../generated/BalanceTrackerFixedPriceNative/AggregatorV3Interface"
 import { Mech } from "../generated/schema"
@@ -28,7 +29,8 @@ import {
   updateDailyTotalsIn,
   updateDailyTotalsOut,
   updateMechDailyIn,
-  updateMechDailyOut
+  updateMechDailyOut,
+  recordDrain
 } from "./utils"
 
 const BURN_ADDRESS = getBurnAddressMechFees();
@@ -124,4 +126,32 @@ export function handleWithdrawForNative(event: Withdraw): void {
       MODEL
     );
   }
+}
+
+// Converts a native drained amount (collectedFees, in wei) to USD, mirroring the FEE_IN
+// conversion: xDAI = USD on Gnosis, otherwise the network's Chainlink native/USD feed.
+// Returns 0 if the Chainlink read reverts (best-effort, so the raw amount is still recorded).
+function drainNativeWeiToUsd(amountWei: BigInt): BigDecimal {
+  const network = dataSource.network();
+  if (network == "xdai" || network == "gnosis") {
+    return convertGnosisNativeWeiToUsd(amountWei);
+  }
+  const priceFeed = AggregatorV3Interface.bind(getChainlinkPriceFeedAddress());
+  const latestRoundData = priceFeed.try_latestRoundData();
+  if (latestRoundData.reverted) {
+    log.error("Drained: could not get Chainlink price for native fee", []);
+    return BigDecimal.fromString("0");
+  }
+  return convertNativeWeiToUsd(amountWei, latestRoundData.value.value1);
+}
+
+export function handleDrainedForNative(event: Drained): void {
+  const amountWei = event.params.collectedFees;
+  recordDrain(
+    event,
+    MODEL,
+    event.params.token,
+    amountWei.toBigDecimal(),
+    drainNativeWeiToUsd(amountWei)
+  );
 }

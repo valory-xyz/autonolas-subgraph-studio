@@ -2,6 +2,19 @@ type Global @entity(immutable: false) {
   id: ID!
   totalFeesInUSD: BigDecimal!
   totalFeesOutUSD: BigDecimal!
+  # Cumulative protocol fees drained from the balance trackers (15% marketplace fee),
+  # summed in USD across every payment model. Sourced from the `Drained` event, which
+  # carries the exact `collectedFees` amount sent to the drainer at each drain. This is
+  # the already-distributed portion only — the currently-accrued-but-undrained balance is
+  # the live `collectedFees()` value on each tracker (read on-chain by consumers).
+  totalDrainedFeesUSD: BigDecimal!
+  # Cumulative OLAS burned: the subset of drained fees from the `token-olas` model. When
+  # the drainer distributes collected fees, OLAS-denominated fees are burned (non-OLAS
+  # fees go to the Olas Treasury), so the OLAS drained here equals the OLAS burned.
+  # `totalOlasBurnedRaw` is in OLAS wei (18 decimals); `totalOlasBurnedUSD` is its USD value
+  # at drain time. (Equivalent to DrainTotals(id: "token-olas"), surfaced for convenience.)
+  totalOlasBurnedRaw: BigDecimal!
+  totalOlasBurnedUSD: BigDecimal!
 }
 
 type Mech @entity(immutable: false) {
@@ -53,4 +66,28 @@ type MechDaily @entity(immutable: false) {
   feesOutUSD: BigDecimal!
   feesInRaw: BigDecimal!
   feesOutRaw: BigDecimal!
+}
+
+# Per-payment-model cumulative drained protocol fees. Lets consumers sum only the models
+# they care about (e.g. exclude OLAS, which is burned rather than sent to the Treasury, or
+# exclude non-USD native tokens). Each per-network deployment owns one row per model, so
+# within a deployment the model uniquely identifies the token (e.g. `native` = xDAI on
+# Gnosis, ETH on Optimism).
+type DrainTotals @entity(immutable: false) {
+  id: ID! # payment model: `native`, `nvm`, `token-olas`, or `token-usdc`
+  model: String!
+  totalDrainedRaw: BigDecimal! # cumulative drained in the model's raw token units
+  totalDrainedUSD: BigDecimal!
+}
+
+# Individual `Drained` event record (one per drain() call on a balance tracker).
+type DrainEvent @entity(immutable: true) {
+  id: ID! # `${txHash}-${logIndex}`
+  model: String! # payment model
+  token: Bytes! # drained token address (indexed in the event)
+  amountRaw: BigDecimal! # collectedFees in the model's raw token units
+  amountUSD: BigDecimal!
+  timestamp: BigInt!
+  blockNumber: BigInt!
+  txHash: Bytes!
 }

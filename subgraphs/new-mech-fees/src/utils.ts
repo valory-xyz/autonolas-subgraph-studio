@@ -1,5 +1,5 @@
-import { BigDecimal, BigInt, ethereum } from "@graphprotocol/graph-ts";
-import { Global, MechTransaction, Mech, MechDaily, DailyTotals, MechModel } from "../generated/schema";
+import { BigDecimal, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts";
+import { Global, MechTransaction, Mech, MechDaily, DailyTotals, MechModel, DrainEvent, DrainTotals } from "../generated/schema";
 import {
   TOKEN_RATIO_GNOSIS,
   XDAI_TOKEN_DECIMALS_GNOSIS,
@@ -25,9 +25,15 @@ export function getOrInitialiseGlobal(): Global {
     global = new Global(GLOBAL_ID);
     global.totalFeesInUSD = BigDecimal.fromString("0");
     global.totalFeesOutUSD = BigDecimal.fromString("0");
+    global.totalDrainedFeesUSD = BigDecimal.fromString("0");
+    global.totalOlasBurnedRaw = BigDecimal.fromString("0");
+    global.totalOlasBurnedUSD = BigDecimal.fromString("0");
   }
   return global;
 }
+
+// Payment model whose drained fees are burned (rather than sent to the Olas Treasury).
+const OLAS_MODEL = "token-olas";
 
 // ---------------- Per-model helpers ----------------
 function mechModelId(mechId: string, model: string): string {
@@ -131,6 +137,55 @@ export function updateTotalFeesIn(amount: BigDecimal): void {
 export function updateTotalFeesOut(amount: BigDecimal): void {
   const global = getOrInitialiseGlobal();
   global.totalFeesOutUSD = global.totalFeesOutUSD.plus(amount);
+  global.save();
+}
+
+// ---------------- Drained (protocol fee) helpers ----------------
+function getOrInitDrainTotals(model: string): DrainTotals {
+  let dt = DrainTotals.load(model);
+  if (dt == null) {
+    dt = new DrainTotals(model);
+    dt.model = model;
+    dt.totalDrainedRaw = BigDecimal.fromString("0");
+    dt.totalDrainedUSD = BigDecimal.fromString("0");
+  }
+  return dt as DrainTotals;
+}
+
+// Records a single `Drained` event: stores the immutable DrainEvent, bumps the per-model
+// DrainTotals (raw + USD) and the global cumulative drained USD. `amountRaw` is the drained
+// `collectedFees` in the model's raw token units; `amountUSD` is the same converted to USD.
+export function recordDrain(
+  event: ethereum.Event,
+  model: string,
+  token: Bytes,
+  amountRaw: BigDecimal,
+  amountUSD: BigDecimal
+): void {
+  const drainEvent = new DrainEvent(
+    event.transaction.hash.toHexString() + "-" + event.logIndex.toString()
+  );
+  drainEvent.model = model;
+  drainEvent.token = token;
+  drainEvent.amountRaw = amountRaw;
+  drainEvent.amountUSD = amountUSD;
+  drainEvent.timestamp = event.block.timestamp;
+  drainEvent.blockNumber = event.block.number;
+  drainEvent.txHash = event.transaction.hash;
+  drainEvent.save();
+
+  const dt = getOrInitDrainTotals(model);
+  dt.totalDrainedRaw = dt.totalDrainedRaw.plus(amountRaw);
+  dt.totalDrainedUSD = dt.totalDrainedUSD.plus(amountUSD);
+  dt.save();
+
+  const global = getOrInitialiseGlobal();
+  global.totalDrainedFeesUSD = global.totalDrainedFeesUSD.plus(amountUSD);
+  // OLAS-denominated drained fees are burned (non-OLAS fees go to the Treasury).
+  if (model == OLAS_MODEL) {
+    global.totalOlasBurnedRaw = global.totalOlasBurnedRaw.plus(amountRaw);
+    global.totalOlasBurnedUSD = global.totalOlasBurnedUSD.plus(amountUSD);
+  }
   global.save();
 }
 

@@ -1,7 +1,8 @@
 import { BigDecimal, log } from "@graphprotocol/graph-ts"
 import {
   MechBalanceAdjusted,
-  Withdraw
+  Withdraw,
+  Drained
 } from "../generated/BalanceTrackerFixedPriceTokenUSDC/BalanceTrackerFixedPriceToken"
 import { Mech } from "../generated/schema"
 import { getBurnAddressMechFees } from "../../../shared/constants"
@@ -18,7 +19,8 @@ import {
   updateDailyTotalsIn,
   updateDailyTotalsOut,
   updateMechDailyIn,
-  updateMechDailyOut
+  updateMechDailyOut,
+  recordDrain
 } from "./utils"
 
 const BURN_ADDRESS = getBurnAddressMechFees();
@@ -89,4 +91,15 @@ export function handleWithdrawForTokenUSDC(event: Withdraw): void {
       MODEL
     );
   }
+}
+
+export function handleDrainedForTokenUSDC(event: Drained): void {
+  const amountUsdc = event.params.collectedFees;
+  recordDrain(
+    event,
+    MODEL,
+    event.params.token,
+    amountUsdc.toBigDecimal(),
+    convertBaseUsdcToUsd(amountUsdc)
+  );
 }

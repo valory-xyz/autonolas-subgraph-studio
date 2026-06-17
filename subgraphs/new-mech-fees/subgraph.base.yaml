@@ -20,6 +20,8 @@ dataSources:
         - DailyTotals
         - MechDaily
         - MechModel
+        - DrainTotals
+        - DrainEvent
       abis:
         - name: BalanceTrackerFixedPriceNative
           file: ../../abis/BalanceTrackerFixedPriceNative.json
@@ -30,6 +32,8 @@ dataSources:
           handler: handleMechBalanceAdjustedForNative
         - event: Withdraw(indexed address,indexed address,uint256)
           handler: handleWithdrawForNative
+        - event: Drained(indexed address,uint256)
+          handler: handleDrainedForNative
       file: ./src/native-mapping.ts
 
   - kind: ethereum
@@ -50,6 +54,8 @@ dataSources:
         - DailyTotals
         - MechDaily
         - MechModel
+        - DrainTotals
+        - DrainEvent
       abis:
         - name: BalanceTrackerNvmSubscription
           file: ../../abis/BalanceTrackerNvmSubscriptionToken.json
@@ -58,6 +64,8 @@ dataSources:
           handler: handleMechBalanceAdjustedForNvm
         - event: Withdraw(indexed address,indexed address,uint256)
           handler: handleWithdrawForNvm
+        - event: Drained(indexed address,uint256)
+          handler: handleDrainedForNvm
       file: ./src/nvm-mapping.ts
 
   - kind: ethereum
@@ -78,6 +86,8 @@ dataSources:
         - DailyTotals
         - MechDaily
         - MechModel
+        - DrainTotals
+        - DrainEvent
       abis:
         - name: BalanceTrackerFixedPriceToken
           file: ../../abis/BalanceTrackerFixedPriceToken.json
@@ -92,4 +102,6 @@ dataSources:
           handler: handleMechBalanceAdjustedForTokenOlas
         - event: Withdraw(indexed address,indexed address,uint256)
           handler: handleWithdrawForTokenOlas
+        - event: Drained(indexed address,uint256)
+          handler: handleDrainedForTokenOlas
       file: ./src/token-olas-mapping.ts

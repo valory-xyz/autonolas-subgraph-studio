@@ -1,7 +1,8 @@
 import { Address, BigDecimal, BigInt, log } from "@graphprotocol/graph-ts"
 import {
   MechBalanceAdjusted,
-  Withdraw
+  Withdraw,
+  Drained
 } from "../generated/BalanceTrackerFixedPriceTokenOLAS/BalanceTrackerFixedPriceToken"
 import { Mech } from "../generated/schema"
 import {
@@ -17,7 +18,8 @@ import {
   updateMechDailyOut,
   updateMechModelIn,
   updateMechModelOut,
-  convertNativeWeiToUsd
+  convertNativeWeiToUsd,
+  recordDrain
 } from "./utils"
 import { IUniswapV2Pair } from "../generated/BalanceTrackerFixedPriceTokenOLAS/IUniswapV2Pair"
 import { AggregatorV3Interface } from "../generated/BalanceTrackerFixedPriceTokenOLAS/AggregatorV3Interface"
@@ -150,4 +152,15 @@ export function handleWithdrawForTokenOlas(event: Withdraw): void {
       MODEL
     );
   }
+}
+
+export function handleDrainedForTokenOlas(event: Drained): void {
+  const amountOlas = event.params.collectedFees;
+  recordDrain(
+    event,
+    MODEL,
+    event.params.token,
+    amountOlas.toBigDecimal(),
+    calculateOlasToUsd(amountOlas)
+  );
 }
