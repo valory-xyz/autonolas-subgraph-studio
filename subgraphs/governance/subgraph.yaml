@@ -63,6 +63,25 @@ dataSources:
       address: "0x8e84b5055492901988b831817e4ace5275a3b401"
       abi: GovernorOLAS
       startBlock: 17527057
+      endBlock: 25322326
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities: *GovernorOLASEntities
+      abis:
+        - name: GovernorOLAS
+          file: ../../abis/GovernorOLAS.json
+      eventHandlers: *GovernorOLASEventHandlers
+      file: ./src/governor-olas.ts
+
+  - kind: ethereum
+    name: GovernorOLASV3
+    network: mainnet
+    source:
+      address: "0x060D0CBdDFb0498d610E2EF55C01516B5B1251E6"
+      abi: GovernorOLAS
+      startBlock: 25322326
     mapping:
       kind: ethereum/events
       apiVersion: 0.0.7
