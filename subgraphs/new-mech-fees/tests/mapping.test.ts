@@ -12,10 +12,13 @@ import { Mech } from "../generated/schema";
 import {
   handleMechBalanceAdjustedForNative,
   handleWithdrawForNative,
+  handleDrainedForNative,
 } from "../src/native-mapping";
+import { recordDrain } from "../src/utils";
 import {
   createMechBalanceAdjustedEvent,
   createWithdrawEvent,
+  createDrainedEvent,
 } from "./mapping-utils";
 import { TestAddresses, TestValues } from "./test-helpers";
 
@@ -477,5 +480,96 @@ describe("handleMechBalanceAdjustedForNative + handleWithdrawForNative integrati
     const mechModelId = mechId + "-native";
     assert.fieldEquals("MechModel", mechModelId, "totalFeesInUSD", "2.5");
     assert.fieldEquals("MechModel", mechModelId, "totalFeesOutUSD", "1");
+  });
+});
+
+describe("handleDrainedForNative", () => {
+  beforeEach(() => {
+    dataSourceMock.setNetwork("xdai");
+  });
+
+  afterEach(() => {
+    clearStore();
+  });
+
+  test("Records DrainEvent, DrainTotals and Global drained total (xDAI = USD)", () => {
+    // drain() of 1 xDAI of collected fees
+    const event = createDrainedEvent(TestAddresses.ZERO, TestValues.ONE_XDAI_WEI);
+
+    handleDrainedForNative(event);
+
+    const drainEventId =
+      event.transaction.hash.toHexString() + "-" + event.logIndex.toString();
+
+    // Immutable DrainEvent
+    assert.entityCount("DrainEvent", 1);
+    assert.fieldEquals("DrainEvent", drainEventId, "model", "native");
+    assert.fieldEquals("DrainEvent", drainEventId, "amountUSD", "1");
+    assert.fieldEquals("DrainEvent", drainEventId, "amountRaw", "1000000000000000000");
+
+    // Per-model DrainTotals (id = model)
+    assert.fieldEquals("DrainTotals", "native", "model", "native");
+    assert.fieldEquals("DrainTotals", "native", "totalDrainedUSD", "1");
+    assert.fieldEquals("DrainTotals", "native", "totalDrainedRaw", "1000000000000000000");
+
+    // Global cumulative drained — and burn totals untouched for a non-OLAS model
+    assert.fieldEquals("Global", "", "totalDrainedFeesUSD", "1");
+    assert.fieldEquals("Global", "", "totalOlasBurnedRaw", "0");
+    assert.fieldEquals("Global", "", "totalOlasBurnedUSD", "0");
+  });
+
+  test("Sums collected fees across multiple drains", () => {
+    handleDrainedForNative(
+      createDrainedEvent(TestAddresses.ZERO, TestValues.ONE_XDAI_WEI, TestValues.TIMESTAMP, TestValues.BLOCK, 0)
+    );
+    handleDrainedForNative(
+      createDrainedEvent(TestAddresses.ZERO, TestValues.TWO_POINT_FIVE_XDAI_WEI, TestValues.TIMESTAMP, TestValues.BLOCK, 1)
+    );
+
+    // 1 + 2.5 = 3.5 (each Drained carries the per-drain delta, so summing is correct)
+    assert.entityCount("DrainEvent", 2);
+    assert.fieldEquals("DrainTotals", "native", "totalDrainedUSD", "3.5");
+    assert.fieldEquals("DrainTotals", "native", "totalDrainedRaw", "3500000000000000000");
+    assert.fieldEquals("Global", "", "totalDrainedFeesUSD", "3.5");
+  });
+});
+
+describe("recordDrain OLAS-burn branch", () => {
+  afterEach(() => {
+    clearStore();
+  });
+
+  test("token-olas drains bump totalOlasBurned* (burned, not sent to Treasury)", () => {
+    const event = createDrainedEvent(TestAddresses.ZERO, TestValues.ONE_XDAI_WEI);
+
+    recordDrain(
+      event,
+      "token-olas",
+      TestAddresses.ZERO,
+      BigDecimal.fromString("2"), // 2 OLAS (raw)
+      BigDecimal.fromString("30") // $30 at drain-time price
+    );
+
+    assert.fieldEquals("DrainTotals", "token-olas", "totalDrainedRaw", "2");
+    assert.fieldEquals("DrainTotals", "token-olas", "totalDrainedUSD", "30");
+    assert.fieldEquals("Global", "", "totalDrainedFeesUSD", "30");
+    assert.fieldEquals("Global", "", "totalOlasBurnedRaw", "2");
+    assert.fieldEquals("Global", "", "totalOlasBurnedUSD", "30");
+  });
+
+  test("non-OLAS models leave totalOlasBurned* at zero", () => {
+    const event = createDrainedEvent(TestAddresses.ZERO, TestValues.ONE_XDAI_WEI);
+
+    recordDrain(
+      event,
+      "token-usdc",
+      TestAddresses.ZERO,
+      BigDecimal.fromString("10"),
+      BigDecimal.fromString("10")
+    );
+
+    assert.fieldEquals("Global", "", "totalDrainedFeesUSD", "10");
+    assert.fieldEquals("Global", "", "totalOlasBurnedRaw", "0");
+    assert.fieldEquals("Global", "", "totalOlasBurnedUSD", "0");
   });
 });

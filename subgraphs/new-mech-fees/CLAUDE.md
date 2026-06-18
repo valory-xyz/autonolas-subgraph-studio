@@ -333,5 +333,5 @@ yarn build:optimism   # graph build subgraph.optimism.yaml
 - All financial fields use `BigDecimal` (exception to monorepo convention of `BigInt`)
 - Daily aggregation skips zero/negative USD amounts
 - Day timestamp: `(timestamp / 86400) * 86400` (integer division, UTC midnight)
-- No tests currently exist for this subgraph
+- Matchstick tests live in `tests/mapping.test.ts` (run with `yarn test`); they cover the native fee-in/out handlers and the `Drained` handler / `recordDrain` (drain accumulation + OLAS-burn branch)
 - `DailyTotals` list field in GraphQL is `dailyTotals_collection` (Graph Node naming for `Int` id types)
