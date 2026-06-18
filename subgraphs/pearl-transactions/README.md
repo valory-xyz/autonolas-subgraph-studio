@@ -4,21 +4,25 @@ Indexes **funds movement for Pearl Master Safe and Agent Safe accounts** on
 Gnosis, Polygon, Optimism, Base. The on-chain backend for the Pearl wallet
 transaction-history view (VLOP-73).
 
-> **Status — implemented (phases 1a/1b/2a/2b), deployed.** Gnosis + Polygon
-> are live on Studio (`pearl-gnosis-transactions`, `pearl-polygon-transactions`,
-> v0.0.5). Optimism/Base manifests build but aren't deployed on the company
-> account yet. See
+> **Status — implemented (phases 1a/1b/2a/2b); all four networks published
+> on The Graph.** As of 2026-06-12 Gnosis is at chain head; Optimism, Base
+> and Polygon are still backfilling (Polygon slowest — the USDC.e-dense
+> range; see [`INDEXING-PERFORMANCE.md`](./INDEXING-PERFORMANCE.md)). See
 > [`CLAUDE.md`](./CLAUDE.md) for architecture and
-> [`IMPLEMENTATION-PLAN.md`](../pearl-funds/IMPLEMENTATION-PLAN.md) for the design.
+> [`IMPLEMENTATION-PLAN.md`](./IMPLEMENTATION-PLAN.md) for the design.
 
 ## What it covers
 
-A single `FundsMovement` ledger, classified per row, plus the entity graph
-(`MasterSafe` / `AgentSafe` / `Service` / `StakingContract`) and helpers
-(`AgentFundingEvent`, `TokenBalance`, `DailyServiceFunds`,
-`ServiceNftCustodyChange`).
+An immutable `FundsMovement` ledger, classified per row, plus a small mutable
+`BondMovement` ledger for SRTU bond deposits/refunds (the only rows that get
+backfilled — split out so `FundsMovement` can stay immutable). **A complete
+wallet ledger is `fundsMovements` ∪ `bondMovements`.** Entity graph:
+`MasterSafe` / `AgentSafe` / `Service` / `StakingContract`; helpers:
+`AgentFundingEvent`, `TokenBalance`, `DailyServiceFunds`,
+`ServiceNftCustodyChange`.
 
-`FundsMovement.category` values:
+Category values (`FundsCategory`, shared by both ledgers — the
+`SERVICE_BOND_*` values appear only on `BondMovement`):
 
 | Category | Meaning |
 |---|---|
@@ -27,8 +31,9 @@ A single `FundsMovement` ledger, classified per row, plus the entity graph
 | `MASTER_FUNDING_IN` | Later EOA → Master Safe top-ups |
 | `MASTER_WITHDRAWAL` | Master Safe → external EOA (tokens; native-out not indexed) |
 | `MASTER_TO_AGENT` | Master Safe → Agent Safe/EOA (grouped via `AgentFundingEvent`) |
-| `AGENT_TO_MASTER` | Agent Safe → Master Safe (reward sweep) |
-| `SERVICE_BOND_DEPOSIT` / `SERVICE_BOND_REFUND` | SRTU bond posted / refunded (with `bondType`) |
+| `AGENT_TO_MASTER` | Agent Safe → Master Safe in native / non-OLAS token |
+| `AGENT_OLAS_TO_MASTER` | Agent Safe → Master Safe in OLAS (reward sweeps + manual returns; split out so the wallet can exclude it at query time) |
+| `SERVICE_BOND_DEPOSIT` / `SERVICE_BOND_REFUND` | SRTU bond posted / refunded (with `bondType`) — **`BondMovement` rows, not `FundsMovement`** |
 | `STAKING_REWARD_CLAIM` / `UNSTAKE_REWARD` / `SERVICE_EVICTED` | Staking events |
 | `AGENT_TO_APP` / `APP_TO_AGENT` / `OTHER` | App-contract flows / untyped |
 
@@ -43,6 +48,9 @@ Studio: `https://api.studio.thegraph.com/query/1716136/pearl-<network>-transacti
 
 ### Wallet history for a Master Safe
 
+A complete history is the union of the two ledgers — `bondType` lives only on
+`bondMovements`, and `Service.id` is Bytes, so read the numeric `serviceId`:
+
 ```graphql
 query History($safe: Bytes!) {
   fundsMovements(
@@ -55,10 +63,26 @@ query History($safe: Bytes!) {
     source
     amount
     token            # null = native coin
-    bondType
     from
     to
-    service { id }
+    service { serviceId }
+    agentSafe { id }
+    blockTimestamp
+    transactionHash
+  }
+  bondMovements(
+    where: { masterSafe: $safe }
+    orderBy: blockTimestamp
+    orderDirection: desc
+    first: 100
+  ) {
+    category         # SERVICE_BOND_DEPOSIT | SERVICE_BOND_REFUND
+    bondType         # SECURITY_DEPOSIT | AGENT_BOND (null if unattributed)
+    amount
+    token
+    from
+    to
+    service { serviceId }
     agentSafe { id }
     blockTimestamp
     transactionHash
@@ -103,7 +127,7 @@ emits no opening-balance row).
 yarn install
 yarn generate-manifests   # render per-network manifests
 yarn codegen
-yarn test                 # 44 Matchstick tests
+yarn test                 # 53 Matchstick tests
 ```
 
 See [`CLAUDE.md`](./CLAUDE.md) for architecture and
@@ -112,7 +136,7 @@ verification checklist.
 
 ## Related
 
-- [`IMPLEMENTATION-PLAN.md`](../pearl-funds/IMPLEMENTATION-PLAN.md) — full design.
+- [`IMPLEMENTATION-PLAN.md`](./IMPLEMENTATION-PLAN.md) — full design.
 - [`subgraphs/staking`](../staking) — `StakingFactory`/`StakingProxy` source.
 - [`subgraphs/service-registry`](../service-registry) — `ServiceRegistryL2` source.
 - [`predict-polymarket`](../predict/predict-polymarket) / [`predict-omen`](../predict/predict-omen)

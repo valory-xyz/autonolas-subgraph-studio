@@ -39,7 +39,8 @@ export function handleServiceStaked(event: ServiceStakedEvent): void {
   service.state = SERVICE_STATE_STAKED;
   service.currentStakingContract = event.address;
   service.updatedTimestamp = event.block.timestamp;
-  service.save();
+  // Single save: neither getOrCreateMasterSafe nor getOrCreateAgentSafe reloads
+  // Service from the store, so persist once at the end (below).
 
   // `owner` is the Master Safe (ServiceStaked carries it explicitly), so
   // this is the canonical discovery path. getOrCreateMasterSafe returns
@@ -185,8 +186,13 @@ export function handleServicesEvicted(event: ServicesEvictedEvent): void {
     const service = getOrCreateService(serviceId, event);
 
     // Unique-id per (tx, logIndex, serviceId-slot) since ServicesEvicted
-    // is one event affecting many services. Use logIndex + i.
-    const id = event.transaction.hash.concatI32(event.logIndex.toI32() + i);
+    // is one event affecting many services. Compose logIndex AND the slot
+    // index as separate segments — `logIndex + i` would collide with any
+    // other event in the same tx whose logIndex falls in [logIndex+1,
+    // logIndex+K-1] and silently overwrite its FundsMovement row.
+    const id = event.transaction.hash
+      .concatI32(event.logIndex.toI32())
+      .concatI32(i);
     const row = new FundsMovement(id);
     row.service = service.id;
     if (service.masterSafe !== null) {

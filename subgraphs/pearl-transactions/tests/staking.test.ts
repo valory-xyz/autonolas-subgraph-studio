@@ -59,6 +59,11 @@ const DISALLOWED_IMPL = Address.fromString(
 );
 
 const SERVICE_ID = BigInt.fromI32(42);
+// Service.id is the serviceId as Bytes — compute it the same way the mapping
+// does so assertions match the stored id regardless of byte layout.
+const SERVICE_ID_HEX = Bytes.fromByteArray(
+  Bytes.fromBigInt(SERVICE_ID)
+).toHexString();
 const SERVICE_ID_2 = BigInt.fromI32(43);
 const EPOCH = BigInt.fromI32(7);
 const REWARD = BigInt.fromString("1500000000000000000"); // 1.5 OLAS
@@ -446,6 +451,18 @@ describe("pearl-transactions / Phase 1b — staking", () => {
       "numAgentInstances",
       NUM_AGENT_INSTANCES.toString()
     );
+    // The proxy must ALSO land in the merged tracked-address table —
+    // classifyTransfer keys the reward-claim path on TrackedAddress(STAKING),
+    // not on StakingContract. The classification tests seed TrackedAddress
+    // manually, so without this assertion the producer→classifier wiring is
+    // uncovered (dropping the upsert would leave every test green while
+    // breaking reward-claim classification in production).
+    assert.fieldEquals(
+      "TrackedAddress",
+      STAKING_PROXY.toHexString(),
+      "role",
+      "STAKING"
+    );
   });
 
   test("InstanceCreated with disallowed implementation is skipped", () => {
@@ -454,6 +471,7 @@ describe("pearl-transactions / Phase 1b — staking", () => {
       newInstanceCreated(MASTER_SAFE, STAKING_PROXY, DISALLOWED_IMPL, tx)
     );
     assert.entityCount("StakingContract", 0);
+    assert.entityCount("TrackedAddress", 0);
   });
 
   test("ServiceStaked sets masterSafe + agentSafe + state + currentStakingContract", () => {
@@ -462,22 +480,22 @@ describe("pearl-transactions / Phase 1b — staking", () => {
       newServiceStaked(SERVICE_ID, EPOCH, MASTER_SAFE, AGENT_SAFE, STAKING_PROXY, tx)
     );
 
-    assert.fieldEquals("Service", "42", "state", "STAKED");
+    assert.fieldEquals("Service", SERVICE_ID_HEX, "state", "STAKED");
     assert.fieldEquals(
       "Service",
-      "42",
+      SERVICE_ID_HEX,
       "masterSafe",
       MASTER_SAFE.toHexString()
     );
     assert.fieldEquals(
       "Service",
-      "42",
+      SERVICE_ID_HEX,
       "agentSafe",
       AGENT_SAFE.toHexString()
     );
     assert.fieldEquals(
       "Service",
-      "42",
+      SERVICE_ID_HEX,
       "currentStakingContract",
       STAKING_PROXY.toHexString()
     );
@@ -527,7 +545,7 @@ describe("pearl-transactions / Phase 1b — staking", () => {
 
     assert.fieldEquals(
       "Service",
-      "42",
+      SERVICE_ID_HEX,
       "totalOlasRewardsClaimed",
       REWARD.toString()
     );
@@ -553,7 +571,7 @@ describe("pearl-transactions / Phase 1b — staking", () => {
       )
     );
 
-    assert.fieldEquals("Service", "42", "state", "UNSTAKED");
+    assert.fieldEquals("Service", SERVICE_ID_HEX, "state", "UNSTAKED");
     // currentStakingContract should be cleared (null).
     const id = tx2.concatI32(0);
     assert.fieldEquals(
@@ -577,14 +595,75 @@ describe("pearl-transactions / Phase 1b — staking", () => {
       )
     );
 
-    // Two FundsMovement rows, both SERVICE_EVICTED with amount 0.
+    // Two FundsMovement rows, both SERVICE_EVICTED with amount 0. IDs
+    // compose the event logIndex (0 on the mock) AND the slot index as
+    // separate segments, so the rows can't collide with same-tx events.
     assert.entityCount("FundsMovement", 2);
-    const id1 = tx.concatI32(0);
-    const id2 = tx.concatI32(1);
+    const id1 = tx.concatI32(0).concatI32(0);
+    const id2 = tx.concatI32(0).concatI32(1);
     assert.fieldEquals("FundsMovement", id1.toHexString(), "category", "SERVICE_EVICTED");
     assert.fieldEquals("FundsMovement", id1.toHexString(), "amount", "0");
     assert.fieldEquals("FundsMovement", id2.toHexString(), "category", "SERVICE_EVICTED");
   });
+
+  test(
+    "ServicesEvicted slot id does NOT collide with another same-tx FundsMovement",
+    () => {
+      // Regression for the row-id collision the fix prevents. Fire a 2-service
+      // eviction at logIndex 2, then a RewardClaimed in the SAME tx at
+      // logIndex 3. Under the old id scheme `txHash.concatI32(logIndex + i)`
+      // the eviction's slot-1 row (2 + 1 = 3) aliased the reward row's
+      // single-segment id `txHash.concatI32(3)` and one silently overwrote the
+      // other → only 2 rows. The two-segment id keeps all three distinct.
+      const tx = mockTx(20);
+
+      const evicted = newServicesEvicted(
+        EPOCH,
+        [SERVICE_ID, SERVICE_ID_2],
+        [MASTER_SAFE, MASTER_SAFE],
+        [AGENT_SAFE, AGENT_SAFE],
+        STAKING_PROXY,
+        tx
+      );
+      evicted.logIndex = BigInt.fromI32(2);
+      handleServicesEvicted(evicted);
+
+      const claimed = newRewardClaimed(
+        SERVICE_ID,
+        EPOCH,
+        MASTER_SAFE,
+        AGENT_SAFE,
+        REWARD,
+        STAKING_PROXY,
+        tx
+      );
+      claimed.logIndex = BigInt.fromI32(3);
+      handleRewardClaimed(claimed);
+
+      // All three rows survive (would be 2 under the old colliding scheme).
+      assert.entityCount("FundsMovement", 3);
+      // Eviction rows: two-segment ids (logIndex 2, slots 0/1).
+      assert.fieldEquals(
+        "FundsMovement",
+        tx.concatI32(2).concatI32(0).toHexString(),
+        "category",
+        "SERVICE_EVICTED"
+      );
+      assert.fieldEquals(
+        "FundsMovement",
+        tx.concatI32(2).concatI32(1).toHexString(),
+        "category",
+        "SERVICE_EVICTED"
+      );
+      // The reward row at single-segment logIndex 3 is intact, NOT clobbered.
+      assert.fieldEquals(
+        "FundsMovement",
+        tx.concatI32(3).toHexString(),
+        "category",
+        "STAKING_REWARD_CLAIM"
+      );
+    }
+  );
 
   test("NFT-Transfer to a known StakingContract does NOT call getOwners()", () => {
     // Seed the StakingContract entity first.
@@ -609,7 +688,7 @@ describe("pearl-transactions / Phase 1b — staking", () => {
     // Service still gets nftCustodian updated.
     assert.fieldEquals(
       "Service",
-      "42",
+      SERVICE_ID_HEX,
       "nftCustodian",
       STAKING_PROXY.toHexString()
     );
@@ -687,7 +766,7 @@ describe("pearl-transactions / Phase 1b — staking", () => {
     // Service.totalOlasRewardsClaimed = 2x reward.
     assert.fieldEquals(
       "Service",
-      "42",
+      SERVICE_ID_HEX,
       "totalOlasRewardsClaimed",
       REWARD.plus(REWARD).toString()
     );
@@ -698,7 +777,7 @@ describe("pearl-transactions / Phase 1b — staking", () => {
     handleServiceStaked(
       newServiceStaked(SERVICE_ID, EPOCH, MASTER_SAFE, AGENT_SAFE, STAKING_PROXY, tx1)
     );
-    assert.fieldEquals("Service", "42", "state", "STAKED");
+    assert.fieldEquals("Service", SERVICE_ID_HEX, "state", "STAKED");
 
     // Three reward claims across epochs.
     const tx2 = mockTx(14);
@@ -753,12 +832,12 @@ describe("pearl-transactions / Phase 1b — staking", () => {
     // Cumulative: 4 × REWARD.
     assert.fieldEquals(
       "Service",
-      "42",
+      SERVICE_ID_HEX,
       "totalOlasRewardsClaimed",
       REWARD.times(BigInt.fromI32(4)).toString()
     );
 
     // Final state.
-    assert.fieldEquals("Service", "42", "state", "UNSTAKED");
+    assert.fieldEquals("Service", SERVICE_ID_HEX, "state", "UNSTAKED");
   });
 });
