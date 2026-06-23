@@ -6,11 +6,13 @@ import {
   afterEach,
   createMockedFunction
 } from "matchstick-as/assembly/index"
-import { BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts"
+import { Address, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts"
 import {
   handleRegisterInstance,
   handleCreateMultisigWithAgents
 } from "../src/serviceRegistry"
+import { getTokenConfig, TokenConfig } from "../src/tokenConfig"
+import { USDC_NATIVE, WETH, AERO, BOLD } from "../src/constants"
 import {
   createRegisterInstanceEvent,
   createCreateMultisigWithAgentsEvent
@@ -374,5 +376,53 @@ describe("handleCreateMultisigWithAgents", () => {
       "firstTradingTimestamp",
       BLOCK_TIMESTAMP.toString()
     )
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Base token configuration — Aerodrome AERO pricing, OLAS dropped, stables ~$1
+// ---------------------------------------------------------------------------
+describe("Base token config (tokenConfig.ts)", () => {
+  test("USDC and WETH price off Chainlink", () => {
+    const usdc = changetype<TokenConfig>(getTokenConfig(USDC_NATIVE))
+    assert.stringEquals("USDC", usdc.symbol)
+    assert.i32Equals(6, usdc.decimals)
+    assert.stringEquals("chainlink", usdc.priceSources[0].sourceType)
+
+    const weth = changetype<TokenConfig>(getTokenConfig(WETH))
+    assert.i32Equals(18, weth.decimals)
+    assert.stringEquals("chainlink", weth.priceSources[0].sourceType)
+  })
+
+  test("AERO prices off the Aerodrome AERO/USDC volatile pool (velodrome_v2 adapter)", () => {
+    const aero = changetype<TokenConfig>(getTokenConfig(AERO))
+    assert.stringEquals("AERO", aero.symbol)
+    assert.i32Equals(18, aero.decimals)
+
+    const src = aero.priceSources[0]
+    assert.stringEquals("velodrome_v2", src.sourceType)
+    // pool address (lowercased hex) — the AERO/USDC volatile pool
+    assert.stringEquals(
+      "0x6cdcb1c4a4d1c3c6d054b27ac5b77e89eafb971d",
+      src.address.toHexString()
+    )
+    // pair token is USDC (the numeraire for the volatile pool)
+    assert.stringEquals(
+      USDC_NATIVE.toHexString(),
+      changetype<Address>(src.pairToken).toHexString()
+    )
+  })
+
+  test("whitelisted stables resolve to ~$1 via the USDC reference feed", () => {
+    const bold = changetype<TokenConfig>(getTokenConfig(BOLD))
+    assert.stringEquals("chainlink_reference", bold.priceSources[0].sourceType)
+  })
+
+  test("OLAS is not tracked (dropped — Basius holds none)", () => {
+    // OLAS on Base: 0x54330d28ca3357F294334BDC454a032e7f353416
+    const olas = getTokenConfig(
+      Address.fromString("0x54330d28ca3357F294334BDC454a032e7f353416")
+    )
+    assert.assertNull(olas)
   })
 })
