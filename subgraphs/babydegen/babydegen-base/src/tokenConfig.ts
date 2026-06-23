@@ -4,6 +4,7 @@ import {
   USDC_USD_FEED,
   USDC_NATIVE,
   WETH,
+  AERO,
   BOLD,
   MSUSD,
   FRXUSD,
@@ -13,14 +14,11 @@ import {
 
 // Token configurations with Chainlink-first approach (Base mainnet).
 //
-// NOTE (scaffold): USDC + WETH price off Base Chainlink feeds. The whitelisted
-// stablecoins (BOLD/msUSD/frxUSD/eUSD/axlUSDC + bridged USDC) currently reference
-// the USDC/USD feed so each has a non-empty price source and resolves to ~$1.
-// OLAS and AERO are intentionally NOT configured yet — without a config
-// getTokenPriceUSD() returns 0 for them (no crash). Replace both with real
-// Aerodrome pool sources.
-// TODO(divya): provide Aerodrome OLAS/<pair> and AERO/<pair> pool addresses, and
-// confirm whether the whitelisted stables should price off real pools vs $1.
+// NOTE: USDC + WETH price off Base Chainlink feeds. The whitelisted stablecoins
+// (BOLD/msUSD/frxUSD/eUSD/axlUSDC) reference the USDC/USD feed so each has a
+// non-empty price source and resolves to ~$1 (confirmed fine by Divya). AERO prices
+// off the Aerodrome AERO/USDC volatile pool (CL gauge reward token). OLAS is not
+// tracked (Basius holds none).
 export const TOKENS = new Map<string, TokenConfig>()
 
 export class TokenConfig {
@@ -150,9 +148,24 @@ function initializeTokens(): void {
   TOKENS.set(EUSD.toHexString().toLowerCase(), usdcReferencedStable(EUSD, "eUSD", 18))
   TOKENS.set(AXLUSDC.toHexString().toLowerCase(), usdcReferencedStable(AXLUSDC, "axlUSDC", 6))
 
-  // OLAS and AERO: NOT configured yet (price resolves to 0 until pools are added).
-  // TODO: Aerodrome AERO/<pair> (prioritise; CL gauge reward) and OLAS/<pair> pools —
-  // Divya to provide, backfill in follow-up PR.
+  // AERO — Aerodrome reward token (CL gauge rewards). Priced off the Aerodrome v2
+  // AERO/USDC *volatile* pool (AERO is not a stablecoin, so the volatile pool, not the
+  // stable one). Mirrors how babydegen-optimism prices VELO via velodrome_v2.
+  // OLAS is intentionally not tracked here (Basius holds none; not a trading asset).
+  TOKENS.set(AERO.toHexString().toLowerCase(), new TokenConfig(
+    AERO,
+    "AERO",
+    18,
+    [
+      new PriceSourceConfig(
+        Address.fromString("0x6cdcb1c4a4d1c3c6d054b27ac5b77e89eafb971d"), // Aerodrome AERO/USDC volatile
+        "velodrome_v2",
+        1,
+        85,
+        USDC_NATIVE // pair token
+      )
+    ]
+  ))
 }
 
 // Call initialization

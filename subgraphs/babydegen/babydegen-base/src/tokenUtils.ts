@@ -2,7 +2,6 @@ import { Address, log } from "@graphprotocol/graph-ts"
 import {
   USDC_NATIVE,
   WETH,
-  OLAS,
   AERO,
   BOLD,
   MSUSD,
@@ -17,7 +16,6 @@ export function getTokenDecimals(tokenAddress: Address): i32 {
 
   if (tokenHex == USDC_NATIVE.toHexString().toLowerCase()) return 6   // USDC
   if (tokenHex == WETH.toHexString().toLowerCase()) return 18         // WETH
-  if (tokenHex == OLAS.toHexString().toLowerCase()) return 18         // OLAS
   if (tokenHex == AERO.toHexString().toLowerCase()) return 18         // AERO
   if (tokenHex == BOLD.toHexString().toLowerCase()) return 18         // BOLD
   if (tokenHex == MSUSD.toHexString().toLowerCase()) return 18        // msUSD
@@ -36,7 +34,6 @@ export function getTokenSymbol(tokenAddress: Address): string {
 
   if (tokenHex == USDC_NATIVE.toHexString().toLowerCase()) return "USDC"
   if (tokenHex == WETH.toHexString().toLowerCase()) return "WETH"
-  if (tokenHex == OLAS.toHexString().toLowerCase()) return "OLAS"
   if (tokenHex == AERO.toHexString().toLowerCase()) return "AERO"
   if (tokenHex == BOLD.toHexString().toLowerCase()) return "BOLD"
   if (tokenHex == MSUSD.toHexString().toLowerCase()) return "msUSD"

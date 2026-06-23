@@ -411,3 +411,18 @@ type NFTPositionMapping @entity(immutable: false) {
   positionId: Bytes!
   protocol: String!
 }
+
+# Phase 2 (stub) — per-day activity for the agent-explorer heatmap.
+# transactionCount currently counts LiFi swaps; the final definition (swaps vs
+# Safe executions vs mech requests) is pending product confirmation.
+type DailyActivityMetric @entity(immutable: false) {
+  id: ID!                 # UTC-midnight day timestamp (seconds) as a string
+  dayTimestamp: BigInt!
+  activeAgents: Int!      # DAA — distinct Basius services with activity this day (stub: services that swapped)
+  transactionCount: Int!  # stub: LiFi swaps this day — PROVISIONAL definition
+}
+
+# Dedup marker so DAA counts each service at most once per day. Immutable.
+type DailyAgentActivity @entity(immutable: true) {
+  id: ID!                 # "<dayTimestamp>-<serviceSafe>"
+}

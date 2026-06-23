@@ -80,27 +80,6 @@ dataSources:
       file: ./src/tokenBalances.ts
 
   - kind: ethereum
-    name: OLAS
-    network: base
-    source:
-      address: "0x54330d28ca3357F294334BDC454a032e7f353416"
-      abi: ERC20
-      startBlock: 47163056
-    mapping:
-      kind: ethereum/events
-      apiVersion: 0.0.9
-      language: wasm/assemblyscript
-      entities:
-        - TokenBalance
-      abis:
-        - name: ERC20
-          file: ../../../abis/ERC20.json
-      eventHandlers:
-        - event: Transfer(indexed address,indexed address,uint256)
-          handler: handleERC20Transfer
-      file: ./src/tokenBalances.ts
-
-  - kind: ethereum
     name: AERO
     network: base
     source:

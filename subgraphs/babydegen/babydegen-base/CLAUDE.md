@@ -8,10 +8,11 @@ Indexing **filters by Olas `agentId == 115`** and tracks every Basius service (c
 > **Id note:** 115 is the **agent** id, not a service id. (Service *115* is an unrelated
 > 2025 service on the generic agent 9 — an early Divya/Tanya mix-up, resolved on-chain.)
 
-> Status: **Phase 1.** Builds + tests green. Registry, Aerodrome surface, Chainlink feeds,
-> LiFi, v2 PoolFactory, startBlock and cadence are all confirmed. The only remaining
-> placeholder is **OLAS/AERO pricing** (unpriced → $0 until Aerodrome pools are supplied);
-> see `IMPLEMENTATION-PLAN.md`.
+> Status: **Phase 1 complete + Phase 2 stub.** Builds + tests green. Registry, Aerodrome
+> surface, Chainlink feeds, LiFi, v2 PoolFactory, startBlock and cadence all confirmed.
+> AERO is priced off the Aerodrome AERO/USDC volatile pool; OLAS dropped (not held). A
+> provisional daily-activity stub (DAA + swaps-based transactions) is in place pending the
+> product definition of "transactions". See `IMPLEMENTATION-PLAN.md`.
 
 ## What changed vs babydegen-optimism
 
@@ -63,10 +64,11 @@ Optimism values): StakingToken `0x2585e63df7BD9De8e058884D496658a030b5c6ce`, Act
 
 ## Tracked tokens
 
-USDC (native), WETH, OLAS, AERO, and the whitelisted stablecoins BOLD / msUSD / frxUSD /
-eUSD / axlUSDC. USDC+WETH price off Chainlink; stables resolve to ~$1 (referenced to the
-USDC feed — confirmed fine by Divya); **OLAS and AERO are unpriced (→ $0) until Aerodrome
-pools are added** (`tokenConfig.ts`; AERO is the CL gauge reward, so prioritise it).
+USDC (native), WETH, AERO, and the whitelisted stablecoins BOLD / msUSD / frxUSD / eUSD /
+axlUSDC. USDC+WETH price off Chainlink; stables resolve to ~$1 (referenced to the USDC feed
+— confirmed fine by Divya); **AERO** (the CL-gauge reward token) prices off the Aerodrome
+AERO/USDC volatile pool `0x6cdcb1c4…` via the `velodrome_v2` adapter (`tokenConfig.ts`).
+**OLAS is not tracked** — Basius holds none and it isn't a trading asset for this agent.
 
 ## Schema, core logic, KPIs
 
@@ -80,6 +82,16 @@ babydegen-optimism (network-agnostic). The website KPIs map to existing entities
 Snapshots fire from the `PortfolioScheduler` block handler at UTC-midnight crossings.
 Block-handler interval is `every: 1800` (~1h on Base) — confirmed: a finer interval can't
 add snapshots since they only fire on day boundaries.
+
+### Phase 2 stub — daily activity (`src/dailyActivity.ts`)
+
+`DailyActivityMetric` (id = UTC-midnight day) holds per-day `transactionCount` and
+`activeAgents` (DAA) for the agent-explorer heatmap; `DailyAgentActivity`
+(`<day>-<serviceSafe>`) is an immutable dedup marker so each service counts toward DAA once
+per day. `recordSwapActivity()` is called from the LiFi handler on each tracked swap.
+**Provisional:** `transactionCount` counts LiFi swaps — the final "transactions" definition
+(swaps vs Safe executions vs mech requests; mech requests need a new data source) is pending
+product confirmation (Tatiana).
 
 ## Development
 

@@ -19,7 +19,6 @@ export const Q96 = BigInt.fromString("79228162514264337593543950336")
 // ---- Tokens tracked for portfolio valuation (Base mainnet) ------------------
 export const USDC_NATIVE = Address.fromString("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913") // Native USDC on Base (primary funding/valuation asset)
 export const WETH = Address.fromString("0x4200000000000000000000000000000000000006") // WETH on Base
-export const OLAS = Address.fromString("0x54330d28ca3357F294334BDC454a032e7f353416") // OLAS on Base
 export const AERO = Address.fromString("0x940181a94A35A4569E4529A3CDfB74e38FD98631") // AERO (Aerodrome reward token) on Base
 
 // Whitelisted stablecoins (Base) — priced via $1 fallback until pools confirmed
@@ -62,7 +61,6 @@ export const EXCLUDED_SERVICE_IDS: BigInt[] = []
 export const WHITELISTED_TOKENS: string[] = [
   USDC_NATIVE.toHexString(),
   WETH.toHexString(),
-  OLAS.toHexString(),
   AERO.toHexString(),
   BOLD.toHexString(),
   MSUSD.toHexString(),

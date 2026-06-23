@@ -72,29 +72,39 @@ everything the **current** babydegen website page shows for Basius.
   confirmed fine (Basius holds no meaningful balances).
 - Speculative **USDbC** token removed (not in Basius's spec).
 
-### Only remaining placeholder
+### Token pricing
 
-- **OLAS / AERO pricing**: unconfigured → resolves to $0. Divya to send Aerodrome OLAS/<pair>
-  and AERO/<pair> pools; backfill in a follow-up PR. **AERO is the CL gauge reward token, so
-  reward USD reads 0 until added — prioritise it.**
+- **OLAS dropped** — Basius holds none and it isn't a trading asset; removed from the token
+  set, manifest, and decimals/symbol maps.
+- **AERO priced** — off the Aerodrome AERO/USDC *volatile* pool
+  `0x6cdcb1c4a4d1c3c6d054b27ac5b77e89eafb971d` via the `velodrome_v2` adapter (same way
+  optimism prices VELO). It's the CL-gauge reward token, so this makes `claimableRewardUSD`
+  correct once Basius opens CL positions. Stables remain ~$1 via the USDC feed.
 
-## Phase 2 — explorer daily metrics (DEFERRED)
+## Phase 2 — explorer daily metrics (STUB LANDED)
 
-The agent-explorer heatmap wants, per day: **DAA (daily active agents)**, **transactions**,
-**avg**, **ROI**. ROI/day already exists (`AgentPortfolioSnapshot.roi`). DAA and
-transactions-per-day are **not implemented** in babydegen today.
+A minimal, clearly-labelled skeleton is in place:
+- `DailyActivityMetric` (id = UTC-midnight day) with `activeAgents` (DAA) and
+  `transactionCount`; `DailyAgentActivity` (`<day>-<serviceSafe>`) dedups DAA per day.
+- `recordSwapActivity()` (`src/dailyActivity.ts`) is called from the LiFi handler on each
+  tracked swap; covered by Matchstick tests (single swap, repeat swap, multi-service DAA).
+- ROI/day is already available via `AgentPortfolioSnapshot.roi`.
 
-**Blocked on a product decision:** what does "transactions" mean for babydegen? Historically
-it meant **mech requests** (Tatiana) — and babydegen now relies on mech requests for its KPI
-(Divya) — vs counting **swaps**. Once defined, Phase 2 likely indexes the Base
-mech-marketplace requests for the Basius safe and adds a daily metric entity.
+**Provisional / pending product:** `transactionCount` currently counts **LiFi swaps**. The
+final definition of "transactions per day" is undecided — candidates: **swaps** (done),
+**Safe executions** (`ExecutionSuccess`, cheap, already captured), or **mech requests**
+(Tatiana's historical meaning; Divya notes babydegen now uses mechs — this one needs a NEW
+Base mech-marketplace data source). DAA's "active" signal (currently = swapped that day) may
+also need broadening once the metric is confirmed.
 
 ## Open questions for the team
 
-1. **OLAS/AERO pricing pools** (Divya) — Aerodrome OLAS/<pair> and AERO/<pair> pool addresses
-   (deepest WETH or USDC pair) to lift these off $0; AERO first.
-2. **Phase 2** (Tatiana) — define "transactions per day" for babydegen (mech requests vs
-   swaps) and how DAA should be computed, so the explorer metrics can be scoped.
+1. **Phase 2 definition** (Tatiana/Presh) — what counts as a "transaction per day" (swaps vs
+   Safe executions vs mech requests) and how DAA should be computed. The swaps-based stub is
+   live; redirecting to mech requests is the only option needing a new data source.
+2. **AERO/USDC pool choice** (Divya, optional) — confirm the volatile AERO/USDC pool
+   `0x6cdcb1c4…` is the preferred price source (vs AERO/WETH).
 
-_Resolved: agentId-vs-serviceId scoping (it's agentId 115, multi-service), v2 PoolFactory,
-startBlock, LiFi, Chainlink feeds, stable pricing, block-handler cadence (`1800`)._
+_Resolved: agentId-vs-serviceId scoping (agentId 115, multi-service), v2 PoolFactory,
+startBlock, LiFi, Chainlink feeds, stable pricing, block-handler cadence (`1800`), OLAS
+dropped, AERO priced._
