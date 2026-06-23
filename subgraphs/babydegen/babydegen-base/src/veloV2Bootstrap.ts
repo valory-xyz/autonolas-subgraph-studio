@@ -62,16 +62,19 @@ export function handleVeloV2Bootstrap(block: ethereum.Block): void {
   let totalDiscovered = 0
   let whitelistedFound = 0
   
-  // Fetch pools in batches (Sugar contract MAX_LPS = 500)
+  // Fetch pools in batches via Aerodrome LpSugar v3 `forSwaps(limit, offset)`, which
+  // returns {lp, type, token0, token1, factory, pool_fee} — exactly the fields the
+  // bootstrap needs. (Aerodrome's `all` has a 3-arg signature + a different struct than
+  // Velodrome's `all`, so calling `all(limit, offset)` would revert.)
   let limit = 500
   let offset = 0
   let hasMore = true
-  
+
   while (hasMore) {
-    let poolsResult = sugar.try_all(BigInt.fromI32(limit), BigInt.fromI32(offset))
-    
+    let poolsResult = sugar.try_forSwaps(BigInt.fromI32(limit), BigInt.fromI32(offset))
+
     if (poolsResult.reverted) {
-      log.error("VELO V2: Sugar call reverted at offset {}", [offset.toString()])
+      log.error("VELO V2: Sugar forSwaps call reverted at offset {}", [offset.toString()])
       break
     }
     
@@ -93,9 +96,9 @@ export function handleVeloV2Bootstrap(block: ethereum.Block): void {
       // type 1 = concentrated liquidity pools (skip these)
       // Only track stable (0) and volatile (-1) pools
       if ([0,-1].includes(poolData.type) && isPoolRelevant(poolData.token0, poolData.token1)) {
-        // Note: isStable is true when type is -1 (this is correct per manual verification)
-        let isStable = poolData.type == -1
-        createPoolTemplate(poolData.id, poolData.token0, poolData.token1, isStable)
+        // type 0 = stable, -1 = volatile v2 pool; positive = CL tickSpacing (skipped above).
+        let isStable = poolData.type == 0
+        createPoolTemplate(poolData.lp, poolData.token0, poolData.token1, isStable)
         whitelistedFound++
       }
     }

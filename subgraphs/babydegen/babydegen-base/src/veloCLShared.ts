@@ -357,8 +357,7 @@ export function refreshVeloCLPosition(
   
   if (!earnedResult.reverted) {
     rewardAmount = earnedResult.value.toBigDecimal().div(BigDecimal.fromString("1e18"))
-    // Aerodrome CL gauges emit AERO rewards. TODO(divya): AERO has no price source
-    // configured yet (see tokenConfig.ts), so reward USD is 0 until an AERO pool is added.
+    // Aerodrome CL gauges emit AERO rewards, now priced off the AERO/USDC pool (tokenConfig.ts).
     const aeroPrice = getTokenPriceUSD(AERO, block.timestamp, false)
     rewardUSD = rewardAmount.times(aeroPrice)
   }

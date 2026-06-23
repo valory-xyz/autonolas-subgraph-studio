@@ -260,7 +260,11 @@ dataSources:
         - ProtocolPosition
       abis:
         - name: Sugar
-          file: ../../../abis/utils/Sugar.json
+          # Aerodrome LpSugar v3 — its `all` takes 3 args and returns a different
+          # struct than Velodrome's; we use `forSwaps(limit, offset)` which returns
+          # exactly {lp, type, token0, token1, ...}. Base-specific ABI (not the shared
+          # Velodrome Sugar.json, which babydegen-optimism still uses).
+          file: ../../../abis/utils/AerodromeLpSugar.json
         - name: PoolFactory
           file: ../../../abis/defi/PoolFactory.json
         - name: VelodromeV2Pool
