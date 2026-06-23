@@ -97,6 +97,26 @@ final definition of "transactions per day" is undecided — candidates: **swaps*
 Base mech-marketplace data source). DAA's "active" signal (currently = swapped that day) may
 also need broadening once the metric is confirmed.
 
+## Aerodrome contract compatibility (verified on-chain)
+
+The port reuses the repo's Velodrome ABIs on the assumption Aerodrome is a clean fork.
+Validated each against the deployed Base contracts:
+
+- **Live read path — compatible ✓.** Slipstream NFPM (all 41 fns match), CL pool
+  (`slot0`/`liquidity`/`tickSpacing`/`token0`/`token1`/`gauge`/`fee`), v2 pool
+  (`getReserves`/`token0`/`token1`/`stable`/`metadata`), CL factory `getPool`, and the v2
+  PoolFactory all respond with matching signatures. CL position tracking, v2 pool reads, and
+  pricing work as-is.
+- **LpSugar bootstrap — fixed in this PR.** Aerodrome's LpSugar v3 `all` takes 3 args with a
+  different struct, so `all(limit, offset)` reverted — silently disabling pre-existing
+  v2-pool template discovery (a Basius LP into an existing stable pool would be missed).
+  Switched the bootstrap to Aerodrome's `forSwaps(limit, offset)` → `{lp, type, token0,
+  token1, …}` via a Base-specific `abis/utils/AerodromeLpSugar.json` (the shared `Sugar.json`
+  stays for optimism). CL positions never needed this (NFPM-based).
+- **Follow-up:** the CL-gauge `earned(address,uint256)` reward read is the same Slipstream
+  fork and is wrapped in `try_` (degrades to reward=0 if it ever mismatched); worth a live
+  confirmation once a Basius CL position with staked rewards exists.
+
 ## Open questions for the team
 
 1. **Phase 2 definition** (Tatiana/Presh) — what counts as a "transaction per day" (swaps vs
