@@ -6,12 +6,15 @@ import {
   afterEach,
   createMockedFunction
 } from "matchstick-as/assembly/index"
-import { Address, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts"
+import { Address, BigInt, BigDecimal, Bytes, ethereum } from "@graphprotocol/graph-ts"
 import {
   handleRegisterInstance,
   handleCreateMultisigWithAgents
 } from "../src/serviceRegistry"
 import { getTokenConfig, TokenConfig } from "../src/tokenConfig"
+import { getVelodromeV2Price } from "../src/priceAdapters"
+import { calculatePositionROI } from "../src/roiCalculation"
+import { ProtocolPosition } from "../generated/schema"
 import { USDC_NATIVE, WETH, AERO, BOLD } from "../src/constants"
 import {
   createRegisterInstanceEvent,
@@ -424,5 +427,113 @@ describe("Base token config (tokenConfig.ts)", () => {
       Address.fromString("0x54330d28ca3357F294334BDC454a032e7f353416")
     )
     assert.assertNull(olas)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// AERO price resolution — velodrome_v2 adapter reading the mocked AERO/USDC pool
+// ---------------------------------------------------------------------------
+describe("getVelodromeV2Price — AERO/USDC volatile pool", () => {
+  afterEach(() => {
+    clearStore()
+  })
+
+  test("derives AERO ≈ $1.30 from reserves (AERO token0 18dec, USDC token1 6dec)", () => {
+    const POOL = Address.fromString("0x6cdcb1c4a4d1c3c6d054b27ac5b77e89eafb971d")
+
+    createMockedFunction(POOL, "token0", "token0():(address)")
+      .withArgs([])
+      .returns([ethereum.Value.fromAddress(AERO)])
+    createMockedFunction(POOL, "token1", "token1():(address)")
+      .withArgs([])
+      .returns([ethereum.Value.fromAddress(USDC_NATIVE)])
+    // 1,000,000 AERO (1e24) vs 1,300,000 USDC (1.3e12) → price = 1.3 USDC/AERO × $1
+    createMockedFunction(POOL, "getReserves", "getReserves():(uint256,uint256,uint256)")
+      .withArgs([])
+      .returns([
+        ethereum.Value.fromUnsignedBigInt(BigInt.fromString("1000000000000000000000000")),
+        ethereum.Value.fromUnsignedBigInt(BigInt.fromString("1300000000000")),
+        ethereum.Value.fromUnsignedBigInt(BigInt.zero())
+      ])
+
+    const price = getVelodromeV2Price(AERO, POOL, USDC_NATIVE)
+    assert.assertTrue(price.gt(BigDecimal.fromString("1.29")))
+    assert.assertTrue(price.lt(BigDecimal.fromString("1.31")))
+  })
+
+  test("returns 0 (graceful) when the pool reverts", () => {
+    const POOL = Address.fromString("0x6cdcb1c4a4d1c3c6d054b27ac5b77e89eafb971d")
+    // token0() reverts → try_token0().reverted → adapter returns 0, no crash.
+    createMockedFunction(POOL, "token0", "token0():(address)").withArgs([]).reverts()
+    createMockedFunction(POOL, "token1", "token1():(address)").withArgs([]).reverts()
+    const price = getVelodromeV2Price(AERO, POOL, USDC_NATIVE)
+    assert.stringEquals("0", price.toString())
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Position ROI math (roiCalculation.ts)
+// ---------------------------------------------------------------------------
+function makeClosedPosition(
+  idStr: string,
+  entryUSD: string,
+  costsUSD: string,
+  exitUSD: string
+): ProtocolPosition {
+  const p = new ProtocolPosition(Bytes.fromUTF8(idStr))
+  p.agent = SERVICE_SAFE
+  p.protocol = "aerodrome-cl"
+  p.pool = SERVICE_SAFE
+  p.isActive = false
+  p.usdCurrent = BigDecimal.zero()
+  p.usdCurrentWithRewards = BigDecimal.zero()
+  p.amount0USD = BigDecimal.zero()
+  p.amount1USD = BigDecimal.zero()
+  p.tokenId = BigInt.zero()
+  p.tickLower = 0
+  p.tickUpper = 0
+  p.entryTxHash = TX_HASH
+  p.entryTimestamp = BLOCK_TIMESTAMP
+  p.entryAmount0 = BigDecimal.zero()
+  p.entryAmount0USD = BigDecimal.zero()
+  p.entryAmount1 = BigDecimal.zero()
+  p.entryAmount1USD = BigDecimal.zero()
+  p.entryAmountUSD = BigDecimal.fromString(entryUSD)
+  p.totalCostsUSD = BigDecimal.fromString(costsUSD)
+  p.swapSlippageUSD = BigDecimal.zero()
+  p.investmentUSD = BigDecimal.zero()
+  p.grossGainUSD = BigDecimal.zero()
+  p.netGainUSD = BigDecimal.zero()
+  p.positionROI = BigDecimal.zero()
+  p.exitAmountUSD = BigDecimal.fromString(exitUSD)
+  p.save()
+  return p
+}
+
+describe("calculatePositionROI", () => {
+  afterEach(() => {
+    clearStore()
+  })
+
+  test("gain: entry 100, exit 150 → ROI 50%", () => {
+    const pos = makeClosedPosition("pos-gain", "100", "0", "150")
+    const roi = calculatePositionROI(pos)
+    assert.stringEquals("50", roi.toString())
+    assert.fieldEquals("ProtocolPosition", pos.id.toHexString(), "netGainUSD", "50")
+    assert.fieldEquals("ProtocolPosition", pos.id.toHexString(), "investmentUSD", "100")
+  })
+
+  test("loss: entry 200, exit 150 → ROI -25%", () => {
+    const pos = makeClosedPosition("pos-loss", "200", "0", "150")
+    const roi = calculatePositionROI(pos)
+    assert.stringEquals("-25", roi.toString())
+  })
+
+  test("costs count against ROI: entry 100, costs 20, exit 150 → ROI 25%", () => {
+    const pos = makeClosedPosition("pos-costs", "100", "20", "150")
+    const roi = calculatePositionROI(pos)
+    // investment = 100 + 20 = 120; netGain = 150 - 120 = 30; ROI = 25%
+    assert.stringEquals("25", roi.toString())
+    assert.fieldEquals("ProtocolPosition", pos.id.toHexString(), "investmentUSD", "120")
   })
 })
