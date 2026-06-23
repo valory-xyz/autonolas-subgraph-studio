@@ -1,0 +1,464 @@
+specVersion: 0.0.8
+schema:
+  file: ./schema.graphql
+# BabyDegen Base (Basius) — Aerodrome-only port of babydegen-optimism.
+# Indexing is PINNED to Olas service 115 (see src/serviceRegistry.ts).
+# NOTE: only USDC (native) and ETH flows affect funding metrics; other token
+# transfers are tracked for balance only.
+#
+# TODO(divya): all `startBlock` values are placeholders (17310019) — set them to
+# the block where Basius service 115 was registered / first funded on Base.
+dataSources:
+  - kind: ethereum
+    name: ServiceRegistryL2
+    network: base
+    source:
+      address: "0x3C1fF68f5aa342D296d4DEe4Bb1cACCA912D95fE" # canonical Olas ServiceRegistryL2 on Base
+      abi: ServiceRegistryL2
+      startBlock: 17310019 # TODO: set to service-115 registration block
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - Service
+        - ServiceRegistration
+        - ServiceIndex
+      abis:
+        - name: ServiceRegistryL2
+          file: ../../../abis/ServiceRegistryL2.json
+      eventHandlers:
+        - event: CreateMultisigWithAgents(indexed uint256,indexed address)
+          handler: handleCreateMultisigWithAgents
+        - event: RegisterInstance(indexed address,indexed uint256,indexed address,uint256)
+          handler: handleRegisterInstance
+      file: ./src/serviceRegistry.ts
+
+  # ---- Tracked token Transfer sources --------------------------------------
+  - kind: ethereum
+    name: USDC_Native
+    network: base
+    source:
+      address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" # USDC on Base (primary funding/valuation asset)
+      abi: ERC20
+      startBlock: 17310019 # TODO: set to service-115 registration block
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - FundingBalance
+        - TokenBalance
+      abis:
+        - name: ERC20
+          file: ../../../abis/ERC20.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleUSDC
+      file: ./src/funding.ts
+
+  - kind: ethereum
+    name: WETH
+    network: base
+    source:
+      address: "0x4200000000000000000000000000000000000006"
+      abi: ERC20
+      startBlock: 17310019 # TODO: set to service-115 registration block
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - TokenBalance
+      abis:
+        - name: ERC20
+          file: ../../../abis/ERC20.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleERC20Transfer
+      file: ./src/tokenBalances.ts
+
+  - kind: ethereum
+    name: OLAS
+    network: base
+    source:
+      address: "0x54330d28ca3357F294334BDC454a032e7f353416"
+      abi: ERC20
+      startBlock: 17310019 # TODO: set to service-115 registration block
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - TokenBalance
+      abis:
+        - name: ERC20
+          file: ../../../abis/ERC20.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleERC20Transfer
+      file: ./src/tokenBalances.ts
+
+  - kind: ethereum
+    name: AERO
+    network: base
+    source:
+      address: "0x940181a94A35A4569E4529A3CDfB74e38FD98631" # Aerodrome reward token
+      abi: ERC20
+      startBlock: 17310019 # TODO: set to service-115 registration block
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - TokenBalance
+      abis:
+        - name: ERC20
+          file: ../../../abis/ERC20.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleERC20Transfer
+      file: ./src/tokenBalances.ts
+
+  - kind: ethereum
+    name: USDC_Bridged
+    network: base
+    source:
+      address: "0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA" # USDbC # TODO(divya): VERIFY Basius holds USDbC
+      abi: ERC20
+      startBlock: 17310019 # TODO: set to service-115 registration block
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - FundingBalance
+        - TokenBalance
+      abis:
+        - name: ERC20
+          file: ../../../abis/ERC20.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleUSDC
+      file: ./src/funding.ts
+
+  - kind: ethereum
+    name: BOLD
+    network: base
+    source:
+      address: "0x03569Cc076654F82679C4BA2124D64774781b01d"
+      abi: ERC20
+      startBlock: 17310019 # TODO: set to service-115 registration block
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - TokenBalance
+      abis:
+        - name: ERC20
+          file: ../../../abis/ERC20.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleERC20Transfer
+      file: ./src/tokenBalances.ts
+
+  - kind: ethereum
+    name: msUSD
+    network: base
+    source:
+      address: "0x526728DBc96689597F85ae4cd716d4f7fCCBAE9d"
+      abi: ERC20
+      startBlock: 17310019 # TODO: set to service-115 registration block
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - TokenBalance
+      abis:
+        - name: ERC20
+          file: ../../../abis/ERC20.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleERC20Transfer
+      file: ./src/tokenBalances.ts
+
+  - kind: ethereum
+    name: frxUSD
+    network: base
+    source:
+      address: "0xe5020A6D073a794B6e7F05678707dE47986Fb0B6"
+      abi: ERC20
+      startBlock: 17310019 # TODO: set to service-115 registration block
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - TokenBalance
+      abis:
+        - name: ERC20
+          file: ../../../abis/ERC20.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleERC20Transfer
+      file: ./src/tokenBalances.ts
+
+  - kind: ethereum
+    name: eUSD
+    network: base
+    source:
+      address: "0xCfA3Ef56d303AE4fAabA0592388F19d7C3399FB4"
+      abi: ERC20
+      startBlock: 17310019 # TODO: set to service-115 registration block
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - TokenBalance
+      abis:
+        - name: ERC20
+          file: ../../../abis/ERC20.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleERC20Transfer
+      file: ./src/tokenBalances.ts
+
+  - kind: ethereum
+    name: axlUSDC
+    network: base
+    source:
+      address: "0xEB466342C4d449BC9f53A865D5Cb90586f405215"
+      abi: ERC20
+      startBlock: 17310019 # TODO: set to service-115 registration block
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - TokenBalance
+      abis:
+        - name: ERC20
+          file: ../../../abis/ERC20.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleERC20Transfer
+      file: ./src/tokenBalances.ts
+
+  # ---- Aerodrome Slipstream (CL) positions ---------------------------------
+  - kind: ethereum
+    name: VeloNFTManager
+    network: base
+    source:
+      address: "0xe1f8cd9AC4e4A65F54f38a5CdAfCA44f6dD68b53" # Aerodrome Slipstream NFPM
+      abi: VelodromePositionNFTManager
+      startBlock: 17310019 # TODO: set to service-115 registration block
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - ProtocolPosition
+      abis:
+        - name: VelodromePositionNFTManager
+          file: ../../../abis/nft/VelodromePositionNFTManager.json
+        - name: VelodromeCLPool
+          file: ../../../abis/defi/VelodromeCLPool.json
+        - name: VelodromeCLFactory
+          file: ../../../abis/defi/VelodromeCLFactory.json
+        - name: VeloCLGauge
+          file: ../../../abis/defi/VeloCLGauge.json
+        - name: VelodromeV2Pool
+          file: ../../../abis/defi/VelodromeV2Pool.json
+        - name: AggregatorV3Interface
+          file: ../../../abis/oracles/AggregatorV3Interface.json
+      eventHandlers:
+        - event: IncreaseLiquidity(indexed uint256,uint128,uint256,uint256)
+          handler: handleIncreaseLiquidity
+        - event: DecreaseLiquidity(indexed uint256,uint128,uint256,uint256)
+          handler: handleDecreaseLiquidity
+        - event: Collect(indexed uint256,address,uint256,uint256)
+          handler: handleCollect
+        - event: Transfer(indexed address,indexed address,indexed uint256)
+          handler: handleNFTTransfer
+      file: ./src/veloNFTManager.ts
+
+  # ---- Aerodrome v2 pool discovery / bootstrap (Sugar) ----------------------
+  - kind: ethereum/contract
+    name: VeloV2Sugar
+    network: base
+    source:
+      address: "0x69dD9db6d8f8E7d83887A704f447b1a584b599A1" # Aerodrome LpSugar v3
+      abi: Sugar
+      startBlock: 17310019 # TODO: set to service-115 registration block
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      file: ./src/veloV2Bootstrap.ts
+      entities:
+        - ProtocolPosition
+      abis:
+        - name: Sugar
+          file: ../../../abis/utils/Sugar.json
+        - name: PoolFactory
+          file: ../../../abis/defi/PoolFactory.json
+        - name: VelodromeV2Pool
+          file: ../../../abis/defi/VelodromeV2Pool.json
+      blockHandlers:
+        - handler: handleVeloV2Bootstrap
+          filter:
+            kind: once
+
+  - kind: ethereum/contract
+    name: VeloV2Factory
+    network: base
+    source:
+      address: "0x420DD381b31aEf6683db6B902084cB0FFECe40Da" # TODO(divya): VERIFY Aerodrome v2 PoolFactory
+      abi: PoolFactory
+      startBlock: 17310019 # TODO: set to service-115 registration block
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      file: ./src/veloV2Bootstrap.ts
+      entities:
+        - ProtocolPosition
+      abis:
+        - name: PoolFactory
+          file: ../../../abis/defi/PoolFactory.json
+        - name: VelodromeV2Pool
+          file: ../../../abis/defi/VelodromeV2Pool.json
+      eventHandlers:
+        - event: PoolCreated(indexed address,indexed address,indexed bool,address,uint256)
+          handler: handleVeloV2PoolCreated
+
+  # ---- Portfolio snapshot scheduler (block handler) ------------------------
+  - kind: ethereum/contract
+    name: PortfolioScheduler
+    network: base
+    source:
+      address: "0x3C1fF68f5aa342D296d4DEe4Bb1cACCA912D95fE" # ServiceRegistryL2 address
+      abi: ServiceRegistryL2
+      startBlock: 17310019 # TODO: set to service-115 registration block
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - AgentPortfolio
+        - AgentPortfolioSnapshot
+      abis:
+        - name: ServiceRegistryL2
+          file: ../../../abis/ServiceRegistryL2.json
+        - name: VelodromeV2Pool
+          file: ../../../abis/defi/VelodromeV2Pool.json
+        - name: VelodromeCLPool
+          file: ../../../abis/defi/VelodromeCLPool.json
+        - name: VelodromeCLFactory
+          file: ../../../abis/defi/VelodromeCLFactory.json
+        - name: VelodromePositionNFTManager
+          file: ../../../abis/nft/VelodromePositionNFTManager.json
+        - name: AggregatorV3Interface
+          file: ../../../abis/oracles/AggregatorV3Interface.json
+        - name: ERC20
+          file: ../../../abis/ERC20.json
+        - name: VeloCLGauge
+          file: ../../../abis/defi/VeloCLGauge.json
+      blockHandlers:
+        - handler: handleBlock
+          filter:
+            kind: polling
+            # Base ~2s blocks; 1800 ≈ 1h. Consider 900 (~30m) once cadence confirmed.
+            every: 1800
+      file: ./src/portfolioScheduler.ts
+
+  # ---- LiFi swap tracking (slippage) ---------------------------------------
+  - kind: ethereum
+    name: LiFiDiamond
+    network: base
+    source:
+      address: "0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE" # TODO(divya): VERIFY LiFi Diamond on Base
+      abi: LiFiDiamond
+      startBlock: 17310019 # TODO: set to service-115 registration block
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - TokenBalance
+        - SwapTransaction
+        - SwapToEntryAssociation
+      abis:
+        - name: LiFiDiamond
+          file: ../../../abis/defi/LiFiDiamond.json
+        - name: AggregatorV3Interface
+          file: ../../../abis/oracles/AggregatorV3Interface.json
+        - name: VelodromeCLPool
+          file: ../../../abis/defi/VelodromeCLPool.json
+        - name: VelodromeV2Pool
+          file: ../../../abis/defi/VelodromeV2Pool.json
+      eventHandlers:
+        - event: LiFiGenericSwapCompleted(indexed bytes32,string,string,address,address,address,uint256,uint256)
+          handler: handleLiFiGenericSwapCompleted
+      file: ./src/lifiDiamond.ts
+
+templates:
+  # Aerodrome v2 pool template (Mint/Burn/Transfer)
+  - kind: ethereum/contract
+    name: VeloV2Pool
+    network: base
+    source:
+      abi: VelodromeV2Pool
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - ProtocolPosition
+      abis:
+        - name: VelodromeV2Pool
+          file: ../../../abis/defi/VelodromeV2Pool.json
+        - name: AggregatorV3Interface
+          file: ../../../abis/oracles/AggregatorV3Interface.json
+        - name: VelodromeCLPool
+          file: ../../../abis/defi/VelodromeCLPool.json
+      eventHandlers:
+        - event: Mint(indexed address,uint256,uint256)
+          handler: handleVeloV2Mint
+        - event: Burn(indexed address,indexed address,uint256,uint256)
+          handler: handleVeloV2Burn
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleVeloV2Transfer
+      file: ./src/veloV2Pool.ts
+
+  # Safe template for tracking ETH transfers to service / operator safes
+  - kind: ethereum/contract
+    name: Safe
+    network: base
+    source:
+      abi: Safe
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - FundingBalance
+        - Service
+      abis:
+        - name: Safe
+          file: ../../../abis/Safe.json
+        - name: AggregatorV3Interface
+          file: ../../../abis/oracles/AggregatorV3Interface.json
+        - name: VelodromeCLPool
+          file: ../../../abis/defi/VelodromeCLPool.json
+      eventHandlers:
+        - event: SafeReceived(indexed address,uint256)
+          handler: handleSafeReceived
+        - event: ExecutionSuccess(bytes32,uint256)
+          handler: handleExecutionSuccess
+        - event: ExecutionFromModuleSuccess(indexed address)
+          handler: handleExecutionFromModuleSuccess
+      file: ./src/safe.ts
