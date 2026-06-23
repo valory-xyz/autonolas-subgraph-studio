@@ -83,15 +83,14 @@ Snapshots fire from the `PortfolioScheduler` block handler at UTC-midnight cross
 Block-handler interval is `every: 1800` (~1h on Base) — confirmed: a finer interval can't
 add snapshots since they only fire on day boundaries.
 
-### Phase 2 stub — daily activity (`src/dailyActivity.ts`)
+### Explorer daily metrics (transactions / DAA) — NOT in this subgraph
 
-`DailyActivityMetric` (id = UTC-midnight day) holds per-day `transactionCount` and
-`activeAgents` (DAA) for the agent-explorer heatmap; `DailyAgentActivity`
-(`<day>-<serviceSafe>`) is an immutable dedup marker so each service counts toward DAA once
-per day. `recordSwapActivity()` is called from the LiFi handler on each tracked swap.
-**Provisional:** `transactionCount` counts LiFi swaps — the final "transactions" definition
-(swaps vs Safe executions vs mech requests; mech requests need a new data source) is pending
-product confirmation (Tatiana).
+Per-day transaction counts and daily-active-agents are **already** produced by the
+`service-registry` subgraph (which also covers Base): `DailyAgentPerformance.txCount`
+(per `agentId` per day, driven by Safe `ExecutionSuccess` / `ExecutionFromModuleSuccess` —
+the agreed "transaction" definition) and `DailyUniqueAgents`. The agent-explorer heatmap
+should read those for Basius (agentId 115); there is intentionally no duplicate daily-metric
+entity here.
 
 ## Development
 

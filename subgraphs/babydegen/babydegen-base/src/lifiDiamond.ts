@@ -2,7 +2,6 @@ import { Address, BigInt, ethereum, Bytes } from "@graphprotocol/graph-ts"
 import { getServiceByAgent } from "./config"
 import { updateETHBalance } from "./tokenBalances"
 import { createSwapTransaction } from "./swapTracking"
-import { recordSwapActivity } from "./dailyActivity"
 import { LiFiGenericSwapCompleted } from "../generated/LiFiDiamond/LiFiDiamond"
 
 /**
@@ -48,10 +47,6 @@ export function handleLiFiGenericSwapCompleted(event: LiFiGenericSwapCompleted):
     toAmount,                   // output amount
     event.logIndex              // log index for unique ID
   )
-
-  // Phase 2 stub: count this swap toward the Basius service's daily activity
-  // (transactionCount + DAA). `receiver` is the tracked service safe.
-  recordSwapActivity(receiver, event.block.timestamp)
 
   // Handle ETH outflows (fromAssetId is zero address - ETH)
   if (fromAssetId.equals(Address.zero())) {

@@ -81,30 +81,33 @@ everything the **current** babydegen website page shows for Basius.
   optimism prices VELO). It's the CL-gauge reward token, so this makes `claimableRewardUSD`
   correct once Basius opens CL positions. Stables remain ~$1 via the USDC feed.
 
-## Phase 2 — explorer daily metrics (STUB LANDED)
+## Phase 2 — explorer daily metrics (served by `service-registry`, nothing to build here)
 
-A minimal, clearly-labelled skeleton is in place:
-- `DailyActivityMetric` (id = UTC-midnight day) with `activeAgents` (DAA) and
-  `transactionCount`; `DailyAgentActivity` (`<day>-<serviceSafe>`) dedups DAA per day.
-- `recordSwapActivity()` (`src/dailyActivity.ts`) is called from the LiFi handler on each
-  tracked swap; covered by Matchstick tests (single swap, repeat swap, multi-service DAA).
-- ROI/day is already available via `AgentPortfolioSnapshot.roi`.
+Transactions-per-day and daily-active-agents are **already** produced by the
+`service-registry` subgraph (which covers Base too) — confirmed in-repo:
+- `DailyAgentPerformance` (`day-{ts}-agent-{agentId}`, `txCount: Int!`) — incremented in
+  `handleExecutionSuccess` / `handleExecutionFromModuleSuccess`, i.e. driven by Safe
+  `ExecutionSuccess` — exactly the "transaction per day" definition wanted for the heatmap.
+- `DailyUniqueAgents` (`day-{ts}`) — deduped daily-active-agents.
 
-**Provisional / pending product:** `transactionCount` currently counts **LiFi swaps**. The
-final definition of "transactions per day" is undecided — candidates: **swaps** (done),
-**Safe executions** (`ExecutionSuccess`, cheap, already captured), or **mech requests**
-(Tatiana's historical meaning; Divya notes babydegen now uses mechs — this one needs a NEW
-Base mech-marketplace data source). DAA's "active" signal (currently = swapped that day) may
-also need broadening once the metric is confirmed.
+Both are per-`agentId`, so Basius (agentId 115) is already covered. The agent-explorer
+heatmap should read these from `service-registry`; ROI/day comes from this subgraph's
+`AgentPortfolioSnapshot.roi`. An earlier swaps-based `DailyActivityMetric` stub here was
+**removed** as redundant and wrong-signal (it counted LiFi swaps, not Safe executions). The
+only remaining Phase-2 task is on the consumer side: @atepem wiring the heatmap to
+`service-registry`'s entities.
 
 ## Open questions for the team
 
-1. **Phase 2 definition** (Tatiana/Presh) — what counts as a "transaction per day" (swaps vs
-   Safe executions vs mech requests) and how DAA should be computed. The swaps-based stub is
-   live; redirecting to mech requests is the only option needing a new data source.
-2. **AERO/USDC pool choice** (Divya, optional) — confirm the volatile AERO/USDC pool
-   `0x6cdcb1c4…` is the preferred price source (vs AERO/WETH).
+1. **Phase 2 heatmap wiring** (@atepem) — consumer-side only: point the agent-explorer
+   heatmap at `service-registry`'s `DailyAgentPerformance.txCount` (Safe-execution
+   transactions) + `DailyUniqueAgents` for Basius (agentId 115). No subgraph work here.
+2. **CL-gauge `earned()` reward read** — deferred verification (no one to ask): the
+   Slipstream-fork ABI matched everywhere else and the call is `try_`-wrapped, but AERO
+   reward valuation can't be confirmed end-to-end until a Basius service opens a *staked* CL
+   position (services are brand-new, no positions yet).
 
 _Resolved: agentId-vs-serviceId scoping (agentId 115, multi-service), v2 PoolFactory,
 startBlock, LiFi, Chainlink feeds, stable pricing, block-handler cadence (`1800`), OLAS
-dropped, AERO priced._
+dropped, AERO priced (`0x6cdcb1c4…` USDC/AERO volatile, confirmed by Divya), Phase-2
+transactions/DAA (served by `service-registry`, Safe-execution definition, per Tanya)._

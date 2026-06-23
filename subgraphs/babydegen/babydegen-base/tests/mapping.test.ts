@@ -11,7 +11,6 @@ import {
   handleRegisterInstance,
   handleCreateMultisigWithAgents
 } from "../src/serviceRegistry"
-import { recordSwapActivity } from "../src/dailyActivity"
 import {
   createRegisterInstanceEvent,
   createCreateMultisigWithAgentsEvent
@@ -375,42 +374,5 @@ describe("handleCreateMultisigWithAgents", () => {
       "firstTradingTimestamp",
       BLOCK_TIMESTAMP.toString()
     )
-  })
-})
-
-// ---------------------------------------------------------------------------
-// Phase 2 stub — daily activity (DAA + swaps-based transactions)
-// ---------------------------------------------------------------------------
-describe("recordSwapActivity (DailyActivityMetric)", () => {
-  afterEach(() => {
-    clearStore()
-  })
-
-  // BLOCK_TIMESTAMP = 1700000000 → UTC-midnight day bucket = 1699920000.
-  const DAY_ID = "1699920000"
-
-  test("one swap → transactionCount=1, activeAgents=1", () => {
-    recordSwapActivity(SERVICE_SAFE, BLOCK_TIMESTAMP)
-
-    assert.entityCount("DailyActivityMetric", 1)
-    assert.fieldEquals("DailyActivityMetric", DAY_ID, "transactionCount", "1")
-    assert.fieldEquals("DailyActivityMetric", DAY_ID, "activeAgents", "1")
-    assert.fieldEquals("DailyActivityMetric", DAY_ID, "dayTimestamp", DAY_ID)
-  })
-
-  test("second swap, same service same day → transactionCount=2, activeAgents=1", () => {
-    recordSwapActivity(SERVICE_SAFE, BLOCK_TIMESTAMP)
-    recordSwapActivity(SERVICE_SAFE, BLOCK_TIMESTAMP)
-
-    assert.fieldEquals("DailyActivityMetric", DAY_ID, "transactionCount", "2")
-    assert.fieldEquals("DailyActivityMetric", DAY_ID, "activeAgents", "1")
-  })
-
-  test("different service same day → activeAgents=2 (multi-service DAA)", () => {
-    recordSwapActivity(SERVICE_SAFE, BLOCK_TIMESTAMP)
-    recordSwapActivity(OPERATOR_SAFE, BLOCK_TIMESTAMP)
-
-    assert.fieldEquals("DailyActivityMetric", DAY_ID, "transactionCount", "2")
-    assert.fieldEquals("DailyActivityMetric", DAY_ID, "activeAgents", "2")
   })
 })
