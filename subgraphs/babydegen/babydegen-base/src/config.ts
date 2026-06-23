@@ -9,7 +9,6 @@ import { Service } from "../generated/schema"
 // re-exported here for the consumers that historically imported them from config.
 export {
   USDC_NATIVE,
-  USDC_BRIDGED,
   ETH_USD_FEED,
   USDC_USD_FEED,
   VELO_NFT_MANAGER

@@ -3,7 +3,6 @@ import { AggregatorV3Interface } from "../generated/templates/Safe/AggregatorV3I
 import { AddressType, Service } from "../generated/schema"
 import { 
   USDC_NATIVE,
-  USDC_BRIDGED,
   ETH_USD_FEED,
   USDC_USD_FEED,
   getServiceByAgent

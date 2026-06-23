@@ -3,7 +3,6 @@ import {
   ETH_USD_FEED,
   USDC_USD_FEED,
   USDC_NATIVE,
-  USDC_BRIDGED,
   WETH,
   BOLD,
   MSUSD,
@@ -143,11 +142,8 @@ function initializeTokens(): void {
     ]
   ))
 
-  // Bridged USDC (USDbC) — reference the USDC feed (~$1)
-  TOKENS.set(USDC_BRIDGED.toHexString().toLowerCase(), usdcReferencedStable(USDC_BRIDGED, "USDbC", 6))
-
-  // Whitelisted stablecoins — $1-via-USDC-reference for now.
-  // TODO(divya): replace with real Aerodrome pools if any of these de-peg materially.
+  // Whitelisted stablecoins — confirmed (Divya): $1 via the USDC feed is fine; Basius
+  // holds no meaningful balances of these, so the fidelity loss is negligible.
   TOKENS.set(BOLD.toHexString().toLowerCase(), usdcReferencedStable(BOLD, "BOLD", 18))
   TOKENS.set(MSUSD.toHexString().toLowerCase(), usdcReferencedStable(MSUSD, "msUSD", 18))
   TOKENS.set(FRXUSD.toHexString().toLowerCase(), usdcReferencedStable(FRXUSD, "frxUSD", 18))
@@ -155,7 +151,8 @@ function initializeTokens(): void {
   TOKENS.set(AXLUSDC.toHexString().toLowerCase(), usdcReferencedStable(AXLUSDC, "axlUSDC", 6))
 
   // OLAS and AERO: NOT configured yet (price resolves to 0 until pools are added).
-  // TODO(divya): add Aerodrome OLAS and AERO price pools here.
+  // TODO: Aerodrome AERO/<pair> (prioritise; CL gauge reward) and OLAS/<pair> pools —
+  // Divya to provide, backfill in follow-up PR.
 }
 
 // Call initialization

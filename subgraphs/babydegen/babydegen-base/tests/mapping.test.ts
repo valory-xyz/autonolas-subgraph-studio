@@ -20,9 +20,9 @@ import {
   AGENT_INSTANCE,
   SERVICE_SAFE,
   SERVICE_ID,
-  NON_BASIUS_SERVICE_ID,
-  OPTIMUS_AGENT_ID,
-  NON_OPTIMUS_AGENT_ID,
+  SERVICE_ID_2,
+  BASIUS_AGENT_ID,
+  NON_BASIUS_AGENT_ID,
   BLOCK_NUMBER,
   BLOCK_TIMESTAMP,
   TX_HASH,
@@ -63,7 +63,7 @@ function mockChainlinkEthUsd(): void {
  */
 function registerService(
   serviceId: BigInt = SERVICE_ID,
-  agentId: BigInt = OPTIMUS_AGENT_ID
+  agentId: BigInt = BASIUS_AGENT_ID
 ): void {
   let event = createRegisterInstanceEvent(
     OPERATOR_SAFE,
@@ -126,18 +126,19 @@ describe("handleRegisterInstance", () => {
     )
   })
 
-  test("registers regardless of agent ID (pinned by service id, not agent id)", () => {
-    // We pin to service 115, so a non-canonical agent id must NOT prevent indexing.
-    registerService(SERVICE_ID, NON_OPTIMUS_AGENT_ID)
-
-    assert.entityCount("ServiceRegistration", 1)
-  })
-
-  test("ignores non-pinned service IDs", () => {
-    // Any service id other than the pinned Basius service (115) is skipped.
-    registerService(NON_BASIUS_SERVICE_ID, OPTIMUS_AGENT_ID)
+  test("ignores non-Basius agent IDs", () => {
+    // Filtering is by agentId; a non-Basius agent id must be skipped.
+    registerService(SERVICE_ID, NON_BASIUS_AGENT_ID)
 
     assert.entityCount("ServiceRegistration", 0)
+  })
+
+  test("tracks every service running agentId 115 (multi-service)", () => {
+    // Two DIFFERENT service IDs, both on agentId 115 → both tracked.
+    registerService(SERVICE_ID, BASIUS_AGENT_ID)
+    registerService(SERVICE_ID_2, BASIUS_AGENT_ID)
+
+    assert.entityCount("ServiceRegistration", 2)
   })
 
   test("overwrites registration for same service ID", () => {
@@ -149,7 +150,7 @@ describe("handleRegisterInstance", () => {
       OPERATOR_SAFE,
       SERVICE_ID,
       AGENT_INSTANCE,
-      OPTIMUS_AGENT_ID
+      BASIUS_AGENT_ID
     )
     let newBlock = BigInt.fromI32(136700000)
     event.block.number = newBlock
@@ -193,17 +194,15 @@ describe("handleCreateMultisigWithAgents", () => {
     assert.entityCount("Service", 0)
   })
 
-  test("does nothing for non-pinned service IDs", () => {
+  test("does nothing for services whose RegisterInstance had a non-Basius agentId", () => {
     mockChainlinkEthUsd()
 
-    // Register first (will be skipped because not the pinned service)
-    registerService(NON_BASIUS_SERVICE_ID, OPTIMUS_AGENT_ID)
+    // RegisterInstance is skipped (non-Basius agentId) → no ServiceRegistration,
+    // so CreateMultisigWithAgents has nothing to promote.
+    registerService(SERVICE_ID, NON_BASIUS_AGENT_ID)
     assert.entityCount("ServiceRegistration", 0)
 
-    let event = createCreateMultisigWithAgentsEvent(
-      NON_BASIUS_SERVICE_ID,
-      SERVICE_SAFE
-    )
+    let event = createCreateMultisigWithAgentsEvent(SERVICE_ID, SERVICE_SAFE)
     event.block.number = BLOCK_NUMBER
     event.block.timestamp = BLOCK_TIMESTAMP
     event.transaction.hash = TX_HASH

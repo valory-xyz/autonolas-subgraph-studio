@@ -5,7 +5,7 @@ import { TOKENS } from "./tokenConfig"
 import { getServiceByAgent } from "./config"
 import { isFundingSource, getEthUsd } from "./common"
 import { getTokenPriceUSD } from "./priceDiscovery"
-import { WETH, WHITELISTED_TOKENS, USDC_NATIVE, USDC_BRIDGED } from "./constants"
+import { WETH, WHITELISTED_TOKENS, USDC_NATIVE } from "./constants"
 import { ensureAgentPortfolio, calculatePortfolioMetrics } from "./helpers"
 
 // Helper function to create block from timestamp for ETH price lookup
@@ -180,10 +180,6 @@ export function handleERC20Transfer(event: TransferEvent): void {
   if (tokenConfig == null) {
     return // Not a whitelisted token
   }
-  
-  // Determine token types
-  let isNativeUSDC = tokenAddress.equals(USDC_NATIVE)
-  let isBridgedUSDC = tokenAddress.equals(USDC_BRIDGED)
   
   // Format token amount with correct decimals
   let divisor = BigDecimal.fromString("1" + "0".repeat(tokenConfig.decimals))

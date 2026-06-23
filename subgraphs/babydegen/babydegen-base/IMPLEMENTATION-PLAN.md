@@ -2,8 +2,8 @@
 
 New subgraph for the **Basius** babydegen agent on **Base**, providing portfolio / APR /
 ROI metrics for the olas.network babydegen page and (later) the agent-explorer page. It is
-a port of `babydegen-optimism`, stripped to **Aerodrome-only** and **pinned to Olas service
-115**.
+a port of `babydegen-optimism`, stripped to **Aerodrome-only** and scoped by **Olas
+`agentId == 115`** (tracking every Basius service), mirroring optimism's `OPTIMUS_AGENT_ID`.
 
 ## Why this shape
 
@@ -18,13 +18,18 @@ reused directly. Uniswap V3, Balancer, and Mode's STURDY vault are not in scope.
 
 - Canonical `ServiceRegistryL2 = 0x3C1fF68f5aa342D296d4DEe4Bb1cACCA912D95fE` (same address
   the repo's `service-registry` subgraph uses for Base; has bytecode).
-- Basius = **service 115**, **agent id 9**, service safe (multisig)
-  `0x9eb5faed6e6983fedc4206af1b58a17fabe9a0d9`, owner/operator `0x3aad0fd3…`, state DEPLOYED.
-- All Aerodrome contracts + USDC/WETH/OLAS/AERO have bytecode on Base.
+- **Basius = `agentId 115`.** Services running it (all DEPLOYED, distinct multisigs):
+  **607, 610, 611, 612**. The earliest, **#607**, was created at block **47163056
+  (2026-06-10)** → that's the subgraph `startBlock`.
+- ⚠️ **115 is the AGENT id, not a service id.** Service *115* (agentId `[9]`, created
+  2025-03-28) is an unrelated old service on the generic agent 9 — NOT Basius. (Original
+  context conflated the two; resolved on-chain.)
+- All Aerodrome contracts + USDC/WETH/OLAS/AERO have bytecode on Base; Chainlink ETH/USD &
+  USDC/USD feeds verified (live, 8 decimals); v2 PoolFactory and LiFi confirmed.
 - ⚠️ The four Olas addresses originally provided (ServiceRegistry `0x48b6…`, StakingToken
   `0x88996…`, ActivityChecker `0x7Fd1F4…`, Multisend `0xbE5b00…`) **have no bytecode on
-  Base** — wrong network/mislabeled. We use the canonical registry instead; the
-  staking/multisend contracts aren't needed (babydegen tracks via the registry + Safe events).
+  Base** — stale Optimism values. Corrected Base StakingToken/ActivityChecker/Multisend are
+  in CLAUDE.md (reference only; this subgraph indexes via the registry + Safe events).
 
 ## KPI → entity mapping (already produced by the ported code)
 
@@ -45,31 +50,33 @@ reused directly. Uniswap V3, Balancer, and Mode's STURDY vault are not in scope.
 - [x] Repoint `constants.ts` / `config.ts` / `tokenConfig.ts` to Base (registry, tokens,
       Chainlink feeds, Aerodrome addresses); protocol strings → `aerodrome-cl`/`aerodrome-v2`;
       reward token VELO → AERO.
-- [x] Pin `serviceRegistry.ts` to service 115 (both handlers).
+- [x] Filter `serviceRegistry.ts` by `agentId == 115` (both handlers; tracks all matching
+      services, like optimism).
 - [x] Rewrite `subgraph.yaml` for Base/Aerodrome (CL NFPM, Slipstream factory, v2 factory +
       LpSugar bootstrap, LiFi, token Transfer sources, block-handler scheduler, Safe + v2-pool
-      templates). Uniswap/Balancer sources removed.
-- [x] `package.json` name → `olas-babydegen-base`.
-- [x] Update Matchstick tests to the pinned-service semantics — **codegen + build + 10/10
-      tests green.**
+      templates). Uniswap/Balancer sources removed. `startBlock = 47163056` everywhere.
+- [x] `package.json` name → `olas-babydegen-base`; undici resolution bumped to `^7.28.0`.
+- [x] Update Matchstick tests to agentId-filter semantics (incl. a multi-service test) —
+      **codegen + build + 10/10 tests green.**
 - [x] Add `babydegen-base` to the CI matrix.
 
 This delivers `AgentPortfolio`, `AgentPortfolioSnapshot`, and `DailyPopulationMetric`, i.e.
 everything the **current** babydegen website page shows for Basius.
 
-### Placeholders still in the tree (all marked `TODO`)
+### Confirmed since the first scaffold (Divya + on-chain)
 
-- Every `startBlock` = `17310019` (placeholder) → set to the **service-115 registration
-  block** on Base.
-- Aerodrome **v2 PoolFactory** `0x420DD381…40Da` → VERIFY (not provided by Divya).
-- Base Chainlink **ETH/USD** `0x71041ddd…` and **USDC/USD** `0x7e860098…` → VERIFY.
-- **LiFi Diamond** on Base `0x1231DEB6…` → VERIFY.
-- **USDbC** `0xd9aAEc86…` → VERIFY Basius actually holds bridged USDC.
-- **OLAS / AERO pricing**: unconfigured → resolve to $0. Add Aerodrome OLAS/<pair> and
-  AERO/<pair> pools in `tokenConfig.ts` (AERO matters: it's the CL gauge reward token, so
-  reward USD is currently 0).
-- Whitelisted stables (BOLD/msUSD/frxUSD/eUSD/axlUSDC) currently price at ~$1 via the USDC
-  feed → confirm whether real Aerodrome pools are needed.
+- `startBlock = 47163056` (earliest agentId-115 service, #607).
+- Aerodrome **v2 PoolFactory** `0x420DD381…40Da`, **LiFi Diamond** `0x1231DEB6…`, and Base
+  Chainlink **ETH/USD** / **USDC/USD** feeds — all confirmed/verified.
+- Whitelisted stables (BOLD/msUSD/frxUSD/eUSD/axlUSDC) price at ~$1 via the USDC feed —
+  confirmed fine (Basius holds no meaningful balances).
+- Speculative **USDbC** token removed (not in Basius's spec).
+
+### Only remaining placeholder
+
+- **OLAS / AERO pricing**: unconfigured → resolves to $0. Divya to send Aerodrome OLAS/<pair>
+  and AERO/<pair> pools; backfill in a follow-up PR. **AERO is the CL gauge reward token, so
+  reward USD reads 0 until added — prioritise it.**
 
 ## Phase 2 — explorer daily metrics (DEFERRED)
 
@@ -84,15 +91,10 @@ mech-marketplace requests for the Basius safe and adds a daily metric entity.
 
 ## Open questions for the team
 
-1. **Scope** — keep the single **service-115 pin**, or generalise to an **agent-id (9)
-   filter**? Agent 9 may be shared by other Base services, so we pinned for safety. (Marked
-   as a `TODO(reviewers)` in `serviceRegistry.ts`.)
-2. **Aerodrome v2 PoolFactory** address (for `PoolCreated` discovery) — not in the config Divya
-   provided.
-3. **service-115 registration block** for `startBlock`.
-4. **LiFi Diamond** address on Base (confirm the cross-chain deterministic address applies).
-5. **Whitelisted-asset pricing** — $1 fallback vs real Aerodrome pools for
-   BOLD/msUSD/frxUSD/eUSD/axlUSDC; and the **OLAS/AERO** pricing pools.
-6. **Block-handler cadence** — keep `every: 1800` (~1h on Base) or drop to `900` (~30m)?
-7. **Phase 2** — confirm the "transactions/DAA per day" definitions so the explorer metrics
-   can be scoped.
+1. **OLAS/AERO pricing pools** (Divya) — Aerodrome OLAS/<pair> and AERO/<pair> pool addresses
+   (deepest WETH or USDC pair) to lift these off $0; AERO first.
+2. **Phase 2** (Tatiana) — define "transactions per day" for babydegen (mech requests vs
+   swaps) and how DAA should be computed, so the explorer metrics can be scoped.
+
+_Resolved: agentId-vs-serviceId scoping (it's agentId 115, multi-service), v2 PoolFactory,
+startBlock, LiFi, Chainlink feeds, stable pricing, block-handler cadence (`1800`)._

@@ -9,7 +9,7 @@ import {
 } from "../generated/schema"
 import { Safe } from "../generated/templates"
 import { BigInt, Bytes, store, log, Address } from "@graphprotocol/graph-ts"
-import { BASIUS_SERVICE_ID, EXCLUDED_SERVICE_IDS } from "./constants"
+import { BASIUS_AGENT_ID, EXCLUDED_SERVICE_IDS } from "./constants"
 import { registerServiceForSnapshots } from "./portfolioScheduler"
 import { ensureAgentPortfolio } from "./helpers"
 import { getEthUsd } from "./common"
@@ -25,12 +25,10 @@ function isServiceExcluded(serviceId: BigInt): boolean {
 }
 
 export function handleRegisterInstance(event: RegisterInstance): void {
-  // PIN to the single Basius service (id 115). Basius registers under canonical
-  // agent id 9, but agent 9 may be shared by other Base services, so we pin by
-  // service id rather than agent id.
-  // TODO(reviewers): should this be generalised to an agent-id filter instead of
-  // a single-service pin? (see IMPLEMENTATION-PLAN.md open questions)
-  if (!event.params.serviceId.equals(BASIUS_SERVICE_ID)) {
+  // Filter for Basius agents only. Basius services register under canonical
+  // agentId 115; tracking every such service (currently 607/610/611/612 on Base)
+  // mirrors babydegen-optimism's OPTIMUS_AGENT_ID filter.
+  if (!event.params.agentId.equals(BASIUS_AGENT_ID)) {
     return
   }
 
@@ -72,11 +70,6 @@ export function handleCreateMultisigWithAgents(event: CreateMultisigWithAgents):
   let serviceId = event.params.serviceId
   let multisig = event.params.multisig
 
-  // PIN to the single Basius service (id 115).
-  if (!serviceId.equals(BASIUS_SERVICE_ID)) {
-    return
-  }
-
   // Check if this service ID should be excluded from tracking
   if (isServiceExcluded(serviceId)) {
     log.info("SERVICE REGISTRY: Skipping multisig creation for excluded service ID {}", [serviceId.toString()])
@@ -87,7 +80,7 @@ export function handleCreateMultisigWithAgents(event: CreateMultisigWithAgents):
   
   let registration = ServiceRegistration.load(tempId)
   if (registration == null) {
-    return // Not an Optimus service
+    return // Not a Basius service (no agentId-115 RegisterInstance was recorded)
   }
   
   // Check if service already exists with this multisig address
