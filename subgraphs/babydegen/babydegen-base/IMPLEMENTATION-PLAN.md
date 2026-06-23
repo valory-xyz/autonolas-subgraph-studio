@@ -57,7 +57,8 @@ reused directly. Uniswap V3, Balancer, and Mode's STURDY vault are not in scope.
       templates). Uniswap/Balancer sources removed. `startBlock = 47163056` everywhere.
 - [x] `package.json` name → `olas-babydegen-base`; undici resolution bumped to `^7.28.0`.
 - [x] Update Matchstick tests to agentId-filter semantics (incl. a multi-service test) —
-      **codegen + build + 10/10 tests green.**
+      **codegen + build + 19/19 tests green** (registry/agentId filter, Base token config,
+      AERO price resolution, position-ROI math).
 - [x] Add `babydegen-base` to the CI matrix.
 
 This delivers `AgentPortfolio`, `AgentPortfolioSnapshot`, and `DailyPopulationMetric`, i.e.
