@@ -634,21 +634,46 @@ function mockV2PoolState(): void {
     .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromString("500"))])
 }
 
+// AERO/USDC velodrome_v2 source from tokenConfig.ts. Must match the AERO price-source pool
+// there — if tokenConfig changes the source, update this address (see review nit #6).
+const AERO_PRICE_POOL = Address.fromString("0x6cdcb1c4a4d1c3c6d054b27ac5b77e89eafb971d")
+
 function mockAeroUsdcPool(): void {
-  const AERO_POOL = Address.fromString("0x6cdcb1c4a4d1c3c6d054b27ac5b77e89eafb971d")
-  createMockedFunction(AERO_POOL, "token0", "token0():(address)")
-    .withArgs([])
-    .returns([ethereum.Value.fromAddress(AERO)])
-  createMockedFunction(AERO_POOL, "token1", "token1():(address)")
+  // On-chain ordering (verified): USDC (0x8335…) < AERO (0x9401…), so USDC is token0. Mock it
+  // that way so the test exercises the same getVelodromeV2Price branch production hits.
+  createMockedFunction(AERO_PRICE_POOL, "token0", "token0():(address)")
     .withArgs([])
     .returns([ethereum.Value.fromAddress(USDC_NATIVE)])
-  createMockedFunction(AERO_POOL, "getReserves", "getReserves():(uint256,uint256,uint256)")
+  createMockedFunction(AERO_PRICE_POOL, "token1", "token1():(address)")
+    .withArgs([])
+    .returns([ethereum.Value.fromAddress(AERO)])
+  // reserve0 = 1.3e12 USDC (1.3M @6dec), reserve1 = 1e24 AERO (1M @18dec) → AERO ≈ $1.30
+  createMockedFunction(AERO_PRICE_POOL, "getReserves", "getReserves():(uint256,uint256,uint256)")
     .withArgs([])
     .returns([
-      ethereum.Value.fromUnsignedBigInt(BigInt.fromString("1000000000000000000000000")), // 1e24 AERO
-      ethereum.Value.fromUnsignedBigInt(BigInt.fromString("1300000000000")),             // 1.3e12 USDC
+      ethereum.Value.fromUnsignedBigInt(BigInt.fromString("1300000000000")),
+      ethereum.Value.fromUnsignedBigInt(BigInt.fromString("1000000000000000000000000")),
       ethereum.Value.fromUnsignedBigInt(BigInt.zero())
     ])
+}
+
+function mockV2PoolStateNoGauge(gaugeAddr: Address): void {
+  createMockedFunction(V2_POOL, "balanceOf", "balanceOf(address):(uint256)")
+    .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
+    .returns([ethereum.Value.fromUnsignedBigInt(BigInt.zero())])
+  createMockedFunction(V2_POOL, "totalSupply", "totalSupply():(uint256)")
+    .withArgs([])
+    .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromString("1000"))])
+  createMockedFunction(V2_POOL, "getReserves", "getReserves():(uint256,uint256,uint256)")
+    .withArgs([])
+    .returns([
+      ethereum.Value.fromUnsignedBigInt(BigInt.fromString("1000")),
+      ethereum.Value.fromUnsignedBigInt(BigInt.fromString("1000")),
+      ethereum.Value.fromUnsignedBigInt(BigInt.zero())
+    ])
+  createMockedFunction(VELO_VOTER, "gauges", "gauges(address):(address)")
+    .withArgs([ethereum.Value.fromAddress(V2_POOL)])
+    .returns([ethereum.Value.fromAddress(gaugeAddr)])
 }
 
 function v2Block(): ethereum.Block {
@@ -700,5 +725,78 @@ describe("Aerodrome V2 gauge-staked positions", () => {
     // usdCurrent is 0 (dummy tokens), so usdCurrentWithRewards == rewardUSD ≈ 2.60.
     assert.assertTrue(pos.usdCurrentWithRewards.gt(BigDecimal.fromString("2.59")))
     assert.assertTrue(pos.usdCurrentWithRewards.lt(BigDecimal.fromString("2.61")))
+  })
+
+  test("pool with no gauge (Voter returns 0x0) → position closes cleanly", () => {
+    createService(SERVICE_SAFE)
+    const id = makeOpenV2Position(DUMMY0, DUMMY1)
+    // Voter returns the zero address → pool has no gauge; no gauge calls are made.
+    mockV2PoolStateNoGauge(Address.zero())
+
+    refreshVeloV2Position(SERVICE_SAFE, V2_POOL, v2Block(), TX_HASH, false)
+
+    // No in-wallet LP and no gauge → genuinely closed.
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "isActive", "false")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "liquidity", "0")
+  })
+
+  test("cached gauge (rewardsContract set) skips the Voter lookup", () => {
+    createService(SERVICE_SAFE)
+    const id = makeOpenV2Position(DUMMY0, DUMMY1)
+    // Pre-cache the gauge on the position. Voter.gauges is intentionally NOT mocked, so if the
+    // code ignored the cache and called it, matchstick would throw and fail this test.
+    const seed = ProtocolPosition.load(id)!
+    seed.rewardsContract = V2_GAUGE
+    seed.save()
+
+    createMockedFunction(V2_POOL, "balanceOf", "balanceOf(address):(uint256)")
+      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
+      .returns([ethereum.Value.fromUnsignedBigInt(BigInt.zero())])
+    createMockedFunction(V2_POOL, "totalSupply", "totalSupply():(uint256)")
+      .withArgs([]).returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromString("1000"))])
+    createMockedFunction(V2_POOL, "getReserves", "getReserves():(uint256,uint256,uint256)")
+      .withArgs([]).returns([
+        ethereum.Value.fromUnsignedBigInt(BigInt.fromString("1000")),
+        ethereum.Value.fromUnsignedBigInt(BigInt.fromString("1000")),
+        ethereum.Value.fromUnsignedBigInt(BigInt.zero())
+      ])
+    createMockedFunction(V2_GAUGE, "balanceOf", "balanceOf(address):(uint256)")
+      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
+      .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromString("500"))])
+    createMockedFunction(V2_GAUGE, "earned", "earned(address):(uint256)")
+      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)]).reverts()
+
+    refreshVeloV2Position(SERVICE_SAFE, V2_POOL, v2Block(), TX_HASH, false)
+
+    // Used the cached gauge (no Voter call); staked LP counted → position stays active.
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "isActive", "true")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "liquidity", "500")
+  })
+
+  test("genuinely exited staked position (pool & gauge balance 0) closes and clears rewards", () => {
+    createService(SERVICE_SAFE)
+    const id = makeOpenV2Position(DUMMY0, DUMMY1)
+    // Pre-seed stale reward fields to prove the close-out path clears them.
+    const seed = ProtocolPosition.load(id)!
+    seed.claimableReward = BigDecimal.fromString("5")
+    seed.claimableRewardUSD = BigDecimal.fromString("6")
+    seed.usdCurrentWithRewards = BigDecimal.fromString("6")
+    seed.save()
+
+    mockV2PoolStateNoGauge(V2_GAUGE)
+    // Nothing staked, and earned reverts → reward block skipped; userBalance = 0.
+    createMockedFunction(V2_GAUGE, "balanceOf", "balanceOf(address):(uint256)")
+      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
+      .returns([ethereum.Value.fromUnsignedBigInt(BigInt.zero())])
+    createMockedFunction(V2_GAUGE, "earned", "earned(address):(uint256)")
+      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)]).reverts()
+
+    refreshVeloV2Position(SERVICE_SAFE, V2_POOL, v2Block(), TX_HASH, false)
+
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "isActive", "false")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "liquidity", "0")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimableReward", "0")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimableRewardUSD", "0")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "usdCurrentWithRewards", "0")
   })
 })
