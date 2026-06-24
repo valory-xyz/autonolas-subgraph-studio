@@ -5,9 +5,10 @@
 identity, `rewardToken = AERO`, and `earned(safe)` resolving non-zero all hold. The **one
 strictly-open gap is the CL `earned(address,uint256)` selector** (a different gauge ABI than
 the V2 `earned(address)` that was exercised) — unverifiable until a Basius position lands in a
-Slipstream pool. Divya's example also surfaced a **separate, larger V2 gap** (§7): staked V2
-positions currently vanish from the portfolio. This doc captures the path, the verification
-status, and the runbook to close CL out once a real staked CL position exists.
+Slipstream pool. Divya's example also surfaced a **separate, larger V2 gap** (§7) — staked V2
+positions vanished from the portfolio — which **this PR fixes** (gauge-aware V2 valuation +
+rewards, with tests). This doc captures the path, the verification status, and the runbook to
+close CL out once a real staked CL position exists.
 
 This is deliberately a docs-first PR: there is **no Basius gauge state on-chain to test
 against today**, so we describe the plan and add self-reporting instrumentation rather than
@@ -162,37 +163,55 @@ the top of this doc to "verified", and update `CLAUDE.md`'s gauge note.
 
 ---
 
-## 7. Separate, larger gap surfaced by Divya's V2 example — staked V2 positions vanish
+## 7. Staked V2 positions — the gap Divya's example surfaced (FIXED in this PR)
 
-Divya's verification used a **V2-gauge** stake, which incidentally exposes a real correctness
-gap in the **V2** path that is *bigger* than missing rewards:
+Divya's verification used a **V2-gauge** stake, which exposed a correctness gap in the **V2**
+path that was *bigger* than missing rewards:
 
 - V2 position value is computed from **`pool.balanceOf(safe)`** (`src/veloV2Shared.ts`).
 - Staking LP into an Aerodrome V2 gauge **transfers the LP ERC20 out of the safe into the
   gauge**, so `balanceOf(safe)` becomes **0**.
-- `handleVeloV2Transfer` refreshes the `from` address on that transfer, and the refresh hits
-  the `userBalance == 0` branch → marks the position **`isActive = false`** and zeroes
-  `usdCurrent`.
+- `handleVeloV2Transfer` refreshes the `from` address on that transfer, the refresh hit the
+  `userBalance == 0` branch → marked the position **`isActive = false`** and zeroed
+  `usdCurrent`. The position **vanished** from the portfolio while staked and earning.
 
-**Net effect:** the moment a Basius agent stakes a V2 position, the subgraph treats it as
-**closed and worthless** — dropping both principal value *and* AERO rewards from the portfolio
-while it's actually staked and earning. (`usdCurrentWithRewards = usdCurrent` with a
-`// TODO: Calculate V2 fees later` only compounds it.) This code is **inherited verbatim from
-`babydegen-optimism`**, so the same gap likely exists there.
+This code was inherited verbatim from `babydegen-optimism`, so the same gap likely exists
+there (worth a follow-up on optimism).
 
-This is **out of scope for this docs PR** (it's a behavioral fix with its own design — read
-the gauge's `stakedValues`/`balanceOf` for the safe to value staked LP, add V2 `earned`
-rewards, and possibly mirror the fix to optimism). It is flagged here so it isn't lost. If
-prioritized, it should be a separate implementation PR with its own tests. The CL `log.warning`
-guard does **not** cover this — V2 uses no such code path.
+### The fix (this PR)
+
+`refreshVeloV2Position` now resolves the pool's gauge and counts the staked LP + rewards:
+
+1. **Resolve the gauge** via the Aerodrome **Voter** — `Voter.gauges(pool)` (`VELO_VOTER =
+   0x16613524…`, verified on-chain), cached on `ProtocolPosition.rewardsContract`. If a pool
+   has no gauge, we don't cache the zero so a later-gauged pool is still picked up.
+2. **Count staked LP** — `effectiveBalance = pool.balanceOf(safe) + gauge.balanceOf(safe)`.
+   `pool.totalSupply` already includes the staked LP (staking is a transfer, not a burn), so
+   the reserve-share math stays correct. A staked-only position is no longer misread as closed.
+3. **Add rewards** — `gauge.earned(safe)` (AERO, 18-dec) priced off the AERO/USDC pool →
+   `claimableReward` / `claimableRewardUSD`, and `usdCurrentWithRewards = usdCurrent + rewardUSD`.
+   (Replaces the old `// TODO: Calculate V2 fees later`.)
+
+All on-chain selectors verified against Divya's live position (gauge `0x793f…`, block
+47702491): `Voter.gauges(pool)`, `gauge.stakingToken()`, `gauge.balanceOf(safe)` =
+`7157236262142` (matches the agent's record), `gauge.rewardToken()` = AERO. New ABIs:
+`abis/defi/VeloVoter.json`, `abis/defi/VeloV2Gauge.json`.
+
+**Tests** (`tests/mapping.test.ts`): a staked position (`pool.balanceOf == 0`, gauge holds the
+LP) stays `isActive` with `liquidity` = staked amount; and `gauge.earned` folds into
+`usdCurrentWithRewards`.
+
+> **Note on CL vs V2 reward selectors:** V2 gauges use `earned(address)`; CL/Slipstream gauges
+> use `earned(address, uint256)` (§1/§3). This PR's V2 fix exercises the V2 selector; the CL
+> selector remains the one item still gated on a live Slipstream stake.
 
 ## 8. Scope
 
-- **In scope (this PR):** documenting the CL-gauge `earned` reward path, folding in Divya's
-  on-chain verification, and the `log.warning` silent-zero guard for the CL path.
-- **Tracked but not in this PR:** the **V2 staked-position** gap (§7) — value + rewards for
-  gauge-staked V2 positions; needs its own PR (likely affects optimism too). And the **CL**
-  end-to-end confirmation (§3/§5), which is event-gated on a real Slipstream stake.
+- **In scope (this PR):** documenting the CL-gauge `earned` reward path + Divya's verification,
+  the CL `log.warning` silent-zero guard, **and** the V2 staked-position fix (§7) with tests.
+- **Follow-up (not here):** the same staked-position gap likely exists in `babydegen-optimism`
+  — mirror §7 there. And the **CL** end-to-end confirmation (§3/§5), event-gated on a real
+  Slipstream stake (the `log.warning` is the trigger).
 - **Out of scope (already settled):** AERO *spot* pricing (done, `tokenConfig.ts`), Aerodrome
   v2 bootstrap (done, `forSwaps`), and per-day transactions / DAA (live in the
   `service-registry` subgraph, not here). See `CLAUDE.md`.

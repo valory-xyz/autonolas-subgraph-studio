@@ -14,8 +14,9 @@ import {
 import { getTokenConfig, TokenConfig } from "../src/tokenConfig"
 import { getVelodromeV2Price } from "../src/priceAdapters"
 import { calculatePositionROI } from "../src/roiCalculation"
-import { ProtocolPosition } from "../generated/schema"
-import { USDC_NATIVE, WETH, AERO, BOLD } from "../src/constants"
+import { refreshVeloV2Position, getVeloV2PositionId } from "../src/veloV2Shared"
+import { ProtocolPosition, Service } from "../generated/schema"
+import { USDC_NATIVE, WETH, AERO, BOLD, VELO_VOTER } from "../src/constants"
 import {
   createRegisterInstanceEvent,
   createCreateMultisigWithAgentsEvent
@@ -535,5 +536,169 @@ describe("calculatePositionROI", () => {
     // investment = 100 + 20 = 120; netGain = 150 - 120 = 30; ROI = 25%
     assert.stringEquals("25", roi.toString())
     assert.fieldEquals("ProtocolPosition", pos.id.toHexString(), "investmentUSD", "120")
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Aerodrome V2 gauge-staked positions (veloV2Shared.ts)
+//
+// When a Basius agent stakes its V2 LP into a gauge, the LP ERC20 leaves the safe
+// (pool.balanceOf(safe) -> 0). Before the fix this marked the position closed/zero;
+// now we resolve the pool's gauge via the Voter and count gauge.balanceOf(safe) as
+// the staked LP, plus gauge.earned(safe) as claimable AERO. See AERO-REWARDS-PLAN.md §7.
+// ---------------------------------------------------------------------------
+const V2_POOL = Address.fromString("0x7a034374c89c463dd65d8c9bcfe63bcbced41f4f")
+const V2_GAUGE = Address.fromString("0x793f22ab88dc91793e5ce6adbd7e733b0bd4733e")
+// Two non-whitelisted dummy tokens → getTokenPriceUSD returns 0 with no chain calls,
+// so usdCurrent is 0 and the test isolates the gauge/staking behavior.
+const DUMMY0 = Address.fromString("0x00000000000000000000000000000000000000a0")
+const DUMMY1 = Address.fromString("0x00000000000000000000000000000000000000b0")
+
+function createService(safe: Address): void {
+  const s = new Service(safe)
+  s.serviceId = SERVICE_ID
+  s.operatorSafe = OPERATOR_SAFE
+  s.serviceSafe = safe
+  s.latestRegistrationBlock = BLOCK_NUMBER
+  s.latestRegistrationTimestamp = BLOCK_TIMESTAMP
+  s.latestRegistrationTxHash = TX_HASH
+  s.latestMultisigBlock = BLOCK_NUMBER
+  s.latestMultisigTimestamp = BLOCK_TIMESTAMP
+  s.latestMultisigTxHash = TX_HASH
+  s.isActive = true
+  s.createdAt = BLOCK_TIMESTAMP
+  s.updatedAt = BLOCK_TIMESTAMP
+  s.positionIds = []
+  s.save()
+}
+
+// Pre-create an existing V2 position so refreshVeloV2Position takes the "existing" path
+// (no token0/stable metadata fetch) and just refreshes current state.
+function makeOpenV2Position(token0: Address, token1: Address): Bytes {
+  const id = getVeloV2PositionId(SERVICE_SAFE, V2_POOL)
+  const p = new ProtocolPosition(id)
+  p.agent = SERVICE_SAFE
+  p.service = SERVICE_SAFE
+  p.protocol = "aerodrome-v2"
+  p.pool = V2_POOL
+  p.token0 = token0
+  p.token1 = token1
+  p.isActive = true
+  p.tokenId = BigInt.zero()
+  p.tickLower = 0
+  p.tickUpper = 0
+  p.tickSpacing = 0
+  p.usdCurrent = BigDecimal.zero()
+  p.usdCurrentWithRewards = BigDecimal.zero()
+  p.amount0USD = BigDecimal.zero()
+  p.amount1USD = BigDecimal.zero()
+  p.entryTxHash = TX_HASH
+  p.entryTimestamp = BLOCK_TIMESTAMP // non-zero → skip the new-position entry/swap block
+  p.entryAmount0 = BigDecimal.zero()
+  p.entryAmount0USD = BigDecimal.zero()
+  p.entryAmount1 = BigDecimal.zero()
+  p.entryAmount1USD = BigDecimal.zero()
+  p.entryAmountUSD = BigDecimal.fromString("100")
+  p.totalCostsUSD = BigDecimal.zero()
+  p.swapSlippageUSD = BigDecimal.zero()
+  p.investmentUSD = BigDecimal.fromString("100")
+  p.grossGainUSD = BigDecimal.zero()
+  p.netGainUSD = BigDecimal.zero()
+  p.positionROI = BigDecimal.zero()
+  p.save()
+  return id
+}
+
+function mockV2PoolState(): void {
+  // LP has left the safe (staked) → balanceOf(safe) == 0
+  createMockedFunction(V2_POOL, "balanceOf", "balanceOf(address):(uint256)")
+    .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
+    .returns([ethereum.Value.fromUnsignedBigInt(BigInt.zero())])
+  createMockedFunction(V2_POOL, "totalSupply", "totalSupply():(uint256)")
+    .withArgs([])
+    .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromString("1000"))])
+  createMockedFunction(V2_POOL, "getReserves", "getReserves():(uint256,uint256,uint256)")
+    .withArgs([])
+    .returns([
+      ethereum.Value.fromUnsignedBigInt(BigInt.fromString("1000")),
+      ethereum.Value.fromUnsignedBigInt(BigInt.fromString("1000")),
+      ethereum.Value.fromUnsignedBigInt(BigInt.zero())
+    ])
+  // Voter resolves the pool's gauge
+  createMockedFunction(VELO_VOTER, "gauges", "gauges(address):(address)")
+    .withArgs([ethereum.Value.fromAddress(V2_POOL)])
+    .returns([ethereum.Value.fromAddress(V2_GAUGE)])
+  // Gauge holds the staked LP for the safe
+  createMockedFunction(V2_GAUGE, "balanceOf", "balanceOf(address):(uint256)")
+    .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
+    .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromString("500"))])
+}
+
+function mockAeroUsdcPool(): void {
+  const AERO_POOL = Address.fromString("0x6cdcb1c4a4d1c3c6d054b27ac5b77e89eafb971d")
+  createMockedFunction(AERO_POOL, "token0", "token0():(address)")
+    .withArgs([])
+    .returns([ethereum.Value.fromAddress(AERO)])
+  createMockedFunction(AERO_POOL, "token1", "token1():(address)")
+    .withArgs([])
+    .returns([ethereum.Value.fromAddress(USDC_NATIVE)])
+  createMockedFunction(AERO_POOL, "getReserves", "getReserves():(uint256,uint256,uint256)")
+    .withArgs([])
+    .returns([
+      ethereum.Value.fromUnsignedBigInt(BigInt.fromString("1000000000000000000000000")), // 1e24 AERO
+      ethereum.Value.fromUnsignedBigInt(BigInt.fromString("1300000000000")),             // 1.3e12 USDC
+      ethereum.Value.fromUnsignedBigInt(BigInt.zero())
+    ])
+}
+
+function v2Block(): ethereum.Block {
+  const ev = createRegisterInstanceEvent(OPERATOR_SAFE, SERVICE_ID, AGENT_INSTANCE, BASIUS_AGENT_ID)
+  ev.block.number = BLOCK_NUMBER
+  ev.block.timestamp = BLOCK_TIMESTAMP
+  return ev.block
+}
+
+describe("Aerodrome V2 gauge-staked positions", () => {
+  afterEach(() => {
+    clearStore()
+  })
+
+  test("staked position (LP left the safe) stays active, valued by gauge balance", () => {
+    createService(SERVICE_SAFE)
+    const id = makeOpenV2Position(DUMMY0, DUMMY1)
+    mockV2PoolState()
+    // No claimable rewards this refresh → reward block is skipped (no AERO pricing needed)
+    createMockedFunction(V2_GAUGE, "earned", "earned(address):(uint256)")
+      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
+      .reverts()
+
+    refreshVeloV2Position(SERVICE_SAFE, V2_POOL, v2Block(), TX_HASH, false)
+
+    // Despite pool.balanceOf(safe) == 0, the position is NOT closed: the gauge holds 500 LP.
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "isActive", "true")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "liquidity", "500")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimableRewardUSD", "0")
+  })
+
+  test("claimable AERO gauge rewards fold into usdCurrentWithRewards", () => {
+    createService(SERVICE_SAFE)
+    const id = makeOpenV2Position(DUMMY0, DUMMY1)
+    mockV2PoolState()
+    mockAeroUsdcPool()
+    // 2 AERO claimable (2e18 wei)
+    createMockedFunction(V2_GAUGE, "earned", "earned(address):(uint256)")
+      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
+      .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromString("2000000000000000000"))])
+
+    refreshVeloV2Position(SERVICE_SAFE, V2_POOL, v2Block(), TX_HASH, false)
+
+    // claimableReward = 2e18 / 1e18 = 2 AERO; AERO ≈ $1.30 → rewardUSD ≈ $2.60.
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimableReward", "2")
+    const pos = ProtocolPosition.load(id)!
+    assert.assertTrue(pos.claimableRewardUSD!.gt(BigDecimal.fromString("2.59")))
+    assert.assertTrue(pos.claimableRewardUSD!.lt(BigDecimal.fromString("2.61")))
+    // usdCurrent is 0 (dummy tokens), so usdCurrentWithRewards == rewardUSD ≈ 2.60.
+    assert.assertTrue(pos.usdCurrentWithRewards.gt(BigDecimal.fromString("2.59")))
+    assert.assertTrue(pos.usdCurrentWithRewards.lt(BigDecimal.fromString("2.61")))
   })
 })

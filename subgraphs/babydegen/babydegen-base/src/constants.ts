@@ -41,6 +41,7 @@ export const VELO_MANAGER = Address.fromString("0xe1f8cd9AC4e4A65F54f38a5CdAfCA4
 export const VELO_FACTORY = Address.fromString("0xf8f2eB4940CFE7d13603DDDD87f123820Fc061Ef")     // Aerodrome Slipstream (CL) factory
 export const VELO_V2_FACTORY = Address.fromString("0x420DD381b31aEf6683db6B902084cB0FFECe40Da")  // Aerodrome v2 PoolFactory (Divya-confirmed)
 export const VELO_V2_SUGAR = Address.fromString("0x69dD9db6d8f8E7d83887A704f447b1a584b599A1")     // Aerodrome LpSugar v3 (pool discovery / bootstrap)
+export const VELO_VOTER = Address.fromString("0x16613524e02ad97eDfeF371bC883F2F5d6C480A5")        // Aerodrome Voter — pool->gauge lookup (gauges(pool)); verified on-chain
 
 // ---- Olas service configuration (Base) --------------------------------------
 // Canonical ServiceRegistryL2 on Base = 0x3C1fF68f5aa342D296d4DEe4Bb1cACCA912D95fE (set in subgraph.yaml).

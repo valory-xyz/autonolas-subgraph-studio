@@ -71,11 +71,16 @@ axlUSDC. USDC+WETH price off Chainlink; stables resolve to ~$1 (referenced to th
 AERO/USDC volatile pool `0x6cdcb1c4…` via the `velodrome_v2` adapter (`tokenConfig.ts`).
 **OLAS is not tracked** — Basius holds none and it isn't a trading asset for this agent.
 
-> **AERO gauge rewards (`earned`) — built but unverified end-to-end.** The CL reward path
-> (`refreshVeloCLPosition` → `gauge.earned(safe, tokenId)` → `usdCurrentWithRewards` → APR/ROI)
-> ships in `#156` but has no live staked Basius position to test against yet. A `log.warning`
-> now fires if `earned()` reverts on an active position (silent-zero guard). Full verification
-> runbook + likely fixes: **`AERO-REWARDS-PLAN.md`**.
+> **AERO gauge rewards.** Both DEX paths now read claimable AERO from the position's gauge
+> into `usdCurrentWithRewards` (→ APR/ROI):
+> - **V2** (`refreshVeloV2Position`): resolves the gauge via Aerodrome **Voter** (`gauges(pool)`,
+>   `VELO_VOTER`), counts `gauge.balanceOf(safe)` as **staked LP** (so a staked position isn't
+>   misread as closed — it had been; fix verified vs Divya's live stake) and adds
+>   `gauge.earned(safe)` (selector `earned(address)`). ABIs: `VeloVoter.json`, `VeloV2Gauge.json`.
+> - **CL** (`refreshVeloCLPosition`): `gauge.earned(safe, tokenId)` (selector `earned(address,
+>   uint256)`). Built in `#156` but **unverified end-to-end** — no live staked Basius Slipstream
+>   position yet; a `log.warning` fires if `earned()` reverts on an active position (silent-zero
+>   guard). Full runbook + likely fixes: **`AERO-REWARDS-PLAN.md`**.
 
 ## Schema, core logic, KPIs
 
