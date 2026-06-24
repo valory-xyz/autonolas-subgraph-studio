@@ -388,6 +388,10 @@ templates:
           file: ../../../abis/oracles/AggregatorV3Interface.json
         - name: VelodromeCLPool
           file: ../../../abis/defi/VelodromeCLPool.json
+        - name: VeloVoter
+          file: ../../../abis/defi/VeloVoter.json
+        - name: VeloV2Gauge
+          file: ../../../abis/defi/VeloV2Gauge.json
       eventHandlers:
         - event: Mint(indexed address,uint256,uint256)
           handler: handleVeloV2Mint
