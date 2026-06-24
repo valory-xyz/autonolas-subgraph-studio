@@ -1,9 +1,13 @@
 # AERO gauge-reward indexing — verification & implementation plan
 
-**Status:** code path is **built and shipped** (in `#156`), but **unverified end-to-end**
-because no Basius CL position has been staked in an Aerodrome gauge on Base yet. This doc
-captures exactly what the path does, which assumptions are still unproven, and the concrete
-steps to confirm (and, if needed, fix) it once the first real staked position exists.
+**Status:** CL reward path is **built and shipped** (in `#156`). Most assumptions are now
+**verified on-chain** via a real Basius **V2** stake (Divya, block 47702491 — §2): depositor
+identity, `rewardToken = AERO`, and `earned(safe)` resolving non-zero all hold. The **one
+strictly-open gap is the CL `earned(address,uint256)` selector** (a different gauge ABI than
+the V2 `earned(address)` that was exercised) — unverifiable until a Basius position lands in a
+Slipstream pool. Divya's example also surfaced a **separate, larger V2 gap** (§7): staked V2
+positions currently vanish from the portfolio. This doc captures the path, the verification
+status, and the runbook to close CL out once a real staked CL position exists.
 
 This is deliberately a docs-first PR: there is **no Basius gauge state on-chain to test
 against today**, so we describe the plan and add self-reporting instrumentation rather than
@@ -52,7 +56,9 @@ So a wrong reward value isn't cosmetic — it understates realized agent perform
 
 ---
 
-## 2. What is already verified (offline)
+## 2. What is already verified
+
+### Offline (ABI / token / contracts)
 
 - **`earned` ABI shape.** `abis/defi/VeloCLGauge.json` declares
   `earned(address account, uint256 tokenId) → uint256`. The bound call matches the ABI.
@@ -66,21 +72,39 @@ So a wrong reward value isn't cosmetic — it understates realized agent perform
 - **Contracts deployed.** Slipstream NFPM / factory and the CL pool `gauge()` getter all
   return live bytecode on Base.
 
-## 3. What is NOT yet verified (needs a live staked position)
+### On-chain (Divya, PR #159, against a real Basius **V2** stake)
 
-Three assumptions can only be confirmed against real gauge state:
+A Basius test agent (`0xcb9a…fc45`) staked into an Aerodrome **V2 stable** gauge
+(`0x793f…733e`, pool USDC/eUSD `0x7A03…1f4F`), verified at block **47702491**:
 
-1. **The gauge selector actually resolves.** Aerodrome's *deployed* CL gauge must implement
-   `earned(address,uint256)` with the same selector. If it differs, `try_earned` **reverts
-   silently** and reward records as **0** — no crash, no error. This is the dangerous mode:
-   the data looks healthy while undercounting.
-2. **The `account` argument is right.** We pass the **service safe** (`nftOwner`) as
-   `account`. Aerodrome credits `earned` to whoever **staked the NFT** (called
-   `gauge.deposit(tokenId)`). If Basius stakes directly from the safe → correct. If it stakes
-   through a relayer/intermediary → `earned(safe, tokenId)` returns 0 for the safe.
-3. **The full wei → AERO → USD product.** Each factor is individually checked; the
-   end-to-end number (`earned` wei → human AERO → USD → `usdCurrentWithRewards`) has never
-   been compared against a real, non-zero value.
+- ✅ **Depositor identity = the service safe.** The gauge `Deposit` log carries the safe as
+  the depositor (no operator/proxy in between). This is structural to Aerodrome and applies
+  **universally to V2 *and* CL** → settles assumption (2) below.
+- ✅ **`rewardToken() = 0x940181a9…` (AERO)** confirmed live.
+- ✅ **`earned(safe)` resolves and is non-zero** (`0.0098155476 AERO` live on that position) —
+  for the **V2** gauge, which uses `earned(address)`.
+- ✅ **Deposited LP matches our record.** On-chain `7157236262142` wei == the agent's internal
+  `current_liquidity`, so our view of the position lines up with the gauge's.
+
+## 3. What is NOT yet verified (needs a live **CL/Slipstream** staked position)
+
+After Divya's V2 verification, only the **CL-selector** gap remains strictly open:
+
+1. **The CL gauge selector actually resolves.** Aerodrome's *deployed* CL gauge must implement
+   `earned(address,uint256)` — a **different selector on a different gauge ABI** than the V2
+   `earned(address)` Divya exercised. If it differs, `try_earned` **reverts silently** and
+   reward records as **0** — no crash, no error. This is the dangerous mode: the data looks
+   healthy while undercounting. **Still the one thing we cannot claim until a Basius position
+   lands in a Slipstream pool.** The `log.warning` guard (§4) exists precisely to surface it.
+2. ~~The `account` argument is right.~~ **✅ Settled by Divya** — the safe is the depositor,
+   universally (V2 + CL). We pass the safe; that's correct.
+3. **The full wei → AERO → USD product.** Verified for the **V2** path (Divya's liquidity +
+   `earned` cross-check). The **CL** product still rides on (1) resolving; once it does, do the
+   §5 cross-check to confirm the end-to-end number.
+
+> **Strongly suggested, not proven:** because depositor identity, `rewardToken`, and the
+> account argument all hold on V2, CL is very likely to work too. But the selector difference
+> means we keep CL marked *unverified* until a real Slipstream stake confirms it.
 
 ---
 
@@ -138,10 +162,37 @@ the top of this doc to "verified", and update `CLAUDE.md`'s gauge note.
 
 ---
 
-## 7. Scope
+## 7. Separate, larger gap surfaced by Divya's V2 example — staked V2 positions vanish
 
-- **In scope:** the CL-gauge `earned` reward path described above and its effect on
-  `usdCurrentWithRewards` / APR / ROI.
+Divya's verification used a **V2-gauge** stake, which incidentally exposes a real correctness
+gap in the **V2** path that is *bigger* than missing rewards:
+
+- V2 position value is computed from **`pool.balanceOf(safe)`** (`src/veloV2Shared.ts`).
+- Staking LP into an Aerodrome V2 gauge **transfers the LP ERC20 out of the safe into the
+  gauge**, so `balanceOf(safe)` becomes **0**.
+- `handleVeloV2Transfer` refreshes the `from` address on that transfer, and the refresh hits
+  the `userBalance == 0` branch → marks the position **`isActive = false`** and zeroes
+  `usdCurrent`.
+
+**Net effect:** the moment a Basius agent stakes a V2 position, the subgraph treats it as
+**closed and worthless** — dropping both principal value *and* AERO rewards from the portfolio
+while it's actually staked and earning. (`usdCurrentWithRewards = usdCurrent` with a
+`// TODO: Calculate V2 fees later` only compounds it.) This code is **inherited verbatim from
+`babydegen-optimism`**, so the same gap likely exists there.
+
+This is **out of scope for this docs PR** (it's a behavioral fix with its own design — read
+the gauge's `stakedValues`/`balanceOf` for the safe to value staked LP, add V2 `earned`
+rewards, and possibly mirror the fix to optimism). It is flagged here so it isn't lost. If
+prioritized, it should be a separate implementation PR with its own tests. The CL `log.warning`
+guard does **not** cover this — V2 uses no such code path.
+
+## 8. Scope
+
+- **In scope (this PR):** documenting the CL-gauge `earned` reward path, folding in Divya's
+  on-chain verification, and the `log.warning` silent-zero guard for the CL path.
+- **Tracked but not in this PR:** the **V2 staked-position** gap (§7) — value + rewards for
+  gauge-staked V2 positions; needs its own PR (likely affects optimism too). And the **CL**
+  end-to-end confirmation (§3/§5), which is event-gated on a real Slipstream stake.
 - **Out of scope (already settled):** AERO *spot* pricing (done, `tokenConfig.ts`), Aerodrome
   v2 bootstrap (done, `forSwaps`), and per-day transactions / DAA (live in the
   `service-registry` subgraph, not here). See `CLAUDE.md`.
