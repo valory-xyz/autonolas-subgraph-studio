@@ -345,12 +345,15 @@ export function refreshVeloCLPosition(
       gaugeAddress = gaugeResult.value
       position.rewardsContract = gaugeAddress
     } else {
+      // pool.gauge() reverted → this pool has no gauge (a legitimate pool state, unlike the
+      // earned()-revert case below). Value the position without rewards and return; do NOT
+      // log — a missing gauge is expected, not the silent-zero failure mode we guard against.
       position.usdCurrent = usd
       position.save()
       return
     }
   }
-  
+
   // Get claimable rewards from gauge
   const gauge = VeloCLGauge.bind(gaugeAddress)
   const earnedResult = gauge.try_earned(nftOwner, tokenId)
@@ -360,6 +363,16 @@ export function refreshVeloCLPosition(
     // Aerodrome CL gauges emit AERO rewards, now priced off the AERO/USDC pool (tokenConfig.ts).
     const aeroPrice = getTokenPriceUSD(AERO, block.timestamp, false)
     rewardUSD = rewardAmount.times(aeroPrice)
+  } else {
+    // earned(account, tokenId) reverted on an active CL position. This is the silent-zero
+    // failure mode flagged in AERO-REWARDS-PLAN.md: if the gauge ABI or the `account`
+    // argument is wrong, rewards quietly record as 0 instead of erroring. Until a real
+    // staked Basius position confirms the path end-to-end, log it loudly so the first
+    // live position surfaces the problem in the indexer logs rather than as quietly-wrong KPIs.
+    log.warning(
+      "AERO rewards: gauge.earned() reverted for active CL position {} (gauge {}, account {}, tokenId {}) — recording 0 reward. See AERO-REWARDS-PLAN.md.",
+      [positionId.toHexString(), gaugeAddress.toHexString(), nftOwner.toHexString(), tokenId.toString()]
+    )
   }
 
   // Separate base position value from rewards to avoid double-counting
