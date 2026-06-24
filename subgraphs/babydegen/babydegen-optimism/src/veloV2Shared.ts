@@ -9,13 +9,33 @@ import {
 
 import { ProtocolPosition, Service, AgentSwapBuffer } from "../generated/schema"
 import { VelodromeV2Pool } from "../generated/templates/VeloV2Pool/VelodromeV2Pool"
+import { VeloVoter } from "../generated/templates/VeloV2Pool/VeloVoter"
+import { VeloV2Gauge } from "../generated/templates/VeloV2Pool/VeloV2Gauge"
 import { VeloV2Pool as VeloV2PoolTemplate } from "../generated/templates"
 import { getTokenPriceUSD } from "./priceDiscovery"
 import { getServiceByAgent } from "./config"
 import { parseTotalSlippageFromBucket, associateSwapsWithPosition, calculatePortfolioMetrics } from "./helpers"
 import { getTokenDecimals, getTokenSymbol } from "./tokenUtils"
 import { calculatePositionROI } from "./roiCalculation"
-import { PROTOCOL_VELODROME_V2 } from "./constants"
+import { PROTOCOL_VELODROME_V2, VELO, VELO_VOTER } from "./constants"
+
+// Resolve the Velodrome V2 gauge for a pool via the Voter (gauges(pool)), caching the result
+// on the position's rewardsContract. Returns Address.zero() if the pool has no gauge (or the
+// Voter call fails) — in that case we don't cache, so a pool that gets gauged later is picked
+// up on a subsequent refresh.
+function resolveV2Gauge(poolAddress: Address, pp: ProtocolPosition): Address {
+  const cached = pp.rewardsContract
+  if (cached) {
+    return Address.fromBytes(cached!)
+  }
+  const voter = VeloVoter.bind(VELO_VOTER)
+  const res = voter.try_gauges(poolAddress)
+  if (res.reverted || res.value.equals(Address.zero())) {
+    return Address.zero()
+  }
+  pp.rewardsContract = res.value
+  return res.value
+}
 
 // VelodromeV2 Router address on Optimism
 const VELODROME_V2_ROUTER = Address.fromString("0xa062ae8a9c5e11aaa026fc2670b0d65ccc8b2858")
@@ -330,23 +350,57 @@ export function refreshVeloV2Position(
     return
   }
   
-  const userBalance = balanceResult.value
+  const userBalanceInSafe = balanceResult.value
   const totalSupply = totalSupplyResult.value
   const reserves = reservesResult.value
-  
-  // User balance and total supply data retrieved successfully
-  
-  // If user has no LP tokens, mark position as inactive
+
+  // Velodrome V2 LP can be staked into a gauge. Staking transfers the LP ERC20 out of the
+  // safe (balanceOf(safe) -> 0) into the gauge, but the agent still owns the position and
+  // earns VELO. Count the gauge-staked LP toward the position value, and read its claimable
+  // VELO rewards, so a staked position isn't misread as closed/zero.
+  let stakedBalance = BigInt.zero()
+  let rewardAmount = BigDecimal.zero()
+  let rewardUSD = BigDecimal.zero()
+  const gaugeAddr = resolveV2Gauge(poolAddress, pp)
+  if (!gaugeAddr.equals(Address.zero())) {
+    const gauge = VeloV2Gauge.bind(gaugeAddr)
+    const stakedRes = gauge.try_balanceOf(userAddress)
+    if (!stakedRes.reverted) {
+      stakedBalance = stakedRes.value
+    }
+    const earnedRes = gauge.try_earned(userAddress)
+    if (!earnedRes.reverted) {
+      // Velodrome V2 gauges emit VELO (18-dec), priced via priceDiscovery (tokenConfig.ts).
+      rewardAmount = earnedRes.value.toBigDecimal().div(BigDecimal.fromString("1e18"))
+      rewardUSD = rewardAmount.times(getTokenPriceUSD(VELO, block.timestamp, false))
+    } else {
+      // Same silent-zero guard as the CL path: earned(address) reverting on a staked
+      // position means a non-standard gauge ABI — log it instead of recording 0 quietly.
+      log.warning(
+        "VELO rewards (V2): gauge.earned() reverted for staked position {} (gauge {}, account {}) — recording 0 reward.",
+        [positionId.toHexString(), gaugeAddr.toHexString(), userAddress.toHexString()]
+      )
+    }
+  }
+
+  // Effective LP balance = in-wallet + gauge-staked. pool.totalSupply already includes the
+  // staked LP (staking is a transfer, not a burn), so the share math stays correct.
+  const userBalance = userBalanceInSafe.plus(stakedBalance)
+
+  // If user has no LP tokens (neither in-wallet nor staked), mark position as inactive
   if (userBalance.equals(BigInt.zero())) {
     pp.isActive = false
-    
+
     // FIXED: Calculate position ROI when position closes (if exit data exists)
     if (pp.exitAmountUSD && pp.exitAmountUSD!.gt(BigDecimal.zero())) {
       calculatePositionROI(pp)
     }
-    
+
     // Zero out current amounts
     pp.usdCurrent = BigDecimal.zero()
+    pp.usdCurrentWithRewards = BigDecimal.zero()
+    pp.claimableReward = BigDecimal.zero()
+    pp.claimableRewardUSD = BigDecimal.zero()
     pp.amount0 = BigDecimal.zero()
     pp.amount0USD = BigDecimal.zero()
     pp.amount1 = BigDecimal.zero()
@@ -374,8 +428,11 @@ export function refreshVeloV2Position(
     pp.amount0USD = token0Price.times(pp.amount0!)
     pp.amount1USD = token1Price.times(pp.amount1!)
     pp.usdCurrent = pp.amount0USD.plus(pp.amount1USD)
-    pp.usdCurrentWithRewards = pp.usdCurrent  // TODO: Calculate V2 fees later
-    pp.liquidity = userBalance // Store LP token balance as liquidity
+    // Base liquidity value plus claimable VELO gauge rewards (0 if the LP isn't staked).
+    pp.claimableReward = rewardAmount
+    pp.claimableRewardUSD = rewardUSD
+    pp.usdCurrentWithRewards = pp.usdCurrent.plus(rewardUSD)
+    pp.liquidity = userBalance // Store LP token balance (in-wallet + gauge-staked) as liquidity
     
     pp.isActive = true
     
