@@ -159,7 +159,9 @@ the top of this doc to "verified", and update `CLAUDE.md`'s gauge note.
 |---|---|---|
 | `log.warning` fires; `earned` reverts | Wrong gauge `earned` selector/ABI | Regenerate `VeloCLGauge.json` from deployed Aerodrome gauge → `codegen` → build |
 | `earned(safe, …)` returns 0 but UI shows rewards | NFT staked by a non-safe depositor | Pass the actual depositor as `account` (derive from `Deposit` event / `stakedContains`) |
+| `earned` returns a sane non-zero number but `claimableRewardUSD` indexes as **0** | **AERO price source returning 0** (not the gauge ABI) — `getTokenPriceUSD(AERO)` failed, e.g. AERO/USDC pool reserves unreadable at that block | Check the `velodrome_v2` adapter / pool reserves snapshot in `tokenConfig.ts`; confirm the AERO/USDC pool `0x6cdcb1c4…` has non-trivial liquidity at the block. The gauge read is fine here. |
 | Reward USD wrong by orders of magnitude | Decimals / price source | Confirm `rewardToken()` decimals; confirm AERO/USDC pool liquidity is non-trivial at the block |
+| `rewardToken()` is **not** AERO (`0x940181a9…`) | Gauge emits a different reward token | Not just an ABI regen: the hardcoded `/1e18` (decimals) **and** `getTokenPriceUSD(AERO, …)` (pricing) both break together — rework both for the actual reward token. Aerodrome has standardized on AERO, so this is low-risk, but step 2 of §5 is the gate. |
 
 ---
 
@@ -209,9 +211,17 @@ LP) stays `isActive` with `liquidity` = staked amount; and `gauge.earned` folds 
 
 - **In scope (this PR):** documenting the CL-gauge `earned` reward path + Divya's verification,
   the CL `log.warning` silent-zero guard, **and** the V2 staked-position fix (§7) with tests.
-- **Follow-up (not here):** the same staked-position gap likely exists in `babydegen-optimism`
-  — mirror §7 there. And the **CL** end-to-end confirmation (§3/§5), event-gated on a real
-  Slipstream stake (the `log.warning` is the trigger).
+- **Follow-up (not here):** the same staked-position gap **is confirmed present in
+  `babydegen-optimism`** — Divya verified Optimus stakes V2 LP into Velodrome gauges
+  (`evaluate_strategy.py` `_build_stake_lp_tokens_action` → `velodrome.py` `stake_lp_tokens`,
+  chain-parameterised), so optimism has the same KPI bug today. Mirror §7 there in a separate
+  PR. And the **CL** end-to-end confirmation (§3/§5), event-gated on a real Slipstream stake
+  (the `log.warning` is the trigger).
+
+> **Release-notes callout:** unlike the CL change (instrumentation only), the V2 fix is a real
+> **KPI change** — gauge-staked V2 positions now contribute their value *and* AERO rewards to
+> `usdCurrentWithRewards`, which feeds the website APR/ROI. Previously they read as $0 while
+> staked. Call this out when the subgraph ships.
 - **Out of scope (already settled):** AERO *spot* pricing (done, `tokenConfig.ts`), Aerodrome
   v2 bootstrap (done, `forSwaps`), and per-day transactions / DAA (live in the
   `service-registry` subgraph, not here). See `CLAUDE.md`.

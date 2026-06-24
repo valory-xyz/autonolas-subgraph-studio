@@ -345,12 +345,15 @@ export function refreshVeloCLPosition(
       gaugeAddress = gaugeResult.value
       position.rewardsContract = gaugeAddress
     } else {
+      // pool.gauge() reverted → this pool has no gauge (a legitimate pool state, unlike the
+      // earned()-revert case below). Value the position without rewards and return; do NOT
+      // log — a missing gauge is expected, not the silent-zero failure mode we guard against.
       position.usdCurrent = usd
       position.save()
       return
     }
   }
-  
+
   // Get claimable rewards from gauge
   const gauge = VeloCLGauge.bind(gaugeAddress)
   const earnedResult = gauge.try_earned(nftOwner, tokenId)

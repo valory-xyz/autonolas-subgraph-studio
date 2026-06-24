@@ -373,6 +373,13 @@ export function refreshVeloV2Position(
       // Aerodrome V2 gauges emit AERO (18-dec), priced off the AERO/USDC pool (tokenConfig.ts).
       rewardAmount = earnedRes.value.toBigDecimal().div(BigDecimal.fromString("1e18"))
       rewardUSD = rewardAmount.times(getTokenPriceUSD(AERO, block.timestamp, false))
+    } else {
+      // Symmetric with the CL guard: earned(address) reverting on a staked position is the
+      // silent-zero failure mode (non-standard gauge ABI). Log it loudly. See AERO-REWARDS-PLAN.md.
+      log.warning(
+        "AERO rewards (V2): gauge.earned() reverted for staked position {} (gauge {}, account {}) — recording 0 reward. See AERO-REWARDS-PLAN.md.",
+        [positionId.toHexString(), gaugeAddr.toHexString(), userAddress.toHexString()]
+      )
     }
   }
 
