@@ -165,6 +165,22 @@ describe("Governance handlers", () => {
     assert.fieldEquals("ProposalCreated", PROPOSAL_ID.toString(), "votesFor", "350")
   })
 
+  test("VoteCast backfills quorum once voting has started", () => {
+    createDefaultProposal()
+    mockQuorumCall(BigInt.fromI32(100))
+
+    let event = createVoteCastEvent(VOTER, PROPOSAL_ID, 1, BigInt.fromI32(500), "")
+    event.block.number = BigInt.fromI32(150)
+    handleVoteCast(event)
+
+    assert.fieldEquals(
+      "ProposalCreated",
+      PROPOSAL_ID.toString(),
+      "quorum",
+      QUORUM_VALUE.toString()
+    )
+  })
+
   test("VoteCastWithParams does not update vote tallies", () => {
     createDefaultProposal()
 

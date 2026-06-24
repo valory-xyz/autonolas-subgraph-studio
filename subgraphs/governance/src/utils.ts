@@ -19,8 +19,12 @@ export function updateProposalQuorum(
     blockNumber.gt(proposalCreated.startBlock)
   ) {
     const contract = GovernorOLAS.bind(contractAddress);
-    const quorum = contract.quorum(proposalCreated.startBlock);
-    proposalCreated.quorum = quorum;
-    proposalCreated.save();
+    // Use try_quorum so a reverting call (e.g. an unexpected governor change)
+    // leaves quorum null instead of halting the whole subgraph.
+    const quorumResult = contract.try_quorum(proposalCreated.startBlock);
+    if (!quorumResult.reverted) {
+      proposalCreated.quorum = quorumResult.value;
+      proposalCreated.save();
+    }
   }
 }

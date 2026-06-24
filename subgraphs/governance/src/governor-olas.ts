@@ -217,6 +217,15 @@ export function handleVoteCast(event: VoteCastEvent): void {
     proposalCreated.save();
   }
 
+  // Backfill quorum once the proposal has started receiving votes. Without this,
+  // proposals that are never queued/executed/cancelled (e.g. defeated ones) keep
+  // a null quorum forever, since those were the only events that set it.
+  updateProposalQuorum(
+    event.params.proposalId,
+    event.block.number,
+    event.address
+  );
+
   entity.save();
 }
 

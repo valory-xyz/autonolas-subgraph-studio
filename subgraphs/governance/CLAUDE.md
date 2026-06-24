@@ -97,7 +97,7 @@ Same as VoteCast but includes `params: Bytes!` for extended voting parameters. D
 | `ProposalCanceled` | `handleProposalCanceled` | Creates event entity, sets `isCancelled = true`, calls `updateProposalQuorum()` |
 | `ProposalExecuted` | `handleProposalExecuted` | Creates event entity, sets `isExecuted = true`, calls `updateProposalQuorum()` |
 | `ProposalQueued` | `handleProposalQueued` | Creates event entity with `eta`, sets `isQueued = true`, calls `updateProposalQuorum()` |
-| `VoteCast` | `handleVoteCast` | Creates VoteCast entity, **accumulates votes**: support=0 → `votesAgainst`, support=1 → `votesFor`, support=2 → neither |
+| `VoteCast` | `handleVoteCast` | Creates VoteCast entity, **accumulates votes**: support=0 → `votesAgainst`, support=1 → `votesFor`, support=2 → neither; also calls `updateProposalQuorum()` to backfill quorum |
 | `VoteCastWithParams` | `handleVoteCastWithParams` | Creates event entity only, does **not** update vote counts on proposal |
 | `ProposalThresholdSet` | `handleProposalThresholdSet` | Creates event entity |
 | `QuorumNumeratorUpdated` | `handleQuorumNumeratorUpdated` | Creates event entity |
@@ -115,9 +115,10 @@ Same as VoteCast but includes `params: Bytes!` for extended voting parameters. D
 - Abstain votes (support=2) do not increment either counter
 
 ### Quorum Calculation (`src/utils.ts`)
-- `updateProposalQuorum(proposalId, blockNumber, contractAddress)` is called by lifecycle handlers (canceled, executed, queued)
+- `updateProposalQuorum(proposalId, blockNumber, contractAddress)` is called by lifecycle handlers (canceled, executed, queued) **and by `handleVoteCast`**
 - Only calculates if: proposal exists, quorum is null, current block > proposal's start block
-- Uses on-chain call: `contract.quorum(proposalCreated.startBlock)` to get historical quorum at the proposal's voting start
+- Uses `contract.try_quorum(proposalCreated.startBlock)` to get historical quorum at the proposal's voting start. `try_quorum` (not `quorum`) is used so a reverting call (e.g. an unexpected governor change) leaves quorum null instead of halting the whole subgraph
+- Backfilling on `VoteCast` ensures proposals that receive votes but are never queued/executed/cancelled (e.g. defeated ones) still get a quorum, instead of keeping `null` forever
 - Enables accurate retroactive quorum display for older proposals
 
 ### Entity ID Patterns
@@ -133,7 +134,7 @@ cd subgraphs/governance
 yarn install
 yarn codegen                # Generate types from schema + ABIs
 yarn build                  # Compile to WASM
-yarn test                   # Run Matchstick tests (no tests currently)
+yarn test                   # Run Matchstick tests (13 tests in tests/governor-olas.test.ts)
 ```
 
 ---
@@ -143,7 +144,7 @@ yarn test                   # Run Matchstick tests (no tests currently)
 ### Critical Points
 1. **Three contract versions**: V1 archived at block 17527057, V2 archived at block 25322326, V3 active from block 25322326. All use identical handlers and ABI.
 2. **Vote accumulation asymmetry**: `handleVoteCast` updates proposal vote tallies; `handleVoteCastWithParams` does not.
-3. **Lazy quorum**: Quorum is not set at proposal creation — it's backfilled on first lifecycle event (cancel/execute/queue) when `currentBlock > startBlock`.
+3. **Lazy quorum**: Quorum is not set at proposal creation — it's backfilled on the first VoteCast or lifecycle event (cancel/execute/queue) when `currentBlock > startBlock`. The call uses `try_quorum`, so a revert leaves quorum null rather than halting indexing.
 4. **Proposal entity is mutable**: Updated by VoteCast (tallies), ProposalCanceled/Executed/Queued (status flags), and quorum calculation.
 5. **All other entities are immutable**: Event log entities created once and never modified.
 6. **Indexer hints**: Prune mode set to `auto` in subgraph.yaml.
