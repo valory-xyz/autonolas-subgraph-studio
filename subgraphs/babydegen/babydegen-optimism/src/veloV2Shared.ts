@@ -20,9 +20,10 @@ import { calculatePositionROI } from "./roiCalculation"
 import { PROTOCOL_VELODROME_V2, VELO, VELO_VOTER } from "./constants"
 
 // Resolve the Velodrome V2 gauge for a pool via the Voter (gauges(pool)), caching the result
-// on the position's rewardsContract. Returns Address.zero() if the pool has no gauge (or the
-// Voter call fails) — in that case we don't cache, so a pool that gets gauged later is picked
-// up on a subsequent refresh.
+// on the position's rewardsContract. Returns Address.zero() when the pool has no gauge.
+// The "Voter reverted" (transient) and "no gauge" (legitimate) cases are kept distinct:
+// a revert is logged (it can silently undervalue a staked position) and never cached, so we
+// retry next refresh; a zero gauge is silent and not cached, so a later-gauged pool is picked up.
 function resolveV2Gauge(poolAddress: Address, pp: ProtocolPosition): Address {
   const cached = pp.rewardsContract
   if (cached) {
@@ -30,8 +31,15 @@ function resolveV2Gauge(poolAddress: Address, pp: ProtocolPosition): Address {
   }
   const voter = VeloVoter.bind(VELO_VOTER)
   const res = voter.try_gauges(poolAddress)
-  if (res.reverted || res.value.equals(Address.zero())) {
+  if (res.reverted) {
+    log.warning(
+      "V2 gauge resolution: Voter.gauges() reverted for pool {} — treating as no gauge this refresh (not cached).",
+      [poolAddress.toHexString()]
+    )
     return Address.zero()
+  }
+  if (res.value.equals(Address.zero())) {
+    return Address.zero() // legitimate: pool has no gauge
   }
   pp.rewardsContract = res.value
   return res.value
@@ -367,6 +375,13 @@ export function refreshVeloV2Position(
     const stakedRes = gauge.try_balanceOf(userAddress)
     if (!stakedRes.reverted) {
       stakedBalance = stakedRes.value
+    } else {
+      // Same silent-zero guard: a reverting balanceOf on a staked position (where
+      // balanceOf(safe)==0 is the normal state) would flip it to closed/zero. Log it.
+      log.warning(
+        "VELO rewards (V2): gauge.balanceOf() reverted for staked position (pool {}, gauge {}, account {}) — staked LP read as 0.",
+        [poolAddress.toHexString(), gaugeAddr.toHexString(), userAddress.toHexString()]
+      )
     }
     const earnedRes = gauge.try_earned(userAddress)
     if (!earnedRes.reverted) {
@@ -377,8 +392,8 @@ export function refreshVeloV2Position(
       // Same silent-zero guard as the CL path: earned(address) reverting on a staked
       // position means a non-standard gauge ABI — log it instead of recording 0 quietly.
       log.warning(
-        "VELO rewards (V2): gauge.earned() reverted for staked position {} (gauge {}, account {}) — recording 0 reward.",
-        [positionId.toHexString(), gaugeAddr.toHexString(), userAddress.toHexString()]
+        "VELO rewards (V2): gauge.earned() reverted for staked position (pool {}, gauge {}, account {}) — recording 0 reward.",
+        [poolAddress.toHexString(), gaugeAddr.toHexString(), userAddress.toHexString()]
       )
     }
   }
