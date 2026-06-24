@@ -39,6 +39,7 @@ export const DAI_USD_FEED = Address.fromString("0x8dBa75e83DA73cc766A7e5a0ee71F6
 export const VELO_NFT_MANAGER = Address.fromString("0x416b433906b1B72FA758e166e239c43d68dC6F29")
 export const VELO_V2_SUGAR = Address.fromString("0xA64db2D254f07977609def75c3A7db3eDc72EE1D")
 export const VELO_V2_FACTORY = Address.fromString("0xF1046053aa5682b4F9a81b5481394DA16BE5FF5a")
+export const VELO_VOTER = Address.fromString("0x41C914ee0c7E1A5edCD0295623e6dC557B5aBf3C")  // Velodrome Voter — pool->gauge lookup (gauges(pool)); verified on-chain
 
 // Velodrome CL (Concentrated Liquidity) addresses
 export const VELO_MANAGER = Address.fromString("0x416b433906b1B72FA758e166e239c43d68dC6F29") // Velodrome CL NFT Position Manager
