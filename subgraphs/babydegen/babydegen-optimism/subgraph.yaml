@@ -698,6 +698,10 @@ templates:
           file: ../../../abis/defi/VelodromeCLPool.json
         - name: UniswapV3Pool
           file: ../../../abis/defi/UniswapV3Pool.json
+        - name: VeloVoter
+          file: ../../../abis/defi/VeloVoter.json
+        - name: VeloV2Gauge
+          file: ../../../abis/defi/VeloV2Gauge.json
       eventHandlers:
         - event: Mint(indexed address,uint256,uint256)
           handler: handleVeloV2Mint

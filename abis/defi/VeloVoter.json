@@ -1,0 +1,9 @@
+[
+  {
+    "type": "function",
+    "name": "gauges",
+    "stateMutability": "view",
+    "inputs": [{ "name": "pool", "type": "address" }],
+    "outputs": [{ "name": "", "type": "address" }]
+  }
+]

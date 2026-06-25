@@ -65,6 +65,8 @@ jobs:
             path: subgraphs/predict/predict-polymarket
           - subgraph: babydegen-optimism
             path: subgraphs/babydegen/babydegen-optimism
+          - subgraph: babydegen-base
+            path: subgraphs/babydegen/babydegen-base
 
     name: test / ${{ matrix.subgraph }}
     steps:
@@ -169,6 +171,7 @@ jobs:
           - "subgraphs/predict/predict-omen"
           - "subgraphs/predict/predict-polymarket"
           - "subgraphs/babydegen/babydegen-optimism"
+          - "subgraphs/babydegen/babydegen-base"
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1
 
