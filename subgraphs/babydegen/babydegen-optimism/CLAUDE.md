@@ -240,7 +240,7 @@ Daily population-level stats at UTC midnight (id: `<dayTimestamp>`).
 - `handlePoolBalanceChanged`: Tracks Balancer V2 pool join/exit events
 
 ### 10. Dynamic Templates
-- **VeloV2Pool**: Mint/Burn/Transfer for V2 position tracking
+- **VeloV2Pool**: Mint/Burn/Transfer for V2 position tracking. `refreshVeloV2Position` is **gauge-aware**: V2 LP staked into a Velodrome gauge leaves the safe (`pool.balanceOf(safe)==0`), so it resolves the gauge via the Velodrome **Voter** (`gauges(pool)`, `VELO_VOTER`, cached on `rewardsContract`), counts `gauge.balanceOf(safe)` as staked LP (so a staked position isn't misread as closed), and folds `gauge.earned(safe)` VELO into `usdCurrentWithRewards`. ABIs: `VeloVoter.json`, `VeloV2Gauge.json`. (CL gauge rewards already handled in `veloCLShared.ts`.)
 - **Safe**: SafeReceived, ExecutionSuccess, ExecutionFromModuleSuccess for ETH tracking
 
 ---

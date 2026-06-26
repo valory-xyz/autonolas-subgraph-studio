@@ -2,7 +2,8 @@ import { newMockEvent } from "matchstick-as/assembly/index";
 import { ethereum, Address, BigInt } from "@graphprotocol/graph-ts";
 import {
   MechBalanceAdjusted,
-  Withdraw
+  Withdraw,
+  Drained
 } from "../generated/BalanceTrackerFixedPriceNative/BalanceTrackerFixedPriceNative";
 import { TestAddresses, TestValues } from "./test-helpers";
 
@@ -82,6 +83,38 @@ export function createWithdrawEvent(
     new ethereum.EventParam(
       "amount",
       ethereum.Value.fromUnsignedBigInt(amount)
+    )
+  );
+
+  return event;
+}
+
+/**
+ * Creates a mock Drained event.
+ *
+ * Event signature: Drained(indexed address token, uint256 collectedFees)
+ */
+export function createDrainedEvent(
+  token: Address,
+  collectedFees: BigInt,
+  timestamp: BigInt = TestValues.TIMESTAMP,
+  blockNumber: BigInt = TestValues.BLOCK,
+  logIndex: i32 = 0
+): Drained {
+  let event = changetype<Drained>(newMockEvent());
+  event.address = TestAddresses.BALANCE_TRACKER_NATIVE;
+  event.logIndex = BigInt.fromI32(logIndex);
+  event.block.timestamp = timestamp;
+  event.block.number = blockNumber;
+  event.parameters = new Array();
+
+  event.parameters.push(
+    new ethereum.EventParam("token", ethereum.Value.fromAddress(token))
+  );
+  event.parameters.push(
+    new ethereum.EventParam(
+      "collectedFees",
+      ethereum.Value.fromUnsignedBigInt(collectedFees)
     )
   );
 

@@ -18,6 +18,8 @@ dataSources:
         - Global
         - Mech
         - MechModel
+        - DrainTotals
+        - DrainEvent
         - MechTransaction
         - DailyTotals
         - MechDaily
@@ -31,6 +33,8 @@ dataSources:
           handler: handleMechBalanceAdjustedForNative
         - event: Withdraw(indexed address,indexed address,uint256)
           handler: handleWithdrawForNative
+        - event: Drained(indexed address,uint256)
+          handler: handleDrainedForNative
       file: ./src/native-mapping.ts
 
   # 2. NVM tracker (credits)
@@ -49,6 +53,8 @@ dataSources:
         - Global
         - Mech
         - MechModel
+        - DrainTotals
+        - DrainEvent
         - MechTransaction
         - DailyTotals
         - MechDaily
@@ -60,6 +66,8 @@ dataSources:
           handler: handleMechBalanceAdjustedForNvm
         - event: Withdraw(indexed address,indexed address,uint256)
           handler: handleWithdrawForNvm
+        - event: Drained(indexed address,uint256)
+          handler: handleDrainedForNvm
       file: ./src/nvm-mapping.ts
 
   # 3. Token OLAS tracker
@@ -78,6 +86,8 @@ dataSources:
         - Global
         - Mech
         - MechModel
+        - DrainTotals
+        - DrainEvent
         - MechTransaction
         - DailyTotals
         - MechDaily
@@ -95,6 +105,8 @@ dataSources:
           handler: handleMechBalanceAdjustedForTokenOlas
         - event: Withdraw(indexed address,indexed address,uint256)
           handler: handleWithdrawForTokenOlas
+        - event: Drained(indexed address,uint256)
+          handler: handleDrainedForTokenOlas
       file: ./src/token-olas-mapping.ts
 
   # 4. Token USDC tracker
@@ -113,6 +125,8 @@ dataSources:
         - Global
         - Mech
         - MechModel
+        - DrainTotals
+        - DrainEvent
         - MechTransaction
         - DailyTotals
         - MechDaily
@@ -124,4 +138,6 @@ dataSources:
           handler: handleMechBalanceAdjustedForTokenUSDC
         - event: Withdraw(indexed address,indexed address,uint256)
           handler: handleWithdrawForTokenUSDC
+        - event: Drained(indexed address,uint256)
+          handler: handleDrainedForTokenUSDC
       file: ./src/token-usdc-mapping.ts

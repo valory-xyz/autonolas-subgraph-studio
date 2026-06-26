@@ -82,6 +82,9 @@ Singleton aggregate (id: `""`). Tracks total USD fees across all mechs.
 |-------|------|-------|
 | totalFeesInUSD | `BigDecimal!` | Cumulative fee-in USD |
 | totalFeesOutUSD | `BigDecimal!` | Cumulative fee-out USD |
+| totalDrainedFeesUSD | `BigDecimal!` | Cumulative protocol fees drained (15% marketplace fee), USD, all models |
+| totalOlasBurnedRaw | `BigDecimal!` | Cumulative OLAS burned (OLAS wei) — drained fees from the `token-olas` model |
+| totalOlasBurnedUSD | `BigDecimal!` | USD value of burned OLAS at drain time |
 
 ### Mech (mutable)
 Per-mech lifetime totals. ID is the mech address.
@@ -147,16 +150,53 @@ Per-mech, per-day totals.
 | feesInRaw | `BigDecimal!` | Mixed raw units if multi-model |
 | feesOutRaw | `BigDecimal!` | Mixed raw units if multi-model |
 
+### DrainTotals (mutable)
+Per-payment-model cumulative drained protocol fees. ID is the model. Each per-network
+deployment owns one row per model, so within a deployment the model uniquely identifies the
+token (e.g. `native` = xDAI on Gnosis, ETH on Optimism). Lets consumers sum only the models
+they care about (e.g. exclude OLAS, which is burned, or exclude non-USD native tokens).
+
+| Field | Type | Notes |
+|-------|------|-------|
+| id | `ID!` | Payment model: `native`, `nvm`, `token-olas`, or `token-usdc` |
+| model | `String!` | Same as id |
+| totalDrainedRaw | `BigDecimal!` | Cumulative drained in the model's raw token units |
+| totalDrainedUSD | `BigDecimal!` | Cumulative drained in USD |
+
+### DrainEvent (immutable)
+Individual `Drained` event record (one per `drain()` call on a balance tracker).
+
+| Field | Type | Notes |
+|-------|------|-------|
+| id | `ID!` | `${txHash}-${logIndex}` |
+| model | `String!` | Payment model |
+| token | `Bytes!` | Drained token address (indexed in the event) |
+| amountRaw | `BigDecimal!` | `collectedFees` in the model's raw token units |
+| amountUSD | `BigDecimal!` | USD equivalent |
+| timestamp | `BigInt!` | |
+| blockNumber | `BigInt!` | |
+| txHash | `Bytes!` | |
+
 ---
 
 ## Event Handlers
 
-All payment models follow the same two-event pattern:
+All payment models follow the same event pattern:
 
 | Event | Type | Handler creates |
 |-------|------|----------------|
 | `MechBalanceAdjusted(indexed address, uint256, uint256, uint256)` | FEE_IN | MechTransaction, updates Mech/MechModel/Global/DailyTotals/MechDaily |
 | `Withdraw(indexed address, indexed address, uint256)` | FEE_OUT | MechTransaction, updates Mech/MechModel/Global/DailyTotals/MechDaily |
+| `Drained(indexed address token, uint256 collectedFees)` | DRAIN | DrainEvent (immutable), updates DrainTotals + Global (`totalDrainedFeesUSD`, and `totalOlasBurned*` for the `token-olas` model) |
+
+### Drained (protocol fee) handler
+`drain()` on a balance tracker sends its accumulated `collectedFees` (the 15% marketplace
+fee) to the drainer and emits `Drained(token, collectedFees)`. Each per-model mapping has a
+`handleDrainedFor*` that converts `collectedFees` to USD using the **same conversion as that
+model's FEE_IN** (the fee accrues in the same unit as the delivery rate / mech balance), then
+calls `recordDrain()` in `utils.ts`. `collectedFees` is NOT carried by any other event, so the
+`Drained` event is the only on-chain source for distributed fees; the currently-accrued-but-
+undrained remainder is the live `collectedFees()` contract value (read off-chain by consumers).
 
 ### Per-Model Mapping Files
 
@@ -241,6 +281,7 @@ Uses Balancer V2 Vault `getPoolTokens()` to get OLAS and stablecoin balances fro
 | `createMechTransactionForCollected(...)` | Create FEE_OUT transaction |
 | `updateDailyTotalsIn/Out(usd, timestamp)` | Update DailyTotals |
 | `updateMechDailyIn/Out(mechId, usd, raw, timestamp)` | Update MechDaily |
+| `recordDrain(event, model, token, raw, usd)` | Record a `Drained` event: DrainEvent + DrainTotals + Global drained/OLAS-burned totals |
 | `convertGnosisNativeWeiToUsd(wei)` | xDAI wei → USD (divide by 1e18) |
 | `convertNativeWeiToUsd(wei, price)` | Native wei + Chainlink price → USD |
 | `calculateGnosisNvmFeesIn(deliveryRate)` | Credits → USD (Gnosis NVM formula) |
@@ -269,10 +310,10 @@ Network-specific addresses (burn, Balancer, OLAS, stablecoin, Chainlink) with `d
 
 | Data Source | ABI | Events |
 |-------------|-----|--------|
-| BalanceTrackerFixedPriceNative | BalanceTrackerFixedPriceNative + AggregatorV3Interface | `MechBalanceAdjusted`, `Withdraw` |
-| BalanceTrackerNvmSubscription | BalanceTrackerNvmSubscription | `MechBalanceAdjusted`, `Withdraw` |
-| BalanceTrackerFixedPriceTokenOLAS | BalanceTrackerFixedPriceToken + BalancerV2 + AggregatorV3 | `MechBalanceAdjusted`, `Withdraw` |
-| BalanceTrackerFixedPriceTokenUSDC | BalanceTrackerFixedPriceToken | `MechBalanceAdjusted`, `Withdraw` |
+| BalanceTrackerFixedPriceNative | BalanceTrackerFixedPriceNative + AggregatorV3Interface | `MechBalanceAdjusted`, `Withdraw`, `Drained` |
+| BalanceTrackerNvmSubscription | BalanceTrackerNvmSubscription | `MechBalanceAdjusted`, `Withdraw`, `Drained` |
+| BalanceTrackerFixedPriceTokenOLAS | BalanceTrackerFixedPriceToken + BalancerV2 + AggregatorV3 | `MechBalanceAdjusted`, `Withdraw`, `Drained` |
+| BalanceTrackerFixedPriceTokenUSDC | BalanceTrackerFixedPriceToken | `MechBalanceAdjusted`, `Withdraw`, `Drained` |
 
 **Spec**: v0.0.5 | **API**: 0.0.7
 
@@ -292,5 +333,5 @@ yarn build:optimism   # graph build subgraph.optimism.yaml
 - All financial fields use `BigDecimal` (exception to monorepo convention of `BigInt`)
 - Daily aggregation skips zero/negative USD amounts
 - Day timestamp: `(timestamp / 86400) * 86400` (integer division, UTC midnight)
-- No tests currently exist for this subgraph
+- Matchstick tests live in `tests/mapping.test.ts` (run with `yarn test`); they cover the native fee-in/out handlers and the `Drained` handler / `recordDrain` (drain accumulation + OLAS-burn branch)
 - `DailyTotals` list field in GraphQL is `dailyTotals_collection` (Graph Node naming for `Int` id types)
