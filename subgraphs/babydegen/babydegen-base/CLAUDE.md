@@ -63,20 +63,6 @@ contracts. For reference, the corrected Base addresses (Divya's first set were s
 Optimism values): StakingToken `0x2585e63df7BD9De8e058884D496658a030b5c6ce`, ActivityChecker
 `0x87C9922A099467E5A80367553e7003349FE50106`, Multisend `0x998739BFdAAdde7C933B942a68053933098f9EDa`.
 
-> **Manifest ABI gotcha.** A handler can only `.bind()` a contract whose ABI is declared
-> in the **same data source's** `abis:` list — and this resolves at *index time*, so neither
-> `graph build` nor Matchstick catches a missing one (it surfaces as a runtime
-> `Could not find ABI for contract "X"` indexing error). Because the shared pricing/refresh
-> helpers bind the Chainlink feed and the Aerodrome pools/gauges, **every** data source whose
-> handler reaches them must declare those ABIs — not just the pool/NFT templates. In
-> particular: token/funding sources need `AggregatorV3Interface` + `VelodromeCLPool` +
-> `VelodromeV2Pool` (token pricing via `priceAdapters`), `ServiceRegistryL2` needs
-> `AggregatorV3Interface` (`getEthUsd` seeds `firstFundingEthPrice`), and `PortfolioScheduler`
-> needs `VeloVoter` + `VeloV2Gauge` + `VeloCLGauge` (the snapshot block handler runs
-> `refreshAllActivePositions`, which re-binds each position's gauge). Run
-> `node scripts/check-subgraph-abis.mjs` to list candidate gaps (it over-approximates
-> branch-guarded binds — review against the code).
-
 ## Tracked tokens
 
 USDC (native), WETH, AERO, and the whitelisted stablecoins BOLD / msUSD / frxUSD / eUSD /

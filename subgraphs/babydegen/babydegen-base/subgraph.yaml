@@ -28,10 +28,6 @@ dataSources:
       abis:
         - name: ServiceRegistryL2
           file: ../../../abis/ServiceRegistryL2.json
-        # handleCreateMultisigWithAgents → getEthUsd() binds the Chainlink ETH/USD
-        # feed to seed firstFundingEthPrice, so this ABI must be declared here too.
-        - name: AggregatorV3Interface
-          file: ../../../abis/oracles/AggregatorV3Interface.json
       eventHandlers:
         - event: CreateMultisigWithAgents(indexed uint256,indexed address)
           handler: handleCreateMultisigWithAgents
@@ -57,15 +53,6 @@ dataSources:
       abis:
         - name: ERC20
           file: ../../../abis/ERC20.json
-        # handleERC20Transfer prices the token via getTokenPriceUSD →
-        # priceAdapters, which binds the Chainlink feed and the Aerodrome
-        # CL/V2 pools. These must be declared on every token data source.
-        - name: AggregatorV3Interface
-          file: ../../../abis/oracles/AggregatorV3Interface.json
-        - name: VelodromeCLPool
-          file: ../../../abis/defi/VelodromeCLPool.json
-        - name: VelodromeV2Pool
-          file: ../../../abis/defi/VelodromeV2Pool.json
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleUSDC
@@ -87,15 +74,6 @@ dataSources:
       abis:
         - name: ERC20
           file: ../../../abis/ERC20.json
-        # handleERC20Transfer prices the token via getTokenPriceUSD →
-        # priceAdapters, which binds the Chainlink feed and the Aerodrome
-        # CL/V2 pools. These must be declared on every token data source.
-        - name: AggregatorV3Interface
-          file: ../../../abis/oracles/AggregatorV3Interface.json
-        - name: VelodromeCLPool
-          file: ../../../abis/defi/VelodromeCLPool.json
-        - name: VelodromeV2Pool
-          file: ../../../abis/defi/VelodromeV2Pool.json
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
@@ -117,15 +95,6 @@ dataSources:
       abis:
         - name: ERC20
           file: ../../../abis/ERC20.json
-        # handleERC20Transfer prices the token via getTokenPriceUSD →
-        # priceAdapters, which binds the Chainlink feed and the Aerodrome
-        # CL/V2 pools. These must be declared on every token data source.
-        - name: AggregatorV3Interface
-          file: ../../../abis/oracles/AggregatorV3Interface.json
-        - name: VelodromeCLPool
-          file: ../../../abis/defi/VelodromeCLPool.json
-        - name: VelodromeV2Pool
-          file: ../../../abis/defi/VelodromeV2Pool.json
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
@@ -147,15 +116,6 @@ dataSources:
       abis:
         - name: ERC20
           file: ../../../abis/ERC20.json
-        # handleERC20Transfer prices the token via getTokenPriceUSD →
-        # priceAdapters, which binds the Chainlink feed and the Aerodrome
-        # CL/V2 pools. These must be declared on every token data source.
-        - name: AggregatorV3Interface
-          file: ../../../abis/oracles/AggregatorV3Interface.json
-        - name: VelodromeCLPool
-          file: ../../../abis/defi/VelodromeCLPool.json
-        - name: VelodromeV2Pool
-          file: ../../../abis/defi/VelodromeV2Pool.json
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
@@ -177,15 +137,6 @@ dataSources:
       abis:
         - name: ERC20
           file: ../../../abis/ERC20.json
-        # handleERC20Transfer prices the token via getTokenPriceUSD →
-        # priceAdapters, which binds the Chainlink feed and the Aerodrome
-        # CL/V2 pools. These must be declared on every token data source.
-        - name: AggregatorV3Interface
-          file: ../../../abis/oracles/AggregatorV3Interface.json
-        - name: VelodromeCLPool
-          file: ../../../abis/defi/VelodromeCLPool.json
-        - name: VelodromeV2Pool
-          file: ../../../abis/defi/VelodromeV2Pool.json
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
@@ -207,15 +158,6 @@ dataSources:
       abis:
         - name: ERC20
           file: ../../../abis/ERC20.json
-        # handleERC20Transfer prices the token via getTokenPriceUSD →
-        # priceAdapters, which binds the Chainlink feed and the Aerodrome
-        # CL/V2 pools. These must be declared on every token data source.
-        - name: AggregatorV3Interface
-          file: ../../../abis/oracles/AggregatorV3Interface.json
-        - name: VelodromeCLPool
-          file: ../../../abis/defi/VelodromeCLPool.json
-        - name: VelodromeV2Pool
-          file: ../../../abis/defi/VelodromeV2Pool.json
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
@@ -237,15 +179,6 @@ dataSources:
       abis:
         - name: ERC20
           file: ../../../abis/ERC20.json
-        # handleERC20Transfer prices the token via getTokenPriceUSD →
-        # priceAdapters, which binds the Chainlink feed and the Aerodrome
-        # CL/V2 pools. These must be declared on every token data source.
-        - name: AggregatorV3Interface
-          file: ../../../abis/oracles/AggregatorV3Interface.json
-        - name: VelodromeCLPool
-          file: ../../../abis/defi/VelodromeCLPool.json
-        - name: VelodromeV2Pool
-          file: ../../../abis/defi/VelodromeV2Pool.json
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
@@ -267,15 +200,6 @@ dataSources:
       abis:
         - name: ERC20
           file: ../../../abis/ERC20.json
-        # handleERC20Transfer prices the token via getTokenPriceUSD →
-        # priceAdapters, which binds the Chainlink feed and the Aerodrome
-        # CL/V2 pools. These must be declared on every token data source.
-        - name: AggregatorV3Interface
-          file: ../../../abis/oracles/AggregatorV3Interface.json
-        - name: VelodromeCLPool
-          file: ../../../abis/defi/VelodromeCLPool.json
-        - name: VelodromeV2Pool
-          file: ../../../abis/defi/VelodromeV2Pool.json
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
@@ -405,15 +329,6 @@ dataSources:
           file: ../../../abis/ERC20.json
         - name: VeloCLGauge
           file: ../../../abis/defi/VeloCLGauge.json
-        # The snapshot block handler refreshes every active position
-        # (refreshAllActivePositions). For staked V2 positions that calls
-        # refreshVeloV2Position → Voter.gauges() + gauge.balanceOf/earned, so
-        # the V2 gauge/voter ABIs must be declared here too (not just on the
-        # VeloV2Pool template).
-        - name: VeloVoter
-          file: ../../../abis/defi/VeloVoter.json
-        - name: VeloV2Gauge
-          file: ../../../abis/defi/VeloV2Gauge.json
       blockHandlers:
         - handler: handleBlock
           filter:
