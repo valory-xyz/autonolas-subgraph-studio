@@ -608,6 +608,15 @@ dataSources:
           file: ../../../abis/defi/VeloCLGauge.json
         - name: UniswapV3NFTManager
           file: ../../../abis/nft/UniswapV3NFTManager.json
+        # The snapshot block handler refreshes every active position
+        # (refreshAllActivePositions). For staked V2 positions that calls
+        # refreshVeloV2Position → Voter.gauges() + gauge.balanceOf/earned, so
+        # the V2 gauge/voter ABIs must be declared here too (not just on the
+        # VeloV2Pool template).
+        - name: VeloVoter
+          file: ../../../abis/defi/VeloVoter.json
+        - name: VeloV2Gauge
+          file: ../../../abis/defi/VeloV2Gauge.json
       blockHandlers:
         - handler: handleBlock
           filter:
