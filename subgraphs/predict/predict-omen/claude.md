@@ -34,7 +34,9 @@ subgraphs/predict/predict-omen/
 │   ├── utils.ts                         # Helpers (processTradeActivity, caching, etc.)
 │   └── constants.ts                     # Whitelists & configs
 ├── tests/
-│   ├── profit.test.ts                   # 19 unit tests
+│   ├── profit.test.ts                   # 19 profit/settlement tests
+│   ├── service-registry-l-2.test.ts     # 11 agent filtering tests
+│   ├── conditional-tokens.test.ts       # 3 condition preparation tests
 │   └── profit.ts                        # Test helpers
 └── package.json                         # graph-cli 0.98.1, graph-ts 0.38.2
 ```
@@ -50,7 +52,7 @@ subgraphs/predict/predict-omen/
 
 ### Core Business Rules
 
-1. **Selective Tracking**: Only tracks agents registered via `ServiceRegistryL2` and markets from whitelisted creators (see [constants](#constants)).
+1. **Selective Tracking**: Only tracks services with the Valory trader agent IDs 14 or 25 (`PREDICT_AGENT_IDS`) registered via `ServiceRegistryL2`, using a two-step `RegisterInstance` + `TraderService` filtering pattern. Markets are further filtered by whitelisted creators (see [constants](#constants)).
 2. **Market Lifecycle**: 4-day trading window; payouts 24+ hours after closing.
 3. **Two-Tier Accounting**:
    - `totalTraded` / `totalFees`: Updated **immediately** when bets are placed.
@@ -67,7 +69,7 @@ subgraphs/predict/predict-omen/
    - `profitParticipants` removed from old daily stat, added to new daily stat.
    - Same-answer resubmissions (higher bond) are no-ops — `settled` flag + answer equality check skip processing.
    - Chains correctly for arbitrary re-answer sequences (A→B→C→...).
-7. **No Arbitration Events**: Only `LogNewQuestion` and `LogNewAnswer` are registered in subgraph.yaml. Handlers for `LogAnswerReveal`, `LogNotifyOfArbitrationRequest`, and `LogFinalize` exist in `realitio.ts` but are **not wired** — they never fire.
+7. **Answer Finalization Tracking**: `FixedProductMarketMakerCreation.answerFinalizedTimestamp` exposes when the current answer becomes final (Protofire `omen-xdai` semantics). Set to `answer ts + question.timeout` on every `LogNewAnswer` (re-answers push it out), cleared on `LogNotifyOfArbitrationRequest` (finalization frozen during arbitration), and set to `block.timestamp` on arbitrator `LogFinalize`. Consumers should treat an answer as final only when `answerFinalizedTimestamp <= now`.
 8. **Mech Fee Correlation**: `profitParticipants` on `DailyProfitStatistic` lists the markets that contributed to PnL on a given day. This is used to cross-reference with the **Mech subgraph** — agents send requests to a Mech to decide how to trade (yes/no) on a market question. By matching market titles between subgraphs, Mech request fees can be attributed to specific profit events at settlement time.
 
 ---
@@ -130,6 +132,7 @@ A prediction market.
 | fee | `BigInt!` | |
 | currentAnswer | `Bytes` | Oracle answer (set at settlement) |
 | currentAnswerTimestamp | `BigInt` | |
+| answerFinalizedTimestamp | `BigInt` | **Nullable.** Scheduled finalization (`answer ts + timeout`); block ts on arbitrator `LogFinalize`; null while arbitration pending. Final when `<= now` |
 | bets | `[Bet!]!` | `@derivedFrom(field: "fixedProductMarketMaker")` |
 | participants | `[MarketParticipant!]!` | `@derivedFrom(field: "fixedProductMarketMaker")` |
 | blockNumber | `BigInt!` | |
@@ -195,23 +198,26 @@ Singleton aggregate statistics (id: `""`).
 
 | Entity | Mutable | Purpose |
 |--------|---------|---------|
+| TraderService | Immutable | Helper entity for agent ID filtering. Only created for services with an agent ID in `PREDICT_AGENT_IDS = [14, 25]` |
 | CreatorAgent | No | Tracks whitelisted market creators. Fields: `totalQuestions`, block metadata |
-| ConditionPreparation | Immutable | Links `conditionId` to `questionId`. Only saved for known questions |
-| Question | No | Raw question text + link to FPMM. `currentAnswer`/`currentAnswerTimestamp` updated at settlement |
+| ConditionPreparation | Immutable | Links `conditionId` to `questionId`. Only saved for known questions (event ordering guarantees `LogNewQuestion` fires first) |
+| Question | No | Raw question text, `timeout` (from `LogNewQuestion`) + link to FPMM. `currentAnswer`/`currentAnswerTimestamp` updated at settlement |
 | PayoutRedemption | Immutable | Debug log for every `PayoutRedemption` event. Fields: redeemer, conditionId, payoutAmount, FPMM, block metadata |
-| QuestionFinalized | No | Created by orphaned handlers (never fires in practice) |
-| LogNewAnswer | No | Entity exists in schema but unused by active handlers |
-| LogSetQuestionFee | Immutable | Exists in schema, no handler creates it |
-| LogNewTemplate | Immutable | Exists in schema, no handler creates it |
-| LogNotifyOfArbitrationRequest | Immutable | Arbitration tracking. Created by orphaned handler (never fires) |
 
 ---
 
 ## Event Handlers
 
-### 1. handleCreateMultisigWithAgents
+### 1. handleRegisterInstance
+**File**: `src/service-registry-l-2.ts` | **Event**: `RegisterInstance(indexed address, indexed uint256, indexed address, uint256)`
+
+- Checks if `agentId` is in `PREDICT_AGENT_IDS (14, 25)` — skips non-prediction services
+- Creates `TraderService` marker entity (prevents duplicates)
+
+### 1b. handleCreateMultisigWithAgents
 **File**: `src/service-registry-l-2.ts` | **Event**: `CreateMultisigWithAgents(indexed uint256, indexed address)`
 
+- **Guard**: Loads `TraderService` for the serviceId — skips if not found (agent ID filtering)
 - Checks if TraderAgent already exists for the multisig address (prevents duplicates)
 - Creates TraderAgent with all counters at zero
 - `firstParticipation` and `lastActive` stay **null** until first bet
@@ -241,7 +247,8 @@ Singleton aggregate statistics (id: `""`).
 ### 4. handleConditionPreparation
 **File**: `src/conditional-tokens.ts` | **Event**: `ConditionPreparation(...)`
 
-- Only saves conditions where the `questionId` matches a known Question entity
+- Only saves conditions where the `questionId` matches a known Question entity (whitelisted-creator markets)
+- Event ordering is guaranteed: `LogNewQuestion` always fires before `ConditionPreparation`, which precedes `FixedProductMarketMakerCreation` — so the Question always exists for tracked markets
 - Creates `ConditionPreparation` linking `conditionId` to `questionId`
 
 ### 5. handleBuy / handleSell
@@ -304,13 +311,6 @@ Tracks actual xDAI claimed by agents. No profit calculation — that's done at s
 - **Payout totals**: Adds `payoutAmount` to agent, participant, and global `totalPayout`
 - **Daily stats**: Updates `dailyStat.totalPayout` (actual redemption tracking only, no profit changes)
 
-### 8. Orphaned Handlers (NOT registered in subgraph.yaml)
-**File**: `src/realitio.ts`
-
-These handlers exist in code but are **not wired** in `subgraph.yaml` — they never fire:
-- `handleLogAnswerReveal`: Creates/updates `QuestionFinalized`
-- `handleLogNotifyOfArbitrationRequest`: Creates `LogNotifyOfArbitrationRequest`
-- `handleLogFinalize`: Creates `QuestionFinalized` with final answer
 
 ---
 
@@ -404,6 +404,7 @@ Full market cost is used (not incremental) so that `oldProfit` reconstruction al
 From `src/constants.ts`:
 
 ```typescript
+PREDICT_AGENT_IDS = [14, 25]   // Valory trader agent IDs (https://olas.network/data)
 CREATOR_ADDRESSES = [
   "0x89c5cc945dd550bcffb72fe42bff002429f46fec",
   "0xffc8029154ecd55abed15bd428ba596e7d23f557"
@@ -424,10 +425,10 @@ ONE_DAY = BigInt.fromI32(86400) // seconds
 
 | Data Source | Events Registered | Handler File |
 |-------------|-------------------|--------------|
-| ServiceRegistryL2 | `CreateMultisigWithAgents` | `service-registry-l-2.ts` |
+| ServiceRegistryL2 | `RegisterInstance`, `CreateMultisigWithAgents` | `service-registry-l-2.ts` |
 | ConditionalTokens | `ConditionPreparation`, `PayoutRedemption` | `conditional-tokens.ts` |
 | FPMMDeterministicFactory | `FixedProductMarketMakerCreation` | `FPMMDeterministicFactoryMapping.ts` |
-| Realitio | `LogNewQuestion`, `LogNewAnswer` | `realitio.ts` |
+| Realitio | `LogNewQuestion`, `LogNewAnswer`, `LogFinalize`, `LogNotifyOfArbitrationRequest` | `realitio.ts` |
 
 ### Dynamic Template
 
@@ -437,20 +438,20 @@ ONE_DAY = BigInt.fromI32(86400) // seconds
 
 **Spec**: v1.0.0 | **API**: 0.0.7 | **Network**: gnosis | **Pruning**: auto
 
-**Note**: Realitio source only registers 2 of 5 available events. The other 3 (`LogAnswerReveal`, `LogFinalize`, `LogNotifyOfArbitrationRequest`) have handlers in code but are NOT in subgraph.yaml.
+**Note**: Realitio registers 4 events: `LogNewQuestion`, `LogNewAnswer` (settlement), plus `LogFinalize` and `LogNotifyOfArbitrationRequest` (finalization tracking only — they never touch profit/settlement state).
 
 ---
 
 ## Testing
 
-**Framework**: Matchstick-as v0.6.0 | **Files**: `tests/profit.test.ts`, `tests/profit.ts`
+**Framework**: Matchstick-as v0.6.0 | **Files**: `tests/profit.test.ts`, `tests/service-registry-l-2.test.ts`, `tests/conditional-tokens.test.ts`, `tests/profit.ts`
 
 ### Test Helpers (`tests/profit.ts`)
 - `createBuyEvent(buyer, investment, fee, outcomeIndex, fpmm, timestamp, logIndex?, outcomeTokensBought?)`
 - `createNewAnswerEvent(questionId, answer, timestamp)`
 - `createPayoutRedemptionEvent(redeemer, payout, conditionId, timestamp)`
 
-### Test Coverage (19 tests)
+### Test Coverage (33 tests)
 
 | Test | Validates |
 |------|-----------|
@@ -473,6 +474,8 @@ ONE_DAY = BigInt.fromI32(86400) // seconds
 | Comprehensive multi-agent | Full lifecycle: 2 agents, 2 markets, all phases |
 | PayoutRedemption creates PayoutRedemption | Immutable log entity with correct fields |
 | Invalid answer: expectedPayout = balance0/2 + balance1/2 | Correct payout for invalid markets with [1,1] split |
+| **Agent ID filtering (11 tests)** | RegisterInstance creates TraderService for correct agent ID, rejects wrong ID, duplicate prevention, CreateMultisigWithAgents requires TraderService, Global tracking |
+| **ConditionPreparation (3 tests)** | Skips unknown questions, saves with known Question, block metadata |
 
 ---
 
@@ -592,6 +595,6 @@ graph deploy --studio autonolas-predict
 7. **Participant-level settlement with re-answer support**: `participant.settled` flag provides idempotency for same-answer resubmissions. For different-answer re-answers, the handler reverses old profit and applies new full profit (`expectedPayout - totalTraded - totalFees`). Iteration is over `fpmm.participants.load()`, not `fpmm.bets.load()` (fewer entities, pruning-resilient).
 8. **`processTradeActivity()`** is the consolidated function for all trade updates (agent, participant, global). Tracks outcome token balances. Increments `totalActiveTraderAgents` on first bet.
 9. **Caching is essential**: `handleLogNewAnswer` uses Map caches for TraderAgent and DailyProfitStatistic, delta accumulation for Global.
-10. **Only 2 of 5 Realitio events are registered**: `LogNewQuestion` and `LogNewAnswer`. Other handlers are orphaned code.
+10. **4 Realitio events are registered**: `LogNewQuestion` and `LogNewAnswer` drive settlement; `LogFinalize` / `LogNotifyOfArbitrationRequest` only maintain `answerFinalizedTimestamp` (settlement for arbitrated answers still runs via the `LogNewAnswer` emitted in the same tx).
 11. **Re-answer profit uses full market cost**: `newProfit = newExpectedPayout - totalTraded - totalFees` (not incremental). This is critical for correct `oldProfit` reconstruction on subsequent re-answers, since `totalTradedSettled = totalTraded` after each settlement.
 12. **`totalExpectedPayout` vs `totalPayout`**: Compare these on TraderAgent/Global to measure claim rate (how much agents actually redeem vs what they're entitled to).

@@ -54,6 +54,12 @@ export function handleFixedProductMarketMakerCreation(
             }
             entity.outcomes = outcomes;
           }
+          if (fields.length >= 3) {
+            entity.category = fields[2].trim();
+          }
+          if (fields.length >= 4) {
+            entity.language = fields[3].trim();
+          }
         }
 
         // Connect question with fpmm

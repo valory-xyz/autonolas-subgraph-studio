@@ -1,6 +1,6 @@
 import { newMockEvent } from "matchstick-as";
 import { Address, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts";
-import { FPMMBuy as FPMMBuyEvent } from "../generated/templates/FixedProductMarketMaker/FixedProductMarketMaker";
+import { FPMMBuy as FPMMBuyEvent, FPMMSell as FPMMSellEvent } from "../generated/templates/FixedProductMarketMaker/FixedProductMarketMaker";
 import { LogNewAnswer as LogNewAnswerEvent } from "../generated/Realitio/Realitio";
 import { PayoutRedemption as PayoutRedemptionEvent } from "../generated/ConditionalTokens/ConditionalTokens";
 
@@ -25,6 +25,32 @@ export function createBuyEvent(
     new ethereum.EventParam("feeAmount", ethereum.Value.fromUnsignedBigInt(fee)),
     new ethereum.EventParam("outcomeIndex", ethereum.Value.fromUnsignedBigInt(outcomeIndex)),
     new ethereum.EventParam("outcomeTokensBought", ethereum.Value.fromUnsignedBigInt(outcomeTokensBought)),
+  ];
+
+  return event;
+}
+
+export function createSellEvent(
+  seller: Address,
+  returnAmount: BigInt,
+  fee: BigInt,
+  outcomeIndex: BigInt,
+  fpmm: Address,
+  timestamp: BigInt,
+  logIndex: i32 = 0,
+  outcomeTokensSold: BigInt = BigInt.fromI32(0)
+): FPMMSellEvent {
+  let event = changetype<FPMMSellEvent>(newMockEvent());
+  event.address = fpmm;
+  event.block.timestamp = timestamp;
+  event.logIndex = BigInt.fromI32(logIndex);
+
+  event.parameters = [
+    new ethereum.EventParam("seller", ethereum.Value.fromAddress(seller)),
+    new ethereum.EventParam("returnAmount", ethereum.Value.fromUnsignedBigInt(returnAmount)),
+    new ethereum.EventParam("feeAmount", ethereum.Value.fromUnsignedBigInt(fee)),
+    new ethereum.EventParam("outcomeIndex", ethereum.Value.fromUnsignedBigInt(outcomeIndex)),
+    new ethereum.EventParam("outcomeTokensSold", ethereum.Value.fromUnsignedBigInt(outcomeTokensSold)),
   ];
 
   return event;

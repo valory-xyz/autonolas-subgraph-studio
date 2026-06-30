@@ -5,6 +5,7 @@ import {
   FPMMSell as FPMMSellEvent,
 } from "../generated/templates/FixedProductMarketMaker/FixedProductMarketMaker";
 import {
+  computeImpliedProbability,
   getDailyProfitStatistic,
   processTradeActivity,
 } from "./utils";
@@ -45,6 +46,10 @@ export function handleBuy(event: FPMMBuyEvent): void {
     bet.amount = event.params.investmentAmount;
     bet.feeAmount = event.params.feeAmount;
     bet.outcomeTokenAmount = event.params.outcomeTokensBought;
+    bet.impliedProbability = computeImpliedProbability(
+      event.params.investmentAmount,
+      event.params.outcomeTokensBought
+    );
     bet.timestamp = event.block.timestamp;
     bet.blockTimestamp = event.block.timestamp;
     bet.transactionHash = event.transaction.hash;
@@ -96,6 +101,12 @@ export function handleSell(event: FPMMSellEvent): void {
     bet.amount = negAmount;
     bet.feeAmount = event.params.feeAmount;
     bet.outcomeTokenAmount = negTokenAmount;
+    // Store positive trade price (returnAmount / tokensSold). Sells are excluded from Brier
+    // aggregation at settlement; storing the price keeps the field universally available.
+    bet.impliedProbability = computeImpliedProbability(
+      event.params.returnAmount,
+      event.params.outcomeTokensSold
+    );
     bet.timestamp = event.block.timestamp;
     bet.blockTimestamp = event.block.timestamp;
     bet.transactionHash = event.transaction.hash;

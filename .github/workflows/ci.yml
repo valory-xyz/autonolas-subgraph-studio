@@ -103,7 +103,11 @@ jobs:
 
       - name: Run tests
         working-directory: ${{ matrix.path }}
-        run: yarn graph test
+        # Pin the matchstick binary version (-v) so `graph test` doesn't query the
+        # GitHub "latest release" API, which intermittently returns undefined and
+        # fails with "Failed to get matchstick binary: Invalid version". Keep in
+        # sync with the matchstick-as pin (0.6.0) in each subgraph's package.json.
+        run: yarn graph test -v 0.6.0
 
   audit:
     name: Dependency audit (root tree)

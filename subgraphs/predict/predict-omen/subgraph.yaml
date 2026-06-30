@@ -16,11 +16,15 @@ dataSources:
       apiVersion: 0.0.7
       language: wasm/assemblyscript
       entities:
-        - CreateMultisigWithAgents
+        - TraderAgent
+        - TraderService
+        - Global
       abis:
         - name: ServiceRegistryL2
           file: ../../../abis/ServiceRegistryL2.json
       eventHandlers:
+        - event: RegisterInstance(indexed address,indexed uint256,indexed address,uint256)
+          handler: handleRegisterInstance
         - event: CreateMultisigWithAgents(indexed uint256,indexed address)
           handler: handleCreateMultisigWithAgents
       file: ./src/service-registry-l-2.ts
@@ -85,11 +89,12 @@ dataSources:
       apiVersion: 0.0.7
       language: wasm/assemblyscript
       entities:
-        - LogNewQuestion
-        - QuestionFinalized
         - Question
-        - LogNewAnswer
-        - LogFinalize
+        - FixedProductMarketMakerCreation
+        - Bet
+        - TraderAgent
+        - DailyProfitStatistic
+        - Global
       abis:
         - name: Realitio
           file: ../../../abis/Realitio.json
@@ -99,6 +104,10 @@ dataSources:
           handler: handleLogNewQuestion
         - event: LogNewAnswer(bytes32,indexed bytes32,bytes32,indexed address,uint256,uint256,bool)
           handler: handleLogNewAnswer
+        - event: LogFinalize(indexed bytes32,indexed bytes32)
+          handler: handleLogFinalize
+        - event: LogNotifyOfArbitrationRequest(indexed bytes32,indexed address)
+          handler: handleLogNotifyOfArbitrationRequest
       file: ./src/realitio.ts
 templates:
   - name: FixedProductMarketMaker

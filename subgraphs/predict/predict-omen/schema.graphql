@@ -1,3 +1,8 @@
+# Helper entity for filtering agents with the correct agent ID
+type TraderService @entity (immutable: true) {
+  id: ID! # serviceId
+}
+
 type TraderAgent @entity (immutable: false) {
   id: Bytes!
   serviceId: BigInt!
@@ -25,6 +30,13 @@ type Bet @entity (immutable: false) {
   amount: BigInt!
   feeAmount: BigInt!
   outcomeTokenAmount: BigInt! # outcomeTokensBought (positive) or -outcomeTokensSold (negative)
+  # Per-token price at trade time, scaled by 1e18 (1e18 = 100%).
+  # For Buy: investmentAmount * 1e18 / outcomeTokensBought — interpretable as the market's
+  #   implied probability that `outcomeIndex` resolves true (i.e. the agent's prediction).
+  # For Sell: returnAmount * 1e18 / outcomeTokensSold — the price the agent received to close
+  #   a position. NOT a prediction; sells are excluded from Brier aggregation at settlement.
+  # Zero is the sentinel for genuine zero-token degenerate trades (Brier skips zero).
+  impliedProbability: BigInt!
   countedInProfit: Boolean!
   countedInTotal: Boolean
   fixedProductMarketMaker: FixedProductMarketMakerCreation
@@ -61,9 +73,15 @@ type FixedProductMarketMakerCreation @entity (immutable: false) {
   conditionIds: [Bytes!]! # bytes32[]
   question: String
   outcomes: [String!]
+  category: String      # nullable; parsed from Realitio template field[2]
+  language: String      # nullable; parsed from Realitio template field[3]
   fee: BigInt! # uint256
   currentAnswer: Bytes
   currentAnswerTimestamp: BigInt
+  # Scheduled finalization time (answer ts + question timeout), recomputed on each
+  # re-answer. Set to block ts on arbitrator LogFinalize; null while arbitration is
+  # pending. The answer is final once answerFinalizedTimestamp <= now.
+  answerFinalizedTimestamp: BigInt
   bets: [Bet!]! @derivedFrom(field: "fixedProductMarketMaker")
   participants: [MarketParticipant!]! @derivedFrom(field: "fixedProductMarketMaker")
   blockNumber: BigInt!
@@ -85,6 +103,10 @@ type MarketParticipant @entity (immutable: false) {
   outcomeTokenBalance0: BigInt! # net token position for outcome 0
   outcomeTokenBalance1: BigInt! # net token position for outcome 1
   expectedPayout: BigInt! # calculated at settlement from token balance
+  # Brier sum and count last credited to a daily stat for this participant. Stored so re-answer
+  # can subtract exactly what was added (handles bets placed between answers correctly).
+  brierSumApplied: BigInt!
+  brierCountApplied: Int!
   settled: Boolean! # idempotency flag - prevents re-processing on re-answer
   createdAt: BigInt!
   blockNumber: BigInt!
@@ -121,6 +143,7 @@ type Question @entity (immutable: false) {
   currentAnswer: Bytes
   question: String! # string
   currentAnswerTimestamp: BigInt
+  timeout: BigInt # Reality.eth answer timeout (seconds), from LogNewQuestion
   fixedProductMarketMaker: FixedProductMarketMakerCreation
 }
 
@@ -135,10 +158,25 @@ type DailyProfitStatistic @entity(immutable: false) {
   totalTraded: BigInt! # total traded today, regardless of market settlement
   totalFees: BigInt! # total fees today, regardless of market settlement
   totalPayout: BigInt! # Payouts received today
-  
+
+  # Cost basis of bets that became settled on this day. Written by handleLogNewAnswer.
+  # Lets ROI for arbitrary windows be computed as profit / dailyTradedSettled without
+  # having to derive `cost = payout - profit`, which is wrong here because totalTraded
+  # lands on bet day, dailyProfit on resolution day, and totalPayout on redemption day.
+  dailyTradedSettled: BigInt!
+  dailyFeesSettled: BigInt!
+
   # Profit
   dailyProfit: BigInt!
-  
+
   # Markets participated in profit calculation today (all on settlement day)
   profitParticipants: [FixedProductMarketMakerCreation!]!
+
+  # Brier-score accumulators for buys that settled on this day, 1e18-scaled.
+  # Per-bet contribution: ((impliedProbability - actual)^2) / 1e18, where actual is
+  # 1e18 if the bet's outcome won, 0 if it lost, or 5e17 for invalid resolutions.
+  # Sells and bets missing `impliedProbability` are excluded.
+  # Mean Brier over a window: sum(brierSum) / sum(brierCount) (1e18-scaled).
+  brierSum: BigInt!
+  brierCount: Int!
 }

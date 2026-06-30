@@ -621,6 +621,8 @@ describe("Profit Chart Integration", () => {
 
     let day3Id = AGENT.toHexString() + "_" + day3TSNormalized.toString();
     assert.fieldEquals("DailyProfitStatistic", day3Id, "dailyProfit", "900");
+    assert.fieldEquals("DailyProfitStatistic", day3Id, "dailyTradedSettled", "1000");
+    assert.fieldEquals("DailyProfitStatistic", day3Id, "dailyFeesSettled", "100");
     assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalExpectedPayout", "2000");
 
     // Answer B (outcome 1 — loses): reverses day 3, full profit = 0 - 1000 - 100 = -1100 on day 4
@@ -629,8 +631,12 @@ describe("Profit Chart Integration", () => {
     handleLogNewAnswer(createNewAnswerEvent(MARKET_LOST, ANSWER_1_HEX, day4TS));
 
     assert.fieldEquals("DailyProfitStatistic", day3Id, "dailyProfit", "0"); // reversed
+    assert.fieldEquals("DailyProfitStatistic", day3Id, "dailyTradedSettled", "0"); // cost reversed off old day
+    assert.fieldEquals("DailyProfitStatistic", day3Id, "dailyFeesSettled", "0");
     let day4Id = AGENT.toHexString() + "_" + day4TSNormalized.toString();
     assert.fieldEquals("DailyProfitStatistic", day4Id, "dailyProfit", "-1100"); // full: 0 - 1000 - 100
+    assert.fieldEquals("DailyProfitStatistic", day4Id, "dailyTradedSettled", "1000"); // full cost re-attributed
+    assert.fieldEquals("DailyProfitStatistic", day4Id, "dailyFeesSettled", "100");
     assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalExpectedPayout", "0");
 
     // Answer C (outcome 0 — wins again): reverses day 4 (-1100), full profit = 900 on day 5
@@ -639,8 +645,12 @@ describe("Profit Chart Integration", () => {
     handleLogNewAnswer(createNewAnswerEvent(MARKET_LOST, ANSWER_0_HEX, day5TS));
 
     assert.fieldEquals("DailyProfitStatistic", day4Id, "dailyProfit", "0"); // -1100 reversed
+    assert.fieldEquals("DailyProfitStatistic", day4Id, "dailyTradedSettled", "0"); // cost reversed off day 4
+    assert.fieldEquals("DailyProfitStatistic", day4Id, "dailyFeesSettled", "0");
     let day5Id = AGENT.toHexString() + "_" + day5TSNormalized.toString();
     assert.fieldEquals("DailyProfitStatistic", day5Id, "dailyProfit", "900"); // full: 2000 - 1000 - 100
+    assert.fieldEquals("DailyProfitStatistic", day5Id, "dailyTradedSettled", "1000"); // full cost re-attributed
+    assert.fieldEquals("DailyProfitStatistic", day5Id, "dailyFeesSettled", "100");
     assert.fieldEquals("TraderAgent", AGENT.toHexString(), "totalExpectedPayout", "2000");
 
     // Participant final state
