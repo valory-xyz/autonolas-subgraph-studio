@@ -15,11 +15,23 @@ import { getTokenConfig, TokenConfig } from "../src/tokenConfig"
 import { getVelodromeV2Price } from "../src/priceAdapters"
 import { calculatePositionROI } from "../src/roiCalculation"
 import { refreshVeloV2Position, getVeloV2PositionId } from "../src/veloV2Shared"
+import { handleVeloV2Bootstrap } from "../src/veloV2Bootstrap"
+import { handleVeloV2Transfer, handleVeloV2Mint } from "../src/veloV2Pool"
 import { ProtocolPosition, Service } from "../generated/schema"
-import { USDC_NATIVE, WETH, AERO, BOLD, VELO_VOTER } from "../src/constants"
+import {
+  USDC_NATIVE,
+  WETH,
+  AERO,
+  BOLD,
+  VELO_VOTER,
+  VELO_V2_SUGAR,
+  VELO_V2_FACTORY
+} from "../src/constants"
 import {
   createRegisterInstanceEvent,
-  createCreateMultisigWithAgentsEvent
+  createCreateMultisigWithAgentsEvent,
+  createV2TransferEvent,
+  createV2MintEvent
 } from "./mapping-utils"
 import {
   OPERATOR_SAFE,
@@ -798,5 +810,243 @@ describe("Aerodrome V2 gauge-staked positions", () => {
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimableReward", "0")
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimableRewardUSD", "0")
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "usdCurrentWithRewards", "0")
+  })
+})
+
+// ---------------------------------------------------------------------------
+// V2 bootstrap pagination (veloV2Bootstrap.ts)
+//
+// LpSugar forSwaps(limit, offset) walks RAW factory pool indices but returns a
+// FILTERED page (zero-reserve pools dropped), so a page shorter than `limit`
+// does NOT mean the end of the list. The loop must page up to the factory's
+// allPoolsLength() bound.
+// ---------------------------------------------------------------------------
+
+// Unique per-test pool addresses: the bootstrap's discoveredPools cache is
+// module-level and survives clearStore(), so reusing an address across tests
+// would silently skip template creation.
+const BOOT_POOL_PAGE1 = Address.fromString("0x00000000000000000000000000000000000000c1")
+const BOOT_POOL_PAGE2 = Address.fromString("0x00000000000000000000000000000000000000c2")
+const BOOT_POOL_CL = Address.fromString("0x00000000000000000000000000000000000000c3")
+const BOOT_POOL_NON_WL = Address.fromString("0x00000000000000000000000000000000000000c4")
+
+// forSwaps returns (address lp, int24 type, address token0, address token1,
+// address factory, uint256 pool_fee)[]
+function sugarPoolTuple(lp: Address, poolType: i32, token0: Address, token1: Address): ethereum.Tuple {
+  const t = new ethereum.Tuple()
+  t.push(ethereum.Value.fromAddress(lp))
+  t.push(ethereum.Value.fromI32(poolType))
+  t.push(ethereum.Value.fromAddress(token0))
+  t.push(ethereum.Value.fromAddress(token1))
+  t.push(ethereum.Value.fromAddress(VELO_V2_FACTORY))
+  t.push(ethereum.Value.fromUnsignedBigInt(BigInt.zero()))
+  return t
+}
+
+function mockForSwapsPage(offset: i32, pools: Array<ethereum.Tuple>): void {
+  createMockedFunction(
+    VELO_V2_SUGAR,
+    "forSwaps",
+    "forSwaps(uint256,uint256):((address,int24,address,address,address,uint256)[])"
+  )
+    .withArgs([
+      ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(500)),
+      ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(offset))
+    ])
+    .returns([ethereum.Value.fromTupleArray(pools)])
+}
+
+function mockAllPoolsLength(count: i32): void {
+  createMockedFunction(VELO_V2_FACTORY, "allPoolsLength", "allPoolsLength():(uint256)")
+    .withArgs([])
+    .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(count))])
+}
+
+describe("handleVeloV2Bootstrap pagination", () => {
+  afterEach(() => {
+    clearStore()
+  })
+
+  test("aborts without calling forSwaps when allPoolsLength reverts", () => {
+    createMockedFunction(VELO_V2_FACTORY, "allPoolsLength", "allPoolsLength():(uint256)")
+      .withArgs([])
+      .reverts()
+    // forSwaps is intentionally NOT mocked: if the bootstrap called it anyway,
+    // matchstick would throw on the unmocked call and fail this test.
+    handleVeloV2Bootstrap(v2Block())
+
+    assert.dataSourceCount("VeloV2Pool", 0)
+  })
+
+  test("continues past a short page up to allPoolsLength (filtered pages)", () => {
+    mockAllPoolsLength(1000)
+    // Page 1 returns 1 entry (< limit 500) — filtered, NOT the end of the list.
+    mockForSwapsPage(0, [sugarPoolTuple(BOOT_POOL_PAGE1, 0, USDC_NATIVE, BOLD)])
+    // Page 2 holds a whitelisted v2 pool, a CL pool (positive type = tickSpacing,
+    // must be skipped) and a pool with a non-whitelisted token (must be skipped).
+    mockForSwapsPage(500, [
+      sugarPoolTuple(BOOT_POOL_PAGE2, -1, USDC_NATIVE, WETH),
+      sugarPoolTuple(BOOT_POOL_CL, 100, USDC_NATIVE, WETH),
+      sugarPoolTuple(BOOT_POOL_NON_WL, 0, DUMMY0, USDC_NATIVE)
+    ])
+
+    handleVeloV2Bootstrap(v2Block())
+
+    // The regression: the old loop stopped after the short first page, so the
+    // second-page pool never got a template.
+    assert.dataSourceExists("VeloV2Pool", BOOT_POOL_PAGE2.toHexString())
+    assert.dataSourceExists("VeloV2Pool", BOOT_POOL_PAGE1.toHexString())
+    assert.dataSourceCount("VeloV2Pool", 2)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// V2 pending-mint entry amounts (veloV2Pool.ts)
+//
+// Transfer(0x0 → safe) creates the position and stores a PendingMintPosition;
+// the Mint event in the same tx then applies the real entry amounts. The
+// pending record must carry the same position id the position was created
+// under (getVeloV2PositionId), otherwise the Mint data is silently dropped.
+// ---------------------------------------------------------------------------
+const MINT_POOL = Address.fromString("0x00000000000000000000000000000000000000d1")
+const ROUTER = Address.fromString("0x00000000000000000000000000000000000000d2")
+
+// token0 = AERO (priced ~$1.30 via mockAeroUsdcPool) so the mint records a
+// non-zero entryAmountUSD; a $0 entry would keep the backfill fallback firing
+// on every refresh and mask the Mint override this test asserts.
+function mockMintPoolState(): void {
+  createMockedFunction(MINT_POOL, "token0", "token0():(address)")
+    .withArgs([])
+    .returns([ethereum.Value.fromAddress(AERO)])
+  createMockedFunction(MINT_POOL, "token1", "token1():(address)")
+    .withArgs([])
+    .returns([ethereum.Value.fromAddress(DUMMY1)])
+  createMockedFunction(MINT_POOL, "stable", "stable():(bool)")
+    .withArgs([])
+    .returns([ethereum.Value.fromBoolean(false)])
+  createMockedFunction(MINT_POOL, "balanceOf", "balanceOf(address):(uint256)")
+    .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
+    .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(500))])
+  createMockedFunction(MINT_POOL, "totalSupply", "totalSupply():(uint256)")
+    .withArgs([])
+    .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1000))])
+  // 2 token0 / 4 token1 (18 dec) in reserves → current amounts 1 / 2 at 50% share
+  createMockedFunction(MINT_POOL, "getReserves", "getReserves():(uint256,uint256,uint256)")
+    .withArgs([])
+    .returns([
+      ethereum.Value.fromUnsignedBigInt(BigInt.fromString("2000000000000000000")),
+      ethereum.Value.fromUnsignedBigInt(BigInt.fromString("4000000000000000000")),
+      ethereum.Value.fromUnsignedBigInt(BigInt.zero())
+    ])
+  // No gauge for this pool → no gauge calls
+  createMockedFunction(VELO_VOTER, "gauges", "gauges(address):(address)")
+    .withArgs([ethereum.Value.fromAddress(MINT_POOL)])
+    .returns([ethereum.Value.fromAddress(Address.zero())])
+}
+
+describe("handleVeloV2Transfer + handleVeloV2Mint entry amounts", () => {
+  afterEach(() => {
+    clearStore()
+  })
+
+  test("pending position id matches the position, so Mint sets entry amounts", () => {
+    createService(SERVICE_SAFE)
+    mockChainlinkEthUsd()
+    mockMintPoolState()
+    mockAeroUsdcPool()
+
+    // 1. LP mint transfer: creates the position + the pending record
+    const transfer = createV2TransferEvent(MINT_POOL, Address.zero(), SERVICE_SAFE, BigInt.fromI32(500))
+    transfer.block.number = BLOCK_NUMBER
+    transfer.block.timestamp = BLOCK_TIMESTAMP
+    transfer.transaction.hash = TX_HASH
+    handleVeloV2Transfer(transfer)
+
+    const positionId = getVeloV2PositionId(SERVICE_SAFE, MINT_POOL)
+    const pendingId = TX_HASH.toHexString() + "-" + MINT_POOL.toHexString()
+    // The regression: the pending record used to carry a "-velodromev2-" id
+    // that matches no ProtocolPosition, so the Mint amounts were dropped.
+    assert.fieldEquals("PendingMintPosition", pendingId, "positionId", positionId.toHexString())
+
+    // 2. Mint event in the same tx applies the event amounts as entry amounts
+    const mint = createV2MintEvent(
+      MINT_POOL,
+      ROUTER,
+      BigInt.fromString("2000000000000000000"), // 2 token0
+      BigInt.fromString("6000000000000000000")  // 6 token1
+    )
+    mint.block.number = BLOCK_NUMBER
+    mint.block.timestamp = BLOCK_TIMESTAMP
+    mint.transaction.hash = TX_HASH
+    handleVeloV2Mint(mint)
+
+    // Entry amounts come from the Mint event (2/6), not from the current pool
+    // share (1/2) that the creation-time fallback recorded.
+    assert.fieldEquals("ProtocolPosition", positionId.toHexString(), "entryAmount0", "2")
+    assert.fieldEquals("ProtocolPosition", positionId.toHexString(), "entryAmount1", "6")
+    // Pending record is consumed
+    assert.entityCount("PendingMintPosition", 0)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// V2 entry-amount fallback (veloV2Shared.ts)
+//
+// entryTimestamp is always set at position creation, so the fallback that
+// backfills missing entry amounts must key off entryAmountUSD alone.
+// ---------------------------------------------------------------------------
+function mockV2PoolInWallet(): void {
+  createMockedFunction(V2_POOL, "balanceOf", "balanceOf(address):(uint256)")
+    .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
+    .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(500))])
+  createMockedFunction(V2_POOL, "totalSupply", "totalSupply():(uint256)")
+    .withArgs([])
+    .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1000))])
+  createMockedFunction(V2_POOL, "getReserves", "getReserves():(uint256,uint256,uint256)")
+    .withArgs([])
+    .returns([
+      ethereum.Value.fromUnsignedBigInt(BigInt.fromString("2000000000000000000")),
+      ethereum.Value.fromUnsignedBigInt(BigInt.fromString("4000000000000000000")),
+      ethereum.Value.fromUnsignedBigInt(BigInt.zero())
+    ])
+  createMockedFunction(VELO_VOTER, "gauges", "gauges(address):(address)")
+    .withArgs([ethereum.Value.fromAddress(V2_POOL)])
+    .returns([ethereum.Value.fromAddress(Address.zero())])
+}
+
+describe("refreshVeloV2Position entry-amount fallback", () => {
+  afterEach(() => {
+    clearStore()
+  })
+
+  test("backfills entry amounts when entryAmountUSD is 0 despite entryTimestamp set", () => {
+    createService(SERVICE_SAFE)
+    const id = makeOpenV2Position(DUMMY0, DUMMY1)
+    // Simulate a position whose Mint data was never applied: entry amounts are
+    // zero but entryTimestamp is set (as creation always does).
+    const seed = ProtocolPosition.load(id)!
+    seed.entryAmountUSD = BigDecimal.zero()
+    seed.save()
+    mockV2PoolInWallet()
+
+    refreshVeloV2Position(SERVICE_SAFE, V2_POOL, v2Block(), TX_HASH, false)
+
+    // Fallback fires: entry amounts = current amounts (50% share of 2/4 reserves)
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "entryAmount0", "1")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "entryAmount1", "2")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "isActive", "true")
+  })
+
+  test("does not overwrite entry amounts that were already recorded", () => {
+    createService(SERVICE_SAFE)
+    // makeOpenV2Position records entryAmountUSD = 100 and entryAmount0 = 0
+    const id = makeOpenV2Position(DUMMY0, DUMMY1)
+    mockV2PoolInWallet()
+
+    refreshVeloV2Position(SERVICE_SAFE, V2_POOL, v2Block(), TX_HASH, false)
+
+    // Fallback must NOT fire: recorded entry data stays untouched.
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "entryAmountUSD", "100")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "entryAmount0", "0")
   })
 })

@@ -96,6 +96,21 @@ AERO/USDC volatile pool `0x6cdcb1c4…` via the `velodrome_v2` adapter (`tokenCo
 >   position yet; a `log.warning` fires if `earned()` reverts on an active position (silent-zero
 >   guard). Full runbook + likely fixes: **`AERO-REWARDS-PLAN.md`**.
 
+> **V2 bootstrap pagination.** LpSugar `forSwaps(limit, offset)` walks **raw factory pool
+> indices** but returns a **filtered** page (zero-reserve pools dropped), so a page shorter
+> than `limit` does NOT mean end-of-list (this early-exit assumption once left ~27.6k of the
+> factory's ~28k pool indices unscanned and most Basius LP positions invisible). The bootstrap
+> pages up to the v2 factory's `allPoolsLength()` and aborts loudly if that call reverts.
+> Entries past the v2 range belong to CL factories and are skipped by the type filter
+> (0 = stable, -1 = volatile, positive = CL tickSpacing).
+
+> **V2 entry amounts.** `Transfer(0x0 → safe)` creates the position and stores a
+> `PendingMintPosition` keyed by `getVeloV2PositionId` (protocol string `aerodrome-v2`); the
+> same-tx `Mint` event then records the real entry amounts (entry USD feeds closed-position
+> ROI, so a dropped mint pins ROI/APR at 0). If entry amounts are still zero on a later
+> refresh, `refreshVeloV2Position` backfills them from current amounts — keyed on
+> `entryAmountUSD == 0` alone, since `entryTimestamp` is always set at creation.
+
 ## Schema, core logic, KPIs
 
 Schema and the entire portfolio/ROI/APR/snapshot/population pipeline are **identical** to

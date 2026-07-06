@@ -452,8 +452,10 @@ export function refreshVeloV2Position(
     
     pp.isActive = true
     
-    // If this is a new position (entry amounts not set), use current amounts as entry
-    if (pp.entryAmountUSD.equals(BigDecimal.zero()) && pp.entryTimestamp.equals(BigInt.zero())) {
+    // Entry amounts not recorded yet (the Mint handler may not have run, or its
+    // data was missed): fall back to current amounts as entry. Note entryTimestamp
+    // is set on creation, so it is never zero here and cannot signal a new position.
+    if (pp.entryAmountUSD.equals(BigDecimal.zero())) {
       pp.entryTxHash = txHash
       pp.entryTimestamp = block.timestamp
       pp.entryAmount0 = pp.amount0!
