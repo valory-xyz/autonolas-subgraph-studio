@@ -57,42 +57,50 @@ function createPoolTemplate(poolAddress: Address, token0: Address, token1: Addre
 // Bootstrap handler - runs once at startup
 export function handleVeloV2Bootstrap(block: ethereum.Block): void {
   log.info("VELO V2: Starting pool discovery at block {}", [block.number.toString()])
-  
+
   let sugar = Sugar.bind(SUGAR_ADDRESS)
   let totalDiscovered = 0
   let whitelistedFound = 0
-  
+
+  // `forSwaps(limit, offset)` pages over raw factory pool indices but returns a
+  // FILTERED page (zero-reserve pools are dropped), so a page with fewer than
+  // `limit` entries does NOT mean the end of the list. The only reliable bound is
+  // the v2 factory's allPoolsLength(); the v2 factory occupies the first index
+  // range of the Sugar registry, and later ranges are CL factories whose entries
+  // the type filter below skips anyway.
+  let factory = PoolFactory.bind(FACTORY_ADDRESS)
+  let poolCountResult = factory.try_allPoolsLength()
+  if (poolCountResult.reverted) {
+    log.error("VELO V2: PoolFactory.allPoolsLength() reverted - bootstrap aborted", [])
+    return
+  }
+  let totalPools = poolCountResult.value
+
   // Fetch pools in batches via Aerodrome LpSugar v3 `forSwaps(limit, offset)`, which
   // returns {lp, type, token0, token1, factory, pool_fee} — exactly the fields the
   // bootstrap needs. (Aerodrome's `all` has a 3-arg signature + a different struct than
   // Velodrome's `all`, so calling `all(limit, offset)` would revert.)
   let limit = 500
-  let offset = 0
-  let hasMore = true
+  let offset = BigInt.zero()
 
-  while (hasMore) {
-    let poolsResult = sugar.try_forSwaps(BigInt.fromI32(limit), BigInt.fromI32(offset))
+  while (offset.lt(totalPools)) {
+    let poolsResult = sugar.try_forSwaps(BigInt.fromI32(limit), offset)
 
     if (poolsResult.reverted) {
       log.error("VELO V2: Sugar forSwaps call reverted at offset {}", [offset.toString()])
       break
     }
-    
+
     let pools = poolsResult.value
     totalDiscovered += pools.length
-    
-    if (pools.length == 0) {
-      hasMore = false
-      break
-    }
-    
+
     // Filter and create relevant pools
     for (let i = 0; i < pools.length; i++) {
       let poolData = pools[i]
-      
+
       // IMPORTANT: Pool type mapping for VelodromeV2 (confirmed manually)
       // type 0 = stable pools
-      // type -1 = volatile pools  
+      // type -1 = volatile pools
       // type 1 = concentrated liquidity pools (skip these)
       // Only track stable (0) and volatile (-1) pools
       if ([0,-1].includes(poolData.type) && isPoolRelevant(poolData.token0, poolData.token1)) {
@@ -102,18 +110,14 @@ export function handleVeloV2Bootstrap(block: ethereum.Block): void {
         whitelistedFound++
       }
     }
-    
-    // Check if we got fewer pools than requested (end of list)
-    if (pools.length < limit) {
-      hasMore = false
-    } else {
-      offset += limit
-    }
+
+    offset = offset.plus(BigInt.fromI32(limit))
   }
-  
-  log.info("VELO V2: Discovery complete - {} whitelisted pools from {} total", [
+
+  log.info("VELO V2: Discovery complete - {} whitelisted pools from {} total ({} factory pool indices scanned)", [
     whitelistedFound.toString(),
-    totalDiscovered.toString()
+    totalDiscovered.toString(),
+    totalPools.toString()
   ])
 }
 

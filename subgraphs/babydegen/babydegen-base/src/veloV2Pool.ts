@@ -4,11 +4,10 @@ import {
   Transfer
 } from "../generated/templates/VeloV2Pool/VelodromeV2Pool"
 
-import { 
-  refreshVeloV2PositionWithEventAmounts,
+import {
   refreshVeloV2PositionWithBurnAmounts,
   refreshVeloV2Position,
-  ensureVeloV2PoolTemplate
+  getVeloV2PositionId
 } from "./veloV2Shared"
 
 import { BigInt, Bytes, store } from "@graphprotocol/graph-ts"
@@ -70,11 +69,10 @@ export function handleVeloV2Transfer(event: Transfer): void {
       refreshVeloV2Position(to, event.address, event.block, event.transaction.hash)
       
       // Store this position as pending mint data
-      const positionId = to.toHex() + "-velodromev2-" + event.address.toHex()
       storePendingPosition(
         event.transaction.hash,
         event.address,
-        Bytes.fromUTF8(positionId),
+        getVeloV2PositionId(to, event.address),
         to
       )
     }
