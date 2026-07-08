@@ -9,5 +9,15 @@
     "added": "YYYY-MM-DD — REQUIRED",
     "review": "YYYY-MM-DD — REQUIRED, expired prints warning but does not fail"
   },
-  "entries": []
+  "entries": [
+    {
+      "id": 1122670,
+      "ghsa": "GHSA-mp2f-45pm-3cg9",
+      "package": "decompress",
+      "severity": "critical",
+      "reason": "Build-time only via @graphprotocol/graph-cli. Path traversal on archive extraction; graph-cli extracts vendor-published npm tarballs, not untrusted input. No upstream fix (fix in <0.0.0), no released graph-cli drops decompress. Revisit if graph-cli publishes a version without decompress or if a fixed decompress ships.",
+      "added": "2026-07-08",
+      "review": "2026-10-08"
+    }
+  ]
 }
