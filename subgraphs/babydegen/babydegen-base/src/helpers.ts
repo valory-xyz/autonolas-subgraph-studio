@@ -1,12 +1,11 @@
 import { BigDecimal, BigInt, Address, Bytes, log, ethereum } from "@graphprotocol/graph-ts"
-import { 
-  FundingBalance, 
-  AgentPortfolio, 
+import {
+  FundingBalance,
+  AgentPortfolio,
   AgentPortfolioSnapshot,
   ProtocolPosition,
   Service,
-  AgentSwapBuffer,
-  SwapTransaction
+  AgentSwapBuffer
 } from "../generated/schema"
 import { calculateUninvestedValue, updateFundingBalance } from "./tokenBalances"
 import { getServiceByAgent } from "./config"
@@ -784,23 +783,6 @@ export function associateSwapsWithPosition(
       let associatedBucketData = associatedSwaps.join("|")
       let bucketSlippage = parseTotalSlippageFromBucket(associatedBucketData)
       totalSlippageUSD = totalSlippageUSD.plus(bucketSlippage)
-      
-      for (let j = 0; j < associatedSwaps.length; j++) {
-        let swapEntry = associatedSwaps[j]
-        let swapParts = swapEntry.split(",")
-        if (swapParts.length >= 5) {
-          let swapId = swapParts[4]
-          let swapTransaction = SwapTransaction.load(Bytes.fromHexString(swapId))
-          if (swapTransaction != null) {
-            swapTransaction.isAssociated = true
-            swapTransaction.save()
-            log.info("SWAP ASSOCIATION: Marked swap {} as associated for agent {}", [
-              swapId,
-              userAddress.toHexString()
-            ])
-          }
-        }
-      }
     }
     
     updatedBuckets[bucketIdx] = remainingSwaps.join("|")

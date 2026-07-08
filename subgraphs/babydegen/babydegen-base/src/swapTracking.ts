@@ -7,9 +7,8 @@ import {
   log
 } from "@graphprotocol/graph-ts"
 
-import { 
-  SwapTransaction, 
-  SwapToEntryAssociation, 
+import {
+  SwapTransaction,
   ProtocolPosition,
   Service,
   AgentSwapBuffer
@@ -284,44 +283,6 @@ export function searchAndAssociateRecentSwaps(position: ProtocolPosition): void 
       position.id.toHexString()
     ])
   }
-}
-
-/**
- * Associate a specific swap with a position (public function)
- */
-export function associateSwapWithPosition(swap: SwapTransaction, position: ProtocolPosition): void {
-  // Update swap
-  swap.isAssociated = true
-  swap.save()
-  
-  // Create or update association
-  let associationId = position.id
-  let association = SwapToEntryAssociation.load(associationId)
-  
-  if (association == null) {
-    association = new SwapToEntryAssociation(associationId)
-    association.position = position.id
-    association.swaps = []
-    association.totalSlippageUSD = BigDecimal.zero()
-    association.associationTimestamp = swap.timestamp
-  }
-  
-  // Add swap to association
-  let swaps = association.swaps
-  swaps.push(swap.id)
-  association.swaps = swaps
-  association.totalSlippageUSD = association.totalSlippageUSD.plus(swap.slippageUSD)
-  
-  association.save()
-  
-  // Update position costs
-  updatePositionCosts(position, association.totalSlippageUSD)
-  
-  log.info("SWAP ASSOCIATION: Linked swap {} to position {} - slippage: {} USD", [
-    swap.id.toHexString(),
-    position.id.toHexString(),
-    swap.slippageUSD.toString()
-  ])
 }
 
 // Update position costs with slippage (private function)
