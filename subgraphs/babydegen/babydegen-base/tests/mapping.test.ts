@@ -15,6 +15,7 @@ import { getTokenConfig, TokenConfig } from "../src/tokenConfig"
 import { getVelodromeV2Price } from "../src/priceAdapters"
 import { calculatePositionROI } from "../src/roiCalculation"
 import { refreshVeloV2Position, getVeloV2PositionId } from "../src/veloV2Shared"
+import { AgentSwapBuffer, SwapTransaction } from "../generated/schema"
 import { handleVeloV2Bootstrap } from "../src/veloV2Bootstrap"
 import { handleVeloV2Transfer, handleVeloV2Mint } from "../src/veloV2Pool"
 import { ProtocolPosition, Service } from "../generated/schema"
@@ -1048,5 +1049,67 @@ describe("refreshVeloV2Position entry-amount fallback", () => {
     // Fallback must NOT fire: recorded entry data stays untouched.
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "entryAmountUSD", "100")
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "entryAmount0", "0")
+  })
+
+  // SwapTransaction is @entity(immutable: true). The buffer-driven swap
+  // association path used to re-save it, which crashes block indexing with
+  // "immutable entity ... only allows inserts, not Overwrite" the moment a
+  // backfilled position finds a matching swap in its window.
+  test("backfill fallback with a matching buffered swap does not overwrite the immutable SwapTransaction", () => {
+    createService(SERVICE_SAFE)
+    const id = makeOpenV2Position(DUMMY0, DUMMY1)
+    const seed = ProtocolPosition.load(id)!
+    seed.entryAmountUSD = BigDecimal.zero()
+    seed.save()
+    mockV2PoolInWallet()
+
+    // A LiFi swap the position should associate with.
+    const swapId = Bytes.fromHexString(
+      "0x54e99012bbbe4c61a28c3f54aaf16efda2d5a0e8ab1be3d4662452d92ca3b5902d313136"
+    )
+    const swap = new SwapTransaction(swapId)
+    swap.agent = SERVICE_SAFE
+    swap.transactionId = TX_HASH
+    swap.txHash = TX_HASH
+    swap.timestamp = BLOCK_TIMESTAMP
+    swap.block = BLOCK_NUMBER
+    swap.fromAssetId = USDC_NATIVE
+    swap.toAssetId = WETH
+    swap.fromAmount = BigInt.fromI32(8000000)
+    swap.toAmount = BigInt.fromString("7988031101223343132")
+    swap.fromAmountUSD = BigDecimal.fromString("7.99768")
+    swap.toAmountUSD = BigDecimal.fromString("7.98571")
+    swap.expectedToAmountUSD = BigDecimal.fromString("7.99768")
+    swap.slippageUSD = BigDecimal.fromString("0.01197")
+    swap.slippagePercentage = BigDecimal.fromString("0.14961")
+    swap.isAssociated = false
+    swap.expiresAt = BLOCK_TIMESTAMP.plus(BigInt.fromI32(1200))
+    swap.save()
+
+    // Seed the agent's swap buffer with one entry for this swap in bucket0. Row
+    // format matches createSwapDataString: "<ts>,<swapId>,<slippage>,<expiresAt>,<swapId>".
+    const buffer = new AgentSwapBuffer(SERVICE_SAFE)
+    buffer.agent = SERVICE_SAFE
+    buffer.bucket0Swaps =
+      BLOCK_TIMESTAMP.toString() + "," + swapId.toHexString() + ",0.01197," +
+      BLOCK_TIMESTAMP.plus(BigInt.fromI32(1200)).toString() + "," + swapId.toHexString()
+    buffer.bucket1Swaps = ""
+    buffer.bucket2Swaps = ""
+    buffer.bucket3Swaps = ""
+    buffer.totalSlippageUSD = BigDecimal.fromString("0.01197")
+    buffer.lastUpdated = BLOCK_TIMESTAMP
+    buffer.currentBucketIndex = BigInt.zero()
+    buffer.save()
+
+    // Before the fix this call reverted the whole block on the immutable
+    // overwrite. It must now complete and apply the associated slippage to the
+    // position's cost basis.
+    refreshVeloV2Position(SERVICE_SAFE, V2_POOL, v2Block(), TX_HASH, false)
+
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "swapSlippageUSD", "0.01197")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "entryAmount0", "1")
+    // The stored swap is untouched (immutable): isAssociated remains its
+    // insert-time value, which is the property the schema enforces.
+    assert.fieldEquals("SwapTransaction", swapId.toHexString(), "isAssociated", "false")
   })
 })
