@@ -35,7 +35,7 @@ dataSources:
           handler: handleBPTTransfer
       file: ./src/mapping.ts
 
-  # Balancer V2 Vault — Swap events for fee tracking
+  # Balancer V2 Vault — Swap events for fee tracking + live reserve deltas
   # Processes ALL Vault swaps; handler filters by poolId and skips non-matching.
   - kind: ethereum/contract
     name: BalancerVault

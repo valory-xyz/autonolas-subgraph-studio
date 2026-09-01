@@ -391,6 +391,102 @@ describe('handleVaultSwap', () => {
       TestValues.SWAP_FEE_PERCENTAGE.toString()
     );
   });
+
+  test('Swap applies reserve deltas', () => {
+    // Baseline reserves from the mint: reserve0=OLAS, reserve1=WXDAI.
+    // Swap WXDAI in, OLAS out.
+    let olasOut = BigInt.fromString('5000000000000000000000'); // 5000 OLAS
+    let swapEvent = createVaultSwapEvent(
+      POOL_ID,
+      TestAddresses.TOKEN_WXDAI,
+      TestAddresses.TOKEN_OLAS,
+      TestValues.SWAP_AMOUNT,
+      olasOut,
+      TestAddresses.VAULT
+    );
+    handleVaultSwap(swapEvent);
+
+    assert.fieldEquals(
+      'PoolMetrics',
+      TestAddresses.POOL.toHexString(),
+      'reserve0',
+      TestValues.RESERVE_OLAS.minus(olasOut).toString()
+    );
+    assert.fieldEquals(
+      'PoolMetrics',
+      TestAddresses.POOL.toHexString(),
+      'reserve1',
+      TestValues.RESERVE_WXDAI.plus(TestValues.SWAP_AMOUNT).toString()
+    );
+  });
+
+  test('Opposite-direction swaps accumulate reserve deltas', () => {
+    let olasOut = BigInt.fromString('5000000000000000000000'); // 5000 OLAS
+    let swap1 = createVaultSwapEvent(
+      POOL_ID,
+      TestAddresses.TOKEN_WXDAI,
+      TestAddresses.TOKEN_OLAS,
+      TestValues.SWAP_AMOUNT,
+      olasOut,
+      TestAddresses.VAULT
+    );
+    handleVaultSwap(swap1);
+
+    // Swap back: OLAS in, WXDAI out
+    let olasIn = BigInt.fromString('2000000000000000000000'); // 2000 OLAS
+    let wxdaiOut = BigInt.fromString('400000000000000000000'); // 400 WXDAI
+    let swap2 = createVaultSwapEvent(
+      POOL_ID,
+      TestAddresses.TOKEN_OLAS,
+      TestAddresses.TOKEN_WXDAI,
+      olasIn,
+      wxdaiOut,
+      TestAddresses.VAULT,
+      TestValues.TIMESTAMP,
+      1
+    );
+    handleVaultSwap(swap2);
+
+    assert.fieldEquals(
+      'PoolMetrics',
+      TestAddresses.POOL.toHexString(),
+      'reserve0',
+      TestValues.RESERVE_OLAS.minus(olasOut).plus(olasIn).toString()
+    );
+    assert.fieldEquals(
+      'PoolMetrics',
+      TestAddresses.POOL.toHexString(),
+      'reserve1',
+      TestValues.RESERVE_WXDAI.plus(TestValues.SWAP_AMOUNT).minus(wxdaiOut).toString()
+    );
+  });
+
+  test('Reserve delta clamps to zero on underflow', () => {
+    // amountOut greater than tracked reserve0 (partial-history guard)
+    let excessiveOut = TestValues.RESERVE_OLAS.plus(BigInt.fromI32(1));
+    let swapEvent = createVaultSwapEvent(
+      POOL_ID,
+      TestAddresses.TOKEN_WXDAI,
+      TestAddresses.TOKEN_OLAS,
+      TestValues.SWAP_AMOUNT,
+      excessiveOut,
+      TestAddresses.VAULT
+    );
+    handleVaultSwap(swapEvent);
+
+    assert.fieldEquals(
+      'PoolMetrics',
+      TestAddresses.POOL.toHexString(),
+      'reserve0',
+      '0'
+    );
+    assert.fieldEquals(
+      'PoolMetrics',
+      TestAddresses.POOL.toHexString(),
+      'reserve1',
+      TestValues.RESERVE_WXDAI.plus(TestValues.SWAP_AMOUNT).toString()
+    );
+  });
 });
 
 describe('handleUniswapSwap', () => {

@@ -1,6 +1,7 @@
 # Balancer V2 pool metrics for OLAS liquidity on L2 chains.
-# Each network has one tracked pool. Reserves are fetched via
-# vault.getPoolTokens() contract call on BPT mint/burn (join/exit) only.
+# Each network has one tracked pool. Reserves are fetched absolutely via
+# vault.getPoolTokens() contract call on BPT mint/burn (join/exit), and
+# kept live between joins/exits by applying Vault Swap event deltas.
 
 type PoolMetrics @entity(immutable: false) {
   id: Bytes! # pool (BPT) contract address
