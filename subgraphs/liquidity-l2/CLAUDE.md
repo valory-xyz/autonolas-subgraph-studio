@@ -17,7 +17,7 @@ subgraphs/liquidity-l2/
 │   ├── mapping.ts                   # BPT Transfer handler with Vault contract calls
 │   └── utils.ts                     # Constants, helpers, get-or-create
 ├── tests/
-│   ├── mapping.test.ts              # 7 Matchstick tests
+│   ├── mapping.test.ts              # 22 Matchstick tests
 │   ├── mapping-utils.ts             # Event factory (createBPTTransferEvent)
 │   └── test-helpers.ts              # Test constants, pool ID
 ├── package.json                     # graph-cli ^0.97.0, graph-ts ^0.38.0
@@ -54,6 +54,7 @@ Singleton per network — tracks pool reserves and BPT supply.
 | reserve0 | `BigInt!` | First token balance in pool (wei) |
 | reserve1 | `BigInt!` | Second token balance in pool (wei) |
 | totalSupply | `BigInt!` | BPT total supply (minted - burned) |
+| reservesRefreshedAtBlock | `BigInt!` | Block of the last absolute `getPoolTokens()` refetch; swap deltas in that block are skipped (0 on Celo) |
 | totalMinted | `BigInt!` | Cumulative BPT minted |
 | totalBurned | `BigInt!` | Cumulative BPT burned |
 | cumulativeFeesToken0 | `BigInt!` | All-time cumulative fees in token0 (wei) |
@@ -116,10 +117,12 @@ Handles reserve updates for the Celo Ubeswap (UniswapV2) pool:
 Handles swap events from the Balancer V2 Vault contract (`0xBA12222222228d8Ba445958a75a0704d566BF2C8`):
 1. Derives pool address from `poolId` (first 20 bytes) and loads `PoolMetrics` — if no entity exists (no prior mint/burn), returns immediately (prevents creating orphan entities for unrelated pools)
 2. Checks `poolId` matches — returns if different (skips non-matching swaps)
-3. Reads `swapFeePercentage` from pool (cached on `PoolMetrics`, fetched via `pool.getSwapFeePercentage()`)
-4. Computes fee: `amountIn * swapFeePercentage / 1e18`
-5. Assigns fee to `feeToken0` or `feeToken1` based on which token was swapped in
-6. Updates `DailyFees` entity (daily aggregation by UTC day) and cumulative fields on `PoolMetrics`
+3. Returns early with a `log.warning` if token addresses are unset (reverted `getPoolTokens()` at mint) — both fee attribution and reserve deltas need them
+4. Reads `swapFeePercentage` from pool (cached on `PoolMetrics`, fetched via `pool.getSwapFeePercentage()`)
+5. Computes fee: `amountIn * swapFeePercentage / 1e18`
+6. Assigns fee to `feeToken0` or `feeToken1` based on which token was swapped in
+7. **Applies swap deltas to reserves**: `tokenIn` side gains `amountIn`, `tokenOut` side loses `amountOut` (clamped at zero with a `log.warning`). Deltas are skipped when `event.block.number == reservesRefreshedAtBlock`: `eth_call` state is end-of-block, so a mint/burn's absolute refetch already includes every swap in its own block — applying the delta again would double-count. Keeps reserves live between joins/exits; the absolute refetch corrects any residual drift.
+8. Updates `DailyFees` entity (daily aggregation by UTC day) and cumulative fields on `PoolMetrics`
 
 ### handleUniswapSwap
 **File**: `src/mapping.ts` | **Event**: `Swap(indexed address, uint256, uint256, uint256, uint256, indexed address)` | **Celo only**
@@ -133,8 +136,8 @@ Handles UniswapV2 swap events on the Celo Ubeswap pair:
 - **Celo special case**: The Celo CELO-OLAS pool is an Ubeswap (UniswapV2 fork) pair at `0x2976Fa805141b467BCBc6334a69AffF4D914d96A`, not a Balancer V2 pool. It uses `Sync` events for reserves and `getReserves()` / `token0()` / `token1()` instead of `getPoolId()` / `getPoolTokens()`. The Celo manifest (`subgraph.celo.yaml`) is written manually, not generated from the template.
 - **Contract calls only on mint/burn (Balancer)**: Regular transfers don't change pool reserves, so calling `getPoolTokens()` on every transfer would waste indexing resources.
 - **Why Transfer events + contract calls (not Vault events)**: Indexing the Vault's `PoolBalanceChanged` would process ALL Balancer pools on the chain — very expensive.
-- **Absolute reserves via `getPoolTokens()` (Balancer) / `Sync` event (Celo)**: Both approaches give current balances, no accumulation needed.
-- **Reserves only update on join/exit (Balancer) or every swap (Celo)**: On Balancer chains, reserves only update on mint/burn. On Celo, Sync fires on every swap too, giving more frequent updates.
+- **Absolute reserves via `getPoolTokens()` (Balancer) / `Sync` event (Celo)**: Both approaches give current balances at join/exit, no accumulation needed.
+- **Reserves update on every swap AND join/exit**: On Balancer chains, join/exit refetches absolute balances via `getPoolTokens()` and every Vault `Swap` applies event deltas in between (without the deltas, reserves drifted up to 75% between joins/exits, corrupting the off-chain POL valuation which prices the paired side ×2). Swap deltas in the refetch block itself are skipped via `reservesRefreshedAtBlock` — `eth_call` returns end-of-block state, so the refetch already includes them. On Celo, Sync fires on every swap and join/exit with absolute values.
 - **Vault Swap indexing for fee tracking (Balancer)**: The Balancer V2 Vault emits `Swap` events for ALL pools on the chain. The `handleVaultSwap` handler filters by `poolId` and returns immediately for non-matching swaps. This adds indexing overhead on busy chains (Arbitrum, Polygon) but provides accurate per-swap fee data. The swap fee percentage is cached on `PoolMetrics` and refreshed via `pool.getSwapFeePercentage()` contract call.
 - **Fee tracking in token terms only (L2)**: L2 subgraphs track fees in token0/token1 amounts without USD conversion. USD conversion is deferred to the off-chain aggregation script (`scripts/pol-aggregation.js`), which uses the same Chainlink prices as POL valuation.
 
@@ -212,12 +215,12 @@ yarn build                 # Compile to WebAssembly (uses gnosis manifest)
 
 ## Testing
 
-**Framework**: Matchstick-as 0.5.0 | **15 tests**
+**Framework**: Matchstick-as 0.5.0 | **22 tests**
 
 ### Test Files
 | File | Purpose |
 |------|---------|
-| `tests/mapping.test.ts` | 15 test cases across 3 handler groups |
+| `tests/mapping.test.ts` | 22 test cases across 3 handler groups |
 | `tests/mapping-utils.ts` | Event factories (`createBPTTransferEvent`, `createVaultSwapEvent`, `createUniswapSwapEvent`) |
 | `tests/test-helpers.ts` | Namespaced constants (`TestAddresses`, `TestValues`, `POOL_ID`) |
 
@@ -226,7 +229,7 @@ yarn build                 # Compile to WebAssembly (uses gnosis manifest)
 | Handler | Tests | What's Covered |
 |---------|-------|----------------|
 | handleBPTTransfer | 7 | Mint/burn supply tracking, Vault reserve fetch, token addresses, pool ID, regular transfers, multiple mint accumulation |
-| handleVaultSwap | 5 | Matching poolId tracks fees correctly (via `getSwapFeePercentage`), swap before any mint ignored (no PoolMetrics), non-matching poolId ignored, multiple swaps accumulate daily, cumulative fees on PoolMetrics |
+| handleVaultSwap | 12 | Matching poolId tracks fees correctly (via `getSwapFeePercentage`), swap before any mint ignored (no PoolMetrics), non-matching poolId ignored, multiple swaps accumulate daily, cumulative fees on PoolMetrics, reserve deltas applied per swap (both directions), underflow clamps (both reserves), same-block refetch skip (no double count), mint-after-swaps absolute overwrite, dual-pool isolation |
 | handleUniswapSwap | 3 | Celo 0.3% fee calculation, cross-day separate DailyFees entities, cumulative fees on PoolMetrics |
 
 Contract calls (`getPoolId`, `getPoolTokens`, `getSwapFeePercentage`) are mocked via `createMockedFunction`.
@@ -270,7 +273,7 @@ For example, if Gnosis pool has 191K WXDAI + 3.8M OLAS, TVL ~ $384K, and Treasur
 
 ### Key Accounting Rules
 
-1. **Reserves Only on Mint/Burn (Balancer)**: Contract calls to `vault.getPoolTokens()` are only made when BPT is minted or burned (pool join/exit). Regular user-to-user transfers do not trigger reserve fetches. On Celo, reserves come from every `Sync` event (including swaps).
+1. **Absolute Reserves on Mint/Burn, Deltas on Swap (Balancer)**: Contract calls to `vault.getPoolTokens()` are only made when BPT is minted or burned (pool join/exit); every Vault `Swap` applies the event's `amountIn`/`amountOut` deltas so reserves stay live in between. Regular user-to-user transfers do not trigger reserve fetches. On Celo, reserves come from every `Sync` event (including swaps).
 
 2. **Mint/Burn Detection**: Transfers from the zero address are mints (liquidity added); transfers to the zero address are burns (liquidity removed).
 
@@ -295,5 +298,4 @@ For example, if Gnosis pool has 191K WXDAI + 3.8M OLAS, TVL ~ $384K, and Treasur
 ### Scope Limitations
 
 - **Solana** (Orca pool `CeZ77ti3nPAmcgRkBkUC1JcoAhR8jRti2DHaCcuyUnzR`) is NOT covered — The Graph cannot index Solana
-- **Swap-induced reserve changes** are not tracked — only join/exit events update reserves. For balanced 50/50 pools, total value is approximately stable across swaps
 - Start blocks are set to actual pool contract creation blocks on each chain

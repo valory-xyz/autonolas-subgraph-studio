@@ -40,6 +40,7 @@ export function getOrCreatePoolMetrics(poolAddress: Address): PoolMetrics {
     metrics.reserve0 = BigInt.zero();
     metrics.reserve1 = BigInt.zero();
     metrics.totalSupply = BigInt.zero();
+    metrics.reservesRefreshedAtBlock = BigInt.zero();
     metrics.totalMinted = BigInt.zero();
     metrics.totalBurned = BigInt.zero();
     metrics.cumulativeFeesToken0 = BigInt.zero();

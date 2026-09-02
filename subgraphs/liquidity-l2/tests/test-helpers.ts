@@ -50,3 +50,9 @@ export namespace TestValues {
 export const POOL_ID = Bytes.fromHexString(
   '0x79c872ed3acb3fc5770dd8a0cd9cd5db3b3ac98500020000000000000000001a'
 );
+
+// Second pool sharing the same Vault data source (Base dual-pool shape).
+export const POOL_B = Address.fromString('0x2da6e67C45aF2aaA539294D9FA27ea50CE4e2C5f');
+export const POOL_B_ID = Bytes.fromHexString(
+  '0x2da6e67c45af2aaa539294d9fa27ea50ce4e2c5f00020000000000000000001b'
+);

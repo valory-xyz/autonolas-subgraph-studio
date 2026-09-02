@@ -1,4 +1,4 @@
-import { Address, BigInt, Bytes } from '@graphprotocol/graph-ts';
+import { Address, BigInt, Bytes, log } from '@graphprotocol/graph-ts';
 import { Transfer } from '../generated/BalancerPool/BalancerV2WeightedPool';
 import { BalancerV2WeightedPool } from '../generated/BalancerPool/BalancerV2WeightedPool';
 import { BalancerV2Vault } from '../generated/BalancerPool/BalancerV2Vault';
@@ -115,6 +115,9 @@ export function handleBPTTransfer(event: Transfer): void {
           metrics.token1 = tokens[1];
           metrics.reserve0 = balances[0];
           metrics.reserve1 = balances[1];
+          // eth_call state is end-of-block, so this refetch already includes
+          // every swap in this block — handleVaultSwap skips deltas for it.
+          metrics.reservesRefreshedAtBlock = event.block.number;
         }
       }
     }
@@ -174,9 +177,12 @@ export function handleUniswapSync(event: Sync): void {
 }
 
 /**
- * Handle Balancer V2 Vault Swap events for fee tracking.
+ * Handle Balancer V2 Vault Swap events for fee tracking and reserve updates.
  * Processes ALL Vault swaps; filters by poolId to only track our pool.
  * Fee = amountIn * swapFeePercentage / 1e18.
+ * Reserves are updated with the swap deltas (tokenIn enters the Vault,
+ * tokenOut leaves it) so they stay live between joins/exits; the absolute
+ * getPoolTokens() refetch on mint/burn corrects any residual drift.
  */
 export function handleVaultSwap(event: VaultSwap): void {
   let poolAddress = event.address; // This is the Vault address, not the pool
@@ -205,6 +211,15 @@ export function handleVaultSwap(event: VaultSwap): void {
     return;
   }
 
+  // Fee attribution and reserve deltas both need the token addresses, which
+  // stay empty if getPoolTokens() reverted at mint.
+  if (metrics.token0.length != 20 || metrics.token1.length != 20) {
+    log.warning('[liquidity-l2] pool {} swap skipped: token addresses unset', [
+      poolAddr.toHexString(),
+    ]);
+    return;
+  }
+
   // Get swap fee percentage (cached, refresh if not set)
   if (metrics.swapFeePercentage.equals(BigInt.zero())) {
     let pool = BalancerV2WeightedPool.bind(poolAddr);
@@ -227,6 +242,48 @@ export function handleVaultSwap(event: VaultSwap): void {
     feeToken0 = fee;
   } else {
     feeToken1 = fee;
+  }
+
+  // Apply swap deltas so reserves stay live between joins/exits. Skip swaps
+  // in the block of the last absolute refetch: eth_call state is end-of-block,
+  // so getPoolTokens() already included them.
+  let tokenOut = event.params.tokenOut;
+  let amountOut = event.params.amountOut;
+  if (event.block.number.gt(metrics.reservesRefreshedAtBlock)) {
+    let token0 = Address.fromBytes(metrics.token0);
+    let token1 = Address.fromBytes(metrics.token1);
+
+    if (tokenIn.equals(token0)) {
+      metrics.reserve0 = metrics.reserve0.plus(amountIn);
+    } else if (tokenIn.equals(token1)) {
+      metrics.reserve1 = metrics.reserve1.plus(amountIn);
+    }
+
+    // Clamp to zero to guard against underflow from partial-history indexing.
+    // Loud because these reserves feed the off-chain POL valuation directly.
+    if (tokenOut.equals(token0)) {
+      if (amountOut.gt(metrics.reserve0)) {
+        log.warning('[liquidity-l2] pool {} reserve0 clamped to 0: out {} > reserve {}', [
+          poolAddr.toHexString(),
+          amountOut.toString(),
+          metrics.reserve0.toString(),
+        ]);
+        metrics.reserve0 = BigInt.zero();
+      } else {
+        metrics.reserve0 = metrics.reserve0.minus(amountOut);
+      }
+    } else if (tokenOut.equals(token1)) {
+      if (amountOut.gt(metrics.reserve1)) {
+        log.warning('[liquidity-l2] pool {} reserve1 clamped to 0: out {} > reserve {}', [
+          poolAddr.toHexString(),
+          amountOut.toString(),
+          metrics.reserve1.toString(),
+        ]);
+        metrics.reserve1 = BigInt.zero();
+      } else {
+        metrics.reserve1 = metrics.reserve1.minus(amountOut);
+      }
+    }
   }
 
   // Update daily fees
