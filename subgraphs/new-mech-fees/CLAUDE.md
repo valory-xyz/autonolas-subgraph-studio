@@ -9,7 +9,7 @@ Tracks fees for autonomous agents (mechs) interacting with the new marketplace c
 subgraphs/new-mech-fees/
 ├── schema.graphql                    # Shared schema (all networks)
 ├── subgraph.gnosis.yaml              # Gnosis manifest (3 data sources)
-├── subgraph.base.yaml                # Base manifest (3 data sources)
+├── subgraph.base.yaml                # Base manifest (4 data sources)
 ├── subgraph.polygon.yaml             # Polygon manifest (4 data sources)
 ├── subgraph.optimism.yaml            # Optimism manifest (4 data sources)
 ├── src/
@@ -36,13 +36,14 @@ Per-network manifests with shared `src/` and `schema.graphql`. Each manifest def
 | NVM | `0x7D686bD1fD3CFF6E45a40165154D61043af7D67c` | 38,662,005 |
 | Token OLAS | `0x53Bd432516707a5212A70216284a99A563aAC1D1` | 38,662,275 |
 
-**Base** — 3 data sources:
+**Base** — 4 data sources:
 
 | Payment Model | Contract | Start Block |
 |---------------|----------|-------------|
 | Native (ETH) | `0xB3921F8D8215603f0Bd521341Ac45eA8f2d274c1` | 26,642,932 |
 | NVM | `0xaafbeef195bdab1bb6f3dc9ceba875cd72499230` | 27,585,236 |
 | Token OLAS | `0x43fB32f25dce34EB76c78C7A42C8F40F84BCD237` | 26,643,048 |
+| Token USDC | `0x0443C55e151dBA13fae079518F9dd01ff9c21CB2` | 50,775,686 |
 
 **Polygon (matic)** — 4 data sources:
 
