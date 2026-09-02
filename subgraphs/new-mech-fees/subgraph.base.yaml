@@ -105,3 +105,35 @@ dataSources:
         - event: Drained(indexed address,uint256)
           handler: handleDrainedForTokenOlas
       file: ./src/token-olas-mapping.ts
+
+  - kind: ethereum
+    name: BalanceTrackerFixedPriceTokenUSDC
+    network: base
+    source:
+      address: "0x0443C55e151dBA13fae079518F9dd01ff9c21CB2"
+      abi: BalanceTrackerFixedPriceToken
+      startBlock: 50775686
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Global
+        - Mech
+        - MechModel
+        - DrainTotals
+        - DrainEvent
+        - MechTransaction
+        - DailyTotals
+        - MechDaily
+      abis:
+        - name: BalanceTrackerFixedPriceToken
+          file: ../../abis/BalanceTrackerFixedPriceToken.json
+      eventHandlers:
+        - event: MechBalanceAdjusted(indexed address,uint256,uint256,uint256)
+          handler: handleMechBalanceAdjustedForTokenUSDC
+        - event: Withdraw(indexed address,indexed address,uint256)
+          handler: handleWithdrawForTokenUSDC
+        - event: Drained(indexed address,uint256)
+          handler: handleDrainedForTokenUSDC
+      file: ./src/token-usdc-mapping.ts
