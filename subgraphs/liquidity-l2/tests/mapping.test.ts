@@ -11,7 +11,7 @@ import { ethereum, BigInt, Bytes } from '@graphprotocol/graph-ts';
 
 import { handleBPTTransfer, handleVaultSwap, handleUniswapSwap } from '../src/mapping';
 import { createBPTTransferEvent, createVaultSwapEvent, createUniswapSwapEvent } from './mapping-utils';
-import { TestAddresses, TestValues, POOL_ID } from './test-helpers';
+import { TestAddresses, TestValues, POOL_ID, POOL_B, POOL_B_ID } from './test-helpers';
 
 // Mock the pool's getPoolId() and the Vault's getPoolTokens()
 function mockBalancerCalls(): void {
@@ -394,7 +394,7 @@ describe('handleVaultSwap', () => {
 
   test('Swap applies reserve deltas', () => {
     // Baseline reserves from the mint: reserve0=OLAS, reserve1=WXDAI.
-    // Swap WXDAI in, OLAS out.
+    // Swap WXDAI in, OLAS out, one block after the mint's absolute refetch.
     let olasOut = BigInt.fromString('5000000000000000000000'); // 5000 OLAS
     let swapEvent = createVaultSwapEvent(
       POOL_ID,
@@ -404,6 +404,7 @@ describe('handleVaultSwap', () => {
       olasOut,
       TestAddresses.VAULT
     );
+    swapEvent.block.number = BigInt.fromI32(2);
     handleVaultSwap(swapEvent);
 
     assert.fieldEquals(
@@ -430,6 +431,7 @@ describe('handleVaultSwap', () => {
       olasOut,
       TestAddresses.VAULT
     );
+    swap1.block.number = BigInt.fromI32(2);
     handleVaultSwap(swap1);
 
     // Swap back: OLAS in, WXDAI out
@@ -445,6 +447,7 @@ describe('handleVaultSwap', () => {
       TestValues.TIMESTAMP,
       1
     );
+    swap2.block.number = BigInt.fromI32(2);
     handleVaultSwap(swap2);
 
     assert.fieldEquals(
@@ -472,6 +475,7 @@ describe('handleVaultSwap', () => {
       excessiveOut,
       TestAddresses.VAULT
     );
+    swapEvent.block.number = BigInt.fromI32(2);
     handleVaultSwap(swapEvent);
 
     assert.fieldEquals(
@@ -485,6 +489,196 @@ describe('handleVaultSwap', () => {
       TestAddresses.POOL.toHexString(),
       'reserve1',
       TestValues.RESERVE_WXDAI.plus(TestValues.SWAP_AMOUNT).toString()
+    );
+  });
+
+  test('Reserve1 delta clamps to zero on underflow', () => {
+    // Mirror of the reserve0 clamp: OLAS in, excessive WXDAI out
+    let excessiveOut = TestValues.RESERVE_WXDAI.plus(BigInt.fromI32(1));
+    let olasIn = BigInt.fromString('2000000000000000000000'); // 2000 OLAS
+    let swapEvent = createVaultSwapEvent(
+      POOL_ID,
+      TestAddresses.TOKEN_OLAS,
+      TestAddresses.TOKEN_WXDAI,
+      olasIn,
+      excessiveOut,
+      TestAddresses.VAULT
+    );
+    swapEvent.block.number = BigInt.fromI32(2);
+    handleVaultSwap(swapEvent);
+
+    assert.fieldEquals(
+      'PoolMetrics',
+      TestAddresses.POOL.toHexString(),
+      'reserve0',
+      TestValues.RESERVE_OLAS.plus(olasIn).toString()
+    );
+    assert.fieldEquals(
+      'PoolMetrics',
+      TestAddresses.POOL.toHexString(),
+      'reserve1',
+      '0'
+    );
+  });
+
+  test('Swap in the block of the absolute refetch is not double-counted', () => {
+    // The beforeEach mint refetched reserves at block 1; eth_call state is
+    // end-of-block, so a block-1 swap is already included in that refetch.
+    let olasOut = BigInt.fromString('5000000000000000000000'); // 5000 OLAS
+    let swapEvent = createVaultSwapEvent(
+      POOL_ID,
+      TestAddresses.TOKEN_WXDAI,
+      TestAddresses.TOKEN_OLAS,
+      TestValues.SWAP_AMOUNT,
+      olasOut,
+      TestAddresses.VAULT
+    );
+    handleVaultSwap(swapEvent); // block 1 (matchstick default) == refetch block
+
+    // Reserves unchanged — but fees still tracked
+    assert.fieldEquals(
+      'PoolMetrics',
+      TestAddresses.POOL.toHexString(),
+      'reserve0',
+      TestValues.RESERVE_OLAS.toString()
+    );
+    assert.fieldEquals(
+      'PoolMetrics',
+      TestAddresses.POOL.toHexString(),
+      'reserve1',
+      TestValues.RESERVE_WXDAI.toString()
+    );
+    let dayId = TestValues.TIMESTAMP.div(BigInt.fromI32(86400)).times(BigInt.fromI32(86400)).toString();
+    assert.fieldEquals('DailyFees', dayId, 'swapCount', '1');
+  });
+
+  test('Mint after swaps restores absolute reserves', () => {
+    // Drift reserves away from the mocked absolute values...
+    let olasOut = BigInt.fromString('5000000000000000000000'); // 5000 OLAS
+    let swapEvent = createVaultSwapEvent(
+      POOL_ID,
+      TestAddresses.TOKEN_WXDAI,
+      TestAddresses.TOKEN_OLAS,
+      TestValues.SWAP_AMOUNT,
+      olasOut,
+      TestAddresses.VAULT
+    );
+    swapEvent.block.number = BigInt.fromI32(2);
+    handleVaultSwap(swapEvent);
+
+    // ...then a second mint refetches getPoolTokens() and must overwrite,
+    // not accumulate.
+    let mint2 = createBPTTransferEvent(
+      TestAddresses.ZERO,
+      TestAddresses.USER_2,
+      TestValues.BPT_AMOUNT_SMALL,
+      TestAddresses.POOL,
+      1
+    );
+    mint2.block.number = BigInt.fromI32(3);
+    handleBPTTransfer(mint2);
+
+    assert.fieldEquals(
+      'PoolMetrics',
+      TestAddresses.POOL.toHexString(),
+      'reserve0',
+      TestValues.RESERVE_OLAS.toString()
+    );
+    assert.fieldEquals(
+      'PoolMetrics',
+      TestAddresses.POOL.toHexString(),
+      'reserve1',
+      TestValues.RESERVE_WXDAI.toString()
+    );
+    assert.fieldEquals(
+      'PoolMetrics',
+      TestAddresses.POOL.toHexString(),
+      'reservesRefreshedAtBlock',
+      '3'
+    );
+  });
+
+  test('Swap on one pool leaves a second pool on the same Vault untouched', () => {
+    // Base shape: two pools share one Vault data source. Mint pool B, then
+    // swap only pool B — pool A's reserves and fees must not move.
+    createMockedFunction(POOL_B, 'getPoolId', 'getPoolId():(bytes32)').returns([
+      ethereum.Value.fromFixedBytes(POOL_B_ID),
+    ]);
+    createMockedFunction(
+      TestAddresses.VAULT,
+      'getPoolTokens',
+      'getPoolTokens(bytes32):(address[],uint256[],uint256)'
+    )
+      .withArgs([ethereum.Value.fromFixedBytes(POOL_B_ID)])
+      .returns([
+        ethereum.Value.fromAddressArray([
+          TestAddresses.TOKEN_OLAS,
+          TestAddresses.TOKEN_WXDAI,
+        ]),
+        ethereum.Value.fromUnsignedBigIntArray([
+          TestValues.RESERVE_OLAS,
+          TestValues.RESERVE_WXDAI,
+        ]),
+        ethereum.Value.fromUnsignedBigInt(TestValues.BLOCK),
+      ]);
+    createMockedFunction(
+      POOL_B,
+      'getSwapFeePercentage',
+      'getSwapFeePercentage():(uint256)'
+    ).returns([ethereum.Value.fromUnsignedBigInt(TestValues.SWAP_FEE_PERCENTAGE)]);
+
+    let mintB = createBPTTransferEvent(
+      TestAddresses.ZERO,
+      TestAddresses.USER_1,
+      TestValues.BPT_AMOUNT,
+      POOL_B,
+      1
+    );
+    handleBPTTransfer(mintB);
+
+    let olasOut = BigInt.fromString('5000000000000000000000'); // 5000 OLAS
+    let swapB = createVaultSwapEvent(
+      POOL_B_ID,
+      TestAddresses.TOKEN_WXDAI,
+      TestAddresses.TOKEN_OLAS,
+      TestValues.SWAP_AMOUNT,
+      olasOut,
+      TestAddresses.VAULT
+    );
+    swapB.block.number = BigInt.fromI32(2);
+    handleVaultSwap(swapB);
+
+    // Pool B moved
+    assert.fieldEquals(
+      'PoolMetrics',
+      POOL_B.toHexString(),
+      'reserve0',
+      TestValues.RESERVE_OLAS.minus(olasOut).toString()
+    );
+    // Pool A untouched
+    assert.fieldEquals(
+      'PoolMetrics',
+      TestAddresses.POOL.toHexString(),
+      'reserve0',
+      TestValues.RESERVE_OLAS.toString()
+    );
+    assert.fieldEquals(
+      'PoolMetrics',
+      TestAddresses.POOL.toHexString(),
+      'reserve1',
+      TestValues.RESERVE_WXDAI.toString()
+    );
+    assert.fieldEquals(
+      'PoolMetrics',
+      TestAddresses.POOL.toHexString(),
+      'cumulativeFeesToken0',
+      '0'
+    );
+    assert.fieldEquals(
+      'PoolMetrics',
+      TestAddresses.POOL.toHexString(),
+      'cumulativeFeesToken1',
+      '0'
     );
   });
 });

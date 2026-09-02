@@ -11,6 +11,7 @@ type PoolMetrics @entity(immutable: false) {
   reserve0: BigInt! # first token balance in pool (wei)
   reserve1: BigInt! # second token balance in pool (wei)
   totalSupply: BigInt! # BPT total supply (minted - burned)
+  reservesRefreshedAtBlock: BigInt! # block of the last absolute getPoolTokens() refetch (0 on Celo)
   totalMinted: BigInt! # cumulative BPT minted
   totalBurned: BigInt! # cumulative BPT burned
   # Fee tracking (cumulative, in token terms)
