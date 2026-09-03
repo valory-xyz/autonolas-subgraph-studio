@@ -37,11 +37,13 @@ import {
 } from "../../../shared/constants"
 
 const BURN_ADDRESS = getBurnAddressMechFees();
-const VAULT_ADDRESS = getBalancerVaultAddress();
-const POOL_ADDRESS = getOlasStablePoolAddress();
 const OLAS_ADDRESS = getOlasTokenAddress();
-const STABLE_ADDRESS = getStableTokenAddress();
 const MODEL = "token-olas";
+
+// Pool-related addresses are resolved lazily inside calculateOlasToUsd(),
+// after the Celo guard. Resolving them at module scope would call
+// log.critical() on Celo (no Balancer pool there), which terminates the
+// subgraph before any handler runs.
 
 function getPoolIdSafe(poolAddress: Address): Bytes {
   const pool = BalancerV2WeightedPool.bind(poolAddress);
@@ -82,14 +84,18 @@ function calculateOlasToUsd(olasAmount: BigInt): BigDecimal {
     return BigDecimal.fromString("0");
   }
 
-  const poolId = getPoolIdSafe(POOL_ADDRESS);
+  const vaultAddress = getBalancerVaultAddress();
+  const poolAddress = getOlasStablePoolAddress();
+  const stableAddress = getStableTokenAddress();
+
+  const poolId = getPoolIdSafe(poolAddress);
   const stablecoinDecimals = getStablecoinDecimals();
 
   const poolValue = calculateOlasInUsd(
-    VAULT_ADDRESS,
+    vaultAddress,
     poolId,
     OLAS_ADDRESS,
-    STABLE_ADDRESS,
+    stableAddress,
     stablecoinDecimals,
     olasAmount
   );
