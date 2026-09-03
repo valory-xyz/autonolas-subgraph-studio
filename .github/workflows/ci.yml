@@ -53,10 +53,13 @@ jobs:
             manifest: subgraph.gnosis.yaml
             generate: true
 
-          # Per-network manifests — need symlink only
+          # Per-network manifests — symlink one for tests, then build every
+          # subgraph.<network>.yaml so a bad address / ABI ref / YAML typo in
+          # any network manifest fails CI instead of surfacing at deploy time.
           - subgraph: new-mech-fees
             path: subgraphs/new-mech-fees
             manifest: subgraph.gnosis.yaml
+            build-all-manifests: true
 
           # Nested subgraphs with standalone manifests
           - subgraph: predict-omen
@@ -108,6 +111,23 @@ jobs:
         # fails with "Failed to get matchstick binary: Invalid version". Keep in
         # sync with the matchstick-as pin (0.6.0) in each subgraph's package.json.
         run: yarn graph test -v 0.6.0
+
+      - name: Build every per-network manifest
+        if: matrix.build-all-manifests
+        working-directory: ${{ matrix.path }}
+        # Each manifest can reference a different set of ABIs, so codegen is
+        # re-run per manifest before building it.
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          manifests=(subgraph.*.yaml)
+          [ "${#manifests[@]}" -gt 0 ] || { echo "::error::no subgraph.<network>.yaml manifests found"; exit 1; }
+          for m in "${manifests[@]}"; do
+            echo "::group::graph build $m"
+            yarn graph codegen "$m"
+            yarn graph build "$m"
+            echo "::endgroup::"
+          done
 
   audit:
     name: Dependency audit (root tree)

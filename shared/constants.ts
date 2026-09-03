@@ -53,9 +53,9 @@ export const USDC_DECIMALS = 6;
 // Convenience selectors (AssemblyScript-friendly)
 export function getBurnAddressMechFees(): Address {
   const n = dataSource.network();
-  if (n == "gnosis" || n == "xdai") return Address.fromString(BURN_ADDRESS_MECH_FEES_GNOSIS);
+  if (n == "gnosis") return Address.fromString(BURN_ADDRESS_MECH_FEES_GNOSIS);
   if (n == "base") return Address.fromString(BURN_ADDRESS_MECH_FEES_BASE);
-  if (n == "matic" || n == "polygon") return Address.fromString(BURN_ADDRESS_MECH_FEES_POLYGON);
+  if (n == "matic") return Address.fromString(BURN_ADDRESS_MECH_FEES_POLYGON);
   if (n == "optimism") return Address.fromString(BURN_ADDRESS_MECH_FEES_OPTIMISM);
   if (n == "mainnet") return Address.fromString(BURN_ADDRESS_MECH_FEES_ETHEREUM);
   if (n == "arbitrum-one") return Address.fromString(BURN_ADDRESS_MECH_FEES_ARBITRUM);
@@ -66,9 +66,9 @@ export function getBurnAddressMechFees(): Address {
 
 export function getBalancerVaultAddress(): Address {
   const n = dataSource.network();
-  if (n == "gnosis" || n == "xdai") return Address.fromString(BALANCER_VAULT_ADDRESS_GNOSIS);
+  if (n == "gnosis") return Address.fromString(BALANCER_VAULT_ADDRESS_GNOSIS);
   if (n == "base") return Address.fromString(BALANCER_VAULT_ADDRESS_BASE);
-  if (n == "matic" || n == "polygon") return Address.fromString(BALANCER_VAULT_ADDRESS_POLYGON);
+  if (n == "matic") return Address.fromString(BALANCER_VAULT_ADDRESS_POLYGON);
   if (n == "optimism") return Address.fromString(BALANCER_VAULT_ADDRESS_OPTIMISM);
   if (n == "arbitrum-one") return Address.fromString(BALANCER_VAULT_ADDRESS_ARBITRUM);
   log.critical("Unsupported network in getBalancerVaultAddress: {}", [n]);
@@ -77,9 +77,9 @@ export function getBalancerVaultAddress(): Address {
 
 export function getOlasTokenAddress(): Address {
   const n = dataSource.network();
-  if (n == "gnosis" || n == "xdai") return Address.fromString(OLAS_ADDRESS_GNOSIS);
+  if (n == "gnosis") return Address.fromString(OLAS_ADDRESS_GNOSIS);
   if (n == "base") return Address.fromString(OLAS_ADDRESS_BASE);
-  if (n == "matic" || n == "polygon") return Address.fromString(OLAS_ADDRESS_POLYGON);
+  if (n == "matic") return Address.fromString(OLAS_ADDRESS_POLYGON);
   if (n == "optimism") return Address.fromString(OLAS_ADDRESS_OPTIMISM);
   if (n == "mainnet") return Address.fromString(OLAS_ADDRESS_ETHEREUM);
   if (n == "arbitrum-one") return Address.fromString(OLAS_ADDRESS_ARBITRUM);
@@ -90,9 +90,9 @@ export function getOlasTokenAddress(): Address {
 
 export function getOlasStablePoolAddress(): Address {
   const n = dataSource.network();
-  if (n == "gnosis" || n == "xdai") return Address.fromString(OLAS_WXDAI_POOL_ADDRESS_GNOSIS);
+  if (n == "gnosis") return Address.fromString(OLAS_WXDAI_POOL_ADDRESS_GNOSIS);
   if (n == "base") return Address.fromString(OLAS_USDC_POOL_ADDRESS_BASE);
-  if (n == "matic" || n == "polygon") return Address.fromString(OLAS_WMATIC_POOL_ADDRESS_POLYGON);
+  if (n == "matic") return Address.fromString(OLAS_WMATIC_POOL_ADDRESS_POLYGON);
   if (n == "optimism") return Address.fromString(OLAS_WETH_POOL_ADDRESS_OPTIMISM);
   if (n == "arbitrum-one") return Address.fromString(OLAS_WETH_POOL_ADDRESS_ARBITRUM);
   log.critical("Unsupported network in getOlasStablePoolAddress: {}", [n]);
@@ -101,9 +101,9 @@ export function getOlasStablePoolAddress(): Address {
 
 export function getStableTokenAddress(): Address {
   const n = dataSource.network();
-  if (n == "gnosis" || n == "xdai") return Address.fromString(WXDAI_ADDRESS_GNOSIS);
+  if (n == "gnosis") return Address.fromString(WXDAI_ADDRESS_GNOSIS);
   if (n == "base") return Address.fromString(USDC_ADDRESS_BASE);
-  if (n == "matic" || n == "polygon") return Address.fromString(WMATIC_ADDRESS_POLYGON);
+  if (n == "matic") return Address.fromString(WMATIC_ADDRESS_POLYGON);
   if (n == "optimism") return Address.fromString(WETH_ADDRESS_OPTIMISM);
   if (n == "arbitrum-one") return Address.fromString(WETH_ADDRESS_ARBITRUM);
   log.critical("Unsupported network in getStableTokenAddress: {}", [n]);

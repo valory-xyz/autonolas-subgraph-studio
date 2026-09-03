@@ -8,19 +8,23 @@ Tracks fees for autonomous agents (mechs) interacting with the new marketplace c
 ```
 subgraphs/new-mech-fees/
 ├── schema.graphql                    # Shared schema (all networks)
+├── subgraph.mainnet.yaml             # Ethereum manifest (3 data sources)
 ├── subgraph.gnosis.yaml              # Gnosis manifest (3 data sources)
 ├── subgraph.base.yaml                # Base manifest (4 data sources)
-├── subgraph.polygon.yaml             # Polygon manifest (4 data sources)
+├── subgraph.matic.yaml               # Polygon manifest (4 data sources)
 ├── subgraph.optimism.yaml            # Optimism manifest (4 data sources)
+├── subgraph.arbitrum-one.yaml        # Arbitrum manifest (3 data sources)
+├── subgraph.celo.yaml                # Celo manifest (3 data sources)
 ├── src/
 │   ├── native-mapping.ts             # Native payment model (xDAI/ETH/POL)
 │   ├── nvm-mapping.ts                # NVM subscription model (credits)
-│   ├── token-olas-mapping.ts         # Token OLAS payment model
-│   ├── token-usdc-mapping.ts         # Token USDC payment model (Polygon/Optimism only)
+│   ├── token-olas-mapping.ts         # Token OLAS payment model (Balancer V2 pricing; all networks except Ethereum)
+│   ├── token-olas-ethereum-mapping.ts # Token OLAS payment model on Ethereum (Uniswap V2 pair + Chainlink pricing)
+│   ├── token-usdc-mapping.ts         # Token USDC payment model (all networks except Gnosis)
 │   ├── utils.ts                      # Shared helpers, entity management, USD conversion
 │   ├── token-utils.ts                # Balancer V2 pool OLAS price calculation
 │   └── constants.ts                  # NVM token ratios, decimal configs
-└── package.json                      # graph-cli ^0.97.0, graph-ts ^0.38.0
+└── package.json                      # graph-cli 0.98.1, graph-ts 0.38.2 (exact pins)
 ```
 
 ### Multi-Network Pattern
@@ -28,7 +32,29 @@ Per-network manifests with shared `src/` and `schema.graphql`. Each manifest def
 
 ### Networks & Contracts
 
-**Gnosis (xdai)** — 3 data sources:
+7 networks. Manifest filenames use the Graph Node network id (`subgraph.<network-id>.yaml`),
+which is also what `dataSource.network()` returns at runtime: `mainnet` (Ethereum),
+`gnosis`, `base`, `matic` (Polygon), `optimism`, `arbitrum-one`, `celo`.
+
+| Network | Manifest | Native | NVM | Token OLAS | Token USDC |
+|---------|----------|:------:|:---:|:----------:|:----------:|
+| Ethereum | `subgraph.mainnet.yaml` | ✓ | | ✓ | ✓ |
+| Gnosis | `subgraph.gnosis.yaml` | ✓ | ✓ | ✓ | |
+| Base | `subgraph.base.yaml` | ✓ | ✓ | ✓ | ✓ |
+| Polygon | `subgraph.matic.yaml` | ✓ | ✓ | ✓ | ✓ |
+| Optimism | `subgraph.optimism.yaml` | ✓ | ✓ | ✓ | ✓ |
+| Arbitrum | `subgraph.arbitrum-one.yaml` | ✓ | | ✓ | ✓ |
+| Celo | `subgraph.celo.yaml` | ✓ | | ✓ | ✓ |
+
+**Ethereum (mainnet)** — 3 data sources:
+
+| Payment Model | Contract | Start Block |
+|---------------|----------|-------------|
+| Native (ETH) | `0x528befb0F8c6a988C9F42345DA6d053d66b3B9B6` | 24,626,597 |
+| Token OLAS | `0x02b576cc1bB21A84Dd8b59013777C150ea64c482` | 24,626,597 |
+| Token USDC | `0x897aee2e6F3d37740D334C55Caea2e0caC82aa14` | 24,626,597 |
+
+**Gnosis** — 3 data sources:
 
 | Payment Model | Contract | Start Block |
 |---------------|----------|-------------|
@@ -63,12 +89,31 @@ Per-network manifests with shared `src/` and `schema.graphql`. Each manifest def
 | Token OLAS | `0x70A0D93fb0dB6EAab871AB0A3BE279DcA37a2bcf` | 145,788,564 |
 | Token USDC | `0xA123748Ce7609F507060F947b70298D0bde621E6` | 145,788,564 |
 
+**Arbitrum (arbitrum-one)** — 3 data sources:
+
+| Payment Model | Contract | Start Block |
+|---------------|----------|-------------|
+| Native (ETH) | `0x26Ea2dC7ce1b41d0AD0E0521535655d7a94b684c` | 440,298,368 |
+| Token OLAS | `0x5dfb0d37f2A28023CDBa46D2f015A90564Cf9586` | 440,298,368 |
+| Token USDC | `0xa987Fe40034AaD2EbB0E01B22DFc57f20C87F949` | 440,298,368 |
+
+**Celo** — 3 data sources:
+
+| Payment Model | Contract | Start Block |
+|---------------|----------|-------------|
+| Native (CELO) | `0x93111f6C267068A5d7356114D61d0f09bFD53a54` | 61,239,248 |
+| Token OLAS | `0x3912381bAa2935a0fc03c173Df366A459DAc1F43` | 61,239,248 |
+| Token USDC | `0xA749f605D93B3efcc207C54270d83C6E8fa70fF8` | 61,239,248 |
+
 ### Burn Addresses (per network, from `shared/constants.ts`)
 Withdraw events to burn addresses are skipped (protocol fee burn, not mech earnings):
+- Ethereum: `0xfAd04813BffD759a308A2BEaAcEf587720ba743F`
 - Gnosis: `0x153196110040a0c729227c603db3a6c6d91851b2`
 - Base: `0x3FD8C757dE190bcc82cF69Df3Cd9Ab15bCec1426`
 - Polygon: `0x88943F63E29cd436B62cFfE332aD54De92AdCE98`
 - Optimism: `0x4891f5894634DcD6d11644fe8E56756EF2681582`
+- Arbitrum: `0xd2ff4Cf0927c3cFbF3BB27391044dBaf6f4ca7b9`
+- Celo: `0x11949cBC85d8793B360029E26b18ae759708e28b`
 
 ---
 
@@ -202,18 +247,22 @@ undrained remainder is the live `collectedFees()` contract value (read off-chain
 ### Per-Model Mapping Files
 
 **`native-mapping.ts`** (model: `"native"`):
-- FEE_IN: `amountRaw` = `deliveryRate` in wei; USD via `convertGnosisNativeWeiToUsd()` (Gnosis: xDAI=USD) or Chainlink price feed (Base/Polygon/Optimism)
+- FEE_IN: `amountRaw` = `deliveryRate` in wei; USD via `convertGnosisNativeWeiToUsd()` (Gnosis: xDAI=USD) or the network's Chainlink native/USD price feed (all other networks)
 - FEE_OUT: Same USD conversion logic; skips burn address
 
-**`nvm-mapping.ts`** (model: `"nvm"`):
+**`nvm-mapping.ts`** (model: `"nvm"`, Gnosis/Base/Polygon/Optimism only):
 - FEE_IN: `amountRaw` = `deliveryRate` in credits; USD via network-specific NVM formula (`credits * tokenRatio / (1e18 * 10^tokenDecimals)`)
 - FEE_OUT: Converts token withdrawal back to equivalent credits for raw units; USD via `convertGnosisNativeWeiToUsd()` (Gnosis) or `convertBaseUsdcToUsd()` (others)
 
-**`token-olas-mapping.ts`** (model: `"token-olas"`):
+**`token-olas-mapping.ts`** (model: `"token-olas"`, all networks except Ethereum):
 - FEE_IN/OUT: `amountRaw` = OLAS wei; USD via `calculateOlasInUsd()` using Balancer V2 pool price
-- On Polygon/Optimism: additional Chainlink conversion (pool gives intermediate native token value)
+- On Polygon/Optimism/Arbitrum: additional Chainlink conversion (pool gives intermediate native token value)
+- On Celo: no OLAS pricing pool yet — USD is recorded as 0 (raw OLAS amounts still tracked)
 
-**`token-usdc-mapping.ts`** (model: `"token-usdc"`, Polygon/Optimism only):
+**`token-olas-ethereum-mapping.ts`** (model: `"token-olas"`, Ethereum only):
+- FEE_IN/OUT: `amountRaw` = OLAS wei; USD via the OLAS/WETH Uniswap V2 pair reserves, then Chainlink ETH/USD
+
+**`token-usdc-mapping.ts`** (model: `"token-usdc"`, all networks except Gnosis):
 - FEE_IN/OUT: `amountRaw` = USDC units; USD via `convertBaseUsdcToUsd()` (1 USDC = 1 USD)
 - Zero-amount guard: returns early if conversion yields 0
 
@@ -231,12 +280,15 @@ undrained remainder is the live `collectedFees()` contract value (read off-chain
 | Model | Network | Method | Details |
 |-------|---------|--------|---------|
 | Native | Gnosis | Direct | xDAI ≈ USD, divide by 1e18 |
-| Native | Base/Optimism | Chainlink | ETH/USD price feed |
+| Native | Ethereum/Base/Optimism/Arbitrum | Chainlink | ETH/USD price feed |
 | Native | Polygon | Chainlink | POL/USD price feed |
+| Native | Celo | Chainlink | CELO/USD price feed |
 | NVM | Gnosis | Formula | `credits * 990...e30 / (1e18 * 1e18)` |
 | NVM | Base/Polygon/Optimism | Formula | `credits * 990...e18 / (1e18 * 1e6)` |
 | Token OLAS | Gnosis/Base | Balancer V2 | `OLAS/stablecoin` pool price |
-| Token OLAS | Polygon/Optimism | Balancer + Chainlink | Pool gives native value, then Chainlink to USD |
+| Token OLAS | Polygon/Optimism/Arbitrum | Balancer + Chainlink | Pool gives native value, then Chainlink to USD |
+| Token OLAS | Ethereum | Uniswap V2 + Chainlink | OLAS/WETH pair reserves give ETH value, then Chainlink to USD |
+| Token OLAS | Celo | None | No pricing pool yet — USD = 0 |
 | Token USDC | All | Direct | 1 USDC = 1 USD, divide by 1e6 |
 
 ### OLAS Price Calculation (`token-utils.ts`)
@@ -256,8 +308,9 @@ Uses Balancer V2 Vault `getPoolTokens()` to get OLAS and stablecoin balances fro
 | Model | Raw Unit |
 |-------|----------|
 | Native (Gnosis) | xDAI wei |
-| Native (Base/Optimism) | ETH wei |
+| Native (Ethereum/Base/Optimism/Arbitrum) | ETH wei |
 | Native (Polygon) | POL wei |
+| Native (Celo) | CELO wei |
 | NVM | Credits (abstract units from `deliveryRate`) |
 | Token OLAS | OLAS wei |
 | Token USDC | USDC (6 decimals) |
@@ -318,12 +371,21 @@ Network-specific addresses (burn, Balancer, OLAS, stablecoin, Chainlink) with `d
 
 **Spec**: v0.0.5 | **API**: 0.0.7
 
+### CI
+`.github/workflows/ci.yml` runs the Matchstick suite against `subgraph.gnosis.yaml`, then
+`graph codegen` + `graph build` for every `subgraph.*.yaml` in this directory (the
+`build-all-manifests` matrix flag), so a broken address, ABI reference, or YAML typo in any
+network manifest fails the PR rather than the deploy.
+
 ### Build Commands
 ```bash
+yarn build:ethereum   # graph build subgraph.mainnet.yaml
 yarn build:gnosis     # graph build subgraph.gnosis.yaml
 yarn build:base       # graph build subgraph.base.yaml
-yarn build:polygon    # graph build subgraph.polygon.yaml
+yarn build:polygon    # graph build subgraph.matic.yaml
 yarn build:optimism   # graph build subgraph.optimism.yaml
+yarn build:arbitrum   # graph build subgraph.arbitrum-one.yaml
+yarn build:celo       # graph build subgraph.celo.yaml
 ```
 
 ---

@@ -4,7 +4,7 @@ schema:
 dataSources:
   - kind: ethereum
     name: BalanceTrackerFixedPriceNative
-    network: xdai
+    network: gnosis
     source:
       address: "0x21cE6799A22A3Da84B7c44a814a9c79ab1d2A50D"
       abi: BalanceTrackerFixedPriceNative
@@ -38,7 +38,7 @@ dataSources:
 
   - kind: ethereum
     name: BalanceTrackerNvmSubscription
-    network: xdai
+    network: gnosis
     source:
       address: "0x7D686bD1fD3CFF6E45a40165154D61043af7D67c"
       abi: BalanceTrackerNvmSubscription
@@ -70,7 +70,7 @@ dataSources:
 
   - kind: ethereum
     name: BalanceTrackerFixedPriceTokenOLAS
-    network: xdai
+    network: gnosis
     source:
       address: "0x53Bd432516707a5212A70216284a99A563aAC1D1"
       abi: BalanceTrackerFixedPriceToken

@@ -6,7 +6,7 @@ Tracks fees for autonomous agents (mechs) across multiple payment models and net
 
 ## Quick Overview
 
-- **4 networks**: Gnosis, Base, Polygon, Optimism (per-network manifests: `subgraph.<network>.yaml`)
+- **7 networks**: Ethereum, Gnosis, Base, Polygon, Optimism, Arbitrum, Celo (per-network manifests: `subgraph.<network-id>.yaml`, e.g. `subgraph.mainnet.yaml`, `subgraph.matic.yaml`, `subgraph.arbitrum-one.yaml`)
 - **4 payment models**: Native, NVM (credits), Token OLAS, Token USDC
 - **Two event types**: `MechBalanceAdjusted` (fee-in) and `Withdraw` (fee-out)
 - **USD conversion**: Chainlink price feeds (native), Balancer V2 pools (OLAS), direct (xDAI/USDC)
@@ -134,18 +134,22 @@ Tracks fees for autonomous agents (mechs) across multiple payment models and net
 
 ```bash
 yarn install              # Install dependencies
-yarn codegen              # Generate TypeScript (default: polygon manifest)
+yarn codegen              # Generate TypeScript (default: subgraph.matic.yaml)
+yarn build:ethereum       # Build for Ethereum (subgraph.mainnet.yaml)
 yarn build:gnosis         # Build for Gnosis
 yarn build:base           # Build for Base
-yarn build:polygon        # Build for Polygon
+yarn build:polygon        # Build for Polygon (subgraph.matic.yaml)
 yarn build:optimism       # Build for Optimism
+yarn build:arbitrum       # Build for Arbitrum (subgraph.arbitrum-one.yaml)
+yarn build:celo           # Build for Celo
 ```
 
 ### Project Structure
 * `src/native-mapping.ts` — Native payment model handlers (xDAI/ETH/POL)
 * `src/nvm-mapping.ts` — NVM subscription model handlers (credits)
-* `src/token-olas-mapping.ts` — Token OLAS payment handlers
-* `src/token-usdc-mapping.ts` — Token USDC payment handlers (Polygon/Optimism only)
+* `src/token-olas-mapping.ts` — Token OLAS payment handlers (Balancer V2 pricing; all networks except Ethereum)
+* `src/token-olas-ethereum-mapping.ts` — Token OLAS payment handlers on Ethereum (Uniswap V2 pair + Chainlink pricing)
+* `src/token-usdc-mapping.ts` — Token USDC payment handlers (all networks except Gnosis)
 * `src/utils.ts` — Shared helpers, entity management, USD conversion functions
 * `src/token-utils.ts` — Balancer V2 pool OLAS price calculation
 * `src/constants.ts` — NVM token ratios and decimal configs
