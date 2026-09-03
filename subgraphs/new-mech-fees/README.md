@@ -134,11 +134,14 @@ Tracks fees for autonomous agents (mechs) across multiple payment models and net
 
 ```bash
 yarn install              # Install dependencies
-yarn codegen              # Generate TypeScript (default: polygon manifest)
+yarn codegen              # Generate TypeScript (default: subgraph.matic.yaml)
+yarn build:ethereum       # Build for Ethereum (subgraph.mainnet.yaml)
 yarn build:gnosis         # Build for Gnosis
 yarn build:base           # Build for Base
-yarn build:polygon        # Build for Polygon
+yarn build:polygon        # Build for Polygon (subgraph.matic.yaml)
 yarn build:optimism       # Build for Optimism
+yarn build:arbitrum       # Build for Arbitrum (subgraph.arbitrum-one.yaml)
+yarn build:celo           # Build for Celo
 ```
 
 ### Project Structure

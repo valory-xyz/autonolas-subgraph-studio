@@ -22,12 +22,12 @@ import {
 } from "./mapping-utils";
 import { TestAddresses, TestValues } from "./test-helpers";
 
-// On Gnosis (xdai), native currency is xDAI which is pegged 1:1 to USD.
+// On Gnosis, native currency is xDAI which is pegged 1:1 to USD.
 // convertGnosisNativeWeiToUsd simply divides by 1e18, no Chainlink call needed.
 
 describe("handleMechBalanceAdjustedForNative", () => {
   beforeEach(() => {
-    dataSourceMock.setNetwork("xdai");
+    dataSourceMock.setNetwork("gnosis");
   });
 
   afterEach(() => {
@@ -253,7 +253,7 @@ describe("handleMechBalanceAdjustedForNative", () => {
 
 describe("handleWithdrawForNative", () => {
   beforeEach(() => {
-    dataSourceMock.setNetwork("xdai");
+    dataSourceMock.setNetwork("gnosis");
   });
 
   afterEach(() => {
@@ -420,7 +420,7 @@ describe("handleWithdrawForNative", () => {
 
 describe("handleMechBalanceAdjustedForNative + handleWithdrawForNative integration", () => {
   beforeEach(() => {
-    dataSourceMock.setNetwork("xdai");
+    dataSourceMock.setNetwork("gnosis");
   });
 
   afterEach(() => {
@@ -485,7 +485,7 @@ describe("handleMechBalanceAdjustedForNative + handleWithdrawForNative integrati
 
 describe("handleDrainedForNative", () => {
   beforeEach(() => {
-    dataSourceMock.setNetwork("xdai");
+    dataSourceMock.setNetwork("gnosis");
   });
 
   afterEach(() => {

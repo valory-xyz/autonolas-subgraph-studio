@@ -42,7 +42,7 @@ const MODEL = "nvm";
 // delivery rate / mech balance) to USD, mirroring the FEE_IN conversion per network.
 function drainNvmCreditsToUsd(credits: BigInt): BigDecimal {
   const network = dataSource.network();
-  if (network == "xdai" || network == "gnosis") return calculateGnosisNvmFeesIn(credits);
+  if (network == "gnosis") return calculateGnosisNvmFeesIn(credits);
   if (network == "matic") return calculatePolygonNvmFeesIn(credits);
   if (network == "optimism") return calculateOptimismNvmFeesIn(credits);
   return calculateBaseNvmFeesIn(credits);
@@ -54,7 +54,7 @@ export function handleMechBalanceAdjustedForNvm(event: MechBalanceAdjusted): voi
   const network = dataSource.network();
 
   let deliveryRateUsd = calculateBaseNvmFeesIn(deliveryRateCredits);
-  if (network == "xdai" || network == "gnosis") {
+  if (network == "gnosis") {
     deliveryRateUsd = calculateGnosisNvmFeesIn(deliveryRateCredits);
   } else if (network == "matic") {
     deliveryRateUsd = calculatePolygonNvmFeesIn(deliveryRateCredits);
@@ -101,7 +101,7 @@ export function handleWithdrawForNvm(event: Withdraw): void {
     .times(BigInt.fromI32(10).pow(USDC_TOKEN_DECIMALS_BASE as u8).toBigDecimal())
     .div(TOKEN_RATIO_BASE);
 
-  if (network == "xdai" || network == "gnosis") {
+  if (network == "gnosis") {
     withdrawalAmountUsd = convertGnosisNativeWeiToUsd(withdrawalAmount);
     const tokenDivisor = BigInt.fromI32(10).pow(XDAI_TOKEN_DECIMALS_GNOSIS as u8).toBigDecimal();
     withdrawalCredits = withdrawalAmount.toBigDecimal()

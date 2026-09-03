@@ -79,10 +79,10 @@ Each subgraph (or network-specific subdirectory) must have its own `package.json
 {
   "name": "my-new-subgraph",
   "scripts": {
-    "codegen": "graph codegen subgraph.polygon.yaml",
-    "build": "graph build subgraph.polygon.yaml",
+    "codegen": "graph codegen subgraph.matic.yaml",
+    "build": "graph build subgraph.matic.yaml",
     "build:gnosis": "graph build subgraph.gnosis.yaml",
-    "build:polygon": "graph build subgraph.polygon.yaml",
+    "build:polygon": "graph build subgraph.matic.yaml",
     "test": "graph test"
   },
   "dependencies": {

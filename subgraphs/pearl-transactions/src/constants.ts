@@ -55,7 +55,7 @@ const OLAS_OPTIMISM = "0xFC2E6e6BCbd49ccf3A5f029c79984372DcBFE527";
 const OLAS_BASE = "0x54330d28ca3357F294334BDC454a032e7f353416";
 
 export function getOlasAddress(network: string): Address {
-  if (network == "gnosis" || network == "xdai") {
+  if (network == "gnosis") {
     return Address.fromString(OLAS_GNOSIS);
   }
   if (network == "matic" || network == "polygon") {
@@ -94,7 +94,7 @@ export function getSrtuAddress(network: string): Address {
     return srtuCacheAddr as Address;
   }
   let addr: Address;
-  if (network == "gnosis" || network == "xdai") {
+  if (network == "gnosis") {
     addr = Address.fromString(SRTU_GNOSIS);
   } else if (network == "matic" || network == "polygon") {
     addr = Address.fromString(SRTU_POLYGON);
@@ -123,7 +123,7 @@ const SERVICE_REGISTRY_OPTIMISM = "0x3d77596beb0f130a4415df3D2D8232B3d3D31e44";
 const SERVICE_REGISTRY_BASE = "0x3C1fF68f5aa342D296d4DEe4Bb1cACCA912D95fE";
 
 export function getServiceRegistryAddress(network: string): Address {
-  if (network == "gnosis" || network == "xdai") {
+  if (network == "gnosis") {
     return Address.fromString(SERVICE_REGISTRY_GNOSIS);
   }
   if (network == "matic" || network == "polygon") {
@@ -152,7 +152,7 @@ const WETH_OPTIMISM = "0x4200000000000000000000000000000000000006";
 const WETH_BASE = "0x4200000000000000000000000000000000000006";
 
 export function getWrappedNativeAddress(network: string): Address {
-  if (network == "gnosis" || network == "xdai") {
+  if (network == "gnosis") {
     return Address.fromString(WXDAI_GNOSIS);
   }
   if (network == "matic" || network == "polygon") {
@@ -173,7 +173,7 @@ export function getWrappedNativeAddress(network: string): Address {
 // Token symbol/decimals for the wrapped native per chain. Used by
 // getOrCreateToken when first encountering the wrapped-native address.
 export function getWrappedNativeSymbol(network: string): string {
-  if (network == "gnosis" || network == "xdai") return "WXDAI";
+  if (network == "gnosis") return "WXDAI";
   if (network == "matic" || network == "polygon") return "WPOL";
   if (network == "optimism" || network == "base") return "WETH";
   return "WNATIVE";
@@ -192,7 +192,7 @@ export function getStablecoinSymbol(
   // Lowercase explicitly: the address literals below are lowercase, and
   // this drops a hidden dependency on graph-ts toHexString() casing.
   const a = address.toHexString().toLowerCase();
-  if (network == "gnosis" || network == "xdai") {
+  if (network == "gnosis") {
     if (a == "0xddafbb505ad214d7b80b1f830fccc89b60fb7a83") return "USDC";
     if (a == "0x2a22f9c3b484c3629090feed35f17ff8f88f76f0") return "USDC.e";
   } else if (network == "matic" || network == "polygon") {
@@ -219,7 +219,7 @@ export function isAllowedImplementation(implementation: Bytes): boolean {
   const network = dataSource.network();
   let allowed: Bytes[] = [];
 
-  if (network == "gnosis" || network == "xdai") {
+  if (network == "gnosis") {
     allowed = [
       Bytes.fromHexString("0xEa00be6690a871827fAfD705440D20dd75e67AB1"),
     ];

@@ -53,7 +53,7 @@ export function handleMechBalanceAdjustedForNative(event: MechBalanceAdjusted): 
   const network = dataSource.network();
 
   let amountUsd: BigDecimal;
-  if (network == "xdai" || network == "gnosis") {
+  if (network == "gnosis") {
     amountUsd = convertGnosisNativeWeiToUsd(amountWei);
   } else {
     const priceFeed = AggregatorV3Interface.bind(getChainlinkPriceFeedAddress());
@@ -98,7 +98,7 @@ export function handleWithdrawForNative(event: Withdraw): void {
   const network = dataSource.network();
 
   let withdrawalAmountUsd: BigDecimal;
-  if (network == "xdai" || network == "gnosis") {
+  if (network == "gnosis") {
     withdrawalAmountUsd = convertGnosisNativeWeiToUsd(withdrawalAmountWei);
   } else {
     const priceFeed = AggregatorV3Interface.bind(getChainlinkPriceFeedAddress());
@@ -133,7 +133,7 @@ export function handleWithdrawForNative(event: Withdraw): void {
 // Returns 0 if the Chainlink read reverts (best-effort, so the raw amount is still recorded).
 function drainNativeWeiToUsd(amountWei: BigInt): BigDecimal {
   const network = dataSource.network();
-  if (network == "xdai" || network == "gnosis") {
+  if (network == "gnosis") {
     return convertGnosisNativeWeiToUsd(amountWei);
   }
   const priceFeed = AggregatorV3Interface.bind(getChainlinkPriceFeedAddress());

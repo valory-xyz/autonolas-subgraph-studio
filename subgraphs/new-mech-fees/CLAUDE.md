@@ -8,10 +8,13 @@ Tracks fees for autonomous agents (mechs) interacting with the new marketplace c
 ```
 subgraphs/new-mech-fees/
 ├── schema.graphql                    # Shared schema (all networks)
+├── subgraph.mainnet.yaml             # Ethereum manifest (3 data sources)
 ├── subgraph.gnosis.yaml              # Gnosis manifest (3 data sources)
 ├── subgraph.base.yaml                # Base manifest (4 data sources)
-├── subgraph.polygon.yaml             # Polygon manifest (4 data sources)
+├── subgraph.matic.yaml               # Polygon manifest (4 data sources)
 ├── subgraph.optimism.yaml            # Optimism manifest (4 data sources)
+├── subgraph.arbitrum-one.yaml        # Arbitrum manifest (3 data sources)
+├── subgraph.celo.yaml                # Celo manifest (3 data sources)
 ├── src/
 │   ├── native-mapping.ts             # Native payment model (xDAI/ETH/POL)
 │   ├── nvm-mapping.ts                # NVM subscription model (credits)
@@ -28,7 +31,7 @@ Per-network manifests with shared `src/` and `schema.graphql`. Each manifest def
 
 ### Networks & Contracts
 
-**Gnosis (xdai)** — 3 data sources:
+**Gnosis** — 3 data sources:
 
 | Payment Model | Contract | Start Block |
 |---------------|----------|-------------|
@@ -320,10 +323,13 @@ Network-specific addresses (burn, Balancer, OLAS, stablecoin, Chainlink) with `d
 
 ### Build Commands
 ```bash
+yarn build:ethereum   # graph build subgraph.mainnet.yaml
 yarn build:gnosis     # graph build subgraph.gnosis.yaml
 yarn build:base       # graph build subgraph.base.yaml
-yarn build:polygon    # graph build subgraph.polygon.yaml
+yarn build:polygon    # graph build subgraph.matic.yaml
 yarn build:optimism   # graph build subgraph.optimism.yaml
+yarn build:arbitrum   # graph build subgraph.arbitrum-one.yaml
+yarn build:celo       # graph build subgraph.celo.yaml
 ```
 
 ---
