@@ -257,7 +257,7 @@ undrained remainder is the live `collectedFees()` contract value (read off-chain
 **`token-olas-mapping.ts`** (model: `"token-olas"`, all networks except Ethereum):
 - FEE_IN/OUT: `amountRaw` = OLAS wei; USD via `calculateOlasInUsd()` using Balancer V2 pool price
 - On Polygon/Optimism/Arbitrum: additional Chainlink conversion (pool gives intermediate native token value)
-- On Celo: no OLAS pricing pool yet — USD is recorded as 0 (raw OLAS amounts still tracked)
+- On Celo: no OLAS pricing pool yet — USD is recorded as 0 (raw OLAS amounts still tracked). Pool addresses (`getBalancerVaultAddress`, `getOlasStablePoolAddress`, `getStableTokenAddress`) are resolved lazily inside `calculateOlasToUsd()` after the Celo guard; at module scope they would `log.critical()` on Celo and halt indexing
 
 **`token-olas-ethereum-mapping.ts`** (model: `"token-olas"`, Ethereum only):
 - FEE_IN/OUT: `amountRaw` = OLAS wei; USD via the OLAS/WETH Uniswap V2 pair reserves, then Chainlink ETH/USD
