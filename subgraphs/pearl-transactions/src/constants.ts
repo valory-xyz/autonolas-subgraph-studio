@@ -58,7 +58,7 @@ export function getOlasAddress(network: string): Address {
   if (network == "gnosis") {
     return Address.fromString(OLAS_GNOSIS);
   }
-  if (network == "matic" || network == "polygon") {
+  if (network == "matic") {
     return Address.fromString(OLAS_POLYGON);
   }
   if (network == "optimism") {
@@ -96,7 +96,7 @@ export function getSrtuAddress(network: string): Address {
   let addr: Address;
   if (network == "gnosis") {
     addr = Address.fromString(SRTU_GNOSIS);
-  } else if (network == "matic" || network == "polygon") {
+  } else if (network == "matic") {
     addr = Address.fromString(SRTU_POLYGON);
   } else if (network == "optimism") {
     addr = Address.fromString(SRTU_OPTIMISM);
@@ -126,7 +126,7 @@ export function getServiceRegistryAddress(network: string): Address {
   if (network == "gnosis") {
     return Address.fromString(SERVICE_REGISTRY_GNOSIS);
   }
-  if (network == "matic" || network == "polygon") {
+  if (network == "matic") {
     return Address.fromString(SERVICE_REGISTRY_POLYGON);
   }
   if (network == "optimism") {
@@ -155,7 +155,7 @@ export function getWrappedNativeAddress(network: string): Address {
   if (network == "gnosis") {
     return Address.fromString(WXDAI_GNOSIS);
   }
-  if (network == "matic" || network == "polygon") {
+  if (network == "matic") {
     return Address.fromString(WPOL_POLYGON);
   }
   if (network == "optimism") {
@@ -174,7 +174,7 @@ export function getWrappedNativeAddress(network: string): Address {
 // getOrCreateToken when first encountering the wrapped-native address.
 export function getWrappedNativeSymbol(network: string): string {
   if (network == "gnosis") return "WXDAI";
-  if (network == "matic" || network == "polygon") return "WPOL";
+  if (network == "matic") return "WPOL";
   if (network == "optimism" || network == "base") return "WETH";
   return "WNATIVE";
 }
@@ -195,7 +195,7 @@ export function getStablecoinSymbol(
   if (network == "gnosis") {
     if (a == "0xddafbb505ad214d7b80b1f830fccc89b60fb7a83") return "USDC";
     if (a == "0x2a22f9c3b484c3629090feed35f17ff8f88f76f0") return "USDC.e";
-  } else if (network == "matic" || network == "polygon") {
+  } else if (network == "matic") {
     if (a == "0x3c499c542cef5e3811e1192ce70d8cc03d5c3359") return "USDC";
     if (a == "0x2791bca1f2de4661ed88a30c99a7a9449aa84174") return "USDC.e";
     if (a == "0xc011a7e12a19f7b1f670d46f03b03f3342e82dfb") return "pUSD";
@@ -223,7 +223,7 @@ export function isAllowedImplementation(implementation: Bytes): boolean {
     allowed = [
       Bytes.fromHexString("0xEa00be6690a871827fAfD705440D20dd75e67AB1"),
     ];
-  } else if (network == "matic" || network == "polygon") {
+  } else if (network == "matic") {
     allowed = [
       Bytes.fromHexString("0x4aba1Cf7a39a51D75cBa789f5f21cf4882162519"),
     ];
