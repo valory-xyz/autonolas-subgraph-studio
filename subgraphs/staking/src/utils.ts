@@ -54,6 +54,7 @@ export function getOrCreateGlobal(): Global {
     global.cumulativeOlasUnstaked = BigInt.fromI32(0);
     global.currentOlasStaked = BigInt.fromI32(0);
     global.totalRewards = BigInt.fromI32(0);
+    global.totalRewardsClaimed = BigInt.fromI32(0);
     global.lastActiveDayTimestamp = BigInt.fromI32(0);
   }
   return global;
@@ -75,14 +76,17 @@ export function getOrCreateCumulativeDailyStakingGlobal(
   const id = Bytes.fromUTF8(dayTimestamp.toString());
   let snapshot = CumulativeDailyStakingGlobal.load(id);
   if (snapshot == null) {
+    const global = getOrCreateGlobal();
+
     snapshot = new CumulativeDailyStakingGlobal(id);
     snapshot.timestamp = dayTimestamp;
-    snapshot.totalRewards = BigInt.fromI32(0);
+    // Carry the running cumulative totals forward; callers overwrite their own.
+    snapshot.totalRewards = global.totalRewards;
+    snapshot.totalRewardsClaimed = global.totalRewardsClaimed;
     snapshot.numServices = 0;
     snapshot.medianCumulativeRewards = BigInt.fromI32(0);
 
     // Use the last active day timestamp from Global for instant forward-filling
-    const global = getOrCreateGlobal();
     if (!global.lastActiveDayTimestamp.isZero()) {
       const referenceId = Bytes.fromUTF8(
         global.lastActiveDayTimestamp.toString()
@@ -117,6 +121,7 @@ export function upsertCumulativeDailyStakingGlobal(
 
   // Update service count
   const global = getOrCreateGlobal();
+  snapshot.totalRewardsClaimed = global.totalRewardsClaimed;
   snapshot.numServices = global.services.load().length;
 
   // Update Global to track this as the most recent active day for future forward-filling
@@ -127,6 +132,24 @@ export function upsertCumulativeDailyStakingGlobal(
   snapshot.save();
 
   return snapshot;
+}
+
+/**
+ * Adds a payout to the Global accumulator and today's snapshot. Skips the
+ * median and service-count recompute, which only change on a checkpoint.
+ */
+export function recordRewardsClaimed(
+  event: ethereum.Event,
+  reward: BigInt
+): void {
+  const global = getOrCreateGlobal();
+  global.totalRewardsClaimed = global.totalRewardsClaimed.plus(reward);
+  global.save();
+
+  const snapshot = getOrCreateCumulativeDailyStakingGlobal(event);
+  snapshot.block = event.block.number;
+  snapshot.totalRewardsClaimed = global.totalRewardsClaimed;
+  snapshot.save();
 }
 
 /**
@@ -298,4 +321,7 @@ export function processUnstake(
   global.cumulativeOlasUnstaked = global.cumulativeOlasUnstaked.plus(olasForStaking);
   global.currentOlasStaked = global.currentOlasStaked.minus(olasForStaking);
   global.save();
+
+  // 5. The accrued reward is paid out, so it counts as claimed
+  recordRewardsClaimed(event, reward);
 }

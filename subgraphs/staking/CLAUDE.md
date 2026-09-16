@@ -154,7 +154,8 @@ Mutable. Singleton (id: `""`) aggregate statistics.
 | cumulativeOlasStaked | `BigInt!` | Total OLAS ever staked |
 | cumulativeOlasUnstaked | `BigInt!` | Total OLAS ever unstaked |
 | currentOlasStaked | `BigInt!` | Net currently staked |
-| totalRewards | `BigInt!` | Cumulative rewards distributed |
+| totalRewards | `BigInt!` | Cumulative rewards earned (claimable), summed at checkpoint |
+| totalRewardsClaimed | `BigInt!` | Cumulative rewards paid out, summed at claim/unstake |
 | lastActiveDayTimestamp | `BigInt!` | For daily snapshot forward-filling |
 | services | `[Service!]!` | `@derivedFrom(field: "global")` |
 
@@ -166,7 +167,8 @@ Mutable. Daily snapshots of ecosystem metrics.
 | id | `Bytes!` | Day timestamp as UTF8 bytes |
 | timestamp | `BigInt!` | UTC midnight timestamp |
 | block | `BigInt!` | Block when updated |
-| totalRewards | `BigInt!` | Cumulative rewards at this day |
+| totalRewards | `BigInt!` | Cumulative rewards earned at this day |
+| totalRewardsClaimed | `BigInt!` | Cumulative rewards claimed at this day |
 | numServices | `Int!` | Total service count |
 | medianCumulativeRewards | `BigInt!` | Median of `olasRewardsEarned` across all services |
 
@@ -221,12 +223,12 @@ Four-phase processing:
 
 - Creates immutable `ServiceUnstaked` entity
 - Creates `RewardUpdate` with type "Claimed"
-- Calls `processUnstake()` — shared logic for unstaking
+- Calls `processUnstake()` — shared logic for unstaking, which also adds the payout to `Global.totalRewardsClaimed`
 
 #### 4. handleServiceForceUnstaked
 - Creates immutable `ServiceForceUnstaked` entity
+- Creates `RewardUpdate` with type "Claimed" — a force unstake pays the accrued reward out too
 - Calls `processUnstake()` — same shared logic
-- **No** `RewardUpdate` created (unlike regular unstake)
 
 #### 5. handleRewardClaimed
 **Event**: `RewardClaimed(uint256 epoch, indexed uint256 serviceId, ...)`
@@ -234,6 +236,7 @@ Four-phase processing:
 - Creates immutable `RewardClaimed` entity
 - Updates `Service.olasRewardsClaimed` (adds claimed amount)
 - Creates `RewardUpdate` with type "Claimed"
+- Calls `recordRewardsClaimed()` — adds to `Global.totalRewardsClaimed` and today's snapshot
 
 #### 6. handleServicesEvicted
 - Creates immutable `ServicesEvicted` entity with array fields
@@ -258,10 +261,11 @@ All in `src/utils.ts`:
 | `getDayTimestamp(timestamp)` | UTC midnight: `timestamp / 86400 * 86400` |
 | `getOrCreateCumulativeDailyStakingGlobal(event)` | Daily snapshot with forward-fill from `Global.lastActiveDayTimestamp` |
 | `upsertCumulativeDailyStakingGlobal(event, totalRewards)` | Updates daily snapshot: sets totalRewards, computes median, counts services, updates `Global.lastActiveDayTimestamp` |
+| `recordRewardsClaimed(event, reward)` | Adds a payout to `Global.totalRewardsClaimed` and mirrors it onto today's snapshot. Skips the median/service-count recompute — claims are far more frequent than checkpoints, and those fields only move on a checkpoint |
 | `computeMedianOfAllServices()` | Loads all Service entities, sorts `olasRewardsEarned`, returns median (avg of two middle for even count) |
 | `isAllowedImplementation(implementation)` | Network-specific whitelist of allowed implementation addresses |
 | `getOrCreateServiceRewardsHistory(serviceId, contractAddress, epoch, ...)` | ID: `{serviceId}-{contractAddress}-{epoch}`. Increments `Service.totalEpochsParticipated` on creation only |
-| `processUnstake(event, serviceId, epoch, reward, contractAddress)` | Shared unstake logic: clears `latestStakingContract`, adds reward to `olasRewardsClaimed`, decrements `currentOlasStaked`, updates Global |
+| `processUnstake(event, serviceId, epoch, reward, contractAddress)` | Shared unstake logic: clears `latestStakingContract`, adds reward to `olasRewardsClaimed`, decrements `currentOlasStaked`, updates Global, calls `recordRewardsClaimed()` |
 
 ---
 
@@ -289,7 +293,8 @@ olasForStaking = StakingContract.minStakingDeposit * (StakingContract.numAgentIn
 - Service remains in `ActiveServiceEpoch` for continuous tracking
 
 ### Daily Snapshots
-- `CumulativeDailyStakingGlobal` updated on every checkpoint
+- `CumulativeDailyStakingGlobal` updated on every checkpoint (all fields) and every claim/unstake (`totalRewardsClaimed` only)
+- A new day seeds both cumulative totals from `Global`, so a day opened by a claim rather than a checkpoint still carries `totalRewards` forward
 - Forward-fills from last active day (via `Global.lastActiveDayTimestamp`) for population continuity
 - `medianCumulativeRewards` computed from all services' `olasRewardsEarned`
 
@@ -297,6 +302,8 @@ olasForStaking = StakingContract.minStakingDeposit * (StakingContract.numAgentIn
 - `olasRewardsEarned`: Updated at checkpoint time — cumulative rewards the service has earned
 - `olasRewardsClaimed`: Updated at claim/unstake time — cumulative rewards actually withdrawn
 - Compare the two to measure unclaimed rewards
+- The same pair exists ecosystem-wide as `Global.totalRewards` / `Global.totalRewardsClaimed`, with a daily series on `CumulativeDailyStakingGlobal`. Prefer these over summing `RewardUpdate` rows: Gnosis alone has >124k of them, so any paginated sum is both slow and easy to silently truncate
+- Three sums are kept in lockstep by design: `Global.totalRewardsClaimed` == sum of `RewardUpdate` where `type: "Claimed"` == sum of `Service.olasRewardsClaimed`
 
 ---
 
@@ -345,7 +352,7 @@ ABIs: `../../abis/StakingFactory.json`, `../../abis/StakingProxy.json`
 - `tests/test-helpers.ts`: Namespaced constants (`TestAddresses`, `TestBytes`, `TestConstants`) and ID helper functions (`createHistoryId`, `createActiveEpochId`)
 - Test setup creates `StakingContract` entity with `MIN_STAKING_DEPOSIT = 10e18`, `NUM_AGENT_INSTANCES = 3`
 
-### Test Coverage (12 tests in staking-proxy.test.ts + utils.test.ts)
+### Test Coverage (18 tests in staking-proxy.test.ts + 5 in utils.test.ts)
 
 | Test | Validates |
 |------|-----------|
@@ -362,6 +369,11 @@ ABIs: `../../abis/StakingFactory.json`, `../../abis/StakingProxy.json`
 | Service on different contracts tracked separately | Per-contract history, totalEpochsParticipated=2 |
 | Complex lifecycle: stake→evict→restake→migrate | 6 epochs, 2 contracts, full history chain |
 | Checkpoint deduplicates next epoch tracker | Race condition: early stake + checkpoint merge |
+| Checkpoint accumulates Global.totalRewards | Claimable accumulator moves, claimed stays at 0 |
+| RewardClaimed accumulates Global.totalRewardsClaimed | Two claims sum |
+| ServiceUnstaked payout counts as claimed | Unstake payout reaches the global accumulator |
+| ServiceForceUnstaked payout counts as claimed | Global accumulator + `RewardUpdate` emitted |
+| Daily snapshot carries both cumulative totals | `totalRewards` and `totalRewardsClaimed` on one day |
 
 ---
 
@@ -425,6 +437,7 @@ yarn deploy-celo
     cumulativeOlasUnstaked
     currentOlasStaked
     totalRewards
+    totalRewardsClaimed
   }
 }
 ```
@@ -435,6 +448,7 @@ yarn deploy-celo
   cumulativeDailyStakingGlobals(orderBy: timestamp, orderDirection: desc, first: 30) {
     timestamp
     totalRewards
+    totalRewardsClaimed
     numServices
     medianCumulativeRewards
   }
@@ -449,12 +463,12 @@ yarn deploy-celo
 1. **All financial fields are `BigInt`** — no BigDecimal.
 2. **Implementation filtering**: Only whitelisted implementations (one per network) get `StakingProxy` template + `StakingContract` entity. `InstanceCreated` events are always recorded regardless.
 3. **Stake amount**: `minStakingDeposit * (numAgentInstances + 1)`, read from the `StakingContract` entity (not on-chain at stake time).
-4. **Earned vs Claimed**: `olasRewardsEarned` updated at checkpoint; `olasRewardsClaimed` updated at claim/unstake. Compare for unclaimed balance.
+4. **Earned vs Claimed**: `olasRewardsEarned` updated at checkpoint; `olasRewardsClaimed` updated at claim/unstake. Compare for unclaimed balance. Ecosystem-wide equivalents live on `Global` (`totalRewards` / `totalRewardsClaimed`) and `CumulativeDailyStakingGlobal` — use those instead of summing `RewardUpdate` rows.
 5. **Zero-reward tracking**: ALL active services get `ServiceRewardsHistory` entries at checkpoint, even if reward=0. Enables KPI analysis.
 6. **Migration detection**: At checkpoint, services with `latestStakingContract != event.address` are skipped for zero-reward entries (they migrated to another contract).
 7. **Eviction does NOT clear state**: `handleServicesEvicted` only records the event. `latestStakingContract` remains set, service stays in `ActiveServiceEpoch`.
 8. **Epoch rollover with deduplication**: Checkpoint merges current active services into next epoch's tracker, handling race conditions where services stake for the next epoch before the current checkpoint.
 9. **Daily forward-fill**: `CumulativeDailyStakingGlobal` copies `numServices` and `medianCumulativeRewards` from last active day when creating a new snapshot, ensuring continuous time series.
-10. **`processUnstake()` shared logic**: Used by both `handleServiceUnstaked` and `handleServiceForceUnstaked`. Clears `latestStakingContract`, adds reward to `olasRewardsClaimed`, decrements stake from Global.
+10. **`processUnstake()` shared logic**: Used by both `handleServiceUnstaked` and `handleServiceForceUnstaked`. Clears `latestStakingContract`, adds reward to `olasRewardsClaimed`, decrements stake from Global, adds the payout to `Global.totalRewardsClaimed`.
 11. **`ServiceRewardsHistory` ID**: `{serviceId}-{contractAddress}-{epoch}` — scoped by contract, enabling multi-contract participation.
 12. **`totalEpochsParticipated`**: Incremented inside `getOrCreateServiceRewardsHistory()` only on first creation per unique ID — idempotent on subsequent calls.

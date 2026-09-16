@@ -7,7 +7,7 @@ import {
   afterEach,
 } from "matchstick-as/assembly/index"
 import { Address, BigInt, Bytes } from "@graphprotocol/graph-ts"
-import { ActiveServiceEpoch, StakingContract, ServiceRewardsHistory } from "../generated/schema"
+import { ActiveServiceEpoch, CumulativeDailyStakingGlobal, StakingContract, ServiceRewardsHistory } from "../generated/schema"
 import {
   handleServiceStaked,
   handleCheckpoint,
@@ -25,6 +25,7 @@ import {
   createServicesEvictedEvent,
 } from "./staking-proxy-utils"
 import { TestAddresses, TestConstants, createHistoryId, createActiveEpochId } from "./test-helpers"
+import { getDayTimestamp } from "../src/utils"
 
 // Helper to create a StakingContract entity for getOlasForStaking
 function createStakingContractEntity(contractAddress: Address): void {
@@ -530,4 +531,98 @@ describe("ServiceRewardsHistory Tests", () => {
   })
 
   
+})
+
+describe("Global reward accumulators", () => {
+  beforeEach(() => {
+    clearStore()
+  })
+
+  afterEach(() => {
+    clearStore()
+  })
+
+  test("Checkpoint accumulates Global.totalRewards and leaves claimed at zero", () => {
+    let serviceId = TestConstants.SERVICE_ID_1
+    let epoch = TestConstants.EPOCH_5
+    let contractAddress = TestAddresses.CONTRACT_1
+    createStakingContractEntity(contractAddress)
+
+    handleServiceStaked(createServiceStakedEvent(serviceId, epoch, contractAddress))
+    handleCheckpoint(
+      createCheckpointEvent(epoch, [serviceId], [TestConstants.REWARD_1000], contractAddress)
+    )
+
+    assert.fieldEquals("Global", "", "totalRewards", TestConstants.REWARD_1000.toString())
+    assert.fieldEquals("Global", "", "totalRewardsClaimed", "0")
+  })
+
+  test("RewardClaimed accumulates Global.totalRewardsClaimed", () => {
+    let serviceId = TestConstants.SERVICE_ID_1
+    let epoch = TestConstants.EPOCH_5
+    let contractAddress = TestAddresses.CONTRACT_1
+    createStakingContractEntity(contractAddress)
+
+    handleServiceStaked(createServiceStakedEvent(serviceId, epoch, contractAddress))
+    handleRewardClaimed(
+      createRewardClaimedEvent(serviceId, epoch, TestConstants.REWARD_1000, contractAddress)
+    )
+    handleRewardClaimed(
+      createRewardClaimedEvent(serviceId, epoch, TestConstants.REWARD_250, contractAddress)
+    )
+
+    let expected = TestConstants.REWARD_1000.plus(TestConstants.REWARD_250)
+    assert.fieldEquals("Global", "", "totalRewardsClaimed", expected.toString())
+  })
+
+  test("ServiceUnstaked payout counts as claimed", () => {
+    let serviceId = TestConstants.SERVICE_ID_1
+    let epoch = TestConstants.EPOCH_5
+    let contractAddress = TestAddresses.CONTRACT_1
+    createStakingContractEntity(contractAddress)
+
+    handleServiceStaked(createServiceStakedEvent(serviceId, epoch, contractAddress))
+    handleServiceUnstaked(
+      createServiceUnstakedEvent(serviceId, epoch, TestConstants.REWARD_500, contractAddress)
+    )
+
+    assert.fieldEquals("Global", "", "totalRewardsClaimed", TestConstants.REWARD_500.toString())
+  })
+
+  test("ServiceForceUnstaked payout counts as claimed and emits a RewardUpdate", () => {
+    let serviceId = TestConstants.SERVICE_ID_1
+    let epoch = TestConstants.EPOCH_5
+    let contractAddress = TestAddresses.CONTRACT_1
+    createStakingContractEntity(contractAddress)
+
+    handleServiceStaked(createServiceStakedEvent(serviceId, epoch, contractAddress))
+    handleServiceForceUnstaked(
+      createServiceForceUnstakedEvent(serviceId, epoch, TestConstants.REWARD_500, contractAddress)
+    )
+
+    assert.fieldEquals("Global", "", "totalRewardsClaimed", TestConstants.REWARD_500.toString())
+    assert.entityCount("RewardUpdate", 1)
+  })
+
+  test("Daily snapshot carries both cumulative totals", () => {
+    let serviceId = TestConstants.SERVICE_ID_1
+    let epoch = TestConstants.EPOCH_5
+    let contractAddress = TestAddresses.CONTRACT_1
+    createStakingContractEntity(contractAddress)
+
+    let stakeEvent = createServiceStakedEvent(serviceId, epoch, contractAddress)
+    handleServiceStaked(stakeEvent)
+    handleCheckpoint(
+      createCheckpointEvent(epoch, [serviceId], [TestConstants.REWARD_1000], contractAddress)
+    )
+    handleRewardClaimed(
+      createRewardClaimedEvent(serviceId, epoch, TestConstants.REWARD_250, contractAddress)
+    )
+
+    let dayId = Bytes.fromUTF8(getDayTimestamp(stakeEvent.block.timestamp).toString())
+    let snapshot = CumulativeDailyStakingGlobal.load(dayId)
+    assert.assertNotNull(snapshot)
+    assert.stringEquals(TestConstants.REWARD_1000.toString(), snapshot!.totalRewards.toString())
+    assert.stringEquals(TestConstants.REWARD_250.toString(), snapshot!.totalRewardsClaimed.toString())
+  })
 })

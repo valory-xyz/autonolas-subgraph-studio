@@ -23,7 +23,7 @@ import {
   Withdraw,
   ActiveServiceEpoch
 } from "../generated/schema"
-import { createRewardUpdate, getOrCreateGlobal, getOlasForStaking, upsertCumulativeDailyStakingGlobal, getOrCreateServiceRewardsHistory, processUnstake } from "./utils"
+import { createRewardUpdate, getOrCreateGlobal, getOlasForStaking, upsertCumulativeDailyStakingGlobal, getOrCreateServiceRewardsHistory, processUnstake, recordRewardsClaimed } from "./utils"
 
 export function handleCheckpoint(event: CheckpointEvent): void {
   let entity = new Checkpoint(
@@ -220,6 +220,8 @@ export function handleRewardClaimed(event: RewardClaimedEvent): void {
     "Claimed",
     event.params.reward
   );
+
+  recordRewardsClaimed(event, event.params.reward);
 }
 
 export function handleServiceForceUnstaked(
@@ -241,6 +243,16 @@ export function handleServiceForceUnstaked(
   entity.transactionHash = event.transaction.hash
 
   entity.save()
+
+  // Force unstaking pays out the accrued reward too
+  createRewardUpdate(
+    event.transaction.hash.toHex() + "-" + event.logIndex.toString(),
+    event.block.number,
+    event.block.timestamp,
+    event.transaction.hash,
+    "Claimed",
+    event.params.reward
+  );
 
   processUnstake(
     event,
