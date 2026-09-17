@@ -25,6 +25,7 @@ import {
   createServicesEvictedEvent,
 } from "./staking-proxy-utils"
 import { TestAddresses, TestConstants, createHistoryId, createActiveEpochId } from "./test-helpers"
+import { mockServiceDeposit } from "./staking-factory-utils"
 import { getDayTimestamp } from "../src/utils"
 
 // Helper to create a StakingContract entity for getOlasForStaking
@@ -48,8 +49,82 @@ function createStakingContractEntity(contractAddress: Address): void {
   stakingContract.proxyHash = Bytes.empty();
   stakingContract.serviceRegistry = Address.zero();
   stakingContract.activityChecker = Address.zero();
+  stakingContract.stakingManager = null;
+  stakingContract.configComplete = true;
+  stakingContract.stakingToken = null;
+  stakingContract.isOlasStaking = true;
+  stakingContract.serviceRegistryTokenUtility = null;
   stakingContract.save();
 }
+
+const TOKEN_UTILITY = Address.fromString("0x0000000000000000000000000000000000000079")
+const SERVICE_REGISTRY = Address.fromString("0x0000000000000000000000000000000000000077")
+
+// Same as above but reachable by readLockedOlas, so the on-chain deposit is used
+function createStakingContractWithUtility(contractAddress: Address, isOlas: boolean): void {
+  createStakingContractEntity(contractAddress);
+  let stakingContract = StakingContract.load(contractAddress)!;
+  stakingContract.serviceRegistry = SERVICE_REGISTRY;
+  stakingContract.serviceRegistryTokenUtility = TOKEN_UTILITY;
+  stakingContract.isOlasStaking = isOlas;
+  stakingContract.save();
+}
+
+describe("Stake amount accounting", () => {
+  beforeEach(() => { clearStore() })
+  afterEach(() => { clearStore() })
+
+  test("Stake amount comes from the on-chain deposit, not the contract minimum", () => {
+    let serviceId = TestConstants.SERVICE_ID_1
+    let contractAddress = TestAddresses.CONTRACT_1
+    createStakingContractWithUtility(contractAddress, true)
+
+    // security 500 + 1 slot x bond 500 = 1000, while the contract minimum implies 40
+    let security = BigInt.fromString("500000000000000000000")
+    let bond = BigInt.fromString("500000000000000000000")
+    mockServiceDeposit(TOKEN_UTILITY, SERVICE_REGISTRY, serviceId, security, BigInt.fromI32(25), BigInt.fromI32(1), bond)
+
+    handleServiceStaked(createServiceStakedEvent(serviceId, TestConstants.EPOCH_5, contractAddress))
+
+    assert.fieldEquals("Service", serviceId.toString(), "currentOlasStaked", "1000000000000000000000")
+    assert.fieldEquals("Service", serviceId.toString(), "currentStakeAmount", "1000000000000000000000")
+    assert.fieldEquals("Global", "", "currentOlasStaked", "1000000000000000000000")
+  })
+
+  test("Unstake releases the recorded amount even if the deposit changed", () => {
+    let serviceId = TestConstants.SERVICE_ID_1
+    let contractAddress = TestAddresses.CONTRACT_1
+    createStakingContractWithUtility(contractAddress, true)
+
+    let security = BigInt.fromString("500000000000000000000")
+    mockServiceDeposit(TOKEN_UTILITY, SERVICE_REGISTRY, serviceId, security, BigInt.fromI32(25), BigInt.fromI32(1), security)
+    handleServiceStaked(createServiceStakedEvent(serviceId, TestConstants.EPOCH_5, contractAddress))
+
+    // deposit doubles while the service is staked
+    let bigger = BigInt.fromString("1000000000000000000000")
+    mockServiceDeposit(TOKEN_UTILITY, SERVICE_REGISTRY, serviceId, bigger, BigInt.fromI32(25), BigInt.fromI32(1), bigger)
+    handleServiceUnstaked(createServiceUnstakedEvent(serviceId, TestConstants.EPOCH_5, TestConstants.REWARD_500, contractAddress))
+
+    // back to zero, not negative and not stranded
+    assert.fieldEquals("Service", serviceId.toString(), "currentOlasStaked", "0")
+    assert.fieldEquals("Service", serviceId.toString(), "currentStakeAmount", "0")
+    assert.fieldEquals("Global", "", "currentOlasStaked", "0")
+  })
+
+  test("Contracts staking another token contribute nothing to OLAS totals", () => {
+    let serviceId = TestConstants.SERVICE_ID_1
+    let contractAddress = TestAddresses.CONTRACT_1
+    createStakingContractWithUtility(contractAddress, false)
+
+    let security = BigInt.fromString("500000000000000000000")
+    mockServiceDeposit(TOKEN_UTILITY, SERVICE_REGISTRY, serviceId, security, BigInt.fromI32(25), BigInt.fromI32(1), security)
+
+    handleServiceStaked(createServiceStakedEvent(serviceId, TestConstants.EPOCH_5, contractAddress))
+
+    assert.fieldEquals("Service", serviceId.toString(), "currentOlasStaked", "0")
+    assert.fieldEquals("Global", "", "currentOlasStaked", "0")
+  })
+})
 
 describe("ServiceRewardsHistory Tests", () => {
   beforeEach(() => {

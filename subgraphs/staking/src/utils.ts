@@ -1,10 +1,6 @@
-import {
-  Address,
-  BigInt,
-  Bytes,
-  dataSource,
-  ethereum,
-} from "@graphprotocol/graph-ts";
+import { Address, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts";
+import { ServiceRegistryL2 } from "../generated/templates/StakingProxy/ServiceRegistryL2";
+import { ServiceRegistryTokenUtility } from "../generated/templates/StakingProxy/ServiceRegistryTokenUtility";
 import {
   Global,
   RewardUpdate,
@@ -33,17 +29,74 @@ export function createRewardUpdate(
   rewardUpdate.save();
 }
 
-export function getOlasForStaking(address: Address): BigInt {
-  const stakingContract = StakingContract.load(address);
-  if (stakingContract === null) {
-    return BigInt.fromI32(0);
+/**
+ * OLAS a service has locked: security deposit plus a bond per agent instance,
+ * read from ServiceRegistryTokenUtility. Null when a read is unavailable.
+ */
+function readLockedOlas(
+  stakingContract: StakingContract,
+  serviceId: BigInt
+): BigInt | null {
+  const utilityAddress = stakingContract.serviceRegistryTokenUtility;
+  if (utilityAddress === null) {
+    return null;
   }
 
-  const stakeAmount = stakingContract.minStakingDeposit.times(
+  const utility = ServiceRegistryTokenUtility.bind(
+    Address.fromBytes(utilityAddress as Bytes)
+  );
+  const deposit = utility.try_mapServiceIdTokenDeposit(serviceId);
+  if (deposit.reverted) {
+    return null;
+  }
+  // value0 is the deposit token, value1 the security deposit
+  let total = deposit.value.value1;
+
+  const registry = ServiceRegistryL2.bind(
+    Address.fromBytes(stakingContract.serviceRegistry)
+  );
+  const service = registry.try_getService(serviceId);
+  const params = registry.try_getAgentParams(serviceId);
+  if (service.reverted || params.reverted) {
+    return null;
+  }
+
+  const agentIds = service.value.agentIds;
+  const agentParams = params.value.value1;
+  for (let i = 0; i < agentParams.length && i < agentIds.length; i++) {
+    const bond = utility.try_getAgentBond(serviceId, agentIds[i]);
+    if (bond.reverted) {
+      return null;
+    }
+    total = total.plus(agentParams[i].slots.times(bond.value));
+  }
+
+  return total;
+}
+
+/**
+ * Stake amount for a service: the amount locked on-chain, falling back to the
+ * staking contract's parameters when that read is unavailable.
+ */
+export function getOlasForStaking(address: Address, serviceId: BigInt): BigInt {
+  const stakingContract = StakingContract.load(address);
+  if (stakingContract === null) {
+    return BigInt.zero();
+  }
+
+  // Non-OLAS deposits stay out of the OLAS totals
+  if (!stakingContract.isOlasStaking) {
+    return BigInt.zero();
+  }
+
+  const locked = readLockedOlas(stakingContract, serviceId);
+  if (locked !== null) {
+    return locked as BigInt;
+  }
+
+  return stakingContract.minStakingDeposit.times(
     stakingContract.numAgentInstances.plus(BigInt.fromI32(1))
   );
-
-  return stakeAmount;
 }
 
 export function getOrCreateGlobal(): Global {
@@ -196,60 +249,6 @@ export function computeMedianOfAllServices(): BigInt {
   return rewards[mid - 1].plus(rewards[mid]).div(BigInt.fromI32(2));
 }
 
-export function isAllowedImplementation(implementation: Bytes): boolean {
-  let network = dataSource.network();
-
-  let allowed: Bytes[] = [];
-
-  if (network == "arbitrum-one") {
-    allowed = [
-      Bytes.fromHexString("0x04b0007b2aFb398015B76e5f22993a1fddF83644"),
-    ];
-  } else if (network == "base") {
-    allowed = [
-      Bytes.fromHexString(
-        "0xEB5638eefE289691EcE01943f768EDBF96258a80"
-      ) as Bytes,
-    ];
-  } else if (network == "celo") {
-    allowed = [
-      Bytes.fromHexString("0xe1E1B286EbE95b39F785d8069f2248ae9C41b7a9"),
-    ];
-  } else if (network == "gnosis") {
-    allowed = [
-      Bytes.fromHexString(
-        "0xEa00be6690a871827fAfD705440D20dd75e67AB1"
-      ) as Bytes,
-    ];
-  } else if (network == "mainnet") {
-    allowed = [
-      Bytes.fromHexString(
-        "0x0Dc23eEf3bC64CF3cbd8f9329B57AE4C4f28d5d2"
-      ) as Bytes,
-    ];
-  } else if (network == "matic") {
-    allowed = [
-      Bytes.fromHexString(
-        "0x4aba1Cf7a39a51D75cBa789f5f21cf4882162519"
-      ) as Bytes,
-    ];
-  } else if (network == "optimism") {
-    allowed = [
-      Bytes.fromHexString(
-        "0x63C2c53c09dE534Dd3bc0b7771bf976070936bAC"
-      ) as Bytes,
-    ];
-  }
-
-  for (let i = 0; i < allowed.length; i++) {
-    if (implementation.toHexString() == allowed[i].toHexString()) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
 export function getOrCreateServiceRewardsHistory(
   serviceId: BigInt,
   contractAddress: Bytes,
@@ -292,15 +291,19 @@ export function processUnstake(
   reward: BigInt,
   contractAddress: Address
 ): void {
-  const olasForStaking = getOlasForStaking(contractAddress);
   let serviceIdStr = serviceId.toString();
 
-  // 1. Update service
+  // Release exactly what was recorded on stake, so the totals cannot drift
   let service = Service.load(serviceIdStr);
+  const olasForStaking =
+    service === null ? BigInt.zero() : service.currentStakeAmount;
+
+  // 1. Update service
   if (service !== null) {
     service.latestStakingContract = null;
     service.olasRewardsClaimed = service.olasRewardsClaimed.plus(reward);
     service.currentOlasStaked = service.currentOlasStaked.minus(olasForStaking);
+    service.currentStakeAmount = BigInt.zero();
     service.save();
   }
 

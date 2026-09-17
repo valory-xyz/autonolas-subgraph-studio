@@ -154,6 +154,12 @@ type StakingContract @entity(immutable: true) {
   sender: Bytes! # address
   instance: Bytes! # address
   implementation: Bytes! # address
+  # Nullable below: implementations expose different getters
+  stakingManager: Bytes
+  stakingToken: Bytes
+  serviceRegistryTokenUtility: Bytes
+  configComplete: Boolean! # false when a getter reverted and the field holds a default
+  isOlasStaking: Boolean! # stakingToken matches this network's OLAS
   metadataHash: Bytes!
   maxNumServices: BigInt!
   rewardsPerSecond: BigInt!
@@ -183,6 +189,7 @@ type RewardUpdate @entity(immutable: true) {
 type Service @entity(immutable: false) {
   id: ID!
   currentOlasStaked: BigInt!
+  currentStakeAmount: BigInt! # recorded on stake, subtracted on unstake
   olasRewardsEarned: BigInt!
   olasRewardsClaimed: BigInt!
   blockNumber: BigInt!
