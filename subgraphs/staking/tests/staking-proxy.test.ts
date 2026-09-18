@@ -25,7 +25,7 @@ import {
   createServicesEvictedEvent,
 } from "./staking-proxy-utils"
 import { TestAddresses, TestConstants, createHistoryId, createActiveEpochId } from "./test-helpers"
-import { mockServiceDeposit } from "./staking-factory-utils"
+import { mockServiceDeposit, mockServiceDepositMulti } from "./staking-factory-utils"
 import { getDayTimestamp } from "../src/utils"
 
 // Helper to create a StakingContract entity for getOlasForStaking
@@ -123,6 +123,133 @@ describe("Stake amount accounting", () => {
 
     assert.fieldEquals("Service", serviceId.toString(), "currentOlasStaked", "0")
     assert.fieldEquals("Global", "", "currentOlasStaked", "0")
+  })
+})
+
+describe("Stake amount fallbacks", () => {
+  beforeEach(() => { clearStore() })
+  afterEach(() => { clearStore() })
+
+  // Every read that readLockedOlas depends on, failed one at a time. The
+  // contract minimum here is 10e18 * (3 + 1) = 40e18.
+  test("serviceRegistry reverting alone falls back instead of crashing", () => {
+    let serviceId = TestConstants.SERVICE_ID_1
+    let contractAddress = TestAddresses.CONTRACT_1
+    createStakingContractEntity(contractAddress)
+    // token utility readable, serviceRegistry empty as if its getter reverted
+    let stakingContract = StakingContract.load(contractAddress)!
+    stakingContract.serviceRegistry = Bytes.empty()
+    stakingContract.serviceRegistryTokenUtility = TOKEN_UTILITY
+    stakingContract.isOlasStaking = true
+    stakingContract.save()
+
+    handleServiceStaked(createServiceStakedEvent(serviceId, TestConstants.EPOCH_5, contractAddress))
+
+    assert.fieldEquals("Service", serviceId.toString(), "currentOlasStaked", "40000000000000000000")
+  })
+
+  test("mapServiceIdTokenDeposit reverting falls back", () => {
+    assertFallbackWhenReverting("mapServiceIdTokenDeposit")
+  })
+
+  test("getService reverting falls back", () => {
+    assertFallbackWhenReverting("getService")
+  })
+
+  test("getAgentParams reverting falls back", () => {
+    assertFallbackWhenReverting("getAgentParams")
+  })
+
+  test("getAgentBond reverting falls back", () => {
+    assertFallbackWhenReverting("getAgentBond")
+  })
+
+  test("Bonds are summed across every canonical agent id", () => {
+    let serviceId = TestConstants.SERVICE_ID_1
+    let contractAddress = TestAddresses.CONTRACT_1
+    createStakingContractWithUtility(contractAddress, true)
+
+    // 100 security + (2 slots x 10) + (3 slots x 20) = 180
+    mockServiceDepositMulti(
+      TOKEN_UTILITY, SERVICE_REGISTRY, serviceId,
+      BigInt.fromI32(100),
+      [BigInt.fromI32(25), BigInt.fromI32(40)],
+      [BigInt.fromI32(2), BigInt.fromI32(3)],
+      [BigInt.fromI32(10), BigInt.fromI32(20)]
+    )
+
+    handleServiceStaked(createServiceStakedEvent(serviceId, TestConstants.EPOCH_5, contractAddress))
+
+    assert.fieldEquals("Service", serviceId.toString(), "currentOlasStaked", "180")
+  })
+
+  test("Unstake for a service never recorded as staked releases nothing", () => {
+    let serviceId = TestConstants.SERVICE_ID_1
+    let contractAddress = TestAddresses.CONTRACT_1
+    createStakingContractEntity(contractAddress)
+
+    // no handleServiceStaked, as if it staked before the subgraph start block
+    handleServiceUnstaked(
+      createServiceUnstakedEvent(serviceId, TestConstants.EPOCH_5, TestConstants.REWARD_500, contractAddress)
+    )
+
+    assert.fieldEquals("Global", "", "currentOlasStaked", "0")
+    assert.fieldEquals("Global", "", "cumulativeOlasUnstaked", "0")
+  })
+})
+
+function assertFallbackWhenReverting(reverting: string): void {
+  let serviceId = TestConstants.SERVICE_ID_1
+  let contractAddress = TestAddresses.CONTRACT_1
+  createStakingContractWithUtility(contractAddress, true)
+  mockServiceDeposit(
+    TOKEN_UTILITY, SERVICE_REGISTRY, serviceId,
+    BigInt.fromString("500000000000000000000"),
+    BigInt.fromI32(25), BigInt.fromI32(1),
+    BigInt.fromString("500000000000000000000"),
+    [reverting]
+  )
+
+  handleServiceStaked(createServiceStakedEvent(serviceId, TestConstants.EPOCH_5, contractAddress))
+
+  // contract minimum, not the 1000e18 the reads would have produced
+  assert.fieldEquals("Service", serviceId.toString(), "currentOlasStaked", "40000000000000000000")
+}
+
+describe("Rewards from contracts paying another token", () => {
+  beforeEach(() => { clearStore() })
+  afterEach(() => { clearStore() })
+
+  test("Checkpoint rewards stay out of the OLAS totals", () => {
+    let serviceId = TestConstants.SERVICE_ID_1
+    let contractAddress = TestAddresses.CONTRACT_1
+    createStakingContractWithUtility(contractAddress, false)
+
+    handleServiceStaked(createServiceStakedEvent(serviceId, TestConstants.EPOCH_5, contractAddress))
+    handleCheckpoint(
+      createCheckpointEvent(TestConstants.EPOCH_5, [serviceId], [TestConstants.REWARD_1000], contractAddress)
+    )
+
+    assert.fieldEquals("Global", "", "totalRewards", "0")
+    assert.fieldEquals("Service", serviceId.toString(), "olasRewardsEarned", "0")
+    assert.entityCount("RewardUpdate", 0)
+    // the raw event is still recorded
+    assert.entityCount("Checkpoint", 1)
+  })
+
+  test("Claimed rewards stay out of the OLAS totals", () => {
+    let serviceId = TestConstants.SERVICE_ID_1
+    let contractAddress = TestAddresses.CONTRACT_1
+    createStakingContractWithUtility(contractAddress, false)
+
+    handleServiceStaked(createServiceStakedEvent(serviceId, TestConstants.EPOCH_5, contractAddress))
+    handleRewardClaimed(
+      createRewardClaimedEvent(serviceId, TestConstants.EPOCH_5, TestConstants.REWARD_1000, contractAddress)
+    )
+
+    assert.fieldEquals("Global", "", "totalRewardsClaimed", "0")
+    assert.fieldEquals("Service", serviceId.toString(), "olasRewardsClaimed", "0")
+    assert.entityCount("RewardClaimed", 1)
   })
 })
 
@@ -292,7 +419,7 @@ describe("ServiceRewardsHistory Tests", () => {
     assert.i32Equals(1, activeServiceEpoch!.activeServiceIds.length)
   })
 
-  test("ServiceForceUnstaked updates olasRewardsClaimed and clears latestStakingContract", () => {
+  test("ServiceForceUnstaked clears latestStakingContract without crediting a claim", () => {
     let serviceId = TestConstants.SERVICE_ID_1
     let epoch = TestConstants.EPOCH_5
     let contractAddress = TestAddresses.CONTRACT_1
@@ -307,8 +434,8 @@ describe("ServiceRewardsHistory Tests", () => {
     let forceUnstakeEvent = createServiceForceUnstakedEvent(serviceId, epoch, reward, contractAddress)
     handleServiceForceUnstaked(forceUnstakeEvent)
 
-    // Check olasRewardsClaimed was updated
-    assert.fieldEquals("Service", serviceId.toString(), "olasRewardsClaimed", reward.toString())
+    // The reward returns to availableRewards, so nothing was claimed
+    assert.fieldEquals("Service", serviceId.toString(), "olasRewardsClaimed", "0")
 
     // Check latestStakingContract was cleared
     assert.fieldEquals("Service", serviceId.toString(), "latestStakingContract", "null")
@@ -664,7 +791,7 @@ describe("Global reward accumulators", () => {
     assert.fieldEquals("Global", "", "totalRewardsClaimed", TestConstants.REWARD_500.toString())
   })
 
-  test("ServiceForceUnstaked payout counts as claimed and emits a RewardUpdate", () => {
+  test("ServiceForceUnstaked is not a claim: no accumulator, no RewardUpdate", () => {
     let serviceId = TestConstants.SERVICE_ID_1
     let epoch = TestConstants.EPOCH_5
     let contractAddress = TestAddresses.CONTRACT_1
@@ -675,8 +802,35 @@ describe("Global reward accumulators", () => {
       createServiceForceUnstakedEvent(serviceId, epoch, TestConstants.REWARD_500, contractAddress)
     )
 
-    assert.fieldEquals("Global", "", "totalRewardsClaimed", TestConstants.REWARD_500.toString())
-    assert.entityCount("RewardUpdate", 1)
+    // _unstake(enforced=true) returns the reward to availableRewards
+    assert.fieldEquals("Global", "", "totalRewardsClaimed", "0")
+    assert.fieldEquals("Service", serviceId.toString(), "olasRewardsClaimed", "0")
+    assert.entityCount("RewardUpdate", 0)
+  })
+
+  test("A day opened by a claim carries totalRewards forward", () => {
+    let serviceId = TestConstants.SERVICE_ID_1
+    let epoch = TestConstants.EPOCH_5
+    let contractAddress = TestAddresses.CONTRACT_1
+    createStakingContractEntity(contractAddress)
+
+    let stakeEvent = createServiceStakedEvent(serviceId, epoch, contractAddress)
+    handleServiceStaked(stakeEvent)
+    handleCheckpoint(
+      createCheckpointEvent(epoch, [serviceId], [TestConstants.REWARD_1000], contractAddress)
+    )
+
+    // a later day whose only activity is a claim, so the snapshot is created there
+    let dayTwo = getDayTimestamp(stakeEvent.block.timestamp).plus(BigInt.fromI32(86400))
+    let claimEvent = createRewardClaimedEvent(serviceId, epoch, TestConstants.REWARD_250, contractAddress)
+    claimEvent.block.timestamp = dayTwo
+    handleRewardClaimed(claimEvent)
+
+    let dayTwoSnapshot = CumulativeDailyStakingGlobal.load(Bytes.fromUTF8(dayTwo.toString()))
+    assert.assertNotNull(dayTwoSnapshot)
+    // carried forward from Global rather than restarting at zero
+    assert.stringEquals(TestConstants.REWARD_1000.toString(), dayTwoSnapshot!.totalRewards.toString())
+    assert.stringEquals(TestConstants.REWARD_250.toString(), dayTwoSnapshot!.totalRewardsClaimed.toString())
   })
 
   test("Daily snapshot carries both cumulative totals", () => {

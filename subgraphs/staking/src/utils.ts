@@ -1,4 +1,4 @@
-import { Address, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts";
+import { Address, BigInt, Bytes, ethereum, log } from "@graphprotocol/graph-ts";
 import { ServiceRegistryL2 } from "../generated/templates/StakingProxy/ServiceRegistryL2";
 import { ServiceRegistryTokenUtility } from "../generated/templates/StakingProxy/ServiceRegistryTokenUtility";
 import {
@@ -11,6 +11,7 @@ import {
 } from "../generated/schema";
 
 const ONE_DAY = BigInt.fromI32(86400);
+const ADDRESS_LENGTH = 20;
 
 export function createRewardUpdate(
   id: string,
@@ -29,16 +30,16 @@ export function createRewardUpdate(
   rewardUpdate.save();
 }
 
-/**
- * OLAS a service has locked: security deposit plus a bond per agent instance,
- * read from ServiceRegistryTokenUtility. Null when a read is unavailable.
- */
+/** Security deposit plus a bond per agent instance; null when a read is unavailable. */
 function readLockedOlas(
   stakingContract: StakingContract,
   serviceId: BigInt
 ): BigInt | null {
   const utilityAddress = stakingContract.serviceRegistryTokenUtility;
-  if (utilityAddress === null) {
+  const registryAddress = stakingContract.serviceRegistry;
+  // Both default to empty when their getter reverted, and Address.fromBytes
+  // throws on anything that is not 20 bytes
+  if (utilityAddress === null || registryAddress.length != ADDRESS_LENGTH) {
     return null;
   }
 
@@ -52,9 +53,7 @@ function readLockedOlas(
   // value0 is the deposit token, value1 the security deposit
   let total = deposit.value.value1;
 
-  const registry = ServiceRegistryL2.bind(
-    Address.fromBytes(stakingContract.serviceRegistry)
-  );
+  const registry = ServiceRegistryL2.bind(Address.fromBytes(registryAddress));
   const service = registry.try_getService(serviceId);
   const params = registry.try_getAgentParams(serviceId);
   if (service.reverted || params.reverted) {
@@ -74,17 +73,19 @@ function readLockedOlas(
   return total;
 }
 
-/**
- * Stake amount for a service: the amount locked on-chain, falling back to the
- * staking contract's parameters when that read is unavailable.
- */
+/** False when the contract's deposits and rewards are denominated in another token. */
+export function isOlasStakingContract(address: Address): boolean {
+  const stakingContract = StakingContract.load(address);
+  return stakingContract !== null && stakingContract.isOlasStaking;
+}
+
+/** Stake amount for a service: read on-chain, falling back to contract parameters. */
 export function getOlasForStaking(address: Address, serviceId: BigInt): BigInt {
   const stakingContract = StakingContract.load(address);
   if (stakingContract === null) {
     return BigInt.zero();
   }
 
-  // Non-OLAS deposits stay out of the OLAS totals
   if (!stakingContract.isOlasStaking) {
     return BigInt.zero();
   }
@@ -94,9 +95,16 @@ export function getOlasForStaking(address: Address, serviceId: BigInt): BigInt {
     return locked as BigInt;
   }
 
-  return stakingContract.minStakingDeposit.times(
+  // The contract's own parameters describe its minimum, not what this service
+  // posted, and are zero when those getters reverted at creation
+  const fallback = stakingContract.minStakingDeposit.times(
     stakingContract.numAgentInstances.plus(BigInt.fromI32(1))
   );
+  log.warning(
+    "Locked OLAS unreadable for service {} on {}, falling back to contract parameters: {}",
+    [serviceId.toString(), address.toHexString(), fallback.toString()]
+  );
+  return fallback;
 }
 
 export function getOrCreateGlobal(): Global {
@@ -187,10 +195,7 @@ export function upsertCumulativeDailyStakingGlobal(
   return snapshot;
 }
 
-/**
- * Adds a payout to the Global accumulator and today's snapshot. Skips the
- * median and service-count recompute, which only change on a checkpoint.
- */
+/** Adds a payout to the Global accumulator and today's snapshot. */
 export function recordRewardsClaimed(
   event: ethereum.Event,
   reward: BigInt
@@ -289,7 +294,8 @@ export function processUnstake(
   serviceId: BigInt,
   epoch: BigInt,
   reward: BigInt,
-  contractAddress: Address
+  contractAddress: Address,
+  rewardPaidOut: boolean
 ): void {
   let serviceIdStr = serviceId.toString();
 
@@ -301,7 +307,9 @@ export function processUnstake(
   // 1. Update service
   if (service !== null) {
     service.latestStakingContract = null;
-    service.olasRewardsClaimed = service.olasRewardsClaimed.plus(reward);
+    if (rewardPaidOut) {
+      service.olasRewardsClaimed = service.olasRewardsClaimed.plus(reward);
+    }
     service.currentOlasStaked = service.currentOlasStaked.minus(olasForStaking);
     service.currentStakeAmount = BigInt.zero();
     service.save();
@@ -325,6 +333,9 @@ export function processUnstake(
   global.currentOlasStaked = global.currentOlasStaked.minus(olasForStaking);
   global.save();
 
-  // 5. The accrued reward is paid out, so it counts as claimed
-  recordRewardsClaimed(event, reward);
+  // 5. A forced unstake returns the reward to availableRewards rather than
+  // paying it out, so only a normal unstake counts as claimed
+  if (rewardPaidOut) {
+    recordRewardsClaimed(event, reward);
+  }
 }

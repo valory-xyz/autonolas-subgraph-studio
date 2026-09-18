@@ -108,29 +108,61 @@ export function mockServiceDeposit(
   securityDeposit: BigInt,
   agentId: BigInt,
   slots: BigInt,
-  bond: BigInt
+  bond: BigInt,
+  reverting: string[] = []
 ): void {
-  createMockedFunction(
+  mockServiceDepositMulti(
+    tokenUtility,
+    registry,
+    serviceId,
+    securityDeposit,
+    [agentId],
+    [slots],
+    [bond],
+    reverting
+  )
+}
+
+/** Same, for a service with more than one canonical agent id. */
+export function mockServiceDepositMulti(
+  tokenUtility: Address,
+  registry: Address,
+  serviceId: BigInt,
+  securityDeposit: BigInt,
+  agentIds: BigInt[],
+  slots: BigInt[],
+  bonds: BigInt[],
+  reverting: string[] = []
+): void {
+  let depositCall = createMockedFunction(
     tokenUtility,
     "mapServiceIdTokenDeposit",
     "mapServiceIdTokenDeposit(uint256):(address,uint96)"
-  )
-    .withArgs([ethereum.Value.fromUnsignedBigInt(serviceId)])
-    .returns([
+  ).withArgs([ethereum.Value.fromUnsignedBigInt(serviceId)])
+  if (reverting.includes("mapServiceIdTokenDeposit")) {
+    depositCall.reverts()
+  } else {
+    depositCall.returns([
       ethereum.Value.fromAddress(Address.fromString("0xcE11e14225575945b8E6Dc0D4F2dD4C570f79d9f")),
       ethereum.Value.fromUnsignedBigInt(securityDeposit),
     ])
+  }
 
-  createMockedFunction(
-    tokenUtility,
-    "getAgentBond",
-    "getAgentBond(uint256,uint256):(uint256)"
-  )
-    .withArgs([
+  for (let i = 0; i < agentIds.length; i++) {
+    let bondCall = createMockedFunction(
+      tokenUtility,
+      "getAgentBond",
+      "getAgentBond(uint256,uint256):(uint256)"
+    ).withArgs([
       ethereum.Value.fromUnsignedBigInt(serviceId),
-      ethereum.Value.fromUnsignedBigInt(agentId),
+      ethereum.Value.fromUnsignedBigInt(agentIds[i]),
     ])
-    .returns([ethereum.Value.fromUnsignedBigInt(bond)])
+    if (reverting.includes("getAgentBond")) {
+      bondCall.reverts()
+    } else {
+      bondCall.returns([ethereum.Value.fromUnsignedBigInt(bonds[i])])
+    }
+  }
 
   let service = new ethereum.Tuple()
   service.push(ethereum.Value.fromUnsignedBigInt(securityDeposit))
@@ -140,26 +172,36 @@ export function mockServiceDeposit(
   service.push(ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1)))
   service.push(ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1)))
   service.push(ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(4)))
-  service.push(ethereum.Value.fromUnsignedBigIntArray([agentId]))
-  createMockedFunction(
+  service.push(ethereum.Value.fromUnsignedBigIntArray(agentIds))
+  let getServiceCall = createMockedFunction(
     registry,
     "getService",
     "getService(uint256):((uint96,address,bytes32,uint32,uint32,uint32,uint8,uint32[]))"
-  )
-    .withArgs([ethereum.Value.fromUnsignedBigInt(serviceId)])
-    .returns([ethereum.Value.fromTuple(service)])
+  ).withArgs([ethereum.Value.fromUnsignedBigInt(serviceId)])
+  if (reverting.includes("getService")) {
+    getServiceCall.reverts()
+  } else {
+    getServiceCall.returns([ethereum.Value.fromTuple(service)])
+  }
 
-  let agentParams = new ethereum.Tuple()
-  agentParams.push(ethereum.Value.fromUnsignedBigInt(slots))
-  agentParams.push(ethereum.Value.fromUnsignedBigInt(bond))
-  createMockedFunction(
+  let tuples = new Array<ethereum.Tuple>()
+  for (let i = 0; i < slots.length; i++) {
+    let agentParams = new ethereum.Tuple()
+    agentParams.push(ethereum.Value.fromUnsignedBigInt(slots[i]))
+    agentParams.push(ethereum.Value.fromUnsignedBigInt(bonds[i]))
+    tuples.push(agentParams)
+  }
+  let paramsCall = createMockedFunction(
     registry,
     "getAgentParams",
     "getAgentParams(uint256):(uint256,(uint32,uint96)[])"
-  )
-    .withArgs([ethereum.Value.fromUnsignedBigInt(serviceId)])
-    .returns([
-      ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1)),
-      ethereum.Value.fromTupleArray([agentParams]),
+  ).withArgs([ethereum.Value.fromUnsignedBigInt(serviceId)])
+  if (reverting.includes("getAgentParams")) {
+    paramsCall.reverts()
+  } else {
+    paramsCall.returns([
+      ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(agentIds.length)),
+      ethereum.Value.fromTupleArray(tuples),
     ])
+  }
 }

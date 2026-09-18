@@ -5,6 +5,7 @@ import {
   clearStore,
   beforeEach,
   afterEach,
+  dataSourceMock,
 } from "matchstick-as/assembly/index"
 import { Address } from "@graphprotocol/graph-ts"
 import { handleInstanceCreated } from "../src/staking-factory"
@@ -17,10 +18,14 @@ const MANAGER = Address.fromString("0x0000000000000000000000000000000000000013")
 describe("StakingFactory instance indexing", () => {
   beforeEach(() => {
     clearStore()
+    // getOlasTokenAddress() reads dataSource.network(); `yarn test` runs the
+    // gnosis manifest, and the mocked stakingToken is gnosis OLAS
+    dataSourceMock.setNetwork("gnosis")
   })
 
   afterEach(() => {
     clearStore()
+    dataSourceMock.resetValues()
   })
 
   test("Fully featured instance is indexed with complete config and no manager", () => {
@@ -34,6 +39,27 @@ describe("StakingFactory instance indexing", () => {
     assert.fieldEquals("StakingContract", instance.toHexString(), "stakingManager", "null")
     assert.fieldEquals("StakingContract", instance.toHexString(), "numAgentInstances", "1")
     assert.fieldEquals("StakingContract", instance.toHexString(), "agentIds", "[25]")
+    // the mock returns this network's OLAS, so the comparison must hold
+    assert.fieldEquals("StakingContract", instance.toHexString(), "isOlasStaking", "true")
+    assert.fieldEquals(
+      "StakingContract",
+      instance.toHexString(),
+      "stakingToken",
+      "0xce11e14225575945b8e6dc0d4f2dd4c570f79d9f"
+    )
+  })
+
+  test("Instance whose stakingToken reverts is excluded from the OLAS totals", () => {
+    let instance = Address.fromString("0x0000000000000000000000000000000000000025")
+    mockStakingProxyConfig(instance, ["stakingToken"], null)
+
+    handleInstanceCreated(createInstanceCreatedEvent(SENDER, instance, IMPLEMENTATION))
+
+    assert.entityCount("StakingContract", 1)
+    assert.fieldEquals("StakingContract", instance.toHexString(), "isOlasStaking", "false")
+    assert.fieldEquals("StakingContract", instance.toHexString(), "stakingToken", "null")
+    // an unreadable token is a failed read, so it must show up here too
+    assert.fieldEquals("StakingContract", instance.toHexString(), "configComplete", "false")
   })
 
   test("Externally managed instance missing getAgentIds is still indexed", () => {
