@@ -37,8 +37,8 @@ function readLockedOlas(
 ): BigInt | null {
   const utilityAddress = stakingContract.serviceRegistryTokenUtility;
   const registryAddress = stakingContract.serviceRegistry;
-  // Both default to empty when their getter reverted, and Address.fromBytes
-  // throws on anything that is not 20 bytes
+  // serviceRegistry defaults to empty when its getter reverted, and
+  // Address.fromBytes throws on anything that is not 20 bytes
   if (utilityAddress === null || registryAddress.length != ADDRESS_LENGTH) {
     return null;
   }
@@ -333,8 +333,7 @@ export function processUnstake(
   global.currentOlasStaked = global.currentOlasStaked.minus(olasForStaking);
   global.save();
 
-  // 5. A forced unstake returns the reward to availableRewards rather than
-  // paying it out, so only a normal unstake counts as claimed
+  // 5. Count the payout only when the caller says one happened
   if (rewardPaidOut) {
     recordRewardsClaimed(event, reward);
   }

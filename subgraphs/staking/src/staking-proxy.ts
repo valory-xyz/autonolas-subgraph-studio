@@ -47,6 +47,9 @@ export function handleCheckpoint(event: CheckpointEvent): void {
   let rewardedAmounts = event.params.rewards;
   let totalRewards = BigInt.fromI32(0);
 
+  // Looked up once: the reward loop below and the global totals both need it
+  let isOlas = isOlasStakingContract(event.address);
+
   // Map to track which services we've already processed for rewards
   let handledServicesMap = new Map<string, boolean>();
   
@@ -61,7 +64,7 @@ export function handleCheckpoint(event: CheckpointEvent): void {
 
     // Update individual Service cumulative earnings, in OLAS terms only
     let service = Service.load(serviceIdStr);
-    if (service !== null && isOlasStakingContract(event.address)) {
+    if (service !== null && isOlas) {
       service.olasRewardsEarned = service.olasRewardsEarned.plus(reward);
       service.save();
     }
@@ -155,7 +158,7 @@ export function handleCheckpoint(event: CheckpointEvent): void {
   }
 
   // 4. Update Global states and rewards
-  if (!isOlasStakingContract(event.address)) return;
+  if (!isOlas) return;
 
   let global = getOrCreateGlobal();
   global.totalRewards = global.totalRewards.plus(totalRewards);
@@ -373,14 +376,20 @@ export function handleServiceUnstaked(event: ServiceUnstakedEvent): void {
 
   entity.save()
 
-  createRewardUpdate(
-    event.transaction.hash.toHex() + "-" + event.logIndex.toString(),
-    event.block.number,
-    event.block.timestamp,
-    event.transaction.hash,
-    "Claimed",
-    event.params.reward
-  );
+  // A normal unstake does pay the reward out, but it is only an OLAS payout
+  // when the contract stakes OLAS; another token's stays out of the OLAS totals
+  let isOlas = isOlasStakingContract(event.address);
+
+  if (isOlas) {
+    createRewardUpdate(
+      event.transaction.hash.toHex() + "-" + event.logIndex.toString(),
+      event.block.number,
+      event.block.timestamp,
+      event.transaction.hash,
+      "Claimed",
+      event.params.reward
+    );
+  }
 
   processUnstake(
     event,
@@ -388,7 +397,7 @@ export function handleServiceUnstaked(event: ServiceUnstakedEvent): void {
     event.params.epoch,
     event.params.reward,
     event.address,
-    true
+    isOlas
   );
 }
 

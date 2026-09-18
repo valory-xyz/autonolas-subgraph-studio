@@ -251,6 +251,23 @@ describe("Rewards from contracts paying another token", () => {
     assert.fieldEquals("Service", serviceId.toString(), "olasRewardsClaimed", "0")
     assert.entityCount("RewardClaimed", 1)
   })
+
+  test("Unstake rewards stay out of the OLAS totals", () => {
+    let serviceId = TestConstants.SERVICE_ID_1
+    let contractAddress = TestAddresses.CONTRACT_1
+    createStakingContractWithUtility(contractAddress, false)
+
+    handleServiceStaked(createServiceStakedEvent(serviceId, TestConstants.EPOCH_5, contractAddress))
+    handleServiceUnstaked(
+      createServiceUnstakedEvent(serviceId, TestConstants.EPOCH_5, TestConstants.REWARD_1000, contractAddress)
+    )
+
+    assert.fieldEquals("Global", "", "totalRewardsClaimed", "0")
+    assert.fieldEquals("Service", serviceId.toString(), "olasRewardsClaimed", "0")
+    assert.entityCount("RewardUpdate", 0)
+    // the raw event is still recorded
+    assert.entityCount("ServiceUnstaked", 1)
+  })
 })
 
 describe("ServiceRewardsHistory Tests", () => {

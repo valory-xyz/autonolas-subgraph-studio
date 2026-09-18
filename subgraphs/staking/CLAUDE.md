@@ -228,8 +228,8 @@ Four-phase processing:
 **Event**: `ServiceUnstaked(uint256 epoch, indexed uint256 serviceId, ...)`
 
 - Creates immutable `ServiceUnstaked` entity
-- Creates `RewardUpdate` with type "Claimed"
-- Calls `processUnstake()` with `rewardPaidOut: true`, which adds the payout to `Global.totalRewardsClaimed`
+- A normal unstake does pay the reward out, but only an OLAS contract pays it in OLAS. `isOlasStakingContract(event.address)` is read once and gates both the `RewardUpdate` with type "Claimed" and the `rewardPaidOut` argument
+- Calls `processUnstake()` with `rewardPaidOut: isOlas`, which adds the payout to `Global.totalRewardsClaimed`
 
 #### 4. handleServiceForceUnstaked
 - Creates immutable `ServiceForceUnstaked` entity
@@ -384,7 +384,7 @@ ABIs: `../../abis/StakingFactory.json`, `../../abis/StakingProxy.json`
 - `tests/test-helpers.ts`: Namespaced constants (`TestAddresses`, `TestBytes`, `TestConstants`) and ID helper functions (`createHistoryId`, `createActiveEpochId`)
 - Test setup creates `StakingContract` entity with `MIN_STAKING_DEPOSIT = 10e18`, `NUM_AGENT_INSTANCES = 3`
 
-### Test Coverage (31 in staking-proxy.test.ts + 5 in staking-factory.test.ts + 5 in utils.test.ts)
+### Test Coverage (32 in staking-proxy.test.ts + 5 in staking-factory.test.ts + 5 in utils.test.ts)
 
 | Test | Validates |
 |------|-----------|
@@ -394,7 +394,7 @@ ABIs: `../../abis/StakingFactory.json`, `../../abis/StakingProxy.json`
 | Checkpoint creates zero-reward entries for non-KPI services | Active but unrewarded services get rewardAmount=0 |
 | RewardClaimed updates olasRewardsClaimed | Cumulative claim tracking |
 | ServiceUnstaked updates claimed and clears contract | olasRewardsClaimed, latestStakingContract=null |
-| ServiceForceUnstaked same behavior as unstake | olasRewardsClaimed, latestStakingContract=null |
+| ServiceForceUnstaked clears the contract without crediting a claim | latestStakingContract=null, olasRewardsClaimed unchanged |
 | totalEpochsParticipated increments correctly | Counts across epochs 1→2→3 |
 | Multiple rewards accumulate | 1000+500+250 = 1750 |
 | Checkpoint carries forward to next epoch | NextEpoch tracker has all services |
@@ -404,7 +404,6 @@ ABIs: `../../abis/StakingFactory.json`, `../../abis/StakingProxy.json`
 | Checkpoint accumulates Global.totalRewards | Claimable accumulator moves, claimed stays at 0 |
 | RewardClaimed accumulates Global.totalRewardsClaimed | Two claims sum |
 | ServiceUnstaked payout counts as claimed | Unstake payout reaches the global accumulator |
-| ServiceForceUnstaked payout counts as claimed | Global accumulator + `RewardUpdate` emitted |
 | Daily snapshot carries both cumulative totals | `totalRewards` and `totalRewardsClaimed` on one day |
 | Fully featured instance indexed | `configComplete: true`, `stakingManager: null`, agentIds read |
 | Instance missing getAgentIds | Still indexed; `configComplete: false`, manager set, other getters kept |
@@ -419,7 +418,7 @@ ABIs: `../../abis/StakingFactory.json`, `../../abis/StakingProxy.json`
 | Bonds summed across several agent ids | 100 + 2×10 + 3×20 = 180 |
 | Unstake with no recorded stake | Releases nothing rather than a phantom amount |
 | A day opened by a claim | `totalRewards` carried forward, not restarted at zero |
-| Non-OLAS checkpoint and claim rewards | Excluded from every OLAS total; raw entities still recorded |
+| Non-OLAS checkpoint, claim and unstake rewards | Excluded from every OLAS total; raw entities still recorded |
 
 ---
 
@@ -515,7 +514,7 @@ yarn deploy-celo
 7. **Eviction does NOT clear state**: `handleServicesEvicted` only records the event. `latestStakingContract` remains set, service stays in `ActiveServiceEpoch`.
 8. **Epoch rollover with deduplication**: Checkpoint merges current active services into next epoch's tracker, handling race conditions where services stake for the next epoch before the current checkpoint.
 9. **Daily forward-fill**: `CumulativeDailyStakingGlobal` copies `numServices` and `medianCumulativeRewards` from last active day when creating a new snapshot, ensuring continuous time series.
-10. **`processUnstake()` shared logic**: Used by both `handleServiceUnstaked` and `handleServiceForceUnstaked`. Clears `latestStakingContract`, adds reward to `olasRewardsClaimed`, decrements stake from Global, adds the payout to `Global.totalRewardsClaimed`.
+10. **`processUnstake()` shared logic**: Used by both `handleServiceUnstaked` and `handleServiceForceUnstaked`. Clears `latestStakingContract`, decrements stake from Global, and — only when `rewardPaidOut`, i.e. a normal unstake of an OLAS contract — adds the reward to `olasRewardsClaimed` and `Global.totalRewardsClaimed`.
 11. **`ServiceRewardsHistory` ID**: `{serviceId}-{contractAddress}-{epoch}` — scoped by contract, enabling multi-contract participation.
 12. **`totalEpochsParticipated`**: Incremented inside `getOrCreateServiceRewardsHistory()` only on first creation per unique ID — idempotent on subsequent calls.
 13. **Forced unstakes are not claims**: `_unstake(enforced = true)` returns the reward to `availableRewards`. `ServiceForceUnstaked.reward` is forfeited, not paid.
