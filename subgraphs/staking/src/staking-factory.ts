@@ -32,8 +32,6 @@ export function handleInstanceCreated(event: InstanceCreatedEvent): void {
 
   entity.save();
 
-  StakingProxy.create(event.params.instance);
-
   let stakingContract = new StakingContract(event.params.instance);
 
   stakingContract.sender = event.params.sender;
@@ -62,6 +60,7 @@ export function handleInstanceCreated(event: InstanceCreatedEvent): void {
   const tokenUtility = contract.try_serviceRegistryTokenUtility();
   const stakingToken = contract.try_stakingToken();
   const stakingManager = contract.try_stakingManager();
+  const version = contract.try_VERSION();
 
   stakingContract.metadataHash = bytesOrEmpty(metadataHash);
   stakingContract.maxNumServices = bigIntOrZero(maxNumServices);
@@ -85,6 +84,31 @@ export function handleInstanceCreated(event: InstanceCreatedEvent): void {
   stakingContract.stakingManager = stakingManager.reverted
     ? null
     : stakingManager.value;
+  stakingContract.version = version.reverted ? null : version.value;
+
+  // The templated handlers decode the v1.2.x event signatures. From registries
+  // v1.3.0, ServiceUnstaked gains a trailing bool and RewardClaimed returns
+  // arrays, so neither matches while ServiceStaked still does — indexing such an
+  // instance would add stakes that never get subtracted. Skip the template and
+  // say so, rather than let the totals drift.
+  //
+  // An externally managed implementation reports 0.3.0 too, but keeps the v1.2.x
+  // signatures; it exposes stakingManager(), which StakingBase never has.
+  const versionString = version.reverted ? "" : version.value;
+  stakingContract.eventsIndexed =
+    version.reverted ||
+    versionString == "0.1.0" ||
+    versionString == "0.2.0" ||
+    (versionString == "0.3.0" && !stakingManager.reverted);
+
+  if (stakingContract.eventsIndexed) {
+    StakingProxy.create(event.params.instance);
+  } else {
+    log.warning(
+      "Instance {} reports version {}, whose events do not match the manifest; not indexing its events",
+      [event.params.instance.toHexString(), versionString]
+    );
+  }
 
   // Guards every OLAS total. A revert is indistinguishable from a genuinely
   // different token, so it is logged: the entity is immutable, and a misread

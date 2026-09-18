@@ -31,8 +31,16 @@ export function createInstanceCreatedEvent(
 export function mockStakingProxyConfig(
   instance: Address,
   reverting: string[],
-  stakingManager: Address | null
+  stakingManager: Address | null,
+  version: string = "0.2.0"
 ): void {
+  let versionCall = createMockedFunction(instance, "VERSION", "VERSION():(string)")
+  if (reverting.includes("VERSION")) {
+    versionCall.reverts()
+  } else {
+    versionCall.returns([ethereum.Value.fromString(version)])
+  }
+
   mockUint(instance, "maxNumServices", BigInt.fromI32(40), reverting)
   mockUint(instance, "rewardsPerSecond", BigInt.fromI32(100), reverting)
   mockUint(instance, "minStakingDeposit", BigInt.fromString("5000000000000000000000"), reverting)

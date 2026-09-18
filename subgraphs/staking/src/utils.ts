@@ -180,10 +180,10 @@ export function upsertCumulativeDailyStakingGlobal(
   // Compute median from ALL services in the system
   snapshot.medianCumulativeRewards = computeMedianOfAllServices();
 
-  // Update service count
+  // Update service count, OLAS services only, to match the median beside it
   const global = getOrCreateGlobal();
   snapshot.totalRewardsClaimed = global.totalRewardsClaimed;
-  snapshot.numServices = global.services.load().length;
+  snapshot.numServices = countOlasServices();
 
   // Update Global to track this as the most recent active day for future forward-filling
   global.lastActiveDayTimestamp = snapshot.timestamp;
@@ -210,10 +210,22 @@ export function recordRewardsClaimed(
   snapshot.save();
 }
 
+/** Number of services that have staked in an OLAS contract at least once. */
+export function countOlasServices(): i32 {
+  const allServices = getOrCreateGlobal().services.load();
+  let count = 0;
+  for (let i = 0; i < allServices.length; i++) {
+    if (allServices[i].hasOlasStake) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
 /**
- * Compute the median of cumulative rewards from ALL Service entities in the system.
- * This gives us the true ecosystem median representing all services' reward levels.
- * Returns 0 if no services exist.
+ * Median of cumulative rewards across OLAS services. Services that have only ever
+ * staked in a contract paying another token earn no OLAS, so counting their zeros
+ * would drag the median down. Returns 0 if there are none.
  */
 export function computeMedianOfAllServices(): BigInt {
   const global = getOrCreateGlobal();
@@ -223,10 +235,12 @@ export function computeMedianOfAllServices(): BigInt {
     return BigInt.fromI32(0);
   }
 
-  // Extract current cumulative rewards from each service entity
+  // Extract current cumulative rewards from each OLAS service entity
   const rewards = new Array<BigInt>();
   for (let i = 0; i < allServices.length; i++) {
-    rewards.push(allServices[i].olasRewardsEarned);
+    if (allServices[i].hasOlasStake) {
+      rewards.push(allServices[i].olasRewardsEarned);
+    }
   }
 
   if (rewards.length == 0) {

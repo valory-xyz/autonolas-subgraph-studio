@@ -50,6 +50,8 @@ function createStakingContractEntity(contractAddress: Address): void {
   stakingContract.serviceRegistry = Address.zero();
   stakingContract.activityChecker = Address.zero();
   stakingContract.stakingManager = null;
+  stakingContract.version = "0.2.0";
+  stakingContract.eventsIndexed = true;
   stakingContract.configComplete = true;
   stakingContract.stakingToken = null;
   stakingContract.isOlasStaking = true;
@@ -235,6 +237,32 @@ describe("Rewards from contracts paying another token", () => {
     assert.entityCount("RewardUpdate", 0)
     // the raw event is still recorded
     assert.entityCount("Checkpoint", 1)
+  })
+
+  test("Non-OLAS services do not skew numServices or the median", () => {
+    let olasContract = TestAddresses.CONTRACT_1
+    let otherContract = TestAddresses.CONTRACT_2
+    createStakingContractWithUtility(olasContract, true)
+    createStakingContractWithUtility(otherContract, false)
+
+    // one service earning OLAS, two that only ever stake elsewhere
+    handleServiceStaked(createServiceStakedEvent(TestConstants.SERVICE_ID_1, TestConstants.EPOCH_5, olasContract))
+    handleServiceStaked(createServiceStakedEvent(TestConstants.SERVICE_ID_2, TestConstants.EPOCH_5, otherContract))
+    handleServiceStaked(createServiceStakedEvent(TestConstants.SERVICE_ID_3, TestConstants.EPOCH_5, otherContract))
+
+    assert.fieldEquals("Service", TestConstants.SERVICE_ID_1.toString(), "hasOlasStake", "true")
+    assert.fieldEquals("Service", TestConstants.SERVICE_ID_2.toString(), "hasOlasStake", "false")
+
+    handleCheckpoint(
+      createCheckpointEvent(TestConstants.EPOCH_5, [TestConstants.SERVICE_ID_1], [TestConstants.REWARD_1000], olasContract)
+    )
+
+    let day = Bytes.fromUTF8(getDayTimestamp(BigInt.fromI32(1)).toString())
+    let snapshot = CumulativeDailyStakingGlobal.load(day)
+    assert.assertNotNull(snapshot)
+    // one OLAS service, not three, and its reward rather than a zero-dragged median
+    assert.i32Equals(1, snapshot!.numServices)
+    assert.stringEquals(TestConstants.REWARD_1000.toString(), snapshot!.medianCumulativeRewards.toString())
   })
 
   test("Claimed rewards stay out of the OLAS totals", () => {

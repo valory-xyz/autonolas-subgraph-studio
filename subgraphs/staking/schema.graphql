@@ -158,8 +158,10 @@ type StakingContract @entity(immutable: true) {
   stakingManager: Bytes
   stakingToken: Bytes
   serviceRegistryTokenUtility: Bytes
+  version: String
   configComplete: Boolean! # false when a getter reverted and the field holds a default
   isOlasStaking: Boolean! # stakingToken matches this network's OLAS
+  eventsIndexed: Boolean! # false when the implementation's events do not match the manifest
   metadataHash: Bytes!
   maxNumServices: BigInt!
   rewardsPerSecond: BigInt!
@@ -190,6 +192,7 @@ type Service @entity(immutable: false) {
   id: ID!
   currentOlasStaked: BigInt!
   currentStakeAmount: BigInt! # recorded on stake, subtracted on unstake
+  hasOlasStake: Boolean! # has staked in an OLAS contract at least once
   olasRewardsEarned: BigInt!
   olasRewardsClaimed: BigInt!
   blockNumber: BigInt!

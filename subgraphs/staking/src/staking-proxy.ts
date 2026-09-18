@@ -307,6 +307,7 @@ export function handleServiceStaked(event: ServiceStakedEvent): void {
     service.olasRewardsEarned = BigInt.fromI32(0);
     service.olasRewardsClaimed = BigInt.fromI32(0);
     service.currentStakeAmount = BigInt.fromI32(0);
+    service.hasOlasStake = false;
     service.global = getOrCreateGlobal().id;
     service.totalEpochsParticipated = 0;
     service.latestStakingContract = null;
@@ -315,6 +316,9 @@ export function handleServiceStaked(event: ServiceStakedEvent): void {
   const olasForStaking = getOlasForStaking(event.address, event.params.serviceId)
   service.currentOlasStaked = service.currentOlasStaked.plus(olasForStaking);
   service.currentStakeAmount = olasForStaking;
+  if (isOlasStakingContract(event.address)) {
+    service.hasOlasStake = true;
+  }
 
   // Track latest staking contract
   service.latestStakingContract = event.address;

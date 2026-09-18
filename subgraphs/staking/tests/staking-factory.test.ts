@@ -109,6 +109,39 @@ describe("StakingFactory instance indexing", () => {
     )
   })
 
+  test("Instance whose events do not match the manifest is not templated", () => {
+    let instance = Address.fromString("0x0000000000000000000000000000000000000026")
+    // StakingBase 0.3.0: ServiceUnstaked and RewardClaimed changed shape
+    mockStakingProxyConfig(instance, [], null, "0.3.0")
+
+    handleInstanceCreated(createInstanceCreatedEvent(SENDER, instance, IMPLEMENTATION))
+
+    // still listed, so the factory stays the source of truth
+    assert.entityCount("StakingContract", 1)
+    assert.fieldEquals("StakingContract", instance.toHexString(), "version", "0.3.0")
+    assert.fieldEquals("StakingContract", instance.toHexString(), "eventsIndexed", "false")
+  })
+
+  test("An externally managed 0.3.0 keeps the v1.2.x signatures and is templated", () => {
+    let instance = Address.fromString("0x0000000000000000000000000000000000000027")
+    // same version string, but stakingManager() marks a different contract family
+    mockStakingProxyConfig(instance, [], MANAGER, "0.3.0")
+
+    handleInstanceCreated(createInstanceCreatedEvent(SENDER, instance, IMPLEMENTATION))
+
+    assert.fieldEquals("StakingContract", instance.toHexString(), "eventsIndexed", "true")
+  })
+
+  test("Implementation predating VERSION() is templated", () => {
+    let instance = Address.fromString("0x0000000000000000000000000000000000000028")
+    mockStakingProxyConfig(instance, ["VERSION"], null)
+
+    handleInstanceCreated(createInstanceCreatedEvent(SENDER, instance, IMPLEMENTATION))
+
+    assert.fieldEquals("StakingContract", instance.toHexString(), "version", "null")
+    assert.fieldEquals("StakingContract", instance.toHexString(), "eventsIndexed", "true")
+  })
+
   test("InstanceCreated is recorded for every instance", () => {
     let instance = Address.fromString("0x0000000000000000000000000000000000000024")
     mockStakingProxyConfig(instance, [], null)
