@@ -1,0 +1,153 @@
+import {
+  assert,
+  describe,
+  test,
+  clearStore,
+  beforeEach,
+  afterEach,
+  dataSourceMock,
+} from "matchstick-as/assembly/index"
+import { Address } from "@graphprotocol/graph-ts"
+import { handleInstanceCreated } from "../src/staking-factory"
+import { createInstanceCreatedEvent, mockStakingProxyConfig } from "./staking-factory-utils"
+
+const SENDER = Address.fromString("0x0000000000000000000000000000000000000011")
+const IMPLEMENTATION = Address.fromString("0x0000000000000000000000000000000000000012")
+const MANAGER = Address.fromString("0x0000000000000000000000000000000000000013")
+
+describe("StakingFactory instance indexing", () => {
+  beforeEach(() => {
+    clearStore()
+    // getOlasTokenAddress() reads dataSource.network(); `yarn test` runs the
+    // gnosis manifest, and the mocked stakingToken is gnosis OLAS
+    dataSourceMock.setNetwork("gnosis")
+  })
+
+  afterEach(() => {
+    clearStore()
+    dataSourceMock.resetValues()
+  })
+
+  test("Fully featured instance is indexed with complete config and no manager", () => {
+    let instance = Address.fromString("0x0000000000000000000000000000000000000021")
+    mockStakingProxyConfig(instance, [], null)
+
+    handleInstanceCreated(createInstanceCreatedEvent(SENDER, instance, IMPLEMENTATION))
+
+    assert.entityCount("StakingContract", 1)
+    assert.fieldEquals("StakingContract", instance.toHexString(), "configComplete", "true")
+    assert.fieldEquals("StakingContract", instance.toHexString(), "stakingManager", "null")
+    assert.fieldEquals("StakingContract", instance.toHexString(), "numAgentInstances", "1")
+    assert.fieldEquals("StakingContract", instance.toHexString(), "agentIds", "[25]")
+    // the mock returns this network's OLAS, so the comparison must hold
+    assert.fieldEquals("StakingContract", instance.toHexString(), "isOlasStaking", "true")
+    assert.fieldEquals(
+      "StakingContract",
+      instance.toHexString(),
+      "stakingToken",
+      "0xce11e14225575945b8e6dc0d4f2dd4c570f79d9f"
+    )
+  })
+
+  test("Instance whose stakingToken reverts is excluded from the OLAS totals", () => {
+    let instance = Address.fromString("0x0000000000000000000000000000000000000025")
+    mockStakingProxyConfig(instance, ["stakingToken"], null)
+
+    handleInstanceCreated(createInstanceCreatedEvent(SENDER, instance, IMPLEMENTATION))
+
+    assert.entityCount("StakingContract", 1)
+    assert.fieldEquals("StakingContract", instance.toHexString(), "isOlasStaking", "false")
+    assert.fieldEquals("StakingContract", instance.toHexString(), "stakingToken", "null")
+    // an unreadable token is a failed read, so it must show up here too
+    assert.fieldEquals("StakingContract", instance.toHexString(), "configComplete", "false")
+  })
+
+  test("Externally managed instance missing getAgentIds is still indexed", () => {
+    let instance = Address.fromString("0x0000000000000000000000000000000000000022")
+    mockStakingProxyConfig(instance, ["getAgentIds"], MANAGER)
+
+    handleInstanceCreated(createInstanceCreatedEvent(SENDER, instance, IMPLEMENTATION))
+
+    assert.entityCount("StakingContract", 1)
+    assert.fieldEquals("StakingContract", instance.toHexString(), "configComplete", "false")
+    assert.fieldEquals("StakingContract", instance.toHexString(), "stakingManager", MANAGER.toHexString())
+    assert.fieldEquals("StakingContract", instance.toHexString(), "agentIds", "[]")
+    // the getters it does expose are still recorded
+    assert.fieldEquals("StakingContract", instance.toHexString(), "numAgentInstances", "1")
+    assert.fieldEquals("StakingContract", instance.toHexString(), "maxNumServices", "40")
+  })
+
+  test("Sparse implementation missing most getters does not halt indexing", () => {
+    let instance = Address.fromString("0x0000000000000000000000000000000000000023")
+    mockStakingProxyConfig(
+      instance,
+      [
+        "metadataHash",
+        "minStakingDuration",
+        "maxNumInactivityPeriods",
+        "numAgentInstances",
+        "getAgentIds",
+        "threshold",
+        "configHash",
+        "proxyHash",
+      ],
+      MANAGER
+    )
+
+    handleInstanceCreated(createInstanceCreatedEvent(SENDER, instance, IMPLEMENTATION))
+
+    assert.entityCount("StakingContract", 1)
+    assert.fieldEquals("StakingContract", instance.toHexString(), "configComplete", "false")
+    assert.fieldEquals("StakingContract", instance.toHexString(), "numAgentInstances", "0")
+    // reads that succeed are kept, so the contract is still usable
+    assert.fieldEquals("StakingContract", instance.toHexString(), "maxNumServices", "40")
+    assert.fieldEquals(
+      "StakingContract",
+      instance.toHexString(),
+      "minStakingDeposit",
+      "5000000000000000000000"
+    )
+  })
+
+  test("Instance whose events do not match the manifest is not templated", () => {
+    let instance = Address.fromString("0x0000000000000000000000000000000000000026")
+    // StakingBase 0.3.0: ServiceUnstaked and RewardClaimed changed shape
+    mockStakingProxyConfig(instance, [], null, "0.3.0")
+
+    handleInstanceCreated(createInstanceCreatedEvent(SENDER, instance, IMPLEMENTATION))
+
+    // still listed, so the factory stays the source of truth
+    assert.entityCount("StakingContract", 1)
+    assert.fieldEquals("StakingContract", instance.toHexString(), "version", "0.3.0")
+    assert.fieldEquals("StakingContract", instance.toHexString(), "eventsIndexed", "false")
+  })
+
+  test("An externally managed 0.3.0 keeps the v1.2.x signatures and is templated", () => {
+    let instance = Address.fromString("0x0000000000000000000000000000000000000027")
+    // same version string, but stakingManager() marks a different contract family
+    mockStakingProxyConfig(instance, [], MANAGER, "0.3.0")
+
+    handleInstanceCreated(createInstanceCreatedEvent(SENDER, instance, IMPLEMENTATION))
+
+    assert.fieldEquals("StakingContract", instance.toHexString(), "eventsIndexed", "true")
+  })
+
+  test("Implementation predating VERSION() is templated", () => {
+    let instance = Address.fromString("0x0000000000000000000000000000000000000028")
+    mockStakingProxyConfig(instance, ["VERSION"], null)
+
+    handleInstanceCreated(createInstanceCreatedEvent(SENDER, instance, IMPLEMENTATION))
+
+    assert.fieldEquals("StakingContract", instance.toHexString(), "version", "null")
+    assert.fieldEquals("StakingContract", instance.toHexString(), "eventsIndexed", "true")
+  })
+
+  test("InstanceCreated is recorded for every instance", () => {
+    let instance = Address.fromString("0x0000000000000000000000000000000000000024")
+    mockStakingProxyConfig(instance, [], null)
+
+    handleInstanceCreated(createInstanceCreatedEvent(SENDER, instance, IMPLEMENTATION))
+
+    assert.entityCount("InstanceCreated", 1)
+  })
+})

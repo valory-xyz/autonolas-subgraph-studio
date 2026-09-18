@@ -23,7 +23,7 @@ import {
   Withdraw,
   ActiveServiceEpoch
 } from "../generated/schema"
-import { createRewardUpdate, getOrCreateGlobal, getOlasForStaking, upsertCumulativeDailyStakingGlobal, getOrCreateServiceRewardsHistory, processUnstake } from "./utils"
+import { createRewardUpdate, getOrCreateGlobal, getOlasForStaking, upsertCumulativeDailyStakingGlobal, getOrCreateServiceRewardsHistory, processUnstake, recordRewardsClaimed, isOlasStakingContract } from "./utils"
 
 export function handleCheckpoint(event: CheckpointEvent): void {
   let entity = new Checkpoint(
@@ -47,6 +47,9 @@ export function handleCheckpoint(event: CheckpointEvent): void {
   let rewardedAmounts = event.params.rewards;
   let totalRewards = BigInt.fromI32(0);
 
+  // Looked up once: the reward loop below and the global totals both need it
+  let isOlas = isOlasStakingContract(event.address);
+
   // Map to track which services we've already processed for rewards
   let handledServicesMap = new Map<string, boolean>();
   
@@ -59,9 +62,9 @@ export function handleCheckpoint(event: CheckpointEvent): void {
     totalRewards = totalRewards.plus(reward);
     handledServicesMap.set(serviceIdStr, true);
 
-    // Update individual Service cumulative earnings
+    // Update individual Service cumulative earnings, in OLAS terms only
     let service = Service.load(serviceIdStr);
-    if (service !== null) {
+    if (service !== null && isOlas) {
       service.olasRewardsEarned = service.olasRewardsEarned.plus(reward);
       service.save();
     }
@@ -155,6 +158,8 @@ export function handleCheckpoint(event: CheckpointEvent): void {
   }
 
   // 4. Update Global states and rewards
+  if (!isOlas) return;
+
   let global = getOrCreateGlobal();
   global.totalRewards = global.totalRewards.plus(totalRewards);
   global.save();
@@ -204,6 +209,9 @@ export function handleRewardClaimed(event: RewardClaimedEvent): void {
 
   entity.save()
 
+  // Rewards from a contract paying in another token are not OLAS
+  if (!isOlasStakingContract(event.address)) return;
+
   // Update service claimed rewards
   let service = Service.load(event.params.serviceId.toString());
   if (service !== null) {
@@ -220,6 +228,8 @@ export function handleRewardClaimed(event: RewardClaimedEvent): void {
     "Claimed",
     event.params.reward
   );
+
+  recordRewardsClaimed(event, event.params.reward);
 }
 
 export function handleServiceForceUnstaked(
@@ -242,12 +252,15 @@ export function handleServiceForceUnstaked(
 
   entity.save()
 
+  // ServiceForceUnstaked.reward is returned to availableRewards, not paid out,
+  // so no "Claimed" RewardUpdate and no claimed accumulation
   processUnstake(
     event,
     event.params.serviceId,
     event.params.epoch,
     event.params.reward,
-    event.address
+    event.address,
+    false
   );
 }
 
@@ -293,13 +306,19 @@ export function handleServiceStaked(event: ServiceStakedEvent): void {
     service.currentOlasStaked = BigInt.fromI32(0);
     service.olasRewardsEarned = BigInt.fromI32(0);
     service.olasRewardsClaimed = BigInt.fromI32(0);
+    service.currentStakeAmount = BigInt.fromI32(0);
+    service.hasOlasStake = false;
     service.global = getOrCreateGlobal().id;
     service.totalEpochsParticipated = 0;
     service.latestStakingContract = null;
   }
 
-  const olasForStaking = getOlasForStaking(event.params._event.address)
+  const olasForStaking = getOlasForStaking(event.address, event.params.serviceId)
   service.currentOlasStaked = service.currentOlasStaked.plus(olasForStaking);
+  service.currentStakeAmount = olasForStaking;
+  if (isOlasStakingContract(event.address)) {
+    service.hasOlasStake = true;
+  }
 
   // Track latest staking contract
   service.latestStakingContract = event.address;
@@ -361,22 +380,28 @@ export function handleServiceUnstaked(event: ServiceUnstakedEvent): void {
 
   entity.save()
 
-  // Update claimed staking rewards
-  createRewardUpdate(
-    event.transaction.hash.toHex() + "-" + event.logIndex.toString(),
-    event.block.number,
-    event.block.timestamp,
-    event.transaction.hash,
-    "Claimed",
-    event.params.reward
-  );
+  // A normal unstake does pay the reward out, but it is only an OLAS payout
+  // when the contract stakes OLAS; another token's stays out of the OLAS totals
+  let isOlas = isOlasStakingContract(event.address);
+
+  if (isOlas) {
+    createRewardUpdate(
+      event.transaction.hash.toHex() + "-" + event.logIndex.toString(),
+      event.block.number,
+      event.block.timestamp,
+      event.transaction.hash,
+      "Claimed",
+      event.params.reward
+    );
+  }
 
   processUnstake(
     event,
     event.params.serviceId,
     event.params.epoch,
     event.params.reward,
-    event.address
+    event.address,
+    isOlas
   );
 }
 

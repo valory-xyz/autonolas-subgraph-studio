@@ -26,6 +26,10 @@ dataSources:
           file: ../../abis/StakingFactory.json
         - name: StakingProxy
           file: ../../abis/StakingProxy.json
+        - name: ServiceRegistryL2
+          file: ../../abis/ServiceRegistryL2.json
+        - name: ServiceRegistryTokenUtility
+          file: ../../abis/ServiceRegistryTokenUtility.json
       eventHandlers:
         - event: InstanceCreated(indexed address,indexed address,indexed address)
           handler: handleInstanceCreated
@@ -61,6 +65,10 @@ templates:
       abis:
         - name: StakingProxy
           file: ../../abis/StakingProxy.json
+        - name: ServiceRegistryL2
+          file: ../../abis/ServiceRegistryL2.json
+        - name: ServiceRegistryTokenUtility
+          file: ../../abis/ServiceRegistryTokenUtility.json
       eventHandlers:
         - event: Checkpoint(indexed uint256,uint256,uint256[],uint256[],uint256)
           handler: handleCheckpoint

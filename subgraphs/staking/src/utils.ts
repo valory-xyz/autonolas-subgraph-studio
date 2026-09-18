@@ -1,10 +1,6 @@
-import {
-  Address,
-  BigInt,
-  Bytes,
-  dataSource,
-  ethereum,
-} from "@graphprotocol/graph-ts";
+import { Address, BigInt, Bytes, ethereum, log } from "@graphprotocol/graph-ts";
+import { ServiceRegistryL2 } from "../generated/templates/StakingProxy/ServiceRegistryL2";
+import { ServiceRegistryTokenUtility } from "../generated/templates/StakingProxy/ServiceRegistryTokenUtility";
 import {
   Global,
   RewardUpdate,
@@ -15,6 +11,7 @@ import {
 } from "../generated/schema";
 
 const ONE_DAY = BigInt.fromI32(86400);
+const ADDRESS_LENGTH = 20;
 
 export function createRewardUpdate(
   id: string,
@@ -33,17 +30,81 @@ export function createRewardUpdate(
   rewardUpdate.save();
 }
 
-export function getOlasForStaking(address: Address): BigInt {
-  const stakingContract = StakingContract.load(address);
-  if (stakingContract === null) {
-    return BigInt.fromI32(0);
+/** Security deposit plus a bond per agent instance; null when a read is unavailable. */
+function readLockedOlas(
+  stakingContract: StakingContract,
+  serviceId: BigInt
+): BigInt | null {
+  const utilityAddress = stakingContract.serviceRegistryTokenUtility;
+  const registryAddress = stakingContract.serviceRegistry;
+  // serviceRegistry defaults to empty when its getter reverted, and
+  // Address.fromBytes throws on anything that is not 20 bytes
+  if (utilityAddress === null || registryAddress.length != ADDRESS_LENGTH) {
+    return null;
   }
 
-  const stakeAmount = stakingContract.minStakingDeposit.times(
+  const utility = ServiceRegistryTokenUtility.bind(
+    Address.fromBytes(utilityAddress as Bytes)
+  );
+  const deposit = utility.try_mapServiceIdTokenDeposit(serviceId);
+  if (deposit.reverted) {
+    return null;
+  }
+  // value0 is the deposit token, value1 the security deposit
+  let total = deposit.value.value1;
+
+  const registry = ServiceRegistryL2.bind(Address.fromBytes(registryAddress));
+  const service = registry.try_getService(serviceId);
+  const params = registry.try_getAgentParams(serviceId);
+  if (service.reverted || params.reverted) {
+    return null;
+  }
+
+  const agentIds = service.value.agentIds;
+  const agentParams = params.value.value1;
+  for (let i = 0; i < agentParams.length && i < agentIds.length; i++) {
+    const bond = utility.try_getAgentBond(serviceId, agentIds[i]);
+    if (bond.reverted) {
+      return null;
+    }
+    total = total.plus(agentParams[i].slots.times(bond.value));
+  }
+
+  return total;
+}
+
+/** False when the contract's deposits and rewards are denominated in another token. */
+export function isOlasStakingContract(address: Address): boolean {
+  const stakingContract = StakingContract.load(address);
+  return stakingContract !== null && stakingContract.isOlasStaking;
+}
+
+/** Stake amount for a service: read on-chain, falling back to contract parameters. */
+export function getOlasForStaking(address: Address, serviceId: BigInt): BigInt {
+  const stakingContract = StakingContract.load(address);
+  if (stakingContract === null) {
+    return BigInt.zero();
+  }
+
+  if (!stakingContract.isOlasStaking) {
+    return BigInt.zero();
+  }
+
+  const locked = readLockedOlas(stakingContract, serviceId);
+  if (locked !== null) {
+    return locked as BigInt;
+  }
+
+  // The contract's own parameters describe its minimum, not what this service
+  // posted, and are zero when those getters reverted at creation
+  const fallback = stakingContract.minStakingDeposit.times(
     stakingContract.numAgentInstances.plus(BigInt.fromI32(1))
   );
-
-  return stakeAmount;
+  log.warning(
+    "Locked OLAS unreadable for service {} on {}, falling back to contract parameters: {}",
+    [serviceId.toString(), address.toHexString(), fallback.toString()]
+  );
+  return fallback;
 }
 
 export function getOrCreateGlobal(): Global {
@@ -54,6 +115,7 @@ export function getOrCreateGlobal(): Global {
     global.cumulativeOlasUnstaked = BigInt.fromI32(0);
     global.currentOlasStaked = BigInt.fromI32(0);
     global.totalRewards = BigInt.fromI32(0);
+    global.totalRewardsClaimed = BigInt.fromI32(0);
     global.lastActiveDayTimestamp = BigInt.fromI32(0);
   }
   return global;
@@ -75,14 +137,17 @@ export function getOrCreateCumulativeDailyStakingGlobal(
   const id = Bytes.fromUTF8(dayTimestamp.toString());
   let snapshot = CumulativeDailyStakingGlobal.load(id);
   if (snapshot == null) {
+    const global = getOrCreateGlobal();
+
     snapshot = new CumulativeDailyStakingGlobal(id);
     snapshot.timestamp = dayTimestamp;
-    snapshot.totalRewards = BigInt.fromI32(0);
+    // Carry the running cumulative totals forward; callers overwrite their own.
+    snapshot.totalRewards = global.totalRewards;
+    snapshot.totalRewardsClaimed = global.totalRewardsClaimed;
     snapshot.numServices = 0;
     snapshot.medianCumulativeRewards = BigInt.fromI32(0);
 
     // Use the last active day timestamp from Global for instant forward-filling
-    const global = getOrCreateGlobal();
     if (!global.lastActiveDayTimestamp.isZero()) {
       const referenceId = Bytes.fromUTF8(
         global.lastActiveDayTimestamp.toString()
@@ -115,9 +180,10 @@ export function upsertCumulativeDailyStakingGlobal(
   // Compute median from ALL services in the system
   snapshot.medianCumulativeRewards = computeMedianOfAllServices();
 
-  // Update service count
+  // Update service count, OLAS services only, to match the median beside it
   const global = getOrCreateGlobal();
-  snapshot.numServices = global.services.load().length;
+  snapshot.totalRewardsClaimed = global.totalRewardsClaimed;
+  snapshot.numServices = countOlasServices();
 
   // Update Global to track this as the most recent active day for future forward-filling
   global.lastActiveDayTimestamp = snapshot.timestamp;
@@ -129,10 +195,37 @@ export function upsertCumulativeDailyStakingGlobal(
   return snapshot;
 }
 
+/** Adds a payout to the Global accumulator and today's snapshot. */
+export function recordRewardsClaimed(
+  event: ethereum.Event,
+  reward: BigInt
+): void {
+  const global = getOrCreateGlobal();
+  global.totalRewardsClaimed = global.totalRewardsClaimed.plus(reward);
+  global.save();
+
+  const snapshot = getOrCreateCumulativeDailyStakingGlobal(event);
+  snapshot.block = event.block.number;
+  snapshot.totalRewardsClaimed = global.totalRewardsClaimed;
+  snapshot.save();
+}
+
+/** Number of services that have staked in an OLAS contract at least once. */
+export function countOlasServices(): i32 {
+  const allServices = getOrCreateGlobal().services.load();
+  let count = 0;
+  for (let i = 0; i < allServices.length; i++) {
+    if (allServices[i].hasOlasStake) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
 /**
- * Compute the median of cumulative rewards from ALL Service entities in the system.
- * This gives us the true ecosystem median representing all services' reward levels.
- * Returns 0 if no services exist.
+ * Median of cumulative rewards across OLAS services. Services that have only ever
+ * staked in a contract paying another token earn no OLAS, so counting their zeros
+ * would drag the median down. Returns 0 if there are none.
  */
 export function computeMedianOfAllServices(): BigInt {
   const global = getOrCreateGlobal();
@@ -142,10 +235,12 @@ export function computeMedianOfAllServices(): BigInt {
     return BigInt.fromI32(0);
   }
 
-  // Extract current cumulative rewards from each service entity
+  // Extract current cumulative rewards from each OLAS service entity
   const rewards = new Array<BigInt>();
   for (let i = 0; i < allServices.length; i++) {
-    rewards.push(allServices[i].olasRewardsEarned);
+    if (allServices[i].hasOlasStake) {
+      rewards.push(allServices[i].olasRewardsEarned);
+    }
   }
 
   if (rewards.length == 0) {
@@ -171,60 +266,6 @@ export function computeMedianOfAllServices(): BigInt {
     return rewards[mid];
   }
   return rewards[mid - 1].plus(rewards[mid]).div(BigInt.fromI32(2));
-}
-
-export function isAllowedImplementation(implementation: Bytes): boolean {
-  let network = dataSource.network();
-
-  let allowed: Bytes[] = [];
-
-  if (network == "arbitrum-one") {
-    allowed = [
-      Bytes.fromHexString("0x04b0007b2aFb398015B76e5f22993a1fddF83644"),
-    ];
-  } else if (network == "base") {
-    allowed = [
-      Bytes.fromHexString(
-        "0xEB5638eefE289691EcE01943f768EDBF96258a80"
-      ) as Bytes,
-    ];
-  } else if (network == "celo") {
-    allowed = [
-      Bytes.fromHexString("0xe1E1B286EbE95b39F785d8069f2248ae9C41b7a9"),
-    ];
-  } else if (network == "gnosis") {
-    allowed = [
-      Bytes.fromHexString(
-        "0xEa00be6690a871827fAfD705440D20dd75e67AB1"
-      ) as Bytes,
-    ];
-  } else if (network == "mainnet") {
-    allowed = [
-      Bytes.fromHexString(
-        "0x0Dc23eEf3bC64CF3cbd8f9329B57AE4C4f28d5d2"
-      ) as Bytes,
-    ];
-  } else if (network == "matic") {
-    allowed = [
-      Bytes.fromHexString(
-        "0x4aba1Cf7a39a51D75cBa789f5f21cf4882162519"
-      ) as Bytes,
-    ];
-  } else if (network == "optimism") {
-    allowed = [
-      Bytes.fromHexString(
-        "0x63C2c53c09dE534Dd3bc0b7771bf976070936bAC"
-      ) as Bytes,
-    ];
-  }
-
-  for (let i = 0; i < allowed.length; i++) {
-    if (implementation.toHexString() == allowed[i].toHexString()) {
-      return true;
-    }
-  }
-
-  return false;
 }
 
 export function getOrCreateServiceRewardsHistory(
@@ -267,17 +308,24 @@ export function processUnstake(
   serviceId: BigInt,
   epoch: BigInt,
   reward: BigInt,
-  contractAddress: Address
+  contractAddress: Address,
+  rewardPaidOut: boolean
 ): void {
-  const olasForStaking = getOlasForStaking(contractAddress);
   let serviceIdStr = serviceId.toString();
 
-  // 1. Update service
+  // Release exactly what was recorded on stake, so the totals cannot drift
   let service = Service.load(serviceIdStr);
+  const olasForStaking =
+    service === null ? BigInt.zero() : service.currentStakeAmount;
+
+  // 1. Update service
   if (service !== null) {
     service.latestStakingContract = null;
-    service.olasRewardsClaimed = service.olasRewardsClaimed.plus(reward);
+    if (rewardPaidOut) {
+      service.olasRewardsClaimed = service.olasRewardsClaimed.plus(reward);
+    }
     service.currentOlasStaked = service.currentOlasStaked.minus(olasForStaking);
+    service.currentStakeAmount = BigInt.zero();
     service.save();
   }
 
@@ -298,4 +346,9 @@ export function processUnstake(
   global.cumulativeOlasUnstaked = global.cumulativeOlasUnstaked.plus(olasForStaking);
   global.currentOlasStaked = global.currentOlasStaked.minus(olasForStaking);
   global.save();
+
+  // 5. Count the payout only when the caller says one happened
+  if (rewardPaidOut) {
+    recordRewardsClaimed(event, reward);
+  }
 }

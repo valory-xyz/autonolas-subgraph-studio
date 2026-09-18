@@ -84,13 +84,20 @@ These are direct recordings of on-chain events. All marked `@entity(immutable: t
 | RewardUpdate | type ("Claimable"\|"Claimed"), amount | StakingProxy |
 
 ### StakingContract
-Immutable. Full on-chain configuration snapshot of a staking proxy, created in `handleInstanceCreated`.
+Immutable. On-chain configuration snapshot of a staking proxy, created in `handleInstanceCreated` for **every** instance the factory creates.
 
 | Field | Type | Notes |
 |-------|------|-------|
 | id | `Bytes!` | Instance address |
 | sender | `Bytes!` | Creator |
 | instance / implementation | `Bytes!` | Contract addresses |
+| stakingManager | `Bytes` | **Nullable.** Read from `stakingManager()`, which not every implementation exposes |
+| configComplete | `Boolean!` | False when at least one getter below reverted and its value is a default rather than a reading |
+| stakingToken | `Bytes` | **Nullable.** Deposit token; null when `stakingToken()` is not exposed |
+| version | `String` | **Nullable.** `VERSION()`; null on implementations predating it |
+| eventsIndexed | `Boolean!` | False when the implementation's event signatures do not match the manifest, so no `StakingProxy` template was created |
+| isOlasStaking | `Boolean!` | `stakingToken` matches this network's OLAS. False means its deposits are **not** OLAS and must not reach the OLAS totals |
+| serviceRegistryTokenUtility | `Bytes` | **Nullable.** Where service deposits and agent bonds actually sit |
 | metadataHash | `Bytes!` | |
 | maxNumServices | `BigInt!` | Max services allowed |
 | rewardsPerSecond | `BigInt!` | Emission rate |
@@ -112,6 +119,8 @@ Mutable. Per-service cumulative state across all staking contracts.
 |-------|------|-------|
 | id | `ID!` | Service ID (string) |
 | currentOlasStaked | `BigInt!` | Currently staked amount |
+| currentStakeAmount | `BigInt!` | Amount recorded at stake time, subtracted verbatim on unstake |
+| hasOlasStake | `Boolean!` | Has staked in an OLAS contract at least once; gates the daily snapshot's `numServices` and median |
 | olasRewardsEarned | `BigInt!` | Cumulative rewards earned (updated at checkpoint) |
 | olasRewardsClaimed | `BigInt!` | Cumulative rewards claimed (updated at claim/unstake) |
 | latestStakingContract | `Bytes` | **Nullable.** Current contract address; null when unstaked |
@@ -154,7 +163,8 @@ Mutable. Singleton (id: `""`) aggregate statistics.
 | cumulativeOlasStaked | `BigInt!` | Total OLAS ever staked |
 | cumulativeOlasUnstaked | `BigInt!` | Total OLAS ever unstaked |
 | currentOlasStaked | `BigInt!` | Net currently staked |
-| totalRewards | `BigInt!` | Cumulative rewards distributed |
+| totalRewards | `BigInt!` | Cumulative rewards earned (claimable), summed at checkpoint |
+| totalRewardsClaimed | `BigInt!` | Cumulative rewards paid out, summed at claim/unstake |
 | lastActiveDayTimestamp | `BigInt!` | For daily snapshot forward-filling |
 | services | `[Service!]!` | `@derivedFrom(field: "global")` |
 
@@ -166,7 +176,8 @@ Mutable. Daily snapshots of ecosystem metrics.
 | id | `Bytes!` | Day timestamp as UTF8 bytes |
 | timestamp | `BigInt!` | UTC midnight timestamp |
 | block | `BigInt!` | Block when updated |
-| totalRewards | `BigInt!` | Cumulative rewards at this day |
+| totalRewards | `BigInt!` | Cumulative rewards earned at this day |
+| totalRewardsClaimed | `BigInt!` | Cumulative rewards claimed at this day |
 | numServices | `Int!` | Total service count |
 | medianCumulativeRewards | `BigInt!` | Median of `olasRewardsEarned` across all services |
 
@@ -180,9 +191,10 @@ Mutable. Daily snapshots of ecosystem metrics.
 **Event**: `InstanceCreated(indexed address sender, indexed address instance, indexed address implementation)`
 
 - Creates immutable `InstanceCreated` entity
-- **Guard**: Checks `isAllowedImplementation(implementation)` — skips if not whitelisted
-- If allowed: creates `StakingProxy` dynamic template and `StakingContract` entity
-- `StakingContract` fields populated via on-chain contract calls (`contract.metadataHash()`, `contract.maxNumServices()`, etc.)
+- Creates a `StakingContract` entity for **every** instance — the factory is the authority on what is a staking contract, so there is no implementation allowlist
+- Creates the `StakingProxy` template only when `eventsIndexed`, i.e. when the implementation's events match the manifest. `ServiceStaked` is unchanged across versions while `ServiceUnstaked` and `RewardClaimed` are not, so templating an implementation we cannot fully decode would add stakes that never get subtracted and leave `currentOlasStaked` climbing permanently. A skipped instance is still listed, flagged and logged — a visible gap rather than silent drift
+- `StakingContract` fields are populated via on-chain calls, each through `try_*`. Implementations differ in which getters they expose, so a revert defaults the field — zero for numerics, empty for bytes, `[]` for `agentIds` — and clears `configComplete`. An unguarded call would revert the handler and **halt indexing for the whole network**, which is what the old allowlist was really protecting against
+- `stakingManager()` is only exposed by some implementations, so a non-null value marks an externally managed contract without needing a hardcoded address list
 
 #### 2-5. Simple Event Recorders
 - **handleInstanceRemoved**: Records `InstanceRemoved`
@@ -197,7 +209,7 @@ Mutable. Daily snapshots of ecosystem metrics.
 
 - Creates immutable `ServiceStaked` entity
 - Creates or loads `Service` entity (initializes all counters to 0 on first creation)
-- Calculates stake amount via `getOlasForStaking(event.address)` — reads from `StakingContract`
+- Calculates stake amount via `getOlasForStaking(event.address, serviceId)` — reads the service's locked OLAS on-chain, and records it on `Service.currentStakeAmount`
 - Updates `Service.currentOlasStaked`, sets `Service.latestStakingContract`
 - Creates/updates `ActiveServiceEpoch` — adds service to active list (deduplicates)
 - Creates `ServiceRewardsHistory` entry for this epoch (increments `totalEpochsParticipated`)
@@ -220,13 +232,13 @@ Four-phase processing:
 **Event**: `ServiceUnstaked(uint256 epoch, indexed uint256 serviceId, ...)`
 
 - Creates immutable `ServiceUnstaked` entity
-- Creates `RewardUpdate` with type "Claimed"
-- Calls `processUnstake()` — shared logic for unstaking
+- A normal unstake does pay the reward out, but only an OLAS contract pays it in OLAS. `isOlasStakingContract(event.address)` is read once and gates both the `RewardUpdate` with type "Claimed" and the `rewardPaidOut` argument
+- Calls `processUnstake()` with `rewardPaidOut: isOlas`, which adds the payout to `Global.totalRewardsClaimed`
 
 #### 4. handleServiceForceUnstaked
 - Creates immutable `ServiceForceUnstaked` entity
-- Calls `processUnstake()` — same shared logic
-- **No** `RewardUpdate` created (unlike regular unstake)
+- Calls `processUnstake()` with `rewardPaidOut: false`
+- **No** `RewardUpdate`, no claimed accumulation, no `olasRewardsClaimed` increment. `_unstake(serviceId, enforced = true)` adds the reward back to `availableRewards` instead of calling `_withdraw`, so `ServiceForceUnstaked.reward` is the amount the service **gave up**, not a payout
 
 #### 5. handleRewardClaimed
 **Event**: `RewardClaimed(uint256 epoch, indexed uint256 serviceId, ...)`
@@ -234,6 +246,7 @@ Four-phase processing:
 - Creates immutable `RewardClaimed` entity
 - Updates `Service.olasRewardsClaimed` (adds claimed amount)
 - Creates `RewardUpdate` with type "Claimed"
+- Calls `recordRewardsClaimed()` — adds to `Global.totalRewardsClaimed` and today's snapshot
 
 #### 6. handleServicesEvicted
 - Creates immutable `ServicesEvicted` entity with array fields
@@ -253,15 +266,18 @@ All in `src/utils.ts`:
 | Function | Purpose |
 |----------|---------|
 | `createRewardUpdate(id, blockNumber, blockTimestamp, txHash, type, amount)` | Creates immutable `RewardUpdate` entity |
-| `getOlasForStaking(address)` | Returns `minStakingDeposit * (numAgentInstances + 1)` from `StakingContract` entity |
+| `getOlasForStaking(address, serviceId)` | OLAS to attribute to a service: the on-chain locked amount, falling back to the contract's parameters. Returns 0 for non-OLAS contracts |
+| `readLockedOlas(stakingContract, serviceId)` | Reads security deposit + agent bonds from ServiceRegistryTokenUtility. Returns null if any read reverts, so the caller can fall back |
 | `getOrCreateGlobal()` | Singleton Global entity (id: `""`) — creates with zero values if null |
 | `getDayTimestamp(timestamp)` | UTC midnight: `timestamp / 86400 * 86400` |
 | `getOrCreateCumulativeDailyStakingGlobal(event)` | Daily snapshot with forward-fill from `Global.lastActiveDayTimestamp` |
 | `upsertCumulativeDailyStakingGlobal(event, totalRewards)` | Updates daily snapshot: sets totalRewards, computes median, counts services, updates `Global.lastActiveDayTimestamp` |
-| `computeMedianOfAllServices()` | Loads all Service entities, sorts `olasRewardsEarned`, returns median (avg of two middle for even count) |
-| `isAllowedImplementation(implementation)` | Network-specific whitelist of allowed implementation addresses |
+| `recordRewardsClaimed(event, reward)` | Adds a payout to `Global.totalRewardsClaimed` and mirrors it onto today's snapshot. Skips the median/service-count recompute — claims are far more frequent than checkpoints, and those fields only move on a checkpoint |
+| `computeMedianOfAllServices()` | Sorts `olasRewardsEarned` across services with `hasOlasStake`, returns median (avg of two middle for even count) |
+| `countOlasServices()` | Number of services with `hasOlasStake`, used for the daily snapshot's `numServices` |
 | `getOrCreateServiceRewardsHistory(serviceId, contractAddress, epoch, ...)` | ID: `{serviceId}-{contractAddress}-{epoch}`. Increments `Service.totalEpochsParticipated` on creation only |
-| `processUnstake(event, serviceId, epoch, reward, contractAddress)` | Shared unstake logic: clears `latestStakingContract`, adds reward to `olasRewardsClaimed`, decrements `currentOlasStaked`, updates Global |
+| `processUnstake(event, serviceId, epoch, reward, contractAddress, rewardPaidOut)` | Shared unstake logic: clears `latestStakingContract`, decrements `currentOlasStaked` **by `Service.currentStakeAmount`**, updates Global. Only when `rewardPaidOut` does it add to `olasRewardsClaimed` and call `recordRewardsClaimed()` |
+| `isOlasStakingContract(address)` | False when the contract's deposits and rewards are denominated in another token |
 
 ---
 
@@ -273,9 +289,27 @@ All in `src/utils.ts`:
 3. **Service unstakes** → `latestStakingContract` cleared, reward added to `olasRewardsClaimed`, stake amount removed from Global
 
 ### Staking Amount Calculation
+
+The OLAS a service locks lives in **ServiceRegistryTokenUtility**, not in the staking contract, and is read at the block being indexed so historic stakes get historic values:
+
+```
+locked = tokenUtility.mapServiceIdTokenDeposit(serviceId).securityDeposit
+       + Σ (agentParams[i].slots * tokenUtility.getAgentBond(serviceId, agentIds[i]))
+```
+
+The staking contract's own parameters are only a **fallback** for when those reads are unavailable:
+
 ```
 olasForStaking = StakingContract.minStakingDeposit * (StakingContract.numAgentInstances + 1)
 ```
+
+That fallback describes the contract's *minimum*, not what a given service actually posted, and some implementations have no `numAgentInstances` at all. Prefer the read; the formula is what the numbers degrade to.
+
+Contracts with `isOlasStaking: false` contribute **zero** — their deposits are denominated in another token.
+
+### Stake / Unstake Symmetry
+
+`Service.currentStakeAmount` is written when a service stakes and subtracted verbatim when it unstakes. Never recompute the amount on the unstake path: the on-chain deposit can change while a service is staked, and an asymmetric add/subtract makes `currentOlasStaked` drift permanently — potentially negative. It also makes a service that unstakes without a recorded stake (staked before the subgraph's `startBlock`) release zero instead of a phantom amount.
 
 ### Service Migration
 - `Service.latestStakingContract` tracks current contract
@@ -289,30 +323,58 @@ olasForStaking = StakingContract.minStakingDeposit * (StakingContract.numAgentIn
 - Service remains in `ActiveServiceEpoch` for continuous tracking
 
 ### Daily Snapshots
-- `CumulativeDailyStakingGlobal` updated on every checkpoint
+- `CumulativeDailyStakingGlobal` updated on every checkpoint (all fields) and every claim/unstake (`totalRewardsClaimed` only)
+- A new day seeds both cumulative totals from `Global`, so a day opened by a claim rather than a checkpoint still carries `totalRewards` forward
 - Forward-fills from last active day (via `Global.lastActiveDayTimestamp`) for population continuity
 - `medianCumulativeRewards` computed from all services' `olasRewardsEarned`
+
+### Non-OLAS Contracts
+
+Every factory instance is indexed, including any that stakes and pays in another token. `StakingContract.isOlasStaking` gates **every OLAS aggregate** — stake totals, `Global.totalRewards`, `Global.totalRewardsClaimed`, `Service.olasRewardsEarned`, `Service.olasRewardsClaimed` and the `RewardUpdate` entities. Raw event entities (`Checkpoint`, `RewardClaimed`, `Deposit`, …) are still recorded, so nothing is lost; it is only the OLAS-denominated sums that exclude them.
+
+A `stakingToken()` revert also yields `isOlasStaking: false`, which is why it is logged and clears `configComplete` — `StakingContract` is immutable, so a misread excludes the contract permanently.
+
+`CumulativeDailyStakingGlobal.numServices` and `medianCumulativeRewards` count only services with `hasOlasStake`. A service that has only ever staked in a non-OLAS contract earns no OLAS, so including its zero would drag the median down and inflate the count — both contradicting the rule above.
 
 ### Reward Tracking: Earned vs Claimed
 - `olasRewardsEarned`: Updated at checkpoint time — cumulative rewards the service has earned
 - `olasRewardsClaimed`: Updated at claim/unstake time — cumulative rewards actually withdrawn
 - Compare the two to measure unclaimed rewards
+- The same pair exists ecosystem-wide as `Global.totalRewards` / `Global.totalRewardsClaimed`, with a daily series on `CumulativeDailyStakingGlobal`. Prefer these over summing `RewardUpdate` rows: Gnosis alone has >124k of them, so any paginated sum is both slow and easy to silently truncate
+- Three sums are kept in lockstep by design: `Global.totalRewardsClaimed` == sum of `RewardUpdate` where `type: "Claimed"` == sum of `Service.olasRewardsClaimed`
+- A forced unstake is **not** a claim. Its reward returns to the contract's `availableRewards`, so it stays in the claimable total and never enters any of the three claimed sums
 
 ---
 
+## Version Gating
+
+`eventsIndexed` is true when the events can be decoded:
+
+| `VERSION()` | Templated | Why |
+|-------------|-----------|-----|
+| reverts | yes | Predates the constant; v1.2.x-era signatures |
+| `0.1.0`, `0.2.0` | yes | Match the manifest |
+| `0.3.0` **with** `stakingManager()` | yes | Externally managed family, keeps the v1.2.x signatures |
+| `0.3.0` **without** `stakingManager()` | **no** | `StakingBase` v1.3.0: `ServiceUnstaked` gains a trailing `bool enforced`, `RewardClaimed` returns `address[] receivers, uint256[] rewardAmounts` |
+| anything else | **no** | Unknown until its signatures are checked |
+
+Both contract families report `0.3.0`, which is why `stakingManager()` is the tie-breaker: `StakingBase` never exposes it.
+
+Widening this list is the deliberate step that comes with adding handlers for new signatures.
+
+## Logging
+
+The only `log` calls in the subgraph, all `log.warning`, all marking a number that silently degraded:
+
+| Where | Meaning |
+|-------|---------|
+| `handleInstanceCreated` | `stakingToken()` reverted, so the instance is excluded from every OLAS total |
+| `handleInstanceCreated` | The implementation's events do not match the manifest, so they are not indexed |
+| `getOlasForStaking` | The service's locked OLAS was unreadable, so the contract-parameter fallback was used |
+
 ## Constants
 
-### Allowed Implementations (per network)
-
-| Network | Implementation Address |
-|---------|----------------------|
-| arbitrum-one | `0x04b0007b2aFb398015B76e5f22993a1fddF83644` |
-| base | `0xEB5638eefE289691EcE01943f768EDBF96258a80` |
-| celo | `0xe1E1B286EbE95b39F785d8069f2248ae9C41b7a9` |
-| gnosis | `0xEa00be6690a871827fAfD705440D20dd75e67AB1` |
-| mainnet | `0x0Dc23eEf3bC64CF3cbd8f9329B57AE4C4f28d5d2` |
-| matic | `0x4aba1Cf7a39a51D75cBa789f5f21cf4882162519` |
-| optimism | `0x63C2c53c09dE534Dd3bc0b7546c1e9aaf525b1FA55` |
+No hardcoded contract allowlists. Which instances count as staking contracts comes from the factory; `stakingManager()` on the instance marks the externally managed ones.
 
 ---
 
@@ -341,11 +403,12 @@ ABIs: `../../abis/StakingFactory.json`, `../../abis/StakingProxy.json`
 **Framework**: Matchstick-as v0.6.0
 
 ### Test Helpers
+- `tests/staking-factory-utils.ts`: `createInstanceCreatedEvent` plus `mockStakingProxyConfig(instance, reverting, stakingManager)`, which mocks every getter `handleInstanceCreated` reads and reverts the ones named, so partial implementations can be simulated
 - `tests/staking-proxy-utils.ts`: Event factories (`createServiceStakedEvent`, `createCheckpointEvent`, `createServiceUnstakedEvent`, `createServiceForceUnstakedEvent`, `createRewardClaimedEvent`, `createServicesEvictedEvent`)
 - `tests/test-helpers.ts`: Namespaced constants (`TestAddresses`, `TestBytes`, `TestConstants`) and ID helper functions (`createHistoryId`, `createActiveEpochId`)
 - Test setup creates `StakingContract` entity with `MIN_STAKING_DEPOSIT = 10e18`, `NUM_AGENT_INSTANCES = 3`
 
-### Test Coverage (12 tests in staking-proxy.test.ts + utils.test.ts)
+### Test Coverage (33 in staking-proxy.test.ts + 8 in staking-factory.test.ts + 5 in utils.test.ts)
 
 | Test | Validates |
 |------|-----------|
@@ -355,13 +418,35 @@ ABIs: `../../abis/StakingFactory.json`, `../../abis/StakingProxy.json`
 | Checkpoint creates zero-reward entries for non-KPI services | Active but unrewarded services get rewardAmount=0 |
 | RewardClaimed updates olasRewardsClaimed | Cumulative claim tracking |
 | ServiceUnstaked updates claimed and clears contract | olasRewardsClaimed, latestStakingContract=null |
-| ServiceForceUnstaked same behavior as unstake | olasRewardsClaimed, latestStakingContract=null |
+| ServiceForceUnstaked clears the contract without crediting a claim | latestStakingContract=null, olasRewardsClaimed unchanged |
 | totalEpochsParticipated increments correctly | Counts across epochs 1→2→3 |
 | Multiple rewards accumulate | 1000+500+250 = 1750 |
 | Checkpoint carries forward to next epoch | NextEpoch tracker has all services |
 | Service on different contracts tracked separately | Per-contract history, totalEpochsParticipated=2 |
 | Complex lifecycle: stake→evict→restake→migrate | 6 epochs, 2 contracts, full history chain |
 | Checkpoint deduplicates next epoch tracker | Race condition: early stake + checkpoint merge |
+| Checkpoint accumulates Global.totalRewards | Claimable accumulator moves, claimed stays at 0 |
+| RewardClaimed accumulates Global.totalRewardsClaimed | Two claims sum |
+| ServiceUnstaked payout counts as claimed | Unstake payout reaches the global accumulator |
+| Daily snapshot carries both cumulative totals | `totalRewards` and `totalRewardsClaimed` on one day |
+| Fully featured instance indexed | `configComplete: true`, `stakingManager: null`, agentIds read |
+| Instance missing getAgentIds | Still indexed; `configComplete: false`, manager set, other getters kept |
+| Sparse implementation missing most getters | Indexing does not halt; successful reads retained |
+| InstanceCreated recorded for every instance | No implementation gate |
+| Stake amount comes from the on-chain deposit | On-chain 1000 used, not the contract minimum |
+| Unstake releases the recorded amount | Deposit doubles mid-stake; totals still return to zero |
+| Non-OLAS contracts contribute nothing | `isOlasStaking: false` adds 0 to the stake totals |
+| Instance whose `stakingToken` reverts | `isOlasStaking: false`, `configComplete: false`, logged |
+| Unmatched version not templated | `0.3.0` without `stakingManager`: listed, `eventsIndexed: false` |
+| Externally managed `0.3.0` templated | Same version string, `stakingManager` set, `eventsIndexed: true` |
+| Implementation predating `VERSION()` | `version: null`, still templated |
+| Non-OLAS services excluded from snapshot stats | 1 OLAS + 2 non-OLAS gives `numServices: 1` and an undragged median |
+| ServiceForceUnstaked is not a claim | No accumulator, no `RewardUpdate`, no `olasRewardsClaimed` |
+| Each `readLockedOlas` read reverting in turn | `serviceRegistry`, `mapServiceIdTokenDeposit`, `getService`, `getAgentParams`, `getAgentBond` each fall back without crashing |
+| Bonds summed across several agent ids | 100 + 2×10 + 3×20 = 180 |
+| Unstake with no recorded stake | Releases nothing rather than a phantom amount |
+| A day opened by a claim | `totalRewards` carried forward, not restarted at zero |
+| Non-OLAS checkpoint, claim and unstake rewards | Excluded from every OLAS total; raw entities still recorded |
 
 ---
 
@@ -425,6 +510,7 @@ yarn deploy-celo
     cumulativeOlasUnstaked
     currentOlasStaked
     totalRewards
+    totalRewardsClaimed
   }
 }
 ```
@@ -435,6 +521,7 @@ yarn deploy-celo
   cumulativeDailyStakingGlobals(orderBy: timestamp, orderDirection: desc, first: 30) {
     timestamp
     totalRewards
+    totalRewardsClaimed
     numServices
     medianCumulativeRewards
   }
@@ -447,14 +534,16 @@ yarn deploy-celo
 
 ### Critical Points
 1. **All financial fields are `BigInt`** — no BigDecimal.
-2. **Implementation filtering**: Only whitelisted implementations (one per network) get `StakingProxy` template + `StakingContract` entity. `InstanceCreated` events are always recorded regardless.
-3. **Stake amount**: `minStakingDeposit * (numAgentInstances + 1)`, read from the `StakingContract` entity (not on-chain at stake time).
-4. **Earned vs Claimed**: `olasRewardsEarned` updated at checkpoint; `olasRewardsClaimed` updated at claim/unstake. Compare for unclaimed balance.
+2. **No implementation filtering**: every factory instance gets a `StakingProxy` template + `StakingContract` entity. Getter reads are all `try_*` because implementations expose different subsets — one unguarded revert would halt indexing for the network. `configComplete` flags entities holding defaults; `stakingManager` is non-null on externally managed contracts.
+3. **Stake amount**: read on-chain from ServiceRegistryTokenUtility at stake time (security deposit + agent bonds), recorded on `Service.currentStakeAmount`, and released verbatim on unstake. The `minStakingDeposit * (numAgentInstances + 1)` formula is only a fallback. Non-OLAS contracts contribute zero.
+4. **Earned vs Claimed**: `olasRewardsEarned` updated at checkpoint; `olasRewardsClaimed` updated at claim/unstake. Compare for unclaimed balance. Ecosystem-wide equivalents live on `Global` (`totalRewards` / `totalRewardsClaimed`) and `CumulativeDailyStakingGlobal` — use those instead of summing `RewardUpdate` rows.
 5. **Zero-reward tracking**: ALL active services get `ServiceRewardsHistory` entries at checkpoint, even if reward=0. Enables KPI analysis.
 6. **Migration detection**: At checkpoint, services with `latestStakingContract != event.address` are skipped for zero-reward entries (they migrated to another contract).
 7. **Eviction does NOT clear state**: `handleServicesEvicted` only records the event. `latestStakingContract` remains set, service stays in `ActiveServiceEpoch`.
 8. **Epoch rollover with deduplication**: Checkpoint merges current active services into next epoch's tracker, handling race conditions where services stake for the next epoch before the current checkpoint.
 9. **Daily forward-fill**: `CumulativeDailyStakingGlobal` copies `numServices` and `medianCumulativeRewards` from last active day when creating a new snapshot, ensuring continuous time series.
-10. **`processUnstake()` shared logic**: Used by both `handleServiceUnstaked` and `handleServiceForceUnstaked`. Clears `latestStakingContract`, adds reward to `olasRewardsClaimed`, decrements stake from Global.
+10. **`processUnstake()` shared logic**: Used by both `handleServiceUnstaked` and `handleServiceForceUnstaked`. Clears `latestStakingContract`, decrements stake from Global, and — only when `rewardPaidOut`, i.e. a normal unstake of an OLAS contract — adds the reward to `olasRewardsClaimed` and `Global.totalRewardsClaimed`.
 11. **`ServiceRewardsHistory` ID**: `{serviceId}-{contractAddress}-{epoch}` — scoped by contract, enabling multi-contract participation.
 12. **`totalEpochsParticipated`**: Incremented inside `getOrCreateServiceRewardsHistory()` only on first creation per unique ID — idempotent on subsequent calls.
+13. **Forced unstakes are not claims**: `_unstake(enforced = true)` returns the reward to `availableRewards`. `ServiceForceUnstaked.reward` is forfeited, not paid.
+14. **Implementation versions**: the manifest matches registries **v1.2.x** (`StakingBase` VERSION `0.2.0`). From v1.3.0 (`VERSION 0.3.0`), `ServiceUnstaked` gains a trailing `bool enforced` and `RewardClaimed` becomes `(…, address[] receivers, uint256[] rewardAmounts)`. Such an instance is **not templated** (see Version Gating) — `ServiceStaked` alone still matches, so indexing it would add stakes that are never subtracted. No such instance is deployed yet (Gnosis: 65 × `0.2.0`, 3 externally managed). When handlers for the new signatures are added, they must not double count: a normal unstake there emits **both** `RewardClaimed` and `ServiceUnstaked`.
