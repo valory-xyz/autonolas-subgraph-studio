@@ -92,8 +92,9 @@ company-account deploy; watch Polygon USDC.e sync.
   `networks.json` via the `{{ erc20TokenDataSources }}` marker in
   `generate-manifests.js`.
 - **`Safe`** template (`src/safe.ts`) — `SafeReceived` (native inbound,
-  precise); `ExecutionSuccess` / `ExecutionFromModuleSuccess` (native-out:
-  intentional no-op, see limits); `AddedOwner` / `RemovedOwner` /
+  precise); `ExecutionSuccess` (decodes the outer `execTransaction` for the
+  Agent Safe → Agent Signer native top-up, `AGENT_SAFE_TO_AGENT_EOA`, see
+  limits); `ExecutionFromModuleSuccess` (intentional no-op); `AddedOwner` / `RemovedOwner` /
   `ChangedThreshold` (Master Safe owner-list maintenance).
 
 ## Key mechanisms (`src/utils.ts` unless noted)
@@ -161,13 +162,22 @@ company-account deploy; watch Polygon USDC.e sync.
 - Non-Safe NFT recipients (staking proxy, EOAs) are skipped via the
   `getOwners()` probe + `isStakingContract`, so the real Master Safe link
   from mint is preserved.
-- **Native outflows from a Safe are not indexed.** Native sent *out*
-  surfaces only as `ExecutionSuccess` (no amount/recipient), so
-  `handleSafeExecution*` are intentional no-ops. Consequence: **native
-  withdrawals to external wallets** and the **native agent gas-funding leg
-  (Master Safe → Agent EOA)** do not appear. Native *inflows* (`SafeReceived`)
-  and all *token* flows in/out are captured. Closing this needs call/trace
-  handlers (the rejected self-hosted indexer); accepted v1 gap.
+- **Native outflows from a Safe are not indexed, with one exception.**
+  Native sent *out* surfaces only as `ExecutionSuccess` (no
+  amount/recipient). The exception (OPE-1965): `handleSafeExecutionSuccess`
+  writes an `AGENT_SAFE_TO_AGENT_EOA` row (SEMANTIC, `token` null, no
+  `TokenBalance`) when the outer tx calls the emitting Safe's
+  `execTransaction` directly with one plain CALL, empty data, value > 0, paid
+  to the tx sender, and the Safe is tracked as `AGENT`. Every shape check
+  runs before any store load (hot path). The row ID is one per tx
+  (`agentSafeTopUpId`), so a reentrant `ExecutionSuccess` from the same Safe
+  in the same tx writes no second row.
+  `handleSafeExecutionFromModuleSuccess` stays a no-op. Consequence: **native
+  withdrawals to external wallets**, relayed / module executions and the
+  **native agent gas-funding leg (Master Safe → Agent EOA)** do not appear.
+  Native *inflows* (`SafeReceived`) and all *token* flows in/out are
+  captured. Closing the rest needs call/trace handlers (the rejected
+  self-hosted indexer); accepted v1 gap.
 - **Token coverage is a fixed allowlist, not "any token."** A subgraph
   `Transfer` data source targets specific contracts, so we index the set the
   wallet displays (OLAS, wrapped-native, USDC / USDC.e / pUSD per chain,
@@ -189,9 +199,10 @@ company-account deploy; watch Polygon USDC.e sync.
 
 ## Tests
 
-53 Matchstick tests across `tests/service-registry.test.ts` (Phase 1a),
+69 Matchstick tests across `tests/service-registry.test.ts` (Phase 1a),
 `tests/staking.test.ts` (Phase 1b), `tests/phase-2a.test.ts` (Phase 2a + the
-Phase-2b stablecoin suite — all 8 (chain, token) tuples). `yarn test`.
+Phase-2b stablecoin suite — all 8 (chain, token) tuples — and the
+`AGENT_SAFE_TO_AGENT_EOA` decode guards). `yarn test`.
 
 ## Development workflow
 

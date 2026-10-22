@@ -1,4 +1,4 @@
-import { Bytes } from "@graphprotocol/graph-ts";
+import { BigInt, Bytes, ethereum, log } from "@graphprotocol/graph-ts";
 import {
   AddedOwner as AddedOwnerEvent,
   ChangedThreshold as ChangedThresholdEvent,
@@ -7,15 +7,19 @@ import {
   RemovedOwner as RemovedOwnerEvent,
   SafeReceived as SafeReceivedEvent,
 } from "../generated/templates/Safe/GnosisSafe";
-import { FundsMovement, MasterSafe } from "../generated/schema";
+import { FundsMovement, MasterSafe, TrackedAddress } from "../generated/schema";
 import {
+  CATEGORY_AGENT_SAFE_TO_AGENT_EOA,
   CATEGORY_MASTER_FUNDING_IN,
   CATEGORY_MASTER_TO_AGENT,
   CATEGORY_SAFE_SETUP_TRANSFER,
+  ROLE_AGENT,
   SOURCE_RAW_TRANSFER,
+  SOURCE_SEMANTIC,
 } from "./constants";
 import {
   addToAgentFundingEvent,
+  agentSafeTopUpId,
   classifyTransfer,
   fundsMovementId,
   getOrCreateAgentFundingEvent,
@@ -78,19 +82,126 @@ export function handleSafeReceived(event: SafeReceivedEvent): void {
   row.save();
 }
 
-// handleSafeExecutionSuccess / handleSafeExecutionFromModuleSuccess
-// — native OUT events. Intentional no-ops for v1: ExecutionSuccess carries
-// no amount/recipient (Safes executing via a relayer carry value=0 on the
-// outer tx), so precise native-out tracking requires call/trace handlers —
-// see plan §6.2 honest-limits doc and the Phase 2b+ option. Deliberately
-// NO store access here: these fire on every execution of every Safe that
-// shares the template, so even a single load would be pure hot-path waste.
+// Selector of execTransaction(address,uint256,bytes,uint8,uint256,uint256,
+// uint256,address,address,bytes).
+const EXEC_TRANSACTION_SELECTOR: u8[] = [0x6a, 0x76, 0x12, 0x02];
+const EXEC_TRANSACTION_ARGS =
+  "(address,uint256,bytes,uint8,uint256,uint256,uint256,address,address,bytes)";
+// Calldata args are the tuple's body; ethereum.decode reads a dynamic tuple
+// as offset + body, so the offset word is prepended before decoding.
+const TUPLE_OFFSET = Bytes.fromHexString(
+  "0x0000000000000000000000000000000000000000000000000000000000000020"
+);
+// Positions of the fields read from the decoded EXEC_TRANSACTION_ARGS tuple.
+const ARG_TO = 0;
+const ARG_VALUE = 1;
+const ARG_DATA = 2;
+const ARG_OPERATION = 3;
+
+function hasExecTransactionSelector(input: Bytes): boolean {
+  if (input.length < 4) return false;
+  for (let i = 0; i < 4; i++) {
+    if (input[i] != EXEC_TRANSACTION_SELECTOR[i]) return false;
+  }
+  return true;
+}
+
+// handleSafeExecutionSuccess — native top-up Agent Safe → its own Agent
+// Signer (AGENT_SAFE_TO_AGENT_EOA). ExecutionSuccess carries no amount or
+// recipient, so they come from the outer tx: it must call the emitting Safe
+// directly with one plain CALL, no data, value > 0, paying the tx sender.
+// The check proves only that the Agent Safe paid the tx sender: the Agent
+// Signer submits its own Safe txs, so that payee is taken to be the Agent
+// Signer (the signer is not a tracked address). Relayed or module
+// executions are not decoded, and every other native outflow stays
+// unindexed.
+//
+// Fires on every execution of every Safe sharing the template, so every
+// shape check runs before any store load (OPE-1965 D39).
+//
+// The row ID is one per tx: a reentrant execTransaction from the same Safe
+// (e.g. an Agent Signer with EIP-7702 code) emits a second ExecutionSuccess
+// in the same tx, which reads the same outer input and is skipped.
 export function handleSafeExecutionSuccess(
   event: ExecutionSuccessEvent
 ): void {
-  // no-op (see above)
+  const txTo = event.transaction.to;
+  if (txTo === null || !txTo.equals(event.address)) return;
+
+  const input = event.transaction.input;
+  if (!hasExecTransactionSelector(input)) return;
+
+  const decoded = ethereum.decode(
+    EXEC_TRANSACTION_ARGS,
+    TUPLE_OFFSET.concat(Bytes.fromUint8Array(input.subarray(4)))
+  );
+  if (decoded === null) {
+    log.warning(
+      "Safe {} execTransaction calldata not decodable (tx={}, input_len={}); skipping",
+      [
+        event.address.toHexString(),
+        event.transaction.hash.toHexString(),
+        input.length.toString(),
+      ]
+    );
+    return;
+  }
+  const args = decoded.toTuple();
+
+  const operation = args[ARG_OPERATION].toBigInt();
+  if (!operation.isZero()) return;
+  if (args[ARG_DATA].toBytes().length != 0) return;
+  const value = args[ARG_VALUE].toBigInt();
+  if (value.le(BigInt.zero())) return;
+  const recipient = args[ARG_TO].toAddress();
+  if (!recipient.equals(event.transaction.from)) {
+    log.debug(
+      "Safe {} native CALL not paid to the tx sender (tx={}); skipping",
+      [event.address.toHexString(), event.transaction.hash.toHexString()]
+    );
+    return;
+  }
+
+  const tracked = TrackedAddress.load(event.address);
+  if (tracked === null || tracked.role != ROLE_AGENT) {
+    log.debug(
+      "Safe {} with top-up shape is not an Agent Safe (role={}, tx={}); skipping",
+      [
+        event.address.toHexString(),
+        tracked === null ? "untracked" : tracked.role,
+        event.transaction.hash.toHexString(),
+      ]
+    );
+    return;
+  }
+
+  const id = agentSafeTopUpId(event.transaction.hash);
+  if (FundsMovement.load(id) !== null) return;
+
+  const row = new FundsMovement(id);
+  if (tracked.service !== null) {
+    row.service = tracked.service!;
+  }
+  if (tracked.masterSafe !== null) {
+    row.masterSafe = tracked.masterSafe!;
+  }
+  row.agentSafe = tracked.id;
+  row.category = CATEGORY_AGENT_SAFE_TO_AGENT_EOA;
+  row.source = SOURCE_SEMANTIC;
+  // token = null (native); no TokenBalance for native.
+  row.amount = value;
+  row.from = event.address;
+  row.to = recipient;
+  row.blockNumber = event.block.number;
+  row.blockTimestamp = event.block.timestamp;
+  row.transactionHash = event.transaction.hash;
+  row.save();
 }
 
+// handleSafeExecutionFromModuleSuccess — intentional no-op: a module
+// execution carries its call in the module's own calldata, not the outer
+// tx. Deliberately NO store access: it fires on every module execution of
+// every Safe sharing the template.
 export function handleSafeExecutionFromModuleSuccess(
   event: ExecutionFromModuleSuccessEvent
 ): void {
