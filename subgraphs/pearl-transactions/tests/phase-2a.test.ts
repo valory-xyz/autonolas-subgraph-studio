@@ -14,15 +14,17 @@ import { Transfer as OlasTransfer } from "../generated/OLAS/ERC20";
 import {
   AddedOwner,
   ChangedThreshold,
+  ExecutionSuccess,
   RemovedOwner,
   SafeReceived,
 } from "../generated/templates/Safe/GnosisSafe";
 import { TokenDeposit } from "../generated/ServiceRegistryTokenUtility/ServiceRegistryTokenUtility";
-import { MasterSafe, TrackedAddress } from "../generated/schema";
+import { FundsMovement, MasterSafe, TrackedAddress } from "../generated/schema";
 import { handleErc20Transfer } from "../src/erc20";
 import {
   handleSafeAddedOwner,
   handleSafeChangedThreshold,
+  handleSafeExecutionSuccess,
   handleSafeReceived,
   handleSafeRemovedOwner,
 } from "../src/safe";
@@ -311,6 +313,75 @@ function newChangedThreshold(
     )
   );
   return setMockEventBoilerplate(e, txHash, 0, safe);
+}
+
+const EXEC_TRANSACTION_SELECTOR = Bytes.fromHexString("0x6a761202");
+// Bytes.empty() is four zero bytes (ByteArray.fromI32(0)), not zero-length.
+const NO_DATA = new Bytes(0);
+
+// Calldata of Safe.execTransaction(to, value, data, operation, 0, 0, 0, 0x0,
+// 0x0, sig). ethereum.encode of a dynamic tuple leads with an offset word
+// that real calldata does not have, so it is dropped.
+function execTransactionInput(
+  to: Address,
+  value: BigInt,
+  data: Bytes,
+  operation: i32,
+  selector: Bytes = EXEC_TRANSACTION_SELECTOR
+): Bytes {
+  const args = new ethereum.Tuple();
+  args.push(ethereum.Value.fromAddress(to));
+  args.push(ethereum.Value.fromUnsignedBigInt(value));
+  args.push(ethereum.Value.fromBytes(data));
+  args.push(ethereum.Value.fromI32(operation));
+  args.push(ethereum.Value.fromUnsignedBigInt(BigInt.zero()));
+  args.push(ethereum.Value.fromUnsignedBigInt(BigInt.zero()));
+  args.push(ethereum.Value.fromUnsignedBigInt(BigInt.zero()));
+  args.push(ethereum.Value.fromAddress(ZERO));
+  args.push(ethereum.Value.fromAddress(ZERO));
+  args.push(
+    ethereum.Value.fromBytes(Bytes.fromHexString("0x" + "01".repeat(65)))
+  );
+  const encoded = ethereum.encode(ethereum.Value.fromTuple(args))!;
+  return selector.concat(Bytes.fromUint8Array(encoded.subarray(32)));
+}
+
+function newExecutionSuccess(
+  safe: Address,
+  txFrom: Address,
+  txTo: Address,
+  input: Bytes,
+  txHash: Bytes,
+  logIndex: i32
+): ExecutionSuccess {
+  const mock = newMockEvent();
+  const e = new ExecutionSuccess(
+    mock.address,
+    mock.logIndex,
+    mock.transactionLogIndex,
+    mock.logType,
+    mock.block,
+    mock.transaction,
+    mock.parameters,
+    mock.receipt
+  );
+  e.parameters = new Array();
+  e.parameters.push(
+    new ethereum.EventParam(
+      "txHash",
+      ethereum.Value.fromFixedBytes(Bytes.fromHexString("0x" + "ab".repeat(32)))
+    )
+  );
+  e.parameters.push(
+    new ethereum.EventParam(
+      "payment",
+      ethereum.Value.fromUnsignedBigInt(BigInt.zero())
+    )
+  );
+  e.transaction.from = txFrom;
+  e.transaction.to = txTo;
+  e.transaction.input = input;
+  return setMockEventBoilerplate(e, txHash, logIndex, safe);
 }
 
 // ----------------- Test setup helpers -----------------
@@ -1072,5 +1143,181 @@ describe("pearl-transactions / Phase 2b — stablecoins", () => {
       "USDC",
       38
     );
+  });
+});
+
+// ---- OPE-1965 — Agent Safe → Agent Signer native top-up ----
+describe("pearl-transactions / AGENT_SAFE_TO_AGENT_EOA", () => {
+  beforeEach(() => {
+    clearStore();
+    dataSourceMock.setNetwork("gnosis");
+  });
+
+  afterEach(() => {
+    clearStore();
+  });
+
+  test("top-up sent by the Agent Signer writes one SEMANTIC native row", () => {
+    seedAgentSafe(SERVICE_ID);
+    const tx = mockTx(60);
+    handleSafeExecutionSuccess(
+      newExecutionSuccess(
+        AGENT_SAFE,
+        AGENT_EOA,
+        AGENT_SAFE,
+        execTransactionInput(AGENT_EOA, AMOUNT, NO_DATA, 0),
+        tx,
+        3
+      )
+    );
+
+    const id = tx.concatI32(3).toHexString();
+    assert.entityCount("FundsMovement", 1);
+    assert.fieldEquals("FundsMovement", id, "category", "AGENT_SAFE_TO_AGENT_EOA");
+    assert.fieldEquals("FundsMovement", id, "source", "SEMANTIC");
+    assert.fieldEquals("FundsMovement", id, "amount", AMOUNT.toString());
+    assert.fieldEquals("FundsMovement", id, "from", AGENT_SAFE.toHexString());
+    assert.fieldEquals("FundsMovement", id, "to", AGENT_EOA.toHexString());
+    assert.assertTrue(FundsMovement.load(tx.concatI32(3))!.token === null);
+    assert.fieldEquals("FundsMovement", id, "agentSafe", AGENT_SAFE.toHexString());
+    assert.fieldEquals("FundsMovement", id, "masterSafe", MASTER_SAFE.toHexString());
+    assert.fieldEquals(
+      "FundsMovement",
+      id,
+      "service",
+      serviceBytes(SERVICE_ID).toHexString()
+    );
+    assert.fieldEquals("FundsMovement", id, "transactionHash", tx.toHexString());
+    assert.entityCount("TokenBalance", 0);
+  });
+
+  test("outer tx not sent to the emitting Safe writes no row", () => {
+    seedAgentSafe(SERVICE_ID);
+    handleSafeExecutionSuccess(
+      newExecutionSuccess(
+        AGENT_SAFE,
+        AGENT_EOA,
+        RANDOM_EOA,
+        execTransactionInput(AGENT_EOA, AMOUNT, NO_DATA, 0),
+        mockTx(61),
+        0
+      )
+    );
+    assert.entityCount("FundsMovement", 0);
+  });
+
+  test("selector other than execTransaction writes no row", () => {
+    seedAgentSafe(SERVICE_ID);
+    handleSafeExecutionSuccess(
+      newExecutionSuccess(
+        AGENT_SAFE,
+        AGENT_EOA,
+        AGENT_SAFE,
+        execTransactionInput(
+          AGENT_EOA,
+          AMOUNT,
+          NO_DATA,
+          0,
+          Bytes.fromHexString("0xdeadbeef")
+        ),
+        mockTx(62),
+        0
+      )
+    );
+    assert.entityCount("FundsMovement", 0);
+  });
+
+  test("delegatecall (operation 1) writes no row", () => {
+    seedAgentSafe(SERVICE_ID);
+    handleSafeExecutionSuccess(
+      newExecutionSuccess(
+        AGENT_SAFE,
+        AGENT_EOA,
+        AGENT_SAFE,
+        execTransactionInput(AGENT_EOA, AMOUNT, NO_DATA, 1),
+        mockTx(63),
+        0
+      )
+    );
+    assert.entityCount("FundsMovement", 0);
+  });
+
+  test("call with data writes no row", () => {
+    seedAgentSafe(SERVICE_ID);
+    handleSafeExecutionSuccess(
+      newExecutionSuccess(
+        AGENT_SAFE,
+        AGENT_EOA,
+        AGENT_SAFE,
+        execTransactionInput(
+          AGENT_EOA,
+          AMOUNT,
+          Bytes.fromHexString("0xa9059cbb"),
+          0
+        ),
+        mockTx(64),
+        0
+      )
+    );
+    assert.entityCount("FundsMovement", 0);
+  });
+
+  test("zero value writes no row", () => {
+    seedAgentSafe(SERVICE_ID);
+    handleSafeExecutionSuccess(
+      newExecutionSuccess(
+        AGENT_SAFE,
+        AGENT_EOA,
+        AGENT_SAFE,
+        execTransactionInput(AGENT_EOA, BigInt.zero(), NO_DATA, 0),
+        mockTx(65),
+        0
+      )
+    );
+    assert.entityCount("FundsMovement", 0);
+  });
+
+  test("recipient other than the tx sender writes no row", () => {
+    seedAgentSafe(SERVICE_ID);
+    handleSafeExecutionSuccess(
+      newExecutionSuccess(
+        AGENT_SAFE,
+        AGENT_EOA,
+        AGENT_SAFE,
+        execTransactionInput(RANDOM_EOA, AMOUNT, NO_DATA, 0),
+        mockTx(66),
+        0
+      )
+    );
+    assert.entityCount("FundsMovement", 0);
+  });
+
+  test("untracked Safe writes no row", () => {
+    handleSafeExecutionSuccess(
+      newExecutionSuccess(
+        AGENT_SAFE,
+        AGENT_EOA,
+        AGENT_SAFE,
+        execTransactionInput(AGENT_EOA, AMOUNT, NO_DATA, 0),
+        mockTx(67),
+        0
+      )
+    );
+    assert.entityCount("FundsMovement", 0);
+  });
+
+  test("Master Safe paying its own signer writes no row", () => {
+    seedMasterSafe(true);
+    handleSafeExecutionSuccess(
+      newExecutionSuccess(
+        MASTER_SAFE,
+        MASTER_EOA,
+        MASTER_SAFE,
+        execTransactionInput(MASTER_EOA, AMOUNT, NO_DATA, 0),
+        mockTx(68),
+        0
+      )
+    );
+    assert.entityCount("FundsMovement", 0);
   });
 });
