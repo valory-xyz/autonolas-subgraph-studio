@@ -19,6 +19,7 @@ import {
 } from "./constants";
 import {
   addToAgentFundingEvent,
+  agentSafeTopUpId,
   classifyTransfer,
   fundsMovementId,
   getOrCreateAgentFundingEvent,
@@ -91,6 +92,11 @@ const EXEC_TRANSACTION_ARGS =
 const TUPLE_OFFSET = Bytes.fromHexString(
   "0x0000000000000000000000000000000000000000000000000000000000000020"
 );
+// Positions of the fields read from the decoded EXEC_TRANSACTION_ARGS tuple.
+const ARG_TO = 0;
+const ARG_VALUE = 1;
+const ARG_DATA = 2;
+const ARG_OPERATION = 3;
 
 function hasExecTransactionSelector(input: Bytes): boolean {
   if (input.length < 4) return false;
@@ -104,13 +110,18 @@ function hasExecTransactionSelector(input: Bytes): boolean {
 // Signer (AGENT_SAFE_TO_AGENT_EOA). ExecutionSuccess carries no amount or
 // recipient, so they come from the outer tx: it must call the emitting Safe
 // directly with one plain CALL, no data, value > 0, paying the tx sender.
-// The Agent Signer submits its own Safe txs, so a payee equal to the sender
-// is taken to be the Agent Signer (the signer is not a tracked address).
-// Relayed or module executions are not decoded, and every other native
-// outflow stays unindexed.
+// The check proves only that the Agent Safe paid the tx sender: the Agent
+// Signer submits its own Safe txs, so that payee is taken to be the Agent
+// Signer (the signer is not a tracked address). Relayed or module
+// executions are not decoded, and every other native outflow stays
+// unindexed.
 //
 // Fires on every execution of every Safe sharing the template, so every
-// shape check runs before the single store load.
+// shape check runs before any store load (OPE-1965 D39).
+//
+// The row ID is one per tx: a reentrant execTransaction from the same Safe
+// (e.g. an Agent Signer with EIP-7702 code) emits a second ExecutionSuccess
+// in the same tx, which reads the same outer input and is skipped.
 export function handleSafeExecutionSuccess(
   event: ExecutionSuccessEvent
 ): void {
@@ -126,25 +137,48 @@ export function handleSafeExecutionSuccess(
   );
   if (decoded === null) {
     log.warning(
-      "Safe {} execTransaction calldata not decodable (tx={}); skipping",
-      [event.address.toHexString(), event.transaction.hash.toHexString()]
+      "Safe {} execTransaction calldata not decodable (tx={}, input_len={}); skipping",
+      [
+        event.address.toHexString(),
+        event.transaction.hash.toHexString(),
+        input.length.toString(),
+      ]
     );
     return;
   }
   const args = decoded.toTuple();
 
-  const operation = args[3].toBigInt();
+  const operation = args[ARG_OPERATION].toBigInt();
   if (!operation.isZero()) return;
-  if (args[2].toBytes().length != 0) return;
-  const value = args[1].toBigInt();
+  if (args[ARG_DATA].toBytes().length != 0) return;
+  const value = args[ARG_VALUE].toBigInt();
   if (value.le(BigInt.zero())) return;
-  const recipient = args[0].toAddress();
-  if (!recipient.equals(event.transaction.from)) return;
+  const recipient = args[ARG_TO].toAddress();
+  if (!recipient.equals(event.transaction.from)) {
+    log.debug(
+      "Safe {} native CALL not paid to the tx sender (tx={}); skipping",
+      [event.address.toHexString(), event.transaction.hash.toHexString()]
+    );
+    return;
+  }
 
   const tracked = TrackedAddress.load(event.address);
-  if (tracked === null || tracked.role != ROLE_AGENT) return;
+  if (tracked === null || tracked.role != ROLE_AGENT) {
+    log.debug(
+      "Safe {} with top-up shape is not an Agent Safe (role={}, tx={}); skipping",
+      [
+        event.address.toHexString(),
+        tracked === null ? "untracked" : tracked.role,
+        event.transaction.hash.toHexString(),
+      ]
+    );
+    return;
+  }
 
-  const row = new FundsMovement(fundsMovementId(event));
+  const id = agentSafeTopUpId(event.transaction.hash);
+  if (FundsMovement.load(id) !== null) return;
+
+  const row = new FundsMovement(id);
   if (tracked.service !== null) {
     row.service = tracked.service!;
   }

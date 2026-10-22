@@ -169,7 +169,9 @@ company-account deploy; watch Polygon USDC.e sync.
   `TokenBalance`) when the outer tx calls the emitting Safe's
   `execTransaction` directly with one plain CALL, empty data, value > 0, paid
   to the tx sender, and the Safe is tracked as `AGENT`. Every shape check
-  runs before the one `TrackedAddress` load (hot path).
+  runs before any store load (hot path). The row ID is one per tx
+  (`agentSafeTopUpId`), so a reentrant `ExecutionSuccess` from the same Safe
+  in the same tx writes no second row.
   `handleSafeExecutionFromModuleSuccess` stays a no-op. Consequence: **native
   withdrawals to external wallets**, relayed / module executions and the
   **native agent gas-funding leg (Master Safe → Agent EOA)** do not appear.
@@ -197,7 +199,7 @@ company-account deploy; watch Polygon USDC.e sync.
 
 ## Tests
 
-64 Matchstick tests across `tests/service-registry.test.ts` (Phase 1a),
+69 Matchstick tests across `tests/service-registry.test.ts` (Phase 1a),
 `tests/staking.test.ts` (Phase 1b), `tests/phase-2a.test.ts` (Phase 2a + the
 Phase-2b stablecoin suite — all 8 (chain, token) tuples — and the
 `AGENT_SAFE_TO_AGENT_EOA` decode guards). `yarn test`.
