@@ -1,4 +1,4 @@
-import { BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts";
+import { BigInt, Bytes, ethereum, log } from "@graphprotocol/graph-ts";
 import {
   AddedOwner as AddedOwnerEvent,
   ChangedThreshold as ChangedThresholdEvent,
@@ -124,7 +124,13 @@ export function handleSafeExecutionSuccess(
     EXEC_TRANSACTION_ARGS,
     TUPLE_OFFSET.concat(Bytes.fromUint8Array(input.subarray(4)))
   );
-  if (decoded === null) return;
+  if (decoded === null) {
+    log.warning(
+      "Safe {} execTransaction calldata not decodable (tx={}); skipping",
+      [event.address.toHexString(), event.transaction.hash.toHexString()]
+    );
+    return;
+  }
   const args = decoded.toTuple();
 
   const operation = args[3].toBigInt();

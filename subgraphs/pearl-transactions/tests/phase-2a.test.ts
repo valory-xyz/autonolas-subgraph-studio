@@ -1227,6 +1227,22 @@ describe("pearl-transactions / AGENT_SAFE_TO_AGENT_EOA", () => {
     assert.entityCount("FundsMovement", 0);
   });
 
+  test("truncated execTransaction calldata writes no row", () => {
+    seedAgentSafe(SERVICE_ID);
+    const full = execTransactionInput(AGENT_EOA, AMOUNT, NO_DATA, 0);
+    handleSafeExecutionSuccess(
+      newExecutionSuccess(
+        AGENT_SAFE,
+        AGENT_EOA,
+        AGENT_SAFE,
+        Bytes.fromUint8Array(full.subarray(0, 40)),
+        mockTx(70),
+        0
+      )
+    );
+    assert.entityCount("FundsMovement", 0);
+  });
+
   test("delegatecall (operation 1) writes no row", () => {
     seedAgentSafe(SERVICE_ID);
     handleSafeExecutionSuccess(
