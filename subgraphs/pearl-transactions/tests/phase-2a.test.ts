@@ -14,6 +14,7 @@ import { Transfer as OlasTransfer } from "../generated/OLAS/ERC20";
 import {
   AddedOwner,
   ChangedThreshold,
+  ExecutionFromModuleSuccess,
   ExecutionSuccess,
   RemovedOwner,
   SafeReceived,
@@ -24,11 +25,13 @@ import { handleErc20Transfer } from "../src/erc20";
 import {
   handleSafeAddedOwner,
   handleSafeChangedThreshold,
+  handleSafeExecutionFromModuleSuccess,
   handleSafeExecutionSuccess,
   handleSafeReceived,
   handleSafeRemovedOwner,
 } from "../src/safe";
 import { handleTokenDeposit } from "../src/service-registry-token-utility";
+import { agentSafeTopUpId } from "../src/utils";
 
 // ----------------- Fixtures -----------------
 
@@ -382,6 +385,34 @@ function newExecutionSuccess(
   e.transaction.to = txTo;
   e.transaction.input = input;
   return setMockEventBoilerplate(e, txHash, logIndex, safe);
+}
+
+function newExecutionFromModuleSuccess(
+  safe: Address,
+  txFrom: Address,
+  txTo: Address,
+  input: Bytes,
+  txHash: Bytes
+): ExecutionFromModuleSuccess {
+  const mock = newMockEvent();
+  const e = new ExecutionFromModuleSuccess(
+    mock.address,
+    mock.logIndex,
+    mock.transactionLogIndex,
+    mock.logType,
+    mock.block,
+    mock.transaction,
+    mock.parameters,
+    mock.receipt
+  );
+  e.parameters = new Array();
+  e.parameters.push(
+    new ethereum.EventParam("module", ethereum.Value.fromAddress(RANDOM_EOA))
+  );
+  e.transaction.from = txFrom;
+  e.transaction.to = txTo;
+  e.transaction.input = input;
+  return setMockEventBoilerplate(e, txHash, 0, safe);
 }
 
 // ----------------- Test setup helpers -----------------
@@ -1146,6 +1177,30 @@ describe("pearl-transactions / Phase 2b — stablecoins", () => {
   });
 });
 
+// Gnosis tx 0x6a542ed4e0bf5e84bd3408f1ba0e387dff5d232ba290aa0f91ee6128d37b5734:
+// Agent Safe of service 0x3481…0658 sends 5.732515 xDAI to 0x4ced…8093.
+// It is a withdrawal, not a top-up: its sender is the Agent Signer, not the
+// payee. No real top-up exists on chain yet.
+const REAL_SAFE = Address.fromString(
+  "0x3481bc52e0be05a8c1d80f5ca30d19cf260e0658"
+);
+const REAL_RECIPIENT = Address.fromString(
+  "0x4ced59b679664c00de0de117c0ef461481a98093"
+);
+const REAL_INPUT = Bytes.fromHexString(
+  "0x6a761202" +
+    "0000000000000000000000004ced59b679664c00de0de117c0ef461481a98093" +
+    "0000000000000000000000000000000000000000000000004f8dfc0534993000" +
+    "0000000000000000000000000000000000000000000000000000000000000140" +
+    "0".repeat(64 * 6) +
+    "0000000000000000000000000000000000000000000000000000000000000160" +
+    "0000000000000000000000000000000000000000000000000000000000000000" +
+    "0000000000000000000000000000000000000000000000000000000000000041" +
+    "9a21d2a2856a59f654e42f8ca8ba182c3113e03085fd3e53bee929cb3de51c9c" +
+    "6d7bf7e6438eb825329f4f5b3613296d46c03a73f66fabe0d070741d149e21fa" +
+    "1b00000000000000000000000000000000000000000000000000000000000000"
+);
+
 // ---- OPE-1965 — Agent Safe → Agent Signer native top-up ----
 describe("pearl-transactions / AGENT_SAFE_TO_AGENT_EOA", () => {
   beforeEach(() => {
@@ -1171,14 +1226,14 @@ describe("pearl-transactions / AGENT_SAFE_TO_AGENT_EOA", () => {
       )
     );
 
-    const id = tx.concatI32(3).toHexString();
+    const id = agentSafeTopUpId(tx).toHexString();
     assert.entityCount("FundsMovement", 1);
     assert.fieldEquals("FundsMovement", id, "category", "AGENT_SAFE_TO_AGENT_EOA");
     assert.fieldEquals("FundsMovement", id, "source", "SEMANTIC");
     assert.fieldEquals("FundsMovement", id, "amount", AMOUNT.toString());
     assert.fieldEquals("FundsMovement", id, "from", AGENT_SAFE.toHexString());
     assert.fieldEquals("FundsMovement", id, "to", AGENT_EOA.toHexString());
-    assert.assertTrue(FundsMovement.load(tx.concatI32(3))!.token === null);
+    assert.assertTrue(FundsMovement.load(agentSafeTopUpId(tx))!.token === null);
     assert.fieldEquals("FundsMovement", id, "agentSafe", AGENT_SAFE.toHexString());
     assert.fieldEquals("FundsMovement", id, "masterSafe", MASTER_SAFE.toHexString());
     assert.fieldEquals(
@@ -1189,6 +1244,27 @@ describe("pearl-transactions / AGENT_SAFE_TO_AGENT_EOA", () => {
     );
     assert.fieldEquals("FundsMovement", id, "transactionHash", tx.toHexString());
     assert.entityCount("TokenBalance", 0);
+  });
+
+  test("reentrant ExecutionSuccess from the same Safe in one tx writes one row", () => {
+    seedAgentSafe(SERVICE_ID);
+    const tx = mockTx(72);
+    const input = execTransactionInput(AGENT_EOA, AMOUNT, NO_DATA, 0);
+    // Inner execTransaction logs first, then the outer one; both carry the
+    // outer tx input.
+    handleSafeExecutionSuccess(
+      newExecutionSuccess(AGENT_SAFE, AGENT_EOA, AGENT_SAFE, input, tx, 2)
+    );
+    handleSafeExecutionSuccess(
+      newExecutionSuccess(AGENT_SAFE, AGENT_EOA, AGENT_SAFE, input, tx, 3)
+    );
+    assert.entityCount("FundsMovement", 1);
+    assert.fieldEquals(
+      "FundsMovement",
+      agentSafeTopUpId(tx).toHexString(),
+      "amount",
+      AMOUNT.toString()
+    );
   });
 
   test("outer tx not sent to the emitting Safe writes no row", () => {
@@ -1221,6 +1297,42 @@ describe("pearl-transactions / AGENT_SAFE_TO_AGENT_EOA", () => {
           Bytes.fromHexString("0xdeadbeef")
         ),
         mockTx(62),
+        0
+      )
+    );
+    assert.entityCount("FundsMovement", 0);
+  });
+
+  test("selector differing only in its last byte writes no row", () => {
+    seedAgentSafe(SERVICE_ID);
+    handleSafeExecutionSuccess(
+      newExecutionSuccess(
+        AGENT_SAFE,
+        AGENT_EOA,
+        AGENT_SAFE,
+        execTransactionInput(
+          AGENT_EOA,
+          AMOUNT,
+          NO_DATA,
+          0,
+          Bytes.fromHexString("0x6a761203")
+        ),
+        mockTx(73),
+        0
+      )
+    );
+    assert.entityCount("FundsMovement", 0);
+  });
+
+  test("input shorter than a selector writes no row", () => {
+    seedAgentSafe(SERVICE_ID);
+    handleSafeExecutionSuccess(
+      newExecutionSuccess(
+        AGENT_SAFE,
+        AGENT_EOA,
+        AGENT_SAFE,
+        Bytes.fromHexString("0x6a76"),
+        mockTx(74),
         0
       )
     );
@@ -1322,40 +1434,31 @@ describe("pearl-transactions / AGENT_SAFE_TO_AGENT_EOA", () => {
     assert.entityCount("FundsMovement", 0);
   });
 
-  test("real Gnosis execTransaction calldata decodes to its on-chain to and value", () => {
-    // Gnosis tx 0x6a542ed4e0bf5e84bd3408f1ba0e387dff5d232ba290aa0f91ee6128d37b5734:
-    // Agent Safe of service 0x3481…0658 sends 5.732515 xDAI to 0x4ced…8093.
-    const realSafe = Address.fromString(
-      "0x3481bc52e0be05a8c1d80f5ca30d19cf260e0658"
-    );
-    const realRecipient = Address.fromString(
-      "0x4ced59b679664c00de0de117c0ef461481a98093"
-    );
-    const realInput = Bytes.fromHexString(
-      "0x6a761202" +
-        "0000000000000000000000004ced59b679664c00de0de117c0ef461481a98093" +
-        "0000000000000000000000000000000000000000000000004f8dfc0534993000" +
-        "0000000000000000000000000000000000000000000000000000000000000140" +
-        "0".repeat(64 * 6) +
-        "0000000000000000000000000000000000000000000000000000000000000160" +
-        "0000000000000000000000000000000000000000000000000000000000000000" +
-        "0000000000000000000000000000000000000000000000000000000000000041" +
-        "9a21d2a2856a59f654e42f8ca8ba182c3113e03085fd3e53bee929cb3de51c9c" +
-        "6d7bf7e6438eb825329f4f5b3613296d46c03a73f66fabe0d070741d149e21fa" +
-        "1b00000000000000000000000000000000000000000000000000000000000000"
-    );
-    seedTrackedAddress(realSafe, "AGENT", MASTER_SAFE, serviceBytes(SERVICE_ID));
-    const tx = mockTx(71);
-    // The real sender is the Agent Signer, not the payee; it is swapped for
-    // the payee so the decoded values reach the row.
+  test("real Gnosis withdrawal (payee is not the sender) writes no row", () => {
+    seedTrackedAddress(REAL_SAFE, "AGENT", MASTER_SAFE, serviceBytes(SERVICE_ID));
+    // AGENT_EOA stands in for the real sender, which is not the payee.
     handleSafeExecutionSuccess(
-      newExecutionSuccess(realSafe, realRecipient, realSafe, realInput, tx, 0)
+      newExecutionSuccess(REAL_SAFE, AGENT_EOA, REAL_SAFE, REAL_INPUT, mockTx(71), 0)
+    );
+    assert.entityCount("FundsMovement", 0);
+  });
+
+  test("real Gnosis calldata, re-sent by its payee, decodes to the on-chain to and value", () => {
+    // Pins the decode against real calldata only: the sender is set to the
+    // payee so the decoded values reach the row. This is not the on-chain tx.
+    seedTrackedAddress(REAL_SAFE, "AGENT", MASTER_SAFE, serviceBytes(SERVICE_ID));
+    const tx = mockTx(75);
+    handleSafeExecutionSuccess(
+      newExecutionSuccess(REAL_SAFE, REAL_RECIPIENT, REAL_SAFE, REAL_INPUT, tx, 0)
     );
 
-    const id = tx.concatI32(0).toHexString();
+    const id = agentSafeTopUpId(tx).toHexString();
     assert.entityCount("FundsMovement", 1);
+    assert.fieldEquals("FundsMovement", id, "category", "AGENT_SAFE_TO_AGENT_EOA");
+    assert.fieldEquals("FundsMovement", id, "source", "SEMANTIC");
+    assert.fieldEquals("FundsMovement", id, "from", REAL_SAFE.toHexString());
+    assert.fieldEquals("FundsMovement", id, "to", REAL_RECIPIENT.toHexString());
     assert.fieldEquals("FundsMovement", id, "amount", "5732515000000000000");
-    assert.fieldEquals("FundsMovement", id, "to", realRecipient.toHexString());
   });
 
   test("Master Safe paying its own signer writes no row", () => {
@@ -1371,5 +1474,20 @@ describe("pearl-transactions / AGENT_SAFE_TO_AGENT_EOA", () => {
       )
     );
     assert.entityCount("FundsMovement", 0);
+  });
+
+  test("module execution with top-up shape writes nothing", () => {
+    seedAgentSafe(SERVICE_ID);
+    handleSafeExecutionFromModuleSuccess(
+      newExecutionFromModuleSuccess(
+        AGENT_SAFE,
+        AGENT_EOA,
+        AGENT_SAFE,
+        execTransactionInput(AGENT_EOA, AMOUNT, NO_DATA, 0),
+        mockTx(76)
+      )
+    );
+    assert.entityCount("FundsMovement", 0);
+    assert.entityCount("TokenBalance", 0);
   });
 });
