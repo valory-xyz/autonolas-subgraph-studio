@@ -1322,6 +1322,42 @@ describe("pearl-transactions / AGENT_SAFE_TO_AGENT_EOA", () => {
     assert.entityCount("FundsMovement", 0);
   });
 
+  test("real Gnosis execTransaction calldata decodes to its on-chain to and value", () => {
+    // Gnosis tx 0x6a542ed4e0bf5e84bd3408f1ba0e387dff5d232ba290aa0f91ee6128d37b5734:
+    // Agent Safe of service 0x3481…0658 sends 5.732515 xDAI to 0x4ced…8093.
+    const realSafe = Address.fromString(
+      "0x3481bc52e0be05a8c1d80f5ca30d19cf260e0658"
+    );
+    const realRecipient = Address.fromString(
+      "0x4ced59b679664c00de0de117c0ef461481a98093"
+    );
+    const realInput = Bytes.fromHexString(
+      "0x6a761202" +
+        "0000000000000000000000004ced59b679664c00de0de117c0ef461481a98093" +
+        "0000000000000000000000000000000000000000000000004f8dfc0534993000" +
+        "0000000000000000000000000000000000000000000000000000000000000140" +
+        "0".repeat(64 * 6) +
+        "0000000000000000000000000000000000000000000000000000000000000160" +
+        "0000000000000000000000000000000000000000000000000000000000000000" +
+        "0000000000000000000000000000000000000000000000000000000000000041" +
+        "9a21d2a2856a59f654e42f8ca8ba182c3113e03085fd3e53bee929cb3de51c9c" +
+        "6d7bf7e6438eb825329f4f5b3613296d46c03a73f66fabe0d070741d149e21fa" +
+        "1b00000000000000000000000000000000000000000000000000000000000000"
+    );
+    seedTrackedAddress(realSafe, "AGENT", MASTER_SAFE, serviceBytes(SERVICE_ID));
+    const tx = mockTx(71);
+    // The real sender is the Agent Signer, not the payee; it is swapped for
+    // the payee so the decoded values reach the row.
+    handleSafeExecutionSuccess(
+      newExecutionSuccess(realSafe, realRecipient, realSafe, realInput, tx, 0)
+    );
+
+    const id = tx.concatI32(0).toHexString();
+    assert.entityCount("FundsMovement", 1);
+    assert.fieldEquals("FundsMovement", id, "amount", "5732515000000000000");
+    assert.fieldEquals("FundsMovement", id, "to", realRecipient.toHexString());
+  });
+
   test("Master Safe paying its own signer writes no row", () => {
     seedMasterSafe(true);
     handleSafeExecutionSuccess(
