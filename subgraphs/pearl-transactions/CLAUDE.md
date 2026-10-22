@@ -197,7 +197,7 @@ company-account deploy; watch Polygon USDC.e sync.
 
 ## Tests
 
-62 Matchstick tests across `tests/service-registry.test.ts` (Phase 1a),
+63 Matchstick tests across `tests/service-registry.test.ts` (Phase 1a),
 `tests/staking.test.ts` (Phase 1b), `tests/phase-2a.test.ts` (Phase 2a + the
 Phase-2b stablecoin suite — all 8 (chain, token) tuples — and the
 `AGENT_SAFE_TO_AGENT_EOA` decode guards). `yarn test`.
