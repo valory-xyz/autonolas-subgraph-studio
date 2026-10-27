@@ -36,6 +36,7 @@ Category values (`FundsCategory`, shared by both ledgers — the
 | `SERVICE_BOND_DEPOSIT` / `SERVICE_BOND_REFUND` | SRTU bond posted / refunded (with `bondType`) — **`BondMovement` rows, not `FundsMovement`** |
 | `STAKING_REWARD_CLAIM` / `UNSTAKE_REWARD` / `SERVICE_EVICTED` | Staking events |
 | `AGENT_TO_APP` / `APP_TO_AGENT` / `OTHER` | App-contract flows / untyped |
+| `AGENT_SAFE_TO_AGENT_EOA` | Agent Safe → its own Agent Signer, native (`SEMANTIC`; decoded from the outer `execTransaction` sent by that signer; excludes relayed and module executions) |
 
 `source` is `SEMANTIC` (derived from a typed event) or `RAW_TRANSFER` (raw
 ERC-20/native). `token` is null for native coin. `amount` is the on-chain

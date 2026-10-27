@@ -69,6 +69,11 @@ export function safeDeployedId(masterSafe: Bytes): Bytes {
   return Bytes.fromUTF8("safe-deployed:").concat(masterSafe);
 }
 
+// One AGENT_SAFE_TO_AGENT_EOA row per tx (see handleSafeExecutionSuccess).
+export function agentSafeTopUpId(txHash: Bytes): Bytes {
+  return Bytes.fromUTF8("topup:").concat(txHash);
+}
+
 // Service.id is Bytes (serviceId as Bytes) — halves FK storage / speeds
 // comparisons vs the old string id. serviceIndexId / pendingRegistrationId
 // share the same byte layout; they alias this helper so the encoding has a
