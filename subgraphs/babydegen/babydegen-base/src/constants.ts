@@ -21,7 +21,7 @@ export const USDC_NATIVE = Address.fromString("0x833589fCD6eDb6E08f4c7C32D4f71b5
 export const WETH = Address.fromString("0x4200000000000000000000000000000000000006") // WETH on Base
 export const AERO = Address.fromString("0x940181a94A35A4569E4529A3CDfB74e38FD98631") // AERO (Aerodrome reward token) on Base
 
-// Whitelisted stablecoins (Base) — priced via $1 fallback until pools confirmed
+// Whitelisted stablecoins (Base) — referenced to the USDC/USD feed until pools are confirmed
 export const BOLD = Address.fromString("0x03569Cc076654F82679C4BA2124D64774781b01d") // BOLD
 export const MSUSD = Address.fromString("0x526728DBc96689597F85ae4cd716d4f7fCCBAE9d") // msUSD
 export const FRXUSD = Address.fromString("0xe5020A6D073a794B6e7F05678707dE47986Fb0B6") // frxUSD

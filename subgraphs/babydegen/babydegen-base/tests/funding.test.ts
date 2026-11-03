@@ -185,7 +185,7 @@ describe("ETH funding uses the same user-side rule", () => {
     event.address = SAFE_CL
     event.transaction.to = USER_EOA
     event.transaction.value = BigInt.fromString("500000000000000000")
-    processSafeEthTransfer(SAFE_CL, "ExecutionFromModuleSuccess", event, seededAddressType, "")
+    processSafeEthTransfer(SAFE_CL, event, seededAddressType)
     fundingField(SAFE_CL, "totalWithdrawnUsd", "1000")
   })
 
@@ -195,7 +195,7 @@ describe("ETH funding uses the same user-side rule", () => {
     event.address = SAFE_CL
     event.transaction.to = AGENT_INSTANCE
     event.transaction.value = BigInt.fromString("500000000000000000")
-    processSafeEthTransfer(SAFE_CL, "ExecutionFromModuleSuccess", event, seededAddressType, "")
+    processSafeEthTransfer(SAFE_CL, event, seededAddressType)
     assert.notInStore("FundingBalance", SAFE_CL.toHexString())
   })
 

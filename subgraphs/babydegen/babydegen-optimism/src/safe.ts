@@ -95,21 +95,13 @@ export function processSafeReceived(event: SafeReceivedEvent, readAddressType: A
 /**
  * Helper function to handle ETH transfers for both ExecutionSuccess and ExecutionFromModuleSuccess events
  * @param serviceSafe The safe address that executed the transaction
- * @param eventType String identifying the type of event ('execution' or 'module')
  * @param event The Safe event, whose transaction and receipt are read
  * @param readAddressType Address-type reader, getAddressType outside tests
- * @param txHash The transaction hash as a string
- * @param moduleAddress Optional module address for module executions
- * @param extraInfo Optional additional information to log (e.g. payment)
  */
 export function processSafeEthTransfer(
   serviceSafe: Address,
-  eventType: string,
   event: ethereum.Event,
-  readAddressType: AddressTypeReader,
-  txHash: string,
-  moduleAddress: Address | null = null,
-  extraInfo: string | null = null
+  readAddressType: AddressTypeReader
 ): void {
   let service = getServiceByAgent(serviceSafe)
   
@@ -143,33 +135,9 @@ export function processSafeEthTransfer(
 }
 
 export function handleExecutionSuccess(event: ExecutionSuccessEvent): void {
-  let serviceSafe = event.address
-  let txHash = event.params.txHash.toHexString()
-  let payment = event.params.payment
-  
-  processSafeEthTransfer(
-    serviceSafe,
-    "ExecutionSuccess",
-    event,
-    getAddressType,
-    event.transaction.hash.toHexString(), // Use actual transaction hash
-    null,
-    "payment: " + payment.toString()
-  )
+  processSafeEthTransfer(event.address, event, getAddressType)
 }
 
 export function handleExecutionFromModuleSuccess(event: ExecutionFromModuleSuccessEvent): void {
-  
-  let serviceSafe = event.address
-  let moduleAddress = event.params.module
-  let txHash = event.transaction.hash.toHexString()
-  
-  processSafeEthTransfer(
-    serviceSafe,
-    "ExecutionFromModuleSuccess",
-    event,
-    getAddressType,
-    txHash,
-    moduleAddress
-  )
+  processSafeEthTransfer(event.address, event, getAddressType)
 }
