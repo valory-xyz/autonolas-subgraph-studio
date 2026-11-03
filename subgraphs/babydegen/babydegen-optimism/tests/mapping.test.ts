@@ -12,11 +12,37 @@ import {
   handleCreateMultisigWithAgents
 } from "../src/serviceRegistry"
 import { refreshVeloV2Position, getVeloV2PositionId } from "../src/veloV2Shared"
-import { ProtocolPosition, Service } from "../generated/schema"
-import { VELO, VELO_VOTER } from "../src/constants"
+import { ProtocolPosition, Service, V2PoolVenue } from "../generated/schema"
+import { handleNFTTransfer, handleAeroIncreaseLiquidity } from "../src/veloNFTManager"
+import { refreshVeloCLPosition, getVeloCLPositionId, clVenueForManager } from "../src/veloCLShared"
+import { handleVeloV2Transfer, handleAeroV2Mint } from "../src/veloV2Pool"
+import { handleAeroV2PoolCreated } from "../src/veloV2Factory"
+import { handleAeroGaugeCreated } from "../src/aeroGaugeManager"
+import { getTokenConfig, TokenConfig } from "../src/tokenConfig"
+import { getTokenPriceUSD } from "../src/priceDiscovery"
+import {
+  VELO,
+  VELO_VOTER,
+  VELO_MANAGER,
+  BOLD,
+  BOLD_V2,
+  USDS,
+  XAERO,
+  AERO_NFT_MANAGER,
+  AERO_CL_FACTORY,
+  AERO_V2_STABLE_FACTORY,
+  CRITICAL_STABLECOINS,
+  WHITELISTED_TOKENS
+} from "../src/constants"
 import {
   createRegisterInstanceEvent,
-  createCreateMultisigWithAgentsEvent
+  createCreateMultisigWithAgentsEvent,
+  createV2TransferEvent,
+  createNFTTransferEvent,
+  createAeroIncreaseLiquidityEvent,
+  createAeroV2PoolCreatedEvent,
+  createGaugeCreatedEvent,
+  createAeroV2MintEvent
 } from "./mapping-utils"
 import {
   OPERATOR_SAFE,
@@ -639,5 +665,299 @@ describe("Velodrome V2 gauge-staked positions", () => {
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimableReward", "0")
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimableRewardUSD", "0")
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "usdCurrentWithRewards", "0")
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Aero (merged protocol) — CL positions, v2 pools, xAERO rewards, new tokens
+// ---------------------------------------------------------------------------
+const AERO_TOKEN_ID = BigInt.fromI32(42)
+const AERO_CL_POOL = Address.fromString("0x00000000000000000000000000000000000000e1")
+const AERO_CL_GAUGE = Address.fromString("0x00000000000000000000000000000000000000e2")
+const AERO_V2_POOL = Address.fromString("0x00000000000000000000000000000000000000e3")
+const AERO_V2_GAUGE = Address.fromString("0x00000000000000000000000000000000000000e4")
+const ROUTER = Address.fromString("0x00000000000000000000000000000000000000d2")
+
+function mockAeroCLPosition(): void {
+  createMockedFunction(
+    AERO_NFT_MANAGER,
+    "positions",
+    "positions(uint256):(uint96,address,address,address,int24,int24,int24,uint128,uint256,uint256,uint128,uint128)"
+  )
+    .withArgs([ethereum.Value.fromUnsignedBigInt(AERO_TOKEN_ID)])
+    .returns([
+      ethereum.Value.fromUnsignedBigInt(BigInt.zero()),
+      ethereum.Value.fromAddress(Address.zero()),
+      ethereum.Value.fromAddress(DUMMY0),
+      ethereum.Value.fromAddress(DUMMY1),
+      ethereum.Value.fromI32(1),
+      ethereum.Value.fromI32(-10),
+      ethereum.Value.fromI32(10),
+      ethereum.Value.fromUnsignedBigInt(BigInt.fromString("1000000000000000000")),
+      ethereum.Value.fromUnsignedBigInt(BigInt.zero()),
+      ethereum.Value.fromUnsignedBigInt(BigInt.zero()),
+      ethereum.Value.fromUnsignedBigInt(BigInt.zero()),
+      ethereum.Value.fromUnsignedBigInt(BigInt.zero())
+    ])
+  // The pool comes from Aero's CL factory, not the Slipstream one (VELO_FACTORY is not mocked).
+  createMockedFunction(AERO_CL_FACTORY, "getPool", "getPool(address,address,int24):(address)")
+    .withArgs([
+      ethereum.Value.fromAddress(DUMMY0),
+      ethereum.Value.fromAddress(DUMMY1),
+      ethereum.Value.fromI32(1)
+    ])
+    .returns([ethereum.Value.fromAddress(AERO_CL_POOL)])
+  createMockedFunction(AERO_CL_POOL, "slot0", "slot0():(uint160,int24,uint16,uint16,uint16,bool)")
+    .withArgs([])
+    .returns([
+      ethereum.Value.fromUnsignedBigInt(BigInt.fromString("79228162514264337593543950336")), // price 1
+      ethereum.Value.fromI32(0),
+      ethereum.Value.fromI32(0),
+      ethereum.Value.fromI32(0),
+      ethereum.Value.fromI32(0),
+      ethereum.Value.fromBoolean(true)
+    ])
+  createMockedFunction(AERO_CL_POOL, "gauge", "gauge():(address)")
+    .withArgs([]).returns([ethereum.Value.fromAddress(AERO_CL_GAUGE)])
+}
+
+function mockAeroCLStaked(staked: boolean): void {
+  createMockedFunction(AERO_CL_GAUGE, "stakedContains", "stakedContains(address,uint256):(bool)")
+    .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE), ethereum.Value.fromUnsignedBigInt(AERO_TOKEN_ID)])
+    .returns([ethereum.Value.fromBoolean(staked)])
+}
+
+function openAeroCLPosition(): Bytes {
+  const mint = createNFTTransferEvent(AERO_NFT_MANAGER, Address.zero(), SERVICE_SAFE, AERO_TOKEN_ID)
+  mint.block = v2Block()
+  mint.transaction.hash = TX_HASH
+  handleNFTTransfer(mint)
+
+  const inc = createAeroIncreaseLiquidityEvent(
+    AERO_NFT_MANAGER,
+    AERO_TOKEN_ID,
+    BigInt.fromString("1000000000000000000"),
+    BigInt.fromString("1000000000000000000"), // 1 token0
+    BigInt.fromString("2000000000000000000"), // 2 token1
+    -10,
+    10
+  )
+  inc.block = v2Block()
+  inc.transaction.hash = TX_HASH
+  handleAeroIncreaseLiquidity(inc)
+
+  return getVeloCLPositionId(SERVICE_SAFE, AERO_TOKEN_ID, "aero-cl")
+}
+
+describe("Aero CL positions (AeroNFTManager)", () => {
+  afterEach(() => {
+    clearStore()
+  })
+
+  test("the emitting NFPM picks the venue", () => {
+    assert.stringEquals("aero-cl", clVenueForManager(AERO_NFT_MANAGER).protocol)
+    assert.stringEquals("velodrome-v3", clVenueForManager(VELO_MANAGER).protocol)
+  })
+
+  test("mint + 6-arg IncreaseLiquidity creates an aero-cl position with its own mapping", () => {
+    createService(SERVICE_SAFE)
+    mockChainlinkEthUsd()
+    mockAeroCLPosition()
+    mockAeroCLStaked(false)
+
+    const id = openAeroCLPosition()
+
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "protocol", "aero-cl")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "pool", AERO_CL_POOL.toHexString())
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "entryAmount0", "1")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "entryAmount1", "2")
+    assert.entityCount("NFTPositionMapping", 1)
+    assert.fieldEquals("NFTPositionMapping", Bytes.fromUTF8("aero-cl-42").toHexString(), "positionId", id.toHexString())
+    // Unstaked NFT: no rewards, and earned(address,uint256[]) (which would revert) is not called
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimableReward", "0")
+  })
+
+  test("staked position records its xAERO amount from earned(agent, [tokenId]) at $0", () => {
+    createService(SERVICE_SAFE)
+    mockChainlinkEthUsd()
+    mockAeroCLPosition()
+    mockAeroCLStaked(false)
+    const id = openAeroCLPosition()
+
+    mockAeroCLStaked(true)
+    const tokenIds: Array<BigInt> = [AERO_TOKEN_ID]
+    createMockedFunction(AERO_CL_GAUGE, "earned", "earned(address,uint256[]):(uint256)")
+      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE), ethereum.Value.fromUnsignedBigIntArray(tokenIds)])
+      .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromString("2000000000000000000"))])
+
+    refreshVeloCLPosition(id, AERO_TOKEN_ID, v2Block(), TX_HASH, false)
+
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimableReward", "2")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimableRewardUSD", "0")
+  })
+})
+
+function mockAeroV2PoolState(pool: Address, gauge: Address): void {
+  createMockedFunction(pool, "balanceOf", "balanceOf(address):(uint256)")
+    .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
+    .returns([ethereum.Value.fromUnsignedBigInt(BigInt.zero())])
+  createMockedFunction(pool, "totalSupply", "totalSupply():(uint256)")
+    .withArgs([]).returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromString("1000"))])
+  createMockedFunction(pool, "getReserves", "getReserves():(uint256,uint256,uint256)")
+    .withArgs([]).returns([
+      ethereum.Value.fromUnsignedBigInt(BigInt.fromString("1000")),
+      ethereum.Value.fromUnsignedBigInt(BigInt.fromString("1000")),
+      ethereum.Value.fromUnsignedBigInt(BigInt.zero())
+    ])
+  createMockedFunction(pool, "token0", "token0():(address)")
+    .withArgs([]).returns([ethereum.Value.fromAddress(DUMMY0)])
+  createMockedFunction(pool, "token1", "token1():(address)")
+    .withArgs([]).returns([ethereum.Value.fromAddress(DUMMY1)])
+  // Aero v2 pools have no stable()
+  createMockedFunction(pool, "stable", "stable():(bool)").withArgs([]).reverts()
+  createMockedFunction(gauge, "balanceOf", "balanceOf(address):(uint256)")
+    .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
+    .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromString("500"))])
+}
+
+describe("Aero v2 pools (factories + GaugeManager)", () => {
+  afterEach(() => {
+    clearStore()
+  })
+
+  test("PoolCreated from an Aero factory records the venue and starts the AeroV2Pool template", () => {
+    const ev = createAeroV2PoolCreatedEvent(AERO_V2_STABLE_FACTORY, BOLD_V2, USDC_OP, AERO_V2_POOL)
+    handleAeroV2PoolCreated(ev)
+
+    assert.fieldEquals("V2PoolVenue", AERO_V2_POOL.toHexString(), "protocol", "aero-v2")
+    assert.dataSourceCount("AeroV2Pool", 1)
+  })
+
+  test("PoolCreated for a non-whitelisted pair is ignored", () => {
+    const ev = createAeroV2PoolCreatedEvent(AERO_V2_STABLE_FACTORY, DUMMY0, DUMMY1, AERO_V2_POOL)
+    handleAeroV2PoolCreated(ev)
+
+    assert.entityCount("V2PoolVenue", 0)
+  })
+
+  test("GaugeCreated feeds the aero-v2 gauge lookup; staked LP and xAERO rewards are counted", () => {
+    createService(SERVICE_SAFE)
+    const venue = new V2PoolVenue(AERO_V2_POOL)
+    venue.protocol = "aero-v2"
+    venue.save()
+    handleAeroGaugeCreated(createGaugeCreatedEvent(AERO_V2_POOL, AERO_V2_GAUGE))
+    mockAeroV2PoolState(AERO_V2_POOL, AERO_V2_GAUGE)
+    createMockedFunction(AERO_V2_GAUGE, "earned", "earned(address):(uint256)")
+      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
+      .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromString("2000000000000000000"))])
+
+    // VELO_VOTER.gauges is deliberately not mocked: the aero-v2 path must not call it.
+    refreshVeloV2Position(SERVICE_SAFE, AERO_V2_POOL, v2Block(), TX_HASH, false)
+
+    const id = getVeloV2PositionId(SERVICE_SAFE, AERO_V2_POOL)
+    assert.stringEquals(SERVICE_SAFE.toHex() + "-aero-v2-" + AERO_V2_POOL.toHex(), id.toString())
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "protocol", "aero-v2")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "isActive", "true")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "liquidity", "500")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "rewardsContract", AERO_V2_GAUGE.toHexString())
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimableReward", "2")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimableRewardUSD", "0")
+  })
+
+  test("a later GaugeCreated for the same pool replaces the gauge", () => {
+    createService(SERVICE_SAFE)
+    const venue = new V2PoolVenue(AERO_V2_POOL)
+    venue.protocol = "aero-v2"
+    venue.save()
+    handleAeroGaugeCreated(createGaugeCreatedEvent(AERO_V2_POOL, AERO_V2_GAUGE))
+    mockAeroV2PoolState(AERO_V2_POOL, AERO_V2_GAUGE)
+    createMockedFunction(AERO_V2_GAUGE, "earned", "earned(address):(uint256)")
+      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)]).reverts()
+    refreshVeloV2Position(SERVICE_SAFE, AERO_V2_POOL, v2Block(), TX_HASH, false)
+
+    const NEW_GAUGE = Address.fromString("0x00000000000000000000000000000000000000e5")
+    handleAeroGaugeCreated(createGaugeCreatedEvent(AERO_V2_POOL, NEW_GAUGE))
+    mockAeroV2PoolState(AERO_V2_POOL, NEW_GAUGE)
+    createMockedFunction(NEW_GAUGE, "earned", "earned(address):(uint256)")
+      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)]).reverts()
+    refreshVeloV2Position(SERVICE_SAFE, AERO_V2_POOL, v2Block(), TX_HASH, false)
+
+    const id = getVeloV2PositionId(SERVICE_SAFE, AERO_V2_POOL)
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "rewardsContract", NEW_GAUGE.toHexString())
+  })
+
+  test("Aero's 4-arg Mint sets entry amounts", () => {
+    createService(SERVICE_SAFE)
+    mockChainlinkEthUsd()
+    mockVeloUsdcPool()
+    const venue = new V2PoolVenue(AERO_V2_POOL)
+    venue.protocol = "aero-v2"
+    venue.save()
+    // token0 = VELO (priced via mockVeloUsdcPool) so entryAmountUSD is non-zero
+    createMockedFunction(AERO_V2_POOL, "token0", "token0():(address)")
+      .withArgs([]).returns([ethereum.Value.fromAddress(VELO)])
+    createMockedFunction(AERO_V2_POOL, "token1", "token1():(address)")
+      .withArgs([]).returns([ethereum.Value.fromAddress(DUMMY1)])
+    createMockedFunction(AERO_V2_POOL, "stable", "stable():(bool)").withArgs([]).reverts()
+    createMockedFunction(AERO_V2_POOL, "balanceOf", "balanceOf(address):(uint256)")
+      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
+      .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(500))])
+    createMockedFunction(AERO_V2_POOL, "totalSupply", "totalSupply():(uint256)")
+      .withArgs([]).returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1000))])
+    createMockedFunction(AERO_V2_POOL, "getReserves", "getReserves():(uint256,uint256,uint256)")
+      .withArgs([]).returns([
+        ethereum.Value.fromUnsignedBigInt(BigInt.fromString("2000000000000000000")),
+        ethereum.Value.fromUnsignedBigInt(BigInt.fromString("4000000000000000000")),
+        ethereum.Value.fromUnsignedBigInt(BigInt.zero())
+      ])
+
+    const transfer = createV2TransferEvent(AERO_V2_POOL, Address.zero(), SERVICE_SAFE, BigInt.fromI32(500))
+    transfer.block = v2Block()
+    transfer.transaction.hash = TX_HASH
+    handleVeloV2Transfer(transfer)
+
+    const mint = createAeroV2MintEvent(
+      AERO_V2_POOL,
+      ROUTER,
+      SERVICE_SAFE,
+      BigInt.fromString("2000000000000000000"),
+      BigInt.fromString("6000000000000000000")
+    )
+    mint.block = v2Block()
+    mint.transaction.hash = TX_HASH
+    handleAeroV2Mint(mint)
+
+    const id = getVeloV2PositionId(SERVICE_SAFE, AERO_V2_POOL)
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "protocol", "aero-v2")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "entryAmount0", "2")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "entryAmount1", "6")
+    assert.entityCount("PendingMintPosition", 0)
+  })
+})
+
+describe("New Optimism tokens (BOLD 0x0356…, USDS, xAERO)", () => {
+  afterEach(() => {
+    clearStore()
+  })
+
+  test("the agent's BOLD prices off the Velodrome v2 stable BOLD/USDC pool; the legacy BOLD stays", () => {
+    const bold = changetype<TokenConfig>(getTokenConfig(BOLD_V2))
+    assert.stringEquals("velodrome_v2", bold.priceSources[0].sourceType)
+    assert.stringEquals(
+      "0x8828b7792499a7d86e931df56e3d37c428d12d2b",
+      bold.priceSources[0].address.toHexString()
+    )
+    assert.assertNotNull(getTokenConfig(BOLD))
+  })
+
+  test("USDS and xAERO are tracked for balances but have no price source, so they value at $0", () => {
+    const tokens: Address[] = [USDS, XAERO]
+    for (let i = 0; i < tokens.length; i++) {
+      const cfg = changetype<TokenConfig>(getTokenConfig(tokens[i]))
+      assert.i32Equals(0, cfg.priceSources.length)
+      assert.assertTrue(CRITICAL_STABLECOINS.indexOf(tokens[i].toHexString()) == -1)
+      assert.assertTrue(WHITELISTED_TOKENS.indexOf(tokens[i].toHexString()) != -1)
+      assert.stringEquals("0", getTokenPriceUSD(tokens[i], BLOCK_TIMESTAMP, true).toString())
+    }
   })
 })
