@@ -63,7 +63,7 @@ type ProtocolPosition @entity(immutable: false) {
   id: Bytes!                # "<agent>-<tokenId>"
   agent: Bytes!             @index
   service: Service          # Link to service
-  protocol: String!         @index   # "velodrome-cl"
+  protocol: String!         @index   # e.g. "aerodrome-cl", "aero-cl", "aero-v2"
   pool: Bytes!
   
   # Position status
@@ -410,4 +410,18 @@ type NFTPositionMapping @entity(immutable: false) {
   id: Bytes!
   positionId: Bytes!
   protocol: String!
+}
+
+# Aero v2 pool -> gauge, from GaugeManager GaugeCreated (Aero v2 pools have no gauge() and the
+# Aero Voter has no gauges(pool)). CL pools get a row too; their path reads pool.gauge() instead.
+type AeroGauge @entity(immutable: false) {
+  id: Bytes!                # pool (GaugeCreated._target)
+  gauge: Bytes!             # GaugeCreated._gauge; a later GaugeCreated for the same pool replaces it
+  createdAtBlock: BigInt!
+}
+
+# Venue of a v2 pool, written by the factory handler that created it. Pools with no row are legacy.
+type V2PoolVenue @entity(immutable: true) {
+  id: Bytes!                # pool address
+  protocol: String!         # "aero-v2"
 }

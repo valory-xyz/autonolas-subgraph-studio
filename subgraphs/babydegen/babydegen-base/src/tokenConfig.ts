@@ -9,7 +9,16 @@ import {
   MSUSD,
   FRXUSD,
   EUSD,
-  AXLUSDC
+  AXLUSDC,
+  NEW_AERO,
+  USDT,
+  DAI,
+  USDE,
+  USDS,
+  USDT_USD_FEED,
+  DAI_USD_FEED,
+  USDE_USD_FEED,
+  USDS_USD_FEED
 } from "./constants"
 
 // Token configurations with Chainlink-first approach (Base mainnet).
@@ -69,6 +78,10 @@ export class PriceSourceConfig {
 const CHAINLINK_FEEDS = new Map<string, string>()
 CHAINLINK_FEEDS.set("ETH_USD", ETH_USD_FEED.toHexString())
 CHAINLINK_FEEDS.set("USDC_USD", USDC_USD_FEED.toHexString())
+CHAINLINK_FEEDS.set("USDT_USD", USDT_USD_FEED.toHexString())
+CHAINLINK_FEEDS.set("DAI_USD", DAI_USD_FEED.toHexString())
+CHAINLINK_FEEDS.set("USDE_USD", USDE_USD_FEED.toHexString())
+CHAINLINK_FEEDS.set("USDS_USD", USDS_USD_FEED.toHexString())
 
 export function getTokenConfig(address: Address): TokenConfig | null {
   let key = address.toHexString().toLowerCase()
@@ -105,6 +118,25 @@ function usdcReferencedStable(address: Address, symbol: string, decimals: i32): 
       90
     )
   ])
+}
+
+// A stablecoin priced off its own Chainlink feed, with an Aero USDC pool as the
+// priority-2 fallback when the feed gives no valid price (stale, out of range). Neither
+// source assumes $1, so a depeg shows. No pool → feed only.
+function chainlinkStable(
+  address: Address,
+  symbol: string,
+  decimals: i32,
+  feedName: string,
+  fallbackPool: Address | null
+): TokenConfig {
+  const sources = [
+    new PriceSourceConfig(Address.fromString(getChainlinkFeedSafe(feedName)), "chainlink", 1, 95)
+  ]
+  if (fallbackPool !== null) {
+    sources.push(new PriceSourceConfig(fallbackPool, "velodrome_slipstream", 2, 80, USDC_NATIVE))
+  }
+  return new TokenConfig(address, symbol, decimals, sources)
 }
 
 // Initialize token configurations
@@ -166,6 +198,32 @@ function initializeTokens(): void {
       )
     ]
   ))
+
+  // AERO of Aero (the merged protocol) — Aero CL/v2 gauge reward token. Priced off the Aero v2
+  // AERO/USDC volatile pool, the deepest AERO/USDC pool on Base (~$16M USDC, 2026-11-03).
+  TOKENS.set(NEW_AERO.toHexString().toLowerCase(), new TokenConfig(
+    NEW_AERO,
+    "AERO",
+    18,
+    [
+      new PriceSourceConfig(
+        Address.fromString("0xF634058dC94e6BF8e828E27621320C423bC8B18E"), // Aero v2 AERO/USDC volatile
+        "velodrome_v2",
+        1,
+        85,
+        USDC_NATIVE // pair token
+      )
+    ]
+  ))
+
+  // optimus#412 stablecoins. Fallback pools are the Aero CL tickSpacing-1 pools vs USDC.
+  TOKENS.set(USDT.toHexString().toLowerCase(), chainlinkStable(USDT, "USDT", 6, "USDT_USD",
+    Address.fromString("0xD448990883e3Bf9cDD8ebCA368A3ECF9D629aAf7"))) // Aero USDC/USDT CL
+  TOKENS.set(DAI.toHexString().toLowerCase(), chainlinkStable(DAI, "DAI", 18, "DAI_USD",
+    Address.fromString("0xeF48Feb4c2AcDC3b5b7ceF492B86933B9Bc69c94"))) // Aero DAI/USDC CL
+  TOKENS.set(USDE.toHexString().toLowerCase(), chainlinkStable(USDE, "USDe", 18, "USDE_USD",
+    Address.fromString("0x64F020b475ad7913259daCaFa452351b3390Ad6A"))) // Aero USDe/USDC CL
+  TOKENS.set(USDS.toHexString().toLowerCase(), chainlinkStable(USDS, "USDS", 18, "USDS_USD", null))
 }
 
 // Call initialization

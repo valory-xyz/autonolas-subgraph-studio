@@ -159,12 +159,24 @@ function getPriceFromSources(
   let confidences: BigDecimal[] = []
   let sourceTypes: string[] = []
   
-  // Try all sources and collect valid prices
+  // Collect valid prices from the best priority that has any: a higher-numbered source is a
+  // fallback, only read when every better one fails (e.g. a stablecoin's pool behind its
+  // Chainlink feed). Sources sharing a priority are averaged by confidence below.
+  let bestPriority = i32.MAX_VALUE
   for (let i = 0; i < config.priceSources.length; i++) {
     let sourceConfig = config.priceSources[i]
+    if (sourceConfig.priority > bestPriority) {
+      continue
+    }
     let result = getPriceFromSource(token, sourceConfig, timestamp)
     
     if (result.price.gt(BigDecimal.fromString("0"))) {
+      if (sourceConfig.priority < bestPriority) {
+        bestPriority = sourceConfig.priority
+        validPrices = []
+        confidences = []
+        sourceTypes = []
+      }
       validPrices.push(result.price)
       confidences.push(result.confidence)
       sourceTypes.push(result.source)
