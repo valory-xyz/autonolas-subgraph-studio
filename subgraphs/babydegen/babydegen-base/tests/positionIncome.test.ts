@@ -5,7 +5,7 @@ import { ClaimableRewardBeforeBlock, ProtocolPosition } from "../generated/schem
 import { Collect, DecreaseLiquidity } from "../generated/VeloNFTManager/VelodromePositionNFTManager"
 import { handleCollect, handleDecreaseLiquidity } from "../src/veloNFTManager"
 import { processERC20Transfer } from "../src/tokenBalances"
-import { attributeRewardTransfer } from "../src/positionIncome"
+import { attributeRewardTransfer, recordClaimableRewardBeforeBlock } from "../src/positionIncome"
 import { calculateActualROI } from "../src/roiCalculation"
 import { USDC_NATIVE, BOLD, AERO, VELO_MANAGER, PROTOCOL_VELODROME_V3, PROTOCOL_VELODROME_V2, PROTOCOL_AERO_CL } from "../src/constants"
 import { newLog, newReceipt, newTransfer, mockEthUsd, seedService, seedAddressType, seedTokenPrice, seedPosition, seededAddressType } from "./fixtures"
@@ -102,6 +102,23 @@ const SAFE_D12 = Address.fromString("0xd32613ed605be41d9c7fbc85f2ccb4fba59778ac"
 const GAUGE_D12 = Address.fromString("0x0f5212f63ba8eab0fabd94fc2071d461d9d6ddb2")
 const REWARD_PAID = BigInt.fromString("1814069823640933344")
 
+const CL_GAUGE_WITHDRAW_TOPIC = "0x8903a5b5d08a841e7f68438387f1da20c84dea756379ed37e633ff3854b99b84"
+
+function word32(hex: string): string {
+  let digits = hex.startsWith("0x") ? hex.slice(2) : hex
+  return "0x" + "0".repeat(64 - digits.length) + digits
+}
+
+// Withdraw(address indexed user, uint256 indexed tokenId, uint128 indexed liquidityToStake)
+function gaugeWithdraw(gauge: Address, user: Address, tokenId: i32, logIndex: i32): ethereum.Log {
+  return newLog(gauge.toHexString(), [
+    CL_GAUGE_WITHDRAW_TOPIC,
+    word32(user.toHexString()),
+    word32(tokenId.toString(16)),
+    word32("1")
+  ], "0x", logIndex)
+}
+
 describe("claimed rewards", () => {
   beforeEach(() => {
     mockEthUsd()
@@ -134,6 +151,40 @@ describe("claimed rewards", () => {
     positionField(unstaked, "claimedRewardsUSD", "0.0907034911820466672")
     positionField(other, "claimedRewards", "0")
     assert.notInStore("FundingBalance", SAFE_D12.toHexString())
+  })
+
+  test("each reward goes to the Withdraw after it, not one before it", () => {
+    seedService(SAFE_D12, OPERATOR_SAFE, AGENT_INSTANCE)
+    seedAddressType(GAUGE_D12, true, false)
+    let first = seedPosition(SAFE_D12, PROTOCOL_VELODROME_V3, BigInt.fromI32(1001), USDC_NATIVE, BOLD, GAUGE_D12, BigInt.fromI32(1), "0")
+    let second = seedPosition(SAFE_D12, PROTOCOL_VELODROME_V3, BigInt.fromI32(1002), USDC_NATIVE, BOLD, GAUGE_D12, BigInt.fromI32(1), "0")
+    // reward (20) → Withdraw(1001) (21) → reward (22) → Withdraw(1002) (23), all from one gauge
+    let receipt = newReceipt([
+      gaugeWithdraw(GAUGE_D12, SAFE_D12, 1001, 21),
+      gaugeWithdraw(GAUGE_D12, SAFE_D12, 1002, 23)
+    ])
+    processERC20Transfer(newTransfer(AERO, GAUGE_D12, SAFE_D12, BigInt.fromString("1000000000000000000"), 20, receipt), seededAddressType)
+    processERC20Transfer(newTransfer(AERO, GAUGE_D12, SAFE_D12, BigInt.fromString("2000000000000000000"), 22, receipt), seededAddressType)
+
+    positionField(first, "claimedRewards", "1")
+    positionField(second, "claimedRewards", "2")
+  })
+
+  test("the claimable reward a block started with survives later refreshes in that block", () => {
+    seedService(SERVICE_SAFE, OPERATOR_SAFE, AGENT_INSTANCE)
+    let p = seedPosition(SERVICE_SAFE, PROTOCOL_VELODROME_V3, BigInt.fromI32(1), USDC_NATIVE, BOLD, GAUGE_D12, BigInt.fromI32(1), "3")
+    let block = newMockEvent().block
+    block.number = BLOCK_NUMBER
+
+    recordClaimableRewardBeforeBlock(p, block)
+    p.claimableReward = BigDecimal.zero()
+    recordClaimableRewardBeforeBlock(p, block)
+    assert.fieldEquals("ClaimableRewardBeforeBlock", p.id.toHexString(), "claimableReward", "3")
+
+    block.number = BLOCK_NUMBER.plus(BigInt.fromI32(1))
+    p.claimableReward = BigDecimal.fromString("5")
+    recordClaimableRewardBeforeBlock(p, block)
+    assert.fieldEquals("ClaimableRewardBeforeBlock", p.id.toHexString(), "claimableReward", "5")
   })
 
   test("a CL claim with no Withdraw is split by what each position had earned before the block", () => {

@@ -51,11 +51,31 @@ describe("stablecoin pricing", () => {
     clearStore()
   })
 
-  test("a price below $0.95 is kept and marks the stablecoin depegged", () => {
+  test("a price below the old $0.95 floor is kept and marks the stablecoin depegged", () => {
     mockUsdtFeed(90000000)
     assert.stringEquals(getTokenPriceUSD(USDT, BLOCK_TIMESTAMP).toString(), "0.9")
     assert.fieldEquals("Token", USDT.toHexString(), "depegged", "true")
     assert.fieldEquals("Token", USDT.toHexString(), "priceStale", "false")
+  })
+
+  test("depegged starts just below $0.98", () => {
+    mockUsdtFeed(97999999)
+    getTokenPriceUSD(USDT, BLOCK_TIMESTAMP)
+    assert.fieldEquals("Token", USDT.toHexString(), "depegged", "true")
+  })
+
+  test("a stablecoin at exactly $0.98 is not depegged", () => {
+    mockUsdtFeed(98000000)
+    getTokenPriceUSD(USDT, BLOCK_TIMESTAMP)
+    assert.fieldEquals("Token", USDT.toHexString(), "depegged", "false")
+  })
+
+  test("the depeg flag clears when the price recovers", () => {
+    mockUsdtFeed(90000000)
+    getTokenPriceUSD(USDT, BLOCK_TIMESTAMP)
+    mockUsdtFeed(100000000)
+    getTokenPriceUSD(USDT, BLOCK_TIMESTAMP, true)
+    assert.fieldEquals("Token", USDT.toHexString(), "depegged", "false")
   })
 
   test("a stablecoin at $0.99 is not depegged", () => {
