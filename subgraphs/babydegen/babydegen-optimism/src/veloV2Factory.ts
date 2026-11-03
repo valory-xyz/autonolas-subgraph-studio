@@ -4,7 +4,7 @@ import { AeroV2Pool as AeroV2PoolTemplate } from "../generated/templates"
 import { V2PoolVenue } from "../generated/schema"
 import { ensureVeloV2PoolTemplate } from "./veloV2Shared"
 import { isPoolRelevant } from "./veloV2Bootstrap"
-import { PROTOCOL_AERO_V2 } from "./constants"
+import { PROTOCOL_AERO_V2, AERO_V2_STABLE_FACTORY } from "./constants"
 import { log } from "@graphprotocol/graph-ts"
 
 // Handle VelodromeV2 Factory PoolCreated events
@@ -34,6 +34,7 @@ export function handleAeroV2PoolCreated(event: AeroV2PoolCreated): void {
   }
   const venue = new V2PoolVenue(event.params.pool)
   venue.protocol = PROTOCOL_AERO_V2
+  venue.stable = event.address.equals(AERO_V2_STABLE_FACTORY)
   venue.save()
   AeroV2PoolTemplate.create(event.params.pool)
 }

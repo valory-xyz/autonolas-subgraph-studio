@@ -11,10 +11,11 @@ export const Q96 = BigInt.fromString("79228162514264337593543950336")
 // NETWORK-SPECIFIC CONSTANTS FOR BASE (Aerodrome)
 // =============================================================================
 //
-// Basius is the babydegen agent on Base. It trades exclusively on Aerodrome
-// (a Velodrome fork: Slipstream CL + v2 stable/volatile pools). The handler
-// files keep their `velo*` names; only the addresses + the consumer-facing
-// `protocol` strings differ. See CLAUDE.md for the velo->aerodrome mapping.
+// Basius is the babydegen agent on Base. It trades on Aerodrome (a Velodrome
+// fork: Slipstream CL + v2 stable/volatile pools) and, since optimus v0.13.10,
+// on Aero (the merged protocol; see the Aero section below). The handler files
+// keep their `velo*` names; only the addresses + the consumer-facing `protocol`
+// strings differ. See CLAUDE.md for the velo->aerodrome mapping.
 
 // ---- Tokens tracked for portfolio valuation (Base mainnet) ------------------
 export const USDC_NATIVE = Address.fromString("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913") // Native USDC on Base (primary funding/valuation asset)

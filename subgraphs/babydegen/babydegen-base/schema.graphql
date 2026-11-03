@@ -424,4 +424,5 @@ type AeroGauge @entity(immutable: false) {
 type V2PoolVenue @entity(immutable: true) {
   id: Bytes!                # pool address
   protocol: String!         # "aero-v2"
+  stable: Boolean!          # created by the stable factory (Aero v2 pools have no stable())
 }

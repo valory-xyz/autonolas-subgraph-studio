@@ -30,15 +30,29 @@ function v2RewardTokenFor(protocol: string): Address {
   return protocol == PROTOCOL_AERO_V2 ? XAERO : VELO
 }
 
-// Resolve the Velodrome V2 gauge for a pool via the Voter (gauges(pool)), caching the result
-// on the position's rewardsContract. Returns Address.zero() when the pool has no gauge.
-// The "Voter reverted" (transient) and "no gauge" (legitimate) cases are kept distinct:
-// a revert is logged (it can silently undervalue a staked position) and never cached, so we
-// retry next refresh; a zero gauge is silent and not cached, so a later-gauged pool is picked up.
+// Fee tier of a v2 pool: 5 (0.05%) stable, 30 (0.30%) volatile. Aero v2 pools have no stable();
+// the factory that created them recorded which kind they are in V2PoolVenue.
+function setV2PoolFee(pp: ProtocolPosition, poolContract: VelodromeV2Pool): void {
+  const venue = V2PoolVenue.load(Address.fromBytes(pp.pool))
+  if (venue != null) {
+    pp.fee = venue.stable ? 5 : 30
+    return
+  }
+  const stableResult = poolContract.try_stable()
+  if (!stableResult.reverted) {
+    pp.fee = stableResult.value ? 5 : 30
+  }
+}
+
+// Resolve a v2 pool's gauge. Returns Address.zero() when the pool has no gauge.
+// - aero-v2: neither the pool nor the Aero Voter knows its gauge, so read the AeroGauge row
+//   built from GaugeManager GaugeCreated (aeroGaugeManager.ts). Re-read on every refresh, not
+//   cached, since a later GaugeCreated replaces it; no row means no gauge yet.
+// - legacy: the Velodrome Voter's gauges(pool), cached on the position's rewardsContract. A Voter
+//   revert (transient) is logged and not cached, so the next refresh retries; a zero gauge
+//   (legitimate) is silent and not cached, so a later-gauged pool is picked up.
 function resolveV2Gauge(poolAddress: Address, pp: ProtocolPosition): Address {
   if (pp.protocol == PROTOCOL_AERO_V2) {
-    // Aero: neither the pool nor the Voter knows the gauge; GaugeCreated does (aeroGaugeManager.ts).
-    // Read it every refresh rather than the cache, since a later GaugeCreated can replace it.
     // Aero's V2Gauge has the same balanceOf/earned(address) as the legacy one, so VeloV2Gauge binds it.
     const aeroGauge = AeroGauge.load(poolAddress)
     if (aeroGauge == null) {
@@ -147,7 +161,6 @@ export function refreshVeloV2PositionWithEventAmounts(
     
     const token0Result = poolContract.try_token0()
     const token1Result = poolContract.try_token1()
-    const stableResult = poolContract.try_stable()
     
     if (!token0Result.reverted && !token1Result.reverted) {
       pp.token0 = token0Result.value
@@ -155,10 +168,7 @@ export function refreshVeloV2PositionWithEventAmounts(
       pp.token0Symbol = getTokenSymbol(token0Result.value)
       pp.token1Symbol = getTokenSymbol(token1Result.value)
       
-      // Set fee based on pool type (stable vs volatile)
-      if (!stableResult.reverted) {
-        pp.fee = stableResult.value ? 5 : 30 // 0.05% for stable, 0.30% for volatile
-      }
+      setV2PoolFee(pp, poolContract)
     }
     
     // Initialize ALL required fields BEFORE calling initializePositionCosts
@@ -199,7 +209,6 @@ export function refreshVeloV2PositionWithEventAmounts(
     
     const token0Result = poolContract.try_token0()
     const token1Result = poolContract.try_token1()
-    const stableResult = poolContract.try_stable()
     
     if (!token0Result.reverted && !token1Result.reverted) {
       pp.token0 = token0Result.value
@@ -207,10 +216,7 @@ export function refreshVeloV2PositionWithEventAmounts(
       pp.token0Symbol = getTokenSymbol(token0Result.value)
       pp.token1Symbol = getTokenSymbol(token1Result.value)
       
-      // Set fee based on pool type (stable vs volatile)
-      if (!stableResult.reverted) {
-        pp.fee = stableResult.value ? 5 : 30 // 0.05% for stable, 0.30% for volatile
-      }
+      setV2PoolFee(pp, poolContract)
     }
   }
   
@@ -322,7 +328,6 @@ export function refreshVeloV2Position(
     
     const token0Result = poolContract.try_token0()
     const token1Result = poolContract.try_token1()
-    const stableResult = poolContract.try_stable()
     
     if (!token0Result.reverted && !token1Result.reverted) {
       pp.token0 = token0Result.value
@@ -330,10 +335,7 @@ export function refreshVeloV2Position(
       pp.token0Symbol = getTokenSymbol(token0Result.value)
       pp.token1Symbol = getTokenSymbol(token1Result.value)
       
-      // Set fee based on pool type (stable vs volatile)
-      if (!stableResult.reverted) {
-        pp.fee = stableResult.value ? 5 : 30 // 0.05% for stable, 0.30% for volatile
-      }
+      setV2PoolFee(pp, poolContract)
     } else {
       return
     }
