@@ -217,6 +217,8 @@ function initializeTokens(): void {
   ))
 
   // optimus#412 stablecoins. Fallback pools are the Aero CL tickSpacing-1 pools vs USDC.
+  // The DAI and USDe fallbacks are inert for now: the CL adapter's decimal adjustment is inverted
+  // for 18-vs-6-decimal pairs, so they price ~1e-24 and are rejected. USDT (6/6) works.
   TOKENS.set(USDT.toHexString().toLowerCase(), chainlinkStable(USDT, "USDT", 6, "USDT_USD",
     Address.fromString("0xD448990883e3Bf9cDD8ebCA368A3ECF9D629aAf7"))) // Aero USDC/USDT CL
   TOKENS.set(DAI.toHexString().toLowerCase(), chainlinkStable(DAI, "DAI", 18, "DAI_USD",

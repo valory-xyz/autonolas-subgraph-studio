@@ -268,7 +268,8 @@ function getPriceFromSource(
       sourceConfig.pairToken!
     )
     if (price.gt(BigDecimal.fromString("0")) && isValidPriceResult(price, token.symbol)) {
-      return new PriceResult(price, baseConfidence, "velodrome_cl")
+      // Label with the configured sourceType so createPriceUpdate attributes it to this source
+      return new PriceResult(price, baseConfidence, sourceType)
     }
   }
   
@@ -327,14 +328,15 @@ function isValidPriceResult(price: BigDecimal, tokenSymbol: string): boolean {
   let maxPrice: BigDecimal
   
   // Different bounds for stablecoins vs other tokens
-  if (tokenSymbol == "USDC" || tokenSymbol == "USDT" || 
-      tokenSymbol == "DAI" || tokenSymbol == "USDC.e" ||
-      tokenSymbol == "USDe" || tokenSymbol == "USDS") {
+  if (tokenSymbol == "USDC" || tokenSymbol == "USDC.e") {
     // Core stablecoins should be within a very tight range around $1
     minPrice = BigDecimal.fromString("0.95")   // $0.95
     maxPrice = BigDecimal.fromString("1.05")   // $1.05
   } else if (tokenSymbol == "LUSD" || tokenSymbol == "FRAX" || 
-      tokenSymbol == "DOLA") {
+      tokenSymbol == "DOLA" || tokenSymbol == "USDT" || tokenSymbol == "DAI" ||
+      tokenSymbol == "USDe" || tokenSymbol == "USDS") {
+    // Variable stablecoins can have slightly more variation. The optimus#412 stables are here,
+    // not in the tight band, so a real depeg reported by their own feed is kept.
     // Variable stablecoins can have slightly more variation
     minPrice = BigDecimal.fromString("0.5")    // $0.50
     maxPrice = BigDecimal.fromString("1.5")    // $1.50

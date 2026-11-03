@@ -23,8 +23,9 @@ export function getChainlinkPrice(feedAddress: Address, blockTimestamp: BigInt =
     // Chainlink updatedAt timestamp
     let updatedAt = roundData.value3
     
-    // Stale data threshold (24 hours in seconds)
-    const STALE_PRICE_THRESHOLD = BigInt.fromI32(86400)
+    // Stale data threshold: a 24h heartbeat plus a ~1h grace, so a 24h-heartbeat feed (the
+    // Base USDT/DAI/USDe/USDS feeds) isn't rejected in the moments before its next update
+    const STALE_PRICE_THRESHOLD = BigInt.fromI32(90000)
     
     // Calculate how old the data is
     let dataAge = blockTimestamp.minus(updatedAt)
