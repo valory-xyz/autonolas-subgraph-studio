@@ -5,7 +5,10 @@ import {
   CreateMultisigWithAgents
 } from "../generated/ServiceRegistryL2/ServiceRegistryL2"
 import { Transfer as V2Transfer } from "../generated/templates/VeloV2Pool/VelodromeV2Pool"
-import { Transfer as NFTTransfer } from "../generated/VeloNFTManager/VelodromePositionNFTManager"
+import {
+  Transfer as NFTTransfer,
+  DecreaseLiquidity
+} from "../generated/VeloNFTManager/VelodromePositionNFTManager"
 import { IncreaseLiquidity as AeroIncreaseLiquidity } from "../generated/AeroNFTManager/AeroPositionNFTManager"
 import { PoolCreated as AeroV2PoolCreated } from "../generated/AeroV2StableFactory/AeroV2PoolFactory"
 import { GaugeCreated } from "../generated/AeroGaugeManager/AeroGaugeManager"
@@ -231,6 +234,31 @@ export function createAeroV2MintEvent(
 
   event.parameters.push(new ethereum.EventParam("sender", ethereum.Value.fromAddress(sender)))
   event.parameters.push(new ethereum.EventParam("to", ethereum.Value.fromAddress(to)))
+  event.parameters.push(new ethereum.EventParam("amount0", ethereum.Value.fromUnsignedBigInt(amount0)))
+  event.parameters.push(new ethereum.EventParam("amount1", ethereum.Value.fromUnsignedBigInt(amount1)))
+
+  return event
+}
+
+/**
+ * Creates a mock CL NFPM DecreaseLiquidity event (Slipstream or Aero — same signature).
+ *
+ * Solidity signature:
+ *   DecreaseLiquidity(indexed uint256 tokenId, uint128 liquidity, uint256 amount0, uint256 amount1)
+ */
+export function createDecreaseLiquidityEvent(
+  manager: Address,
+  tokenId: BigInt,
+  liquidity: BigInt,
+  amount0: BigInt,
+  amount1: BigInt
+): DecreaseLiquidity {
+  let event = changetype<DecreaseLiquidity>(newMockEvent())
+  event.address = manager
+  event.parameters = new Array()
+
+  event.parameters.push(new ethereum.EventParam("tokenId", ethereum.Value.fromUnsignedBigInt(tokenId)))
+  event.parameters.push(new ethereum.EventParam("liquidity", ethereum.Value.fromUnsignedBigInt(liquidity)))
   event.parameters.push(new ethereum.EventParam("amount0", ethereum.Value.fromUnsignedBigInt(amount0)))
   event.parameters.push(new ethereum.EventParam("amount1", ethereum.Value.fromUnsignedBigInt(amount1)))
 

@@ -13,7 +13,7 @@ import {
 } from "../src/serviceRegistry"
 import { refreshVeloV2Position, getVeloV2PositionId } from "../src/veloV2Shared"
 import { ProtocolPosition, Service, V2PoolVenue } from "../generated/schema"
-import { handleNFTTransfer, handleAeroIncreaseLiquidity } from "../src/veloNFTManager"
+import { handleNFTTransfer, handleAeroIncreaseLiquidity, handleDecreaseLiquidity } from "../src/veloNFTManager"
 import { refreshVeloCLPosition, getVeloCLPositionId, clVenueForManager } from "../src/veloCLShared"
 import { handleVeloV2Transfer, handleAeroV2Mint } from "../src/veloV2Pool"
 import { handleAeroV2PoolCreated } from "../src/veloV2Factory"
@@ -42,7 +42,8 @@ import {
   createAeroIncreaseLiquidityEvent,
   createAeroV2PoolCreatedEvent,
   createGaugeCreatedEvent,
-  createAeroV2MintEvent
+  createAeroV2MintEvent,
+  createDecreaseLiquidityEvent
 } from "./mapping-utils"
 import {
   OPERATOR_SAFE,
@@ -794,6 +795,49 @@ describe("Aero CL positions (AeroNFTManager)", () => {
 
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimableReward", "2")
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimableRewardUSD", "0")
+  })
+  test("a full-exit DecreaseLiquidity from the Aero NFPM closes the aero-cl position", () => {
+    createService(SERVICE_SAFE)
+    mockChainlinkEthUsd()
+    mockAeroCLPosition()
+    mockAeroCLStaked(false)
+    const id = openAeroCLPosition()
+
+    // All liquidity removed: positions() now reports 0. Only the Aero NFPM is mocked, so the
+    // exit must read the position through the venue of the emitting manager.
+    createMockedFunction(
+      AERO_NFT_MANAGER,
+      "positions",
+      "positions(uint256):(uint96,address,address,address,int24,int24,int24,uint128,uint256,uint256,uint128,uint128)"
+    )
+      .withArgs([ethereum.Value.fromUnsignedBigInt(AERO_TOKEN_ID)])
+      .returns([
+        ethereum.Value.fromUnsignedBigInt(BigInt.zero()),
+        ethereum.Value.fromAddress(Address.zero()),
+        ethereum.Value.fromAddress(DUMMY0),
+        ethereum.Value.fromAddress(DUMMY1),
+        ethereum.Value.fromI32(1),
+        ethereum.Value.fromI32(-10),
+        ethereum.Value.fromI32(10),
+        ethereum.Value.fromUnsignedBigInt(BigInt.zero()),
+        ethereum.Value.fromUnsignedBigInt(BigInt.zero()),
+        ethereum.Value.fromUnsignedBigInt(BigInt.zero()),
+        ethereum.Value.fromUnsignedBigInt(BigInt.zero()),
+        ethereum.Value.fromUnsignedBigInt(BigInt.zero())
+      ])
+    const dec = createDecreaseLiquidityEvent(
+      AERO_NFT_MANAGER,
+      AERO_TOKEN_ID,
+      BigInt.fromString("1000000000000000000"),
+      BigInt.fromString("1000000000000000000"),
+      BigInt.fromString("3000000000000000000")
+    )
+    dec.block = v2Block()
+    dec.transaction.hash = TX_HASH
+    handleDecreaseLiquidity(dec)
+
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "isActive", "false")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "exitAmount1", "3")
   })
 })
 

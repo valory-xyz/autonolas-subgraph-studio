@@ -19,7 +19,7 @@ import { AgentSwapBuffer, SwapTransaction } from "../generated/schema"
 import { handleVeloV2Bootstrap } from "../src/veloV2Bootstrap"
 import { handleVeloV2Transfer, handleVeloV2Mint, handleAeroV2Mint } from "../src/veloV2Pool"
 import { ProtocolPosition, Service, V2PoolVenue } from "../generated/schema"
-import { handleNFTTransfer, handleAeroIncreaseLiquidity } from "../src/veloNFTManager"
+import { handleNFTTransfer, handleAeroIncreaseLiquidity, handleDecreaseLiquidity } from "../src/veloNFTManager"
 import { refreshVeloCLPosition, getVeloCLPositionId, clVenueForManager } from "../src/veloCLShared"
 import { handleAeroV2PoolCreated } from "../src/veloV2Factory"
 import { handleAeroGaugeCreated } from "../src/aeroGaugeManager"
@@ -39,6 +39,7 @@ import {
   USDE,
   USDS,
   USDT_USD_FEED,
+  USDS_USD_FEED,
   AERO_NFT_MANAGER,
   AERO_CL_FACTORY,
   AERO_V2_STABLE_FACTORY,
@@ -53,7 +54,8 @@ import {
   createAeroIncreaseLiquidityEvent,
   createAeroV2PoolCreatedEvent,
   createGaugeCreatedEvent,
-  createAeroV2MintEvent
+  createAeroV2MintEvent,
+  createDecreaseLiquidityEvent
 } from "./mapping-utils"
 import {
   OPERATOR_SAFE,
@@ -1291,6 +1293,49 @@ describe("Aero CL positions (AeroNFTManager)", () => {
     assert.assertTrue(pos.claimableRewardUSD!.gt(BigDecimal.fromString("1.19")))
     assert.assertTrue(pos.claimableRewardUSD!.lt(BigDecimal.fromString("1.21")))
   })
+  test("a full-exit DecreaseLiquidity from the Aero NFPM closes the aero-cl position", () => {
+    createService(SERVICE_SAFE)
+    mockChainlinkEthUsd()
+    mockAeroCLPosition()
+    mockAeroCLStaked(false)
+    const id = openAeroCLPosition()
+
+    // All liquidity removed: positions() now reports 0. Only the Aero NFPM is mocked, so the
+    // exit must read the position through the venue of the emitting manager.
+    createMockedFunction(
+      AERO_NFT_MANAGER,
+      "positions",
+      "positions(uint256):(uint96,address,address,address,int24,int24,int24,uint128,uint256,uint256,uint128,uint128)"
+    )
+      .withArgs([ethereum.Value.fromUnsignedBigInt(AERO_TOKEN_ID)])
+      .returns([
+        ethereum.Value.fromUnsignedBigInt(BigInt.zero()),
+        ethereum.Value.fromAddress(Address.zero()),
+        ethereum.Value.fromAddress(DUMMY0),
+        ethereum.Value.fromAddress(DUMMY1),
+        ethereum.Value.fromI32(1),
+        ethereum.Value.fromI32(-10),
+        ethereum.Value.fromI32(10),
+        ethereum.Value.fromUnsignedBigInt(BigInt.zero()),
+        ethereum.Value.fromUnsignedBigInt(BigInt.zero()),
+        ethereum.Value.fromUnsignedBigInt(BigInt.zero()),
+        ethereum.Value.fromUnsignedBigInt(BigInt.zero()),
+        ethereum.Value.fromUnsignedBigInt(BigInt.zero())
+      ])
+    const dec = createDecreaseLiquidityEvent(
+      AERO_NFT_MANAGER,
+      AERO_TOKEN_ID,
+      BigInt.fromString("1000000000000000000"),
+      BigInt.fromString("1000000000000000000"),
+      BigInt.fromString("3000000000000000000")
+    )
+    dec.block = aeroBlock()
+    dec.transaction.hash = TX_HASH
+    handleDecreaseLiquidity(dec)
+
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "isActive", "false")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "exitAmount1", "3")
+  })
 })
 
 function mockAeroV2PoolState(pool: Address, gauge: Address): void {
@@ -1503,6 +1548,23 @@ describe("optimus#412 stablecoins (Chainlink first, pool fallback)", () => {
 
     const price = getTokenPriceUSD(USDT, BLOCK_TIMESTAMP, true)
     assert.stringEquals("1", price.toString())
+  })
+
+  test("a feed price outside the stablecoin band is rejected (USDS has no pool to fall back to)", () => {
+    createMockedFunction(
+      USDS_USD_FEED,
+      "latestRoundData",
+      "latestRoundData():(uint80,int256,uint256,uint256,uint80)"
+    )
+      .withArgs([])
+      .returns([
+        ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1)),
+        ethereum.Value.fromSignedBigInt(BigInt.fromI32(50000000)), // $0.50
+        ethereum.Value.fromUnsignedBigInt(BLOCK_TIMESTAMP),
+        ethereum.Value.fromUnsignedBigInt(BLOCK_TIMESTAMP),
+        ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1))
+      ])
+    assert.stringEquals("0", getTokenPriceUSD(USDS, BLOCK_TIMESTAMP, true).toString())
   })
 
   test("Aero's AERO is tracked alongside the legacy AERO", () => {

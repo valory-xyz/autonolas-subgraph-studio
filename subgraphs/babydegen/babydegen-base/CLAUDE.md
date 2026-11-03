@@ -132,7 +132,7 @@ v0.13.10. Aero positions are labelled **`aero-cl` / `aero-v2`**; legacy labels a
   GaugeManager's `GaugeCreated` builds `AeroGauge { pool → gauge }`, read on every refresh by the
   `aero-v2` branch of `resolveV2Gauge`. Verified against Aero v2 volatile AERO/USDC
   `0xF634…B18E` → gauge `0xd424…5cd1` (`stakingToken()` = the pool).
-- **Pricing** — Aero's AERO prices off that same Aero v2 AERO/USDC volatile pool (~$16M USDC).
+- **Pricing** — Aero's AERO prices off that same Aero v2 AERO/USDC volatile pool.
   optimus#412's USDT / DAI / USDe / USDS price off their own Chainlink feeds (priority 1) with
   the Aero CL tickSpacing-1 pool vs USDC as a priority-2 fallback (USDS: feed only). They are
   **not** on `usdcReferencedStable` or `CRITICAL_STABLECOINS`. `getPriceFromSources` reads a

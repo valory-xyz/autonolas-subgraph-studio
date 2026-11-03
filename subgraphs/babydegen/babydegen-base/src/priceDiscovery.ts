@@ -328,7 +328,8 @@ function isValidPriceResult(price: BigDecimal, tokenSymbol: string): boolean {
   
   // Different bounds for stablecoins vs other tokens
   if (tokenSymbol == "USDC" || tokenSymbol == "USDT" || 
-      tokenSymbol == "DAI" || tokenSymbol == "USDC.e") {
+      tokenSymbol == "DAI" || tokenSymbol == "USDC.e" ||
+      tokenSymbol == "USDe" || tokenSymbol == "USDS") {
     // Core stablecoins should be within a very tight range around $1
     minPrice = BigDecimal.fromString("0.95")   // $0.95
     maxPrice = BigDecimal.fromString("1.05")   // $1.05

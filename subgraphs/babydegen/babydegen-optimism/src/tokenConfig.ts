@@ -330,7 +330,7 @@ function initializeTokens(): void {
   // Pool addresses provided for accurate price tracking
 
   // BOLD (agent's, 0x0356…) - Velodrome V2 stable BOLD/USDC on the legacy factory, the deepest
-  // BOLD/USDC pool (~23k USDC / 25k BOLD, 2026-11-03; the Aero v2 stable one holds ~$640 USDC)
+  // BOLD/USDC pool when this was added (deeper than the Aero v2 stable one)
   TOKENS.set(BOLD_V2.toHexString().toLowerCase(), new TokenConfig(
     BOLD_V2,
     "BOLD",
