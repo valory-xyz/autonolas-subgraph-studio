@@ -87,7 +87,10 @@ export const WHITELISTED_TOKENS: string[] = [
   USDT0.toHexString(),
   OUSDT.toHexString(),
   USDGLO.toHexString(),
-  VELO.toHexString()
+  VELO.toHexString(),
+  SDAI.toHexString(),
+  BOLD.toHexString(),
+  FRAX.toHexString()
 ]
 
 // Stablecoin addresses (for price fallbacks)
