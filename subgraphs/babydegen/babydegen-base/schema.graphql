@@ -181,10 +181,10 @@ type AgentPortfolio @entity(immutable: false) {
   projectedUnrealisedPnLWithRewards: BigDecimal!  # APR calculation including claimable rewards
   
   # ETH-adjusted performance metrics
-  ethAdjustedRoi: BigDecimal!              # ETH-adjusted actual ROI
-  ethAdjustedApr: BigDecimal!              # ETH-adjusted actual APR  
-  ethAdjustedUnrealisedPnL: BigDecimal!    # ETH-adjusted unrealised PnL
-  ethAdjustedProjectedUnrealisedPnL: BigDecimal!  # ETH-adjusted projected unrealised PnL
+  ethAdjustedRoi: BigDecimal!  # Deprecated: equals the unadjusted value
+  ethAdjustedApr: BigDecimal!  # Deprecated: equals the unadjusted value
+  ethAdjustedUnrealisedPnL: BigDecimal!  # Deprecated: equals the unadjusted value
+  ethAdjustedProjectedUnrealisedPnL: BigDecimal!  # Deprecated: equals the unadjusted value
 
   # ETH price tracking
   firstFundingEthPrice: BigDecimal!        # ETH price at first funding
@@ -225,10 +225,10 @@ type AgentPortfolioSnapshot @entity(immutable: true) {
   projectedUnrealisedPnL: BigDecimal!  # Projected unrealised PnL at snapshot time
   
   # ETH-adjusted metrics for historical snapshots
-  ethAdjustedRoi: BigDecimal!
-  ethAdjustedApr: BigDecimal!
-  ethAdjustedUnrealisedPnL: BigDecimal!
-  ethAdjustedProjectedUnrealisedPnL: BigDecimal!
+  ethAdjustedRoi: BigDecimal!  # Deprecated: equals the unadjusted value
+  ethAdjustedApr: BigDecimal!  # Deprecated: equals the unadjusted value
+  ethAdjustedUnrealisedPnL: BigDecimal!  # Deprecated: equals the unadjusted value
+  ethAdjustedProjectedUnrealisedPnL: BigDecimal!  # Deprecated: equals the unadjusted value
   
   # Metadata
   timestamp: BigInt!            # When snapshot was taken
@@ -283,16 +283,16 @@ type DailyPopulationMetric @entity(immutable: true) {
   medianProjectedUnrealisedPnLWithRewards: BigDecimal  # Median projected unrealised PnL including rewards
   
   # ETH-adjusted population metrics
-  medianEthAdjustedROI: BigDecimal!        # Median ETH-adjusted actual ROI
-  medianEthAdjustedAPR: BigDecimal!        # Median ETH-adjusted actual APR
-  medianEthAdjustedUnrealisedPnL: BigDecimal!   # Median ETH-adjusted unrealised PnL
-  medianEthAdjustedProjectedUnrealisedPnL: BigDecimal!   # Median ETH-adjusted projected unrealised PnL
+  medianEthAdjustedROI: BigDecimal!  # Deprecated: equals the unadjusted value
+  medianEthAdjustedAPR: BigDecimal!  # Deprecated: equals the unadjusted value
+  medianEthAdjustedUnrealisedPnL: BigDecimal!  # Deprecated: equals the unadjusted value
+  medianEthAdjustedProjectedUnrealisedPnL: BigDecimal!  # Deprecated: equals the unadjusted value
   
   # Lifetime Active Agents Metrics (agents with >2 positions - lifetime active vs stagnant)
   medianLifetimeActiveUnrealisedPnL: BigDecimal  # Median unrealised PnL for lifetime active agents (>2 positions)
   medianLifetimeActiveProjectedUnrealisedPnL: BigDecimal  # Median projected unrealised PnL for lifetime active agents
-  medianLifetimeActiveEthAdjustedUnrealisedPnL: BigDecimal  # Median ETH-adjusted unrealised PnL for lifetime active agents
-  medianLifetimeActiveEthAdjustedProjectedUnrealisedPnL: BigDecimal  # Median ETH-adjusted projected unrealised PnL for lifetime active agents
+  medianLifetimeActiveEthAdjustedUnrealisedPnL: BigDecimal  # Deprecated: equals the unadjusted value
+  medianLifetimeActiveEthAdjustedProjectedUnrealisedPnL: BigDecimal  # Deprecated: equals the unadjusted value
   medianLifetimeActiveAUM: BigDecimal            # Median AUM for lifetime active agents
   totalLifetimeActiveFundedAUM: BigDecimal       # Total funded AUM for lifetime active agents
   totalLifetimeActiveAgents: Int                 # Number of lifetime active agents (>2 positions)
@@ -312,16 +312,16 @@ type DailyPopulationMetric @entity(immutable: true) {
   sma7dAUM: BigDecimal!             # 7-day SMA of median AUM
   
   # 7-day Simple Moving Averages for ETH-adjusted metrics
-  sma7dEthAdjustedROI: BigDecimal!
-  sma7dEthAdjustedAPR: BigDecimal!
-  sma7dEthAdjustedUnrealisedPnL: BigDecimal!
-  sma7dEthAdjustedProjectedUnrealisedPnL: BigDecimal!
+  sma7dEthAdjustedROI: BigDecimal!  # Deprecated: equals the unadjusted value
+  sma7dEthAdjustedAPR: BigDecimal!  # Deprecated: equals the unadjusted value
+  sma7dEthAdjustedUnrealisedPnL: BigDecimal!  # Deprecated: equals the unadjusted value
+  sma7dEthAdjustedProjectedUnrealisedPnL: BigDecimal!  # Deprecated: equals the unadjusted value
   
   # 7-Day Simple Moving Averages for Lifetime Active Agents
   sma7dLifetimeActiveUnrealisedPnL: BigDecimal   # 7-day SMA of median unrealised PnL for lifetime active agents
   sma7dLifetimeActiveProjectedUnrealisedPnL: BigDecimal  # 7-day SMA of median projected unrealised PnL for lifetime active agents
-  sma7dLifetimeActiveEthAdjustedUnrealisedPnL: BigDecimal  # 7-day SMA of median ETH-adjusted unrealised PnL for lifetime active agents
-  sma7dLifetimeActiveEthAdjustedProjectedUnrealisedPnL: BigDecimal  # 7-day SMA of median ETH-adjusted projected unrealised PnL for lifetime active agents
+  sma7dLifetimeActiveEthAdjustedUnrealisedPnL: BigDecimal  # Deprecated: equals the unadjusted value
+  sma7dLifetimeActiveEthAdjustedProjectedUnrealisedPnL: BigDecimal  # Deprecated: equals the unadjusted value
   sma7dLifetimeActiveAUM: BigDecimal             # 7-day SMA of median AUM for lifetime active agents
   
   # Metadata
@@ -337,16 +337,16 @@ type DailyPopulationMetric @entity(immutable: true) {
   historicalMedianAUM: [BigDecimal!]!  # Last 7 days of median AUM values
   
   # Historical arrays for ETH-adjusted SMA calculations
-  historicalMedianEthAdjustedROI: [BigDecimal!]!
-  historicalMedianEthAdjustedAPR: [BigDecimal!]!
-  historicalMedianEthAdjustedUnrealisedPnL: [BigDecimal!]!
-  historicalMedianEthAdjustedProjectedUnrealisedPnL: [BigDecimal!]!
+  historicalMedianEthAdjustedROI: [BigDecimal!]!  # Deprecated: equals the unadjusted value
+  historicalMedianEthAdjustedAPR: [BigDecimal!]!  # Deprecated: equals the unadjusted value
+  historicalMedianEthAdjustedUnrealisedPnL: [BigDecimal!]!  # Deprecated: equals the unadjusted value
+  historicalMedianEthAdjustedProjectedUnrealisedPnL: [BigDecimal!]!  # Deprecated: equals the unadjusted value
   
   # Historical arrays for Lifetime Active Agents SMA calculations
   historicalMedianLifetimeActiveUnrealisedPnL: [BigDecimal!]  # Last 7 days of median unrealised PnL for lifetime active agents
   historicalMedianLifetimeActiveProjectedUnrealisedPnL: [BigDecimal!]  # Last 7 days of median projected unrealised PnL for lifetime active agents
-  historicalMedianLifetimeActiveEthAdjustedUnrealisedPnL: [BigDecimal!]  # Last 7 days of median ETH-adjusted unrealised PnL for lifetime active agents
-  historicalMedianLifetimeActiveEthAdjustedProjectedUnrealisedPnL: [BigDecimal!]  # Last 7 days of median ETH-adjusted projected unrealised PnL for lifetime active agents
+  historicalMedianLifetimeActiveEthAdjustedUnrealisedPnL: [BigDecimal!]  # Deprecated: equals the unadjusted value
+  historicalMedianLifetimeActiveEthAdjustedProjectedUnrealisedPnL: [BigDecimal!]  # Deprecated: equals the unadjusted value
   historicalMedianLifetimeActiveAUM: [BigDecimal!]  # Last 7 days of median AUM for lifetime active agents
 }
 

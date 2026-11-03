@@ -70,7 +70,8 @@ function createBlockFromTimestamp(timestamp: BigInt): ethereum.Block {
   )
 }
 
-// Calculate ETH-adjusted metrics using the core formula
+// ETH-adjusted metrics equal the unadjusted ones: subtracting ETH's whole price move
+// misstated every Safe that did not hold ETH. The fields stay for existing queries.
 function calculateEthAdjustedMetrics(
   portfolio: AgentPortfolio,
   actualROI: BigDecimal,
@@ -79,50 +80,14 @@ function calculateEthAdjustedMetrics(
   projectedUnrealisedPnL: BigDecimal,
   block: ethereum.Block
 ): EthAdjustedMetrics {
-  // Get current ETH price
-  let currentEthPrice = getEthUsd(block)
-  
-  // Get first funding ETH price (should be set when first funding occurs)
-  let firstFundingEthPrice = portfolio.firstFundingEthPrice
-  
-  // Calculate ETH delta: ((ETH_f/ETH_i)-1)*100
-  let ethDelta = BigDecimal.zero()
-  if (firstFundingEthPrice.gt(BigDecimal.zero())) {
-    ethDelta = currentEthPrice.div(firstFundingEthPrice)
-      .minus(BigDecimal.fromString("1"))
-      .times(BigDecimal.fromString("100"))
-  }
-  
-  // Calculate ETH-adjusted ROI: ROI - ETHdelta
-  let ethAdjustedActualROI = actualROI.minus(ethDelta)
-  let ethAdjustedUnrealisedPnL = unrealisedPnL.minus(ethDelta)
-  
-  // CORRECTED: Calculate ETH-adjusted APR from ETH-adjusted ROI (not directly from ETH delta)
-  // Get the time period for APR calculation
-  let timestampForAPR = portfolio.firstTradingTimestamp
-  let ethAdjustedActualAPR = BigDecimal.zero()
-  let ethAdjustedProjectedUnrealisedPnL = BigDecimal.zero()
-  
-  if (timestampForAPR.gt(BigInt.zero())) {
-    let secondsSinceStart = block.timestamp.minus(timestampForAPR)
-    let daysSinceStart = secondsSinceStart.toBigDecimal().div(BigDecimal.fromString("86400"))
-    
-    if (daysSinceStart.gt(BigDecimal.zero())) {
-      // APR = ETH-adjusted ROI * (365 / days_invested)
-      let annualizationFactor = BigDecimal.fromString("365").div(daysSinceStart)
-      ethAdjustedActualAPR = ethAdjustedActualROI.times(annualizationFactor)
-      ethAdjustedProjectedUnrealisedPnL = ethAdjustedUnrealisedPnL.times(annualizationFactor)
-    }
-  }
-  
   return new EthAdjustedMetrics(
-    ethAdjustedActualROI,
-    ethAdjustedUnrealisedPnL,
-    ethAdjustedActualAPR,
-    ethAdjustedProjectedUnrealisedPnL,
-    currentEthPrice,
-    firstFundingEthPrice,
-    ethDelta
+    actualROI,
+    unrealisedPnL,
+    actualAPR,
+    projectedUnrealisedPnL,
+    getEthUsd(block),
+    portfolio.firstFundingEthPrice,
+    BigDecimal.zero()
   )
 }
 
