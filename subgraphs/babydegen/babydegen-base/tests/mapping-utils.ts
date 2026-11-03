@@ -10,7 +10,8 @@ import {
 } from "../generated/templates/VeloV2Pool/VelodromeV2Pool"
 import {
   Transfer as NFTTransfer,
-  DecreaseLiquidity
+  DecreaseLiquidity,
+  IncreaseLiquidity
 } from "../generated/VeloNFTManager/VelodromePositionNFTManager"
 import { IncreaseLiquidity as AeroIncreaseLiquidity } from "../generated/AeroNFTManager/AeroPositionNFTManager"
 import { PoolCreated as AeroV2PoolCreated } from "../generated/AeroV2StableFactory/AeroV2PoolFactory"
@@ -286,6 +287,31 @@ export function createDecreaseLiquidityEvent(
   amount1: BigInt
 ): DecreaseLiquidity {
   let event = changetype<DecreaseLiquidity>(newMockEvent())
+  event.address = manager
+  event.parameters = new Array()
+
+  event.parameters.push(new ethereum.EventParam("tokenId", ethereum.Value.fromUnsignedBigInt(tokenId)))
+  event.parameters.push(new ethereum.EventParam("liquidity", ethereum.Value.fromUnsignedBigInt(liquidity)))
+  event.parameters.push(new ethereum.EventParam("amount0", ethereum.Value.fromUnsignedBigInt(amount0)))
+  event.parameters.push(new ethereum.EventParam("amount1", ethereum.Value.fromUnsignedBigInt(amount1)))
+
+  return event
+}
+
+/**
+ * Creates a mock legacy (Slipstream / Velodrome) NFPM IncreaseLiquidity event.
+ *
+ * Solidity signature:
+ *   IncreaseLiquidity(indexed uint256 tokenId, uint128 liquidity, uint256 amount0, uint256 amount1)
+ */
+export function createIncreaseLiquidityEvent(
+  manager: Address,
+  tokenId: BigInt,
+  liquidity: BigInt,
+  amount0: BigInt,
+  amount1: BigInt
+): IncreaseLiquidity {
+  let event = changetype<IncreaseLiquidity>(newMockEvent())
   event.address = manager
   event.parameters = new Array()
 
