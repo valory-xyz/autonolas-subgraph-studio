@@ -1,7 +1,8 @@
 # BabyDegen Base (Basius) Subgraph
 
 Tracks the **Basius** babydegen agent's portfolio performance on **Base**. Port of
-`babydegen-optimism` repointed to Base + **Aerodrome** (the only DEX Basius trades on).
+`babydegen-optimism` repointed to Base + **Aerodrome**, plus **Aero** (the merged protocol Basius
+moved to in optimus v0.13.10; see "Aero (OPE-2009)" below).
 Indexing **filters by Olas `agentId == 115`** and tracks every Basius service (currently
 607/610/611/612 on Base), mirroring optimism's `OPTIMUS_AGENT_ID` filter.
 
@@ -20,7 +21,7 @@ Indexing **filters by Olas `agentId == 115`** and tracks every Basius service (c
 | Aspect | Optimism | Base (this subgraph) |
 |--------|----------|----------------------|
 | Network | `optimism` | `base` |
-| DEXs tracked | Velodrome CL + V2, **Uniswap V3**, **Balancer** | **Aerodrome only** (CL = Slipstream, v2) |
+| DEXs tracked | Velodrome CL + V2, **Uniswap V3**, **Balancer** | **Aerodrome** (CL = Slipstream, v2) + **Aero** (CL, v2) |
 | Agent scoping | agent-id filter (`OPTIMUS_AGENT_ID = 40`) + excluded ids | agent-id filter (`BASIUS_AGENT_ID = 115`), all matching services |
 | Pricing | Chainlink + DEX | Chainlink (Base feeds) + Aerodrome; stables via $1 |
 | Reward token | VELO | AERO |
@@ -58,8 +59,9 @@ strings changed: `ProtocolPosition.protocol` is now `aerodrome-cl` / `aerodrome-
 Chainlink feeds (Base, verified on-chain — live, 8 decimals): ETH/USD `0x71041ddd…`,
 USDC/USD `0x7e860098…`.
 
-**startBlock** for every data source = `47163056` (earliest agentId-115 service, #607,
-2026-06-10).
+**startBlock** = `47163056` (earliest agentId-115 service, #607, 2026-06-10) for every data
+source except the Aero ones, which start at their deployment: NFPM `52881675`, v2 volatile /
+stable factories `52880042` / `52880046`, GaugeManager `52688318`.
 
 ### Base reference addresses (NOT indexed by this subgraph)
 
