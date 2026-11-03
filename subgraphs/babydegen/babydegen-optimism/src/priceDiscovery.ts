@@ -1,4 +1,4 @@
-import { Address, BigDecimal, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts"
+import { Address, BigDecimal, BigInt, Bytes, ethereum, log } from "@graphprotocol/graph-ts"
 import { Token, PriceSource, PriceUpdate } from "../generated/schema"
 import { getTokenConfig, TokenConfig, PriceSourceConfig } from "./tokenConfig"
 import { CRITICAL_STABLECOINS, DOLA } from "./constants"
@@ -178,6 +178,10 @@ function getPriceFromSources(
   
   let config = getTokenConfig(Address.fromBytes(token.id))
   if (config == null) {
+    return new PriceResult(BigDecimal.fromString("0"), BigDecimal.fromString("0"), "none")
+  }
+  if (config.priceSources.length == 0) {
+    log.warning("PRICE: {} ({}) has no price source — valued at $0", [config.symbol, token.id.toHexString()])
     return new PriceResult(BigDecimal.fromString("0"), BigDecimal.fromString("0"), "none")
   }
   

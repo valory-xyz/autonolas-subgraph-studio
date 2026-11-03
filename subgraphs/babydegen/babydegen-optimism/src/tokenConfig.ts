@@ -1,5 +1,5 @@
 import { Address, BigInt } from "@graphprotocol/graph-ts"
-import { ETH_USD_FEED, USDC_USD_FEED, USDT_USD_FEED, DAI_USD_FEED, USDC_NATIVE, WETH, DAI, USDT, USDC_BRIDGED, USDT0, OUSDT, USDGLO } from "./constants"
+import { ETH_USD_FEED, USDC_USD_FEED, USDT_USD_FEED, DAI_USD_FEED, USDC_NATIVE, WETH, DAI, USDT, USDC_BRIDGED, USDT0, OUSDT, USDGLO, BOLD_V2, USDS, XAERO } from "./constants"
 
 // Token configurations with Chainlink-first approach
 export const TOKENS = new Map<string, TokenConfig>()
@@ -328,6 +328,29 @@ function initializeTokens(): void {
 
   // Note: These tokens now use pool-based price discovery similar to DOLA
   // Pool addresses provided for accurate price tracking
+
+  // BOLD (agent's, 0x0356…) - Velodrome V2 stable BOLD/USDC on the legacy factory, the deepest
+  // BOLD/USDC pool (~23k USDC / 25k BOLD, 2026-11-03; the Aero v2 stable one holds ~$640 USDC)
+  TOKENS.set(BOLD_V2.toHexString().toLowerCase(), new TokenConfig(
+    BOLD_V2,
+    "BOLD",
+    18,
+    [
+      new PriceSourceConfig(
+        Address.fromString("0x8828B7792499A7d86E931DF56E3D37C428d12d2b"),
+        "velodrome_v2",
+        1,
+        85,
+        USDC_NATIVE
+      )
+    ]
+  ))
+
+  // No feed and no pool with real liquidity yet: tracked for balances, valued at $0
+  // (getPriceFromSources logs it) until a source exists. Not on the $1 stablecoin fallback.
+  TOKENS.set(USDS.toHexString().toLowerCase(), new TokenConfig(USDS, "USDS", 18, []))
+  // xAERO - Aero gauge rewards. Its Optimism pools are too thin to price from.
+  TOKENS.set(XAERO.toHexString().toLowerCase(), new TokenConfig(XAERO, "xAERO", 18, []))
 }
 
 // Call initialization

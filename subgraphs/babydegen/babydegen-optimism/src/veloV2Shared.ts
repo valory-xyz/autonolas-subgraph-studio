@@ -7,7 +7,7 @@ import {
   log
 } from "@graphprotocol/graph-ts"
 
-import { ProtocolPosition, Service, AgentSwapBuffer } from "../generated/schema"
+import { ProtocolPosition, Service, AgentSwapBuffer, AeroGauge, V2PoolVenue } from "../generated/schema"
 import { VelodromeV2Pool } from "../generated/templates/VeloV2Pool/VelodromeV2Pool"
 import { VeloVoter } from "../generated/templates/VeloV2Pool/VeloVoter"
 import { VeloV2Gauge } from "../generated/templates/VeloV2Pool/VeloV2Gauge"
@@ -17,7 +17,18 @@ import { getServiceByAgent } from "./config"
 import { parseTotalSlippageFromBucket, associateSwapsWithPosition, calculatePortfolioMetrics } from "./helpers"
 import { getTokenDecimals, getTokenSymbol } from "./tokenUtils"
 import { calculatePositionROI } from "./roiCalculation"
-import { PROTOCOL_VELODROME_V2, VELO, VELO_VOTER } from "./constants"
+import { PROTOCOL_VELODROME_V2, VELO, VELO_VOTER, PROTOCOL_AERO_V2, XAERO } from "./constants"
+
+// A pool's venue is recorded by the factory handler that created it; pools with no
+// V2PoolVenue row came from the legacy factory.
+export function v2ProtocolFor(poolAddress: Address): string {
+  const venue = V2PoolVenue.load(poolAddress)
+  return venue != null ? venue.protocol : PROTOCOL_VELODROME_V2
+}
+
+function v2RewardTokenFor(protocol: string): Address {
+  return protocol == PROTOCOL_AERO_V2 ? XAERO : VELO
+}
 
 // Resolve the Velodrome V2 gauge for a pool via the Voter (gauges(pool)), caching the result
 // on the position's rewardsContract. Returns Address.zero() when the pool has no gauge.
@@ -25,6 +36,17 @@ import { PROTOCOL_VELODROME_V2, VELO, VELO_VOTER } from "./constants"
 // a revert is logged (it can silently undervalue a staked position) and never cached, so we
 // retry next refresh; a zero gauge is silent and not cached, so a later-gauged pool is picked up.
 function resolveV2Gauge(poolAddress: Address, pp: ProtocolPosition): Address {
+  if (pp.protocol == PROTOCOL_AERO_V2) {
+    // Aero: neither the pool nor the Voter knows the gauge; GaugeCreated does (aeroGaugeManager.ts).
+    // Read it every refresh rather than the cache, since a later GaugeCreated can replace it.
+    // Aero's V2Gauge has the same balanceOf/earned(address) as the legacy one, so VeloV2Gauge binds it.
+    const aeroGauge = AeroGauge.load(poolAddress)
+    if (aeroGauge == null) {
+      return Address.zero() // pool has no gauge yet
+    }
+    pp.rewardsContract = aeroGauge.gauge
+    return Address.fromBytes(aeroGauge.gauge)
+  }
   const cached = pp.rewardsContract
   if (cached) {
     return Address.fromBytes(cached!)
@@ -73,7 +95,7 @@ export function ensureVeloV2PoolTemplate(poolAddress: Address): void {
 
 // Create or get VelodromeV2 position ID
 export function getVeloV2PositionId(userAddress: Address, poolAddress: Address): Bytes {
-  let positionId = userAddress.toHex() + "-" + PROTOCOL_VELODROME_V2 + "-" + poolAddress.toHex()
+  let positionId = userAddress.toHex() + "-" + v2ProtocolFor(poolAddress) + "-" + poolAddress.toHex()
   return Bytes.fromUTF8(positionId)
 }
 
@@ -99,7 +121,7 @@ export function refreshVeloV2PositionWithEventAmounts(
     pp = new ProtocolPosition(positionId)
     pp.agent = userAddress
     pp.service = userAddress // Link to service
-    pp.protocol = PROTOCOL_VELODROME_V2
+    pp.protocol = v2ProtocolFor(poolAddress)
     pp.pool = poolAddress
     pp.isActive = true
     pp.tokenId = BigInt.zero() // VelodromeV2 doesn't use tokenIds
@@ -274,7 +296,7 @@ export function refreshVeloV2Position(
     pp = new ProtocolPosition(positionId)
     pp.agent = userAddress
     pp.service = userAddress // Link to service
-    pp.protocol = PROTOCOL_VELODROME_V2
+    pp.protocol = v2ProtocolFor(poolAddress)
     pp.pool = poolAddress
     pp.isActive = true
     pp.tokenId = BigInt.zero() // VelodromeV2 doesn't use tokenIds
@@ -385,9 +407,10 @@ export function refreshVeloV2Position(
     }
     const earnedRes = gauge.try_earned(userAddress)
     if (!earnedRes.reverted) {
-      // Velodrome V2 gauges emit VELO (18-dec), priced via priceDiscovery (tokenConfig.ts).
+      // Velodrome V2 gauges emit VELO, Aero's emit xAERO; both 18-dec. xAERO has no price
+      // source, so its USD value is 0 (priceDiscovery.ts logs it).
       rewardAmount = earnedRes.value.toBigDecimal().div(BigDecimal.fromString("1e18"))
-      rewardUSD = rewardAmount.times(getTokenPriceUSD(VELO, block.timestamp, false))
+      rewardUSD = rewardAmount.times(getTokenPriceUSD(v2RewardTokenFor(pp.protocol), block.timestamp, false))
     } else {
       // Same silent-zero guard as the CL path: earned(address) reverting on a staked
       // position means a non-standard gauge ABI — log it instead of recording 0 quietly.

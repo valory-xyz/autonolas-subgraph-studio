@@ -439,6 +439,90 @@ dataSources:
           handler: handleERC20Transfer
       file: ./src/tokenBalances.ts
   - kind: ethereum
+    name: BOLD_V2
+    network: optimism
+    source:
+      address: "0x03569CC076654F82679C4BA2124D64774781B01D" # BOLD the agent holds (BOLD above keeps its history)
+      abi: ERC20
+      startBlock: 136563000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - TokenBalance
+      abis:
+        - name: ERC20
+          file: ../../../abis/ERC20.json
+        - name: AggregatorV3Interface
+          file: ../../../abis/oracles/AggregatorV3Interface.json
+        - name: VelodromeCLPool
+          file: ../../../abis/defi/VelodromeCLPool.json
+        - name: UniswapV3Pool
+          file: ../../../abis/defi/UniswapV3Pool.json
+        - name: VelodromeV2Pool
+          file: ../../../abis/defi/VelodromeV2Pool.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleERC20Transfer
+      file: ./src/tokenBalances.ts
+  - kind: ethereum
+    name: USDS
+    network: optimism
+    source:
+      address: "0x4F13a96EC5C4Cf34e442b46Bbd98a0791F20edC3" # optimus#412; unpriced
+      abi: ERC20
+      startBlock: 136563000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - TokenBalance
+      abis:
+        - name: ERC20
+          file: ../../../abis/ERC20.json
+        - name: AggregatorV3Interface
+          file: ../../../abis/oracles/AggregatorV3Interface.json
+        - name: VelodromeCLPool
+          file: ../../../abis/defi/VelodromeCLPool.json
+        - name: UniswapV3Pool
+          file: ../../../abis/defi/UniswapV3Pool.json
+        - name: VelodromeV2Pool
+          file: ../../../abis/defi/VelodromeV2Pool.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleERC20Transfer
+      file: ./src/tokenBalances.ts
+  - kind: ethereum
+    name: xAERO
+    network: optimism
+    source:
+      address: "0xbdEaeA5205d16f34Cb40038052d91235D87B4C54" # Aero gauge reward token; unpriced
+      abi: ERC20
+      startBlock: 136563000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - TokenBalance
+      abis:
+        - name: ERC20
+          file: ../../../abis/ERC20.json
+        - name: AggregatorV3Interface
+          file: ../../../abis/oracles/AggregatorV3Interface.json
+        - name: VelodromeCLPool
+          file: ../../../abis/defi/VelodromeCLPool.json
+        - name: UniswapV3Pool
+          file: ../../../abis/defi/UniswapV3Pool.json
+        - name: VelodromeV2Pool
+          file: ../../../abis/defi/VelodromeV2Pool.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleERC20Transfer
+      file: ./src/tokenBalances.ts
+  - kind: ethereum
     name: VeloNFTManager
     network: optimism
     source:
@@ -460,6 +544,8 @@ dataSources:
           file: ../../../abis/defi/VelodromeCLFactory.json
         - name: VeloCLGauge
           file: ../../../abis/defi/VeloCLGauge.json
+        - name: AeroCLGauge
+          file: ../../../abis/defi/AeroCLGauge.json
         - name: VelodromeV2Pool
           file: ../../../abis/defi/VelodromeV2Pool.json
         - name: AggregatorV3Interface
@@ -467,6 +553,50 @@ dataSources:
       eventHandlers:
         - event: IncreaseLiquidity(indexed uint256,uint128,uint256,uint256)
           handler: handleIncreaseLiquidity
+        - event: DecreaseLiquidity(indexed uint256,uint128,uint256,uint256)
+          handler: handleDecreaseLiquidity
+        - event: Collect(indexed uint256,address,uint256,uint256)
+          handler: handleCollect
+        - event: Transfer(indexed address,indexed address,indexed uint256)
+          handler: handleNFTTransfer
+      file: ./src/veloNFTManager.ts
+  # Aero CL positions. Same handlers as the Slipstream NFPM above, except
+  # IncreaseLiquidity, which on the Aero NFPM carries two extra tick arguments.
+  # The shared refresh binds the NFPM through VelodromePositionNFTManager
+  # (identical positions() layout).
+  - kind: ethereum
+    name: AeroNFTManager
+    network: optimism
+    source:
+      address: "0x4857DB576eE0e45F10525eC59527BfD10beeC60b" # Aero NFPM
+      abi: AeroPositionNFTManager
+      startBlock: 158477277 # NFPM deployment (2026-10-21)
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - ProtocolPosition
+      abis:
+        - name: AeroPositionNFTManager
+          file: ../../../abis/nft/AeroPositionNFTManager.json
+        - name: VelodromePositionNFTManager
+          file: ../../../abis/nft/VelodromePositionNFTManager.json
+        - name: VelodromeCLPool
+          file: ../../../abis/defi/VelodromeCLPool.json
+        - name: VelodromeCLFactory
+          file: ../../../abis/defi/VelodromeCLFactory.json
+        - name: VeloCLGauge
+          file: ../../../abis/defi/VeloCLGauge.json
+        - name: AeroCLGauge
+          file: ../../../abis/defi/AeroCLGauge.json
+        - name: VelodromeV2Pool
+          file: ../../../abis/defi/VelodromeV2Pool.json
+        - name: AggregatorV3Interface
+          file: ../../../abis/oracles/AggregatorV3Interface.json
+      eventHandlers:
+        - event: IncreaseLiquidity(indexed uint256,uint128,uint256,uint256,int24,int24)
+          handler: handleAeroIncreaseLiquidity
         - event: DecreaseLiquidity(indexed uint256,uint128,uint256,uint256)
           handler: handleDecreaseLiquidity
         - event: Collect(indexed uint256,address,uint256,uint256)
@@ -564,6 +694,71 @@ dataSources:
           handler: handleVeloV2PoolCreated
 
 
+  # Aero v2 pools + gauges. Aero's v2 factories emit PoolCreated without the
+  # indexed `stable` flag, so they get their own ABI. Aero v2 pools have no
+  # gauge() and the Aero Voter has no gauges(pool): the pool->gauge map comes
+  # from the GaugeManager's GaugeCreated.
+  - kind: ethereum/contract
+    name: AeroV2StableFactory
+    network: optimism
+    source:
+      address: "0x78589E876edcEbdce72ee3436ab3c9AD3a7cEF2D" # Aero v2 stable PoolFactory
+      abi: AeroV2PoolFactory
+      startBlock: 158475798 # factory deployment (2026-10-21)
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      file: ./src/veloV2Factory.ts
+      entities:
+        - V2PoolVenue
+      abis:
+        - name: AeroV2PoolFactory
+          file: ../../../abis/defi/AeroV2PoolFactory.json
+      eventHandlers:
+        - event: PoolCreated(indexed address,indexed address,address,uint256)
+          handler: handleAeroV2PoolCreated
+  - kind: ethereum/contract
+    name: AeroV2VolatileFactory
+    network: optimism
+    source:
+      address: "0x8E6a9FCd1d638CC760Ffba397605Fe3355dE76D2" # Aero v2 volatile PoolFactory
+      abi: AeroV2PoolFactory
+      startBlock: 158475795 # factory deployment (2026-10-21)
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      file: ./src/veloV2Factory.ts
+      entities:
+        - V2PoolVenue
+      abis:
+        - name: AeroV2PoolFactory
+          file: ../../../abis/defi/AeroV2PoolFactory.json
+      eventHandlers:
+        - event: PoolCreated(indexed address,indexed address,address,uint256)
+          handler: handleAeroV2PoolCreated
+  - kind: ethereum
+    name: AeroGaugeManager
+    network: optimism
+    source:
+      address: "0xbF234b32c5e58868243A4a14831626f3EdE7b183" # Aero GaugeManager (Voter.GAUGE_MANAGER())
+      abi: AeroGaugeManager
+      startBlock: 158285174 # GaugeManager deployment (2026-10-16), before its first GaugeCreated
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      file: ./src/aeroGaugeManager.ts
+      entities:
+        - AeroGauge
+      abis:
+        - name: AeroGaugeManager
+          file: ../../../abis/defi/AeroGaugeManager.json
+      eventHandlers:
+        - event: GaugeCreated(indexed address,indexed address,indexed address,address,address,address,bool)
+          handler: handleAeroGaugeCreated
+
   # Block handler for portfolio snapshots
   - kind: ethereum/contract
     name: PortfolioScheduler
@@ -606,6 +801,8 @@ dataSources:
           file: ../../../abis/BalancerV2WeightedPool.json
         - name: VeloCLGauge
           file: ../../../abis/defi/VeloCLGauge.json
+        - name: AeroCLGauge
+          file: ../../../abis/defi/AeroCLGauge.json
         - name: UniswapV3NFTManager
           file: ../../../abis/nft/UniswapV3NFTManager.json
         # The snapshot block handler refreshes every active position
@@ -714,6 +911,42 @@ templates:
       eventHandlers:
         - event: Mint(indexed address,uint256,uint256)
           handler: handleVeloV2Mint
+        - event: Burn(indexed address,indexed address,uint256,uint256)
+          handler: handleVeloV2Burn
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleVeloV2Transfer
+      file: ./src/veloV2Pool.ts
+  # Aero v2 pool template — same handlers as VeloV2Pool except Mint, which on Aero
+  # pools carries an indexed `to`. Created by the Aero v2 factories above.
+  - kind: ethereum/contract
+    name: AeroV2Pool
+    network: optimism
+    source:
+      abi: AeroV2Pool
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - ProtocolPosition
+      abis:
+        - name: AeroV2Pool
+          file: ../../../abis/defi/AeroV2Pool.json
+        - name: VelodromeV2Pool
+          file: ../../../abis/defi/VelodromeV2Pool.json
+        - name: AggregatorV3Interface
+          file: ../../../abis/oracles/AggregatorV3Interface.json
+        - name: VelodromeCLPool
+          file: ../../../abis/defi/VelodromeCLPool.json
+        - name: UniswapV3Pool
+          file: ../../../abis/defi/UniswapV3Pool.json
+        - name: VeloVoter
+          file: ../../../abis/defi/VeloVoter.json
+        - name: VeloV2Gauge
+          file: ../../../abis/defi/VeloV2Gauge.json
+      eventHandlers:
+        - event: Mint(indexed address,indexed address,uint256,uint256)
+          handler: handleAeroV2Mint
         - event: Burn(indexed address,indexed address,uint256,uint256)
           handler: handleVeloV2Burn
         - event: Transfer(indexed address,indexed address,uint256)

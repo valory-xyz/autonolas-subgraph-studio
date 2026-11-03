@@ -35,7 +35,7 @@ function isTokenWhitelisted(tokenAddress: Address): boolean {
   return false
 }
 
-function isPoolRelevant(token0: Address, token1: Address): boolean {
+export function isPoolRelevant(token0: Address, token1: Address): boolean {
   return isTokenWhitelisted(token0) && isTokenWhitelisted(token1)
 }
 
