@@ -55,10 +55,9 @@ function minBigInt(a: BigInt, b: BigInt): BigInt {
 
 function saveWithROI(position: ProtocolPosition): void {
   if (!position.isActive && position.exitAmountUSD) {
-    calculatePositionROI(position) // saves
-  } else {
-    position.save()
+    calculatePositionROI(position)
   }
+  position.save()
 }
 
 // ---------------------------------------------------------------------------

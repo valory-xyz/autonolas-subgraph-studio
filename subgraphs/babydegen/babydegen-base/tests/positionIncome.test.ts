@@ -74,6 +74,18 @@ describe("collected fees", () => {
     positionField(p, "positionROI", "1.5")
   })
 
+  test("a fee on a closed position with no recorded investment is still saved", () => {
+    let p = seedPosition(SERVICE_SAFE, PROTOCOL_VELODROME_V3, BigInt.fromI32(8), USDC_NATIVE, BOLD, null, BigInt.zero(), "0")
+    p.entryAmountUSD = BigDecimal.zero()
+    p.investmentUSD = BigDecimal.zero()
+    p.save()
+    closeAt(p, "0")
+
+    handleCollect(newCollect(BigInt.fromI32(8), SERVICE_SAFE, BigInt.fromI64(2000000), BigInt.zero()))
+
+    positionField(p, "collectedFeesUSD", "2")
+  })
+
   test("a Collect paid to another address is not the Safe's fee", () => {
     let p = seedPosition(SERVICE_SAFE, PROTOCOL_VELODROME_V3, BigInt.fromI32(7), USDC_NATIVE, BOLD, null, BigInt.zero(), "0")
     closeAt(p, "100")
