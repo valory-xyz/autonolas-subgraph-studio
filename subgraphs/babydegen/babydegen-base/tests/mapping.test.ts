@@ -46,6 +46,7 @@ import {
   AERO_NFT_MANAGER,
   AERO_CL_FACTORY,
   AERO_V2_STABLE_FACTORY,
+  AERO_V2_VOLATILE_FACTORY,
   CRITICAL_STABLECOINS
 } from "../src/constants"
 import {
@@ -1014,6 +1015,8 @@ describe("handleVeloV2Transfer + handleVeloV2Mint entry amounts", () => {
     assert.fieldEquals("ProtocolPosition", positionId.toHexString(), "entryAmount1", "6")
     // Pending record is consumed
     assert.entityCount("PendingMintPosition", 0)
+    // Legacy pool, no V2PoolVenue row: the fee comes from stable() (mocked false)
+    assert.fieldEquals("ProtocolPosition", positionId.toHexString(), "fee", "30")
   })
 })
 
@@ -1468,6 +1471,13 @@ describe("Aero v2 pools (factories + GaugeManager)", () => {
     assert.fieldEquals("V2PoolVenue", AERO_V2_POOL.toHexString(), "protocol", "aero-v2")
     assert.fieldEquals("V2PoolVenue", AERO_V2_POOL.toHexString(), "stable", "true")
     assert.dataSourceCount("AeroV2Pool", 1)
+  })
+
+  test("PoolCreated from the volatile factory records stable = false", () => {
+    const ev = createAeroV2PoolCreatedEvent(AERO_V2_VOLATILE_FACTORY, USDC_NATIVE, USDT, AERO_V2_POOL)
+    handleAeroV2PoolCreated(ev)
+
+    assert.fieldEquals("V2PoolVenue", AERO_V2_POOL.toHexString(), "stable", "false")
   })
 
   test("PoolCreated for a non-whitelisted pair is ignored", () => {

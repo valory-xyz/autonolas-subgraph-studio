@@ -33,6 +33,7 @@ import {
   AERO_NFT_MANAGER,
   AERO_CL_FACTORY,
   AERO_V2_STABLE_FACTORY,
+  AERO_V2_VOLATILE_FACTORY,
   CRITICAL_STABLECOINS,
   WHITELISTED_TOKENS
 } from "../src/constants"
@@ -972,6 +973,13 @@ describe("Aero v2 pools (factories + GaugeManager)", () => {
     assert.dataSourceCount("AeroV2Pool", 1)
   })
 
+  test("PoolCreated from the volatile factory records stable = false", () => {
+    const ev = createAeroV2PoolCreatedEvent(AERO_V2_VOLATILE_FACTORY, BOLD_V2, USDC_OP, AERO_V2_POOL)
+    handleAeroV2PoolCreated(ev)
+
+    assert.fieldEquals("V2PoolVenue", AERO_V2_POOL.toHexString(), "stable", "false")
+  })
+
   test("PoolCreated for a non-whitelisted pair is ignored", () => {
     const ev = createAeroV2PoolCreatedEvent(AERO_V2_STABLE_FACTORY, DUMMY0, DUMMY1, AERO_V2_POOL)
     handleAeroV2PoolCreated(ev)
@@ -1076,6 +1084,40 @@ describe("Aero v2 pools (factories + GaugeManager)", () => {
     assert.entityCount("PendingMintPosition", 0)
     // Aero v2 pools have no stable() (mocked to revert); the fee comes from the venue row
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "fee", "30")
+  })
+
+  test("a legacy v2 pool with no venue row takes its fee from stable()", () => {
+    createService(SERVICE_SAFE)
+    mockChainlinkEthUsd()
+    createMockedFunction(V2_POOL, "token0", "token0():(address)")
+      .withArgs([]).returns([ethereum.Value.fromAddress(DUMMY0)])
+    createMockedFunction(V2_POOL, "token1", "token1():(address)")
+      .withArgs([]).returns([ethereum.Value.fromAddress(DUMMY1)])
+    createMockedFunction(V2_POOL, "stable", "stable():(bool)")
+      .withArgs([]).returns([ethereum.Value.fromBoolean(true)])
+    createMockedFunction(V2_POOL, "balanceOf", "balanceOf(address):(uint256)")
+      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
+      .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(500))])
+    createMockedFunction(V2_POOL, "totalSupply", "totalSupply():(uint256)")
+      .withArgs([]).returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1000))])
+    createMockedFunction(V2_POOL, "getReserves", "getReserves():(uint256,uint256,uint256)")
+      .withArgs([]).returns([
+        ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1000)),
+        ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1000)),
+        ethereum.Value.fromUnsignedBigInt(BigInt.zero())
+      ])
+    createMockedFunction(VELO_VOTER, "gauges", "gauges(address):(address)")
+      .withArgs([ethereum.Value.fromAddress(V2_POOL)])
+      .returns([ethereum.Value.fromAddress(Address.zero())])
+
+    const transfer = createV2TransferEvent(V2_POOL, Address.zero(), SERVICE_SAFE, BigInt.fromI32(500))
+    transfer.block = v2Block()
+    transfer.transaction.hash = TX_HASH
+    handleVeloV2Transfer(transfer)
+
+    const id = getVeloV2PositionId(SERVICE_SAFE, V2_POOL)
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "protocol", "velodrome-v2")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "fee", "5")
   })
 })
 
