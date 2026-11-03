@@ -493,6 +493,8 @@ function mockVeloUsdcPool(): void {
     .withArgs([])
     .returns([ethereum.Value.fromAddress(VELO)])
   // reserve0 = 1.3e12 USDC (1.3M @6dec), reserve1 = 1e24 VELO (1M @18dec) → VELO ≈ $1.30
+  // A volatile pool: priced from its reserves
+  createMockedFunction(VELO_PRICE_POOL, "stable", "stable():(bool)").withArgs([]).returns([ethereum.Value.fromBoolean(false)])
   createMockedFunction(VELO_PRICE_POOL, "getReserves", "getReserves():(uint256,uint256,uint256)")
     .withArgs([])
     .returns([

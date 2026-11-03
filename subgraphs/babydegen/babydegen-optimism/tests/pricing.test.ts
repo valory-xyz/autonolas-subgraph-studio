@@ -2,6 +2,7 @@ import { assert, describe, test, clearStore, afterEach, createMockedFunction } f
 import { Address, BigDecimal, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts"
 import { FundingBalance, TokenBalance, AgentPortfolio } from "../generated/schema"
 import { getTokenPriceUSD } from "../src/priceDiscovery"
+import { getVelodromeV2Price } from "../src/priceAdapters"
 import { calculatePortfolioMetrics, ensureAgentPortfolio } from "../src/helpers"
 import { calculateUninvestedValue } from "../src/tokenBalances"
 import { USDT, DOLA, SDAI, BOLD, FRAX, USDC_NATIVE } from "../src/constants"
@@ -28,6 +29,21 @@ function revertUsdtFeed(): void {
   createMockedFunction(USDT_USD_FEED, "latestRoundData", "latestRoundData():(uint80,int256,uint256,uint256,uint80)")
     .withArgs([])
     .reverts()
+}
+
+// An imbalanced stable pool: reserves say $0.755, the pool's own quote for 1 DOLA is $0.994053
+function mockImbalancedStablePool(pool: Address, token: Address, pairToken: Address, oneToken: BigInt, quote: i64): void {
+  createMockedFunction(pool, "token0", "token0():(address)").withArgs([]).returns([ethereum.Value.fromAddress(pairToken)])
+  createMockedFunction(pool, "token1", "token1():(address)").withArgs([]).returns([ethereum.Value.fromAddress(token)])
+  createMockedFunction(pool, "getReserves", "getReserves():(uint256,uint256,uint256)").withArgs([]).returns([
+    ethereum.Value.fromUnsignedBigInt(BigInt.fromI64(755000000)),
+    ethereum.Value.fromUnsignedBigInt(BigInt.fromString("1000000000000000000000")),
+    ethereum.Value.fromUnsignedBigInt(BigInt.zero())
+  ])
+  createMockedFunction(pool, "stable", "stable():(bool)").withArgs([]).returns([ethereum.Value.fromBoolean(true)])
+  createMockedFunction(pool, "getAmountOut", "getAmountOut(uint256,address):(uint256)")
+    .withArgs([ethereum.Value.fromUnsignedBigInt(oneToken), ethereum.Value.fromAddress(token)])
+    .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromI64(quote))])
 }
 
 describe("stablecoin pricing", () => {
@@ -69,6 +85,11 @@ describe("stablecoin pricing", () => {
   test("a stablecoin never priced is unpriced, not $1", () => {
     revertUsdtFeed()
     assert.stringEquals(getTokenPriceUSD(USDT, BLOCK_TIMESTAMP).toString(), "0")
+  })
+
+  test("a stable pool prices from its quote, not its reserve ratio", () => {
+    mockImbalancedStablePool(DOLA_USDC_POOL, DOLA, USDC_NATIVE, BigInt.fromString("1000000000000000000"), 994053)
+    assert.stringEquals(getVelodromeV2Price(DOLA, DOLA_USDC_POOL, USDC_NATIVE).toString(), "0.994053")
   })
 
   test("DOLA is priced from its pool, not hardcoded to $1", () => {

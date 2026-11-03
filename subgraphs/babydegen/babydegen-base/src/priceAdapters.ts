@@ -162,6 +162,17 @@ export function getVelodromeV2Price(
   let reserve1 = reserves.value1
   let blockTimestampLast = BigInt.fromI32(reserves.value2.toI32())
   
+  // On a stable (curve) pool the reserve ratio is not the price: quote one token instead
+  let stableResult = pool.try_stable()
+  if (!stableResult.reverted && stableResult.value) {
+    let oneToken = BigInt.fromI32(10).pow(targetTokenConfig.decimals as u8)
+    let quote = pool.try_getAmountOut(oneToken, token)
+    if (quote.reverted) {
+      return BigDecimal.fromString("0")
+    }
+    let pairUnit = BigInt.fromI32(10).pow(pairTokenConfig.decimals as u8).toBigDecimal()
+    return quote.value.toBigDecimal().div(pairUnit).times(getPairTokenPrice(pairToken, blockTimestampLast))
+  }
   
   // Get token decimals
   let token0Decimals: number

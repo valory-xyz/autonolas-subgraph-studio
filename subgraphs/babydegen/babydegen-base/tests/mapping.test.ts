@@ -463,6 +463,8 @@ describe("getVelodromeV2Price — AERO/USDC volatile pool", () => {
       .withArgs([])
       .returns([ethereum.Value.fromAddress(USDC_NATIVE)])
     // 1,000,000 AERO (1e24) vs 1,300,000 USDC (1.3e12) → price = 1.3 USDC/AERO × $1
+    // A volatile pool: priced from its reserves
+    createMockedFunction(POOL, "stable", "stable():(bool)").withArgs([]).returns([ethereum.Value.fromBoolean(false)])
     createMockedFunction(POOL, "getReserves", "getReserves():(uint256,uint256,uint256)")
       .withArgs([])
       .returns([
@@ -665,6 +667,8 @@ function mockAeroUsdcPool(): void {
     .withArgs([])
     .returns([ethereum.Value.fromAddress(AERO)])
   // reserve0 = 1.3e12 USDC (1.3M @6dec), reserve1 = 1e24 AERO (1M @18dec) → AERO ≈ $1.30
+  // A volatile pool: priced from its reserves
+  createMockedFunction(AERO_PRICE_POOL, "stable", "stable():(bool)").withArgs([]).returns([ethereum.Value.fromBoolean(false)])
   createMockedFunction(AERO_PRICE_POOL, "getReserves", "getReserves():(uint256,uint256,uint256)")
     .withArgs([])
     .returns([
