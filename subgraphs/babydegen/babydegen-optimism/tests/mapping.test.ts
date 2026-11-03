@@ -12,6 +12,7 @@ import {
   handleCreateMultisigWithAgents
 } from "../src/serviceRegistry"
 import { refreshVeloV2Position, getVeloV2PositionId } from "../src/veloV2Shared"
+import { refreshAllActivePositions } from "../src/helpers"
 import { ProtocolPosition, Service, V2PoolVenue } from "../generated/schema"
 import { handleNFTTransfer, handleAeroIncreaseLiquidity, handleDecreaseLiquidity } from "../src/veloNFTManager"
 import { refreshVeloCLPosition, getVeloCLPositionId, clVenueForManager } from "../src/veloCLShared"
@@ -987,7 +988,7 @@ describe("New Optimism tokens (BOLD 0x0356…, USDS, xAERO)", () => {
 
   test("the agent's BOLD prices off the Velodrome v2 stable BOLD/USDC pool; the legacy BOLD stays", () => {
     const bold = changetype<TokenConfig>(getTokenConfig(BOLD_V2))
-    assert.stringEquals("velodrome_v2", bold.priceSources[0].sourceType)
+    assert.stringEquals("velodrome_v2_stable", bold.priceSources[0].sourceType)
     assert.stringEquals(
       "0x8828b7792499a7d86e931df56e3d37c428d12d2b",
       bold.priceSources[0].address.toHexString()
@@ -1004,5 +1005,74 @@ describe("New Optimism tokens (BOLD 0x0356…, USDS, xAERO)", () => {
       assert.assertTrue(WHITELISTED_TOKENS.indexOf(tokens[i].toHexString()) != -1)
       assert.stringEquals("0", getTokenPriceUSD(tokens[i], BLOCK_TIMESTAMP, true).toString())
     }
+  })
+})
+
+describe("BOLD (0x0356…) stable-pool pricing", () => {
+  afterEach(() => {
+    clearStore()
+  })
+
+  test("is quoted through getAmountOut, not the imbalanced reserve ratio", () => {
+    const POOL = Address.fromString("0x8828B7792499A7d86E931DF56E3D37C428d12d2b")
+    createMockedFunction(POOL, "token0", "token0():(address)")
+      .withArgs([]).returns([ethereum.Value.fromAddress(BOLD_V2)])
+    createMockedFunction(POOL, "token1", "token1():(address)")
+      .withArgs([]).returns([ethereum.Value.fromAddress(USDC_OP)])
+    // Reserves as on-chain (25,094 BOLD / 22,830 USDC) would read as ~$0.91; getReserves is not
+    // mocked, so the test fails if the adapter reads it.
+    createMockedFunction(POOL, "getAmountOut", "getAmountOut(uint256,address):(uint256)")
+      .withArgs([
+        ethereum.Value.fromUnsignedBigInt(BigInt.fromString("1000000000000000000")),
+        ethereum.Value.fromAddress(BOLD_V2)
+      ])
+      .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(999289))]) // 0.999289 USDC
+
+    const price = getTokenPriceUSD(BOLD_V2, BLOCK_TIMESTAMP, true)
+    assert.stringEquals("0.999289", price.toString())
+  })
+})
+
+describe("refreshAllActivePositions dispatch (snapshot refresh)", () => {
+  afterEach(() => {
+    clearStore()
+  })
+
+  test("refreshes active aero-cl and aero-v2 positions", () => {
+    createService(SERVICE_SAFE)
+    mockChainlinkEthUsd()
+
+    // aero-cl, opened unstaked so its reward starts at 0
+    mockAeroCLPosition()
+    mockAeroCLStaked(false)
+    const clId = openAeroCLPosition()
+
+    // aero-v2, opened while earned() reverts so its reward starts at 0
+    const venue = new V2PoolVenue(AERO_V2_POOL)
+    venue.protocol = "aero-v2"
+    venue.save()
+    handleAeroGaugeCreated(createGaugeCreatedEvent(AERO_V2_POOL, AERO_V2_GAUGE))
+    mockAeroV2PoolState(AERO_V2_POOL, AERO_V2_GAUGE)
+    createMockedFunction(AERO_V2_GAUGE, "earned", "earned(address):(uint256)")
+      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)]).reverts()
+    refreshVeloV2Position(SERVICE_SAFE, AERO_V2_POOL, v2Block(), TX_HASH, false)
+    const v2Id = getVeloV2PositionId(SERVICE_SAFE, AERO_V2_POOL)
+    assert.fieldEquals("ProtocolPosition", clId.toHexString(), "claimableReward", "0")
+    assert.fieldEquals("ProtocolPosition", v2Id.toHexString(), "claimableReward", "0")
+
+    // Both now have 2 xAERO claimable; only the snapshot refresh can pick that up
+    mockAeroCLStaked(true)
+    const tokenIds: Array<BigInt> = [AERO_TOKEN_ID]
+    createMockedFunction(AERO_CL_GAUGE, "earned", "earned(address,uint256[]):(uint256)")
+      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE), ethereum.Value.fromUnsignedBigIntArray(tokenIds)])
+      .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromString("2000000000000000000"))])
+    createMockedFunction(AERO_V2_GAUGE, "earned", "earned(address):(uint256)")
+      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
+      .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromString("2000000000000000000"))])
+
+    refreshAllActivePositions(SERVICE_SAFE, v2Block(), false)
+
+    assert.fieldEquals("ProtocolPosition", clId.toHexString(), "claimableReward", "2")
+    assert.fieldEquals("ProtocolPosition", v2Id.toHexString(), "claimableReward", "2")
   })
 })

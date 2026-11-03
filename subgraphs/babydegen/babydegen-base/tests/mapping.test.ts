@@ -15,6 +15,7 @@ import { getTokenConfig, TokenConfig } from "../src/tokenConfig"
 import { getVelodromeV2Price } from "../src/priceAdapters"
 import { calculatePositionROI } from "../src/roiCalculation"
 import { refreshVeloV2Position, getVeloV2PositionId } from "../src/veloV2Shared"
+import { refreshAllActivePositions } from "../src/helpers"
 import { AgentSwapBuffer, SwapTransaction } from "../generated/schema"
 import { handleVeloV2Bootstrap } from "../src/veloV2Bootstrap"
 import { handleVeloV2Transfer, handleVeloV2Mint, handleAeroV2Mint } from "../src/veloV2Pool"
@@ -40,6 +41,7 @@ import {
   USDS,
   USDT_USD_FEED,
   USDS_USD_FEED,
+  USDE_USD_FEED,
   AERO_NFT_MANAGER,
   AERO_CL_FACTORY,
   AERO_V2_STABLE_FACTORY,
@@ -1502,6 +1504,18 @@ function mockUsdtFeed(answer: BigInt, reverts: boolean): void {
   ])
 }
 
+function mockStableFeed(feed: Address, answer: BigInt, updatedAt: BigInt): void {
+  createMockedFunction(feed, "latestRoundData", "latestRoundData():(uint80,int256,uint256,uint256,uint80)")
+    .withArgs([])
+    .returns([
+      ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1)),
+      ethereum.Value.fromSignedBigInt(answer),
+      ethereum.Value.fromUnsignedBigInt(updatedAt),
+      ethereum.Value.fromUnsignedBigInt(updatedAt),
+      ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1))
+    ])
+}
+
 describe("optimus#412 stablecoins (Chainlink first, pool fallback)", () => {
   afterEach(() => {
     clearStore()
@@ -1549,23 +1563,25 @@ describe("optimus#412 stablecoins (Chainlink first, pool fallback)", () => {
 
     const price = getTokenPriceUSD(USDT, BLOCK_TIMESTAMP, true)
     assert.stringEquals("1", price.toString())
+    // The PriceUpdate is attributed to the pool that priced it, not the (failed) feed
+    const updateId = USDT.concat(Bytes.fromUTF8(BLOCK_TIMESTAMP.toString()))
+    assert.fieldEquals("PriceUpdate", updateId.toHexString(), "source", USDT_FALLBACK_POOL.toHexString())
   })
 
-  test("a feed price outside the stablecoin band is rejected (USDS has no pool to fall back to)", () => {
-    createMockedFunction(
-      USDS_USD_FEED,
-      "latestRoundData",
-      "latestRoundData():(uint80,int256,uint256,uint256,uint80)"
-    )
-      .withArgs([])
-      .returns([
-        ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1)),
-        ethereum.Value.fromSignedBigInt(BigInt.fromI32(50000000)), // $0.50
-        ethereum.Value.fromUnsignedBigInt(BLOCK_TIMESTAMP),
-        ethereum.Value.fromUnsignedBigInt(BLOCK_TIMESTAMP),
-        ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1))
-      ])
+  test("a depeg reported by the feed is kept (0.5–1.5 band, not USDC's 0.95–1.05)", () => {
+    mockStableFeed(USDE_USD_FEED, BigInt.fromI32(93000000), BLOCK_TIMESTAMP) // $0.93
+    assert.stringEquals("0.93", getTokenPriceUSD(USDE, BLOCK_TIMESTAMP, true).toString())
+  })
+
+  test("a feed price below the band is rejected (USDS has no pool to fall back to)", () => {
+    mockStableFeed(USDS_USD_FEED, BigInt.fromI32(40000000), BLOCK_TIMESTAMP) // $0.40
     assert.stringEquals("0", getTokenPriceUSD(USDS, BLOCK_TIMESTAMP, true).toString())
+  })
+
+  test("a 24h-heartbeat feed just past 86400s old is still accepted", () => {
+    // updatedAt 86500s before the block: over a bare 24h threshold, inside the 90000s grace
+    mockStableFeed(USDS_USD_FEED, BigInt.fromI32(99900000), BLOCK_TIMESTAMP.minus(BigInt.fromI32(86500)))
+    assert.stringEquals("0.999", getTokenPriceUSD(USDS, BLOCK_TIMESTAMP, true).toString())
   })
 
   test("Aero's AERO is tracked alongside the legacy AERO", () => {
@@ -1573,5 +1589,49 @@ describe("optimus#412 stablecoins (Chainlink first, pool fallback)", () => {
     assert.stringEquals("velodrome_v2", cfg.priceSources[0].sourceType)
     assert.stringEquals(NEW_AERO_PRICE_POOL.toHexString(), cfg.priceSources[0].address.toHexString())
     assert.assertNotNull(getTokenConfig(AERO))
+  })
+})
+
+describe("refreshAllActivePositions dispatch (snapshot refresh)", () => {
+  afterEach(() => {
+    clearStore()
+  })
+
+  test("refreshes active aero-cl and aero-v2 positions", () => {
+    createService(SERVICE_SAFE)
+    mockChainlinkEthUsd()
+
+    // aero-cl, opened unstaked so its reward starts at 0
+    mockAeroCLPosition()
+    mockAeroCLStaked(false)
+    const clId = openAeroCLPosition()
+
+    // aero-v2, opened while earned() reverts so its reward starts at 0
+    const venue = new V2PoolVenue(AERO_V2_POOL)
+    venue.protocol = "aero-v2"
+    venue.save()
+    handleAeroGaugeCreated(createGaugeCreatedEvent(AERO_V2_POOL, AERO_V2_GAUGE))
+    mockAeroV2PoolState(AERO_V2_POOL, AERO_V2_GAUGE)
+    createMockedFunction(AERO_V2_GAUGE, "earned", "earned(address):(uint256)")
+      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)]).reverts()
+    refreshVeloV2Position(SERVICE_SAFE, AERO_V2_POOL, aeroBlock(), TX_HASH, false)
+    const v2Id = getVeloV2PositionId(SERVICE_SAFE, AERO_V2_POOL)
+    assert.fieldEquals("ProtocolPosition", clId.toHexString(), "claimableReward", "0")
+    assert.fieldEquals("ProtocolPosition", v2Id.toHexString(), "claimableReward", "0")
+
+    // Both now have 2 AERO claimable; only the snapshot refresh can pick that up
+    mockAeroCLStaked(true)
+    const tokenIds: Array<BigInt> = [AERO_TOKEN_ID]
+    createMockedFunction(AERO_CL_GAUGE, "earned", "earned(address,uint256[]):(uint256)")
+      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE), ethereum.Value.fromUnsignedBigIntArray(tokenIds)])
+      .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromString("2000000000000000000"))])
+    createMockedFunction(AERO_V2_GAUGE, "earned", "earned(address):(uint256)")
+      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
+      .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromString("2000000000000000000"))])
+
+    refreshAllActivePositions(SERVICE_SAFE, aeroBlock(), false)
+
+    assert.fieldEquals("ProtocolPosition", clId.toHexString(), "claimableReward", "2")
+    assert.fieldEquals("ProtocolPosition", v2Id.toHexString(), "claimableReward", "2")
   })
 })
