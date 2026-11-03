@@ -145,6 +145,8 @@ type Token @entity(immutable: false) {
   priceSources: [PriceSource!]! # Hardcoded price sources
   lastPriceUpdate: BigInt!
   priceConfidence: BigDecimal!  # Current price confidence level
+  priceStale: Boolean!          # derivedUSD is the last valid price, not a fresh one
+  depegged: Boolean!            # stablecoin priced below $0.98
 }
 
 type PriceUpdate @entity(immutable: true) {

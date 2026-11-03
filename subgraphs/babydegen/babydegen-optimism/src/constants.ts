@@ -93,28 +93,18 @@ export const WHITELISTED_TOKENS: string[] = [
   FRAX.toHexString()
 ]
 
-// Stablecoin addresses (for price fallbacks)
+// USD stablecoins (a price below $0.98 marks the token depegged)
 export const STABLECOINS: string[] = [
   USDC_NATIVE.toHexString(),
   USDC_BRIDGED.toHexString(),
   USDT.toHexString(),
   DAI.toHexString(),
   LUSD.toHexString(),
-  DOLA.toHexString(),  // DOLA is a stablecoin pegged to USD
+  DOLA.toHexString(),
   USDT0.toHexString(),
   OUSDT.toHexString(),
-  USDGLO.toHexString()
-]
-
-// Critical stablecoins (for emergency fallbacks)
-export const CRITICAL_STABLECOINS: string[] = [
-  USDC_NATIVE.toHexString(),
-  USDT.toHexString(),
-  DAI.toHexString(),
-  LUSD.toHexString(),
-  DOLA.toHexString(),  // Add DOLA to critical stablecoins for fallback
-  USDT0.toHexString(),
-  OUSDT.toHexString(),
-  SDAI.toHexString(),
-  USDGLO.toHexString()
+  USDGLO.toHexString(),
+  BOLD.toHexString(),
+  FRAX.toHexString(),
+  SUSD.toHexString()
 ]

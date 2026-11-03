@@ -1,15 +1,13 @@
 import { Address, BigDecimal, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts"
 import { Token, PriceSource, PriceUpdate } from "../generated/schema"
 import { getTokenConfig, TokenConfig, PriceSourceConfig } from "./tokenConfig"
-import { CRITICAL_STABLECOINS } from "./constants"
+import { STABLECOINS } from "./constants"
 
 // Cache duration: 5 minutes
 const PRICE_CACHE_DURATION = BigInt.fromI32(300)
 const MIN_CONFIDENCE_THRESHOLD = BigDecimal.fromString("0.5") // 50% minimum confidence
 
-// Stablecoin fallback constants
-const STABLECOIN_FALLBACK_PRICE = BigDecimal.fromString("1.0") // Default fallback for stablecoins
-const STABLECOIN_FALLBACK_CONFIDENCE = BigDecimal.fromString("0.95") // 95% confidence for stablecoin fallbacks
+const DEPEG_THRESHOLD = BigDecimal.fromString("0.98")
 
 // Simplified token validation without caching to avoid Map issues
 function isTokenValidated(address: Address): boolean {
@@ -55,6 +53,8 @@ export function getTokenPriceUSD(
     token.derivedUSD = priceResult.price
     token.priceConfidence = priceResult.confidence
     token.lastPriceUpdate = currentTimestamp
+    token.priceStale = false
+    token.depegged = isStablecoin(tokenAddress) && priceResult.price.lt(DEPEG_THRESHOLD)
     token.save()
     
     // Create price update record
@@ -63,36 +63,25 @@ export function getTokenPriceUSD(
     return priceResult.price
   }
   
-  // No reliable price found for token
-
-  // Fallback strategy based on token type
-  let tokenHex = token.id.toHexString().toLowerCase()
-  
-  // For critical stablecoins (USDC, USDT, DAI, LUSD), use $1.00 with high confidence
-  for (let i = 0; i < CRITICAL_STABLECOINS.length; i++) {
-    if (tokenHex == CRITICAL_STABLECOINS[i]) {
-      // Using $1.00 fallback for critical stablecoin
-      
-      // Update token with fallback price
-      token.derivedUSD = STABLECOIN_FALLBACK_PRICE
-      token.priceConfidence = STABLECOIN_FALLBACK_CONFIDENCE
-      token.lastPriceUpdate = currentTimestamp
+  // No valid price: keep the last valid one, marked stale; a token never priced stays unpriced
+  if (token.derivedUSD.gt(BigDecimal.zero())) {
+    if (!token.priceStale) {
+      token.priceStale = true
       token.save()
-      
-      // Create fallback price update record
-      let fallbackResult = new PriceResult(
-        STABLECOIN_FALLBACK_PRICE,
-        STABLECOIN_FALLBACK_CONFIDENCE,
-        "fallback"
-      )
-      createPriceUpdate(token, fallbackResult, currentTimestamp)
-      
-      return STABLECOIN_FALLBACK_PRICE
+    }
+    return token.derivedUSD
+  }
+  return BigDecimal.zero()
+}
+
+function isStablecoin(tokenAddress: Address): boolean {
+  let tokenHex = tokenAddress.toHexString().toLowerCase()
+  for (let i = 0; i < STABLECOINS.length; i++) {
+    if (tokenHex == STABLECOINS[i]) {
+      return true
     }
   }
-
-  // For all other tokens, no reliable fallback
-  return BigDecimal.fromString("0") // Fail gracefully for non-critical tokens
+  return false
 }
 
 class PriceResult {
@@ -119,6 +108,8 @@ function initializeToken(address: Address): Token | null {
   token.decimals = BigInt.fromI32(config.decimals)
   token.derivedUSD = BigDecimal.fromString("0") // Start with 0, not $1
   token.priceConfidence = BigDecimal.fromString("0")
+  token.priceStale = false
+  token.depegged = false
   token.priceSources = []
   token.lastPriceUpdate = BigInt.fromI32(0)
   
@@ -315,15 +306,14 @@ function isValidPriceResult(price: BigDecimal, tokenSymbol: string): boolean {
   let maxPrice: BigDecimal
   
   // Different bounds for stablecoins vs other tokens
+  // Stablecoins have no lower bound, so a depeg is recorded rather than rejected
   if (tokenSymbol == "USDC" || tokenSymbol == "USDT" || 
       tokenSymbol == "DAI" || tokenSymbol == "USDC.e") {
-    // Core stablecoins should be within a very tight range around $1
-    minPrice = BigDecimal.fromString("0.95")   // $0.95
+    minPrice = BigDecimal.zero()
     maxPrice = BigDecimal.fromString("1.05")   // $1.05
   } else if (tokenSymbol == "LUSD" || tokenSymbol == "FRAX" || 
       tokenSymbol == "DOLA") {
-    // Variable stablecoins can have slightly more variation
-    minPrice = BigDecimal.fromString("0.5")    // $0.50
+    minPrice = BigDecimal.zero()
     maxPrice = BigDecimal.fromString("1.5")    // $1.50
   } else {
     // Non-stablecoin tokens can have a wider range

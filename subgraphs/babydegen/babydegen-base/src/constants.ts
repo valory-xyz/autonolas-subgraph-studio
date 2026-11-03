@@ -70,18 +70,8 @@ export const WHITELISTED_TOKENS: string[] = [
   AXLUSDC.toHexString()
 ]
 
-// Stablecoin addresses (for $1 price fallbacks)
+// USD stablecoins: priced at $1 as a pool's pair leg, and depegged below $0.98
 export const STABLECOINS: string[] = [
-  USDC_NATIVE.toHexString(),
-  BOLD.toHexString(),
-  MSUSD.toHexString(),
-  FRXUSD.toHexString(),
-  EUSD.toHexString(),
-  AXLUSDC.toHexString()
-]
-
-// Critical stablecoins (for emergency fallbacks)
-export const CRITICAL_STABLECOINS: string[] = [
   USDC_NATIVE.toHexString(),
   BOLD.toHexString(),
   MSUSD.toHexString(),
