@@ -796,6 +796,7 @@ describe("Aero CL positions (AeroNFTManager)", () => {
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimableReward", "2")
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimableRewardUSD", "0")
   })
+
   test("a full-exit DecreaseLiquidity from the Aero NFPM closes the aero-cl position", () => {
     createService(SERVICE_SAFE)
     mockChainlinkEthUsd()

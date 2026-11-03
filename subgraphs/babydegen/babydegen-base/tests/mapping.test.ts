@@ -1293,6 +1293,7 @@ describe("Aero CL positions (AeroNFTManager)", () => {
     assert.assertTrue(pos.claimableRewardUSD!.gt(BigDecimal.fromString("1.19")))
     assert.assertTrue(pos.claimableRewardUSD!.lt(BigDecimal.fromString("1.21")))
   })
+
   test("a full-exit DecreaseLiquidity from the Aero NFPM closes the aero-cl position", () => {
     createService(SERVICE_SAFE)
     mockChainlinkEthUsd()
