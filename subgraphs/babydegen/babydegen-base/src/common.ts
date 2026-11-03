@@ -58,7 +58,7 @@ function isAgentInstance(addr: Address, service: Service): boolean {
 export function isUserSide(
   addr: Address,
   serviceSafe: Address,
-  block: ethereum.Block,
+  event: ethereum.Event,
   readAddressType: AddressTypeReader
 ): boolean {
   let service = getServiceByAgent(serviceSafe)
@@ -69,10 +69,11 @@ export function isUserSide(
   if (addr.equals(serviceSafe) || addr.equals(Address.zero()) || isAgentInstance(addr, service)) {
     return false
   }
-  if (addr.equals(Address.fromBytes(service.operatorSafe))) {
+  // The tx sender is always an EOA, though an EIP-7702 one has code and is no Safe
+  if (addr.equals(Address.fromBytes(service.operatorSafe)) || addr.equals(event.transaction.from)) {
     return true
   }
-  let addressType = readAddressType(addr, block)
+  let addressType = readAddressType(addr, event.block)
   return !addressType.isContract || addressType.isSafe
 }
 
@@ -101,7 +102,7 @@ export function isWithdrawalRecipient(
   event: ethereum.Event,
   readAddressType: AddressTypeReader
 ): boolean {
-  if (isUserSide(addr, serviceSafe, event.block, readAddressType)) {
+  if (isUserSide(addr, serviceSafe, event, readAddressType)) {
     return true
   }
   let service = getServiceByAgent(serviceSafe)

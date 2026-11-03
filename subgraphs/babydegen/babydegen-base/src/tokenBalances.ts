@@ -194,7 +194,7 @@ export function processERC20Transfer(event: TransferEvent, readAddressType: Addr
     // Trigger portfolio recalculation for any token balance change
     calculatePortfolioMetrics(to, event.block)
     
-    if (isUserSide(from, to, event.block, readAddressType)) {
+    if (isUserSide(from, to, event, readAddressType)) {
       let usdValue = transferUsdValue(value, tokenAddress, tokenConfig.decimals, event.block.timestamp)
       updateFundingBalance(to, usdValue, true, event.block.timestamp, txHash)
     }

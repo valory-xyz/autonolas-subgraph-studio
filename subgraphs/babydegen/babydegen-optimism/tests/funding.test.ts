@@ -70,6 +70,15 @@ describe("funding: every tracked token counts", () => {
     assert.notInStore("FundingBalance", SAFE_CL.toHexString())
   })
 
+  test("a deposit sent by the tx's own sender (e.g. an EIP-7702 wallet) is funding", () => {
+    seedService(SAFE_CL, OPERATOR_SAFE, AGENT_INSTANCE)
+    seedAddressType(SOME_CONTRACT, true, false)
+    let event = newTransfer(USDC_NATIVE, SOME_CONTRACT, SAFE_CL, BigInt.fromI64(5000000), 1, newReceipt([]))
+    event.transaction.from = SOME_CONTRACT
+    processERC20Transfer(event, seededAddressType)
+    fundingField(SAFE_CL, "totalInUsd", "5")
+  })
+
   test("a deposit from a non-Safe contract is not funding", () => {
     seedService(SAFE_CL, OPERATOR_SAFE, AGENT_INSTANCE)
     seedAddressType(SOME_CONTRACT, true, false)

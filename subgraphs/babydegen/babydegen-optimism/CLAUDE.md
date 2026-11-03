@@ -209,7 +209,7 @@ Daily population-level stats at UTC midnight (id: `<dayTimestamp>`).
 **Files**: `src/funding.ts`, `src/tokenBalances.ts`
 - `handleUSDC` → redirects to `handleERC20Transfer`
 - `handleERC20Transfer`: Central handler for all token transfers. Updates TokenBalance with USD values, attributes gauge rewards to positions, and updates FundingBalance
-- **Every tracked token and ETH counts as funding, in and out, valued at its price at the transfer.** The user side (`isUserSide`, `common.ts`) is the operator Safe, any Safe, or an EOA that is not one of the service's agent EOAs; the zero address (mints) is not. An outflow to any other contract is a withdrawal only when the tx receipt shows nothing coming back to the Safe — no ERC-20/ERC-721 `Transfer` to it and no `SafeReceived` (`isWithdrawalRecipient`). This catches EIP-7702 wallets (they have code) and keeps swaps and LP entries out. Every Transfer and Safe handler sets `receipt: true`
+- **Every tracked token and ETH counts as funding, in and out, valued at its price at the transfer.** The user side (`isUserSide`, `common.ts`) is the operator Safe, any Safe, the tx sender, or an EOA that is not one of the service's agent EOAs; the zero address (mints) and the agent EOAs never are. The tx-sender rule covers EIP-7702 wallets, which have code and are no Safe. An outflow to any other contract is a withdrawal only when the tx receipt shows nothing coming back to the Safe — no ERC-20/ERC-721 `Transfer` to it and no `SafeReceived` (`isWithdrawalRecipient`). This catches EIP-7702 wallets (they have code) and keeps swaps and LP entries out. Every Transfer and Safe handler sets `receipt: true`
 - Withdrawals go to `totalWithdrawnUsd` (added back into `finalValue`); they never reduce `netUsd`
 - Matchstick has no `ethereum.hasCode`, so `processERC20Transfer` / `processSafeReceived` take the address-type reader; handlers pass `getAddressType`, tests pass a reader over seeded `AddressType` rows
 
@@ -310,7 +310,7 @@ Deprecated: every `ethAdjusted*` field equals its unadjusted counterpart. Subtra
 
 ### Resolution Order
 1. **Chainlink feeds** (primary for ETH, USDC, DAI, USDT)
-2. **DEX pools** (Velodrome CL/SlipStream, Velodrome V2, Uniswap V3) — DOLA included
+2. **DEX pools** (Velodrome CL/SlipStream, Velodrome V2, Uniswap V3) — DOLA included. A Velodrome v2 *stable* pool is priced from its `getAmountOut` quote for one token, not its reserve ratio (wrong on a stable curve)
 3. **No valid price**: the last valid price, with `priceStale = true`; a token never priced is 0. There is no $1 fallback
 - Stablecoins have no lower price bound, so a depeg is recorded: `depegged` below $0.98
 

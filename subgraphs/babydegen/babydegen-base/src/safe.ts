@@ -41,7 +41,7 @@ export function processSafeReceived(event: SafeReceivedEvent, readAddressType: A
   if (toService !== null) {
     // This is an inflow TO a service safe
     // Check if sender is valid funding source for this service
-    let isValidFundingSource = isUserSide(from, to, event.block, readAddressType)
+    let isValidFundingSource = isUserSide(from, to, event, readAddressType)
     
     if (isValidFundingSource) {
       // Convert ETH to USD
@@ -76,7 +76,7 @@ export function processSafeReceived(event: SafeReceivedEvent, readAddressType: A
       let ethAmount = value.toBigDecimal().div(BigDecimal.fromString("1e18"))
       
       // Only Safes we index emit SafeReceived; the operator Safe and any other Safe are the user side
-      if (isUserSide(to, from, event.block, readAddressType)) {
+      if (isUserSide(to, from, event, readAddressType)) {
         updateWithdrawalBalance(from, usd, event.block.timestamp)
         
         // Update ETH balance for the service safe (outflow)
