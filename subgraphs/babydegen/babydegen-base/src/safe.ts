@@ -97,14 +97,16 @@ export function processSafeReceived(event: SafeReceivedEvent, readAddressType: A
  * @param serviceSafe The safe address that executed the transaction
  * @param eventType String identifying the type of event ('execution' or 'module')
  * @param event The Safe event, whose transaction and receipt are read
+ * @param readAddressType Address-type reader, getAddressType outside tests
  * @param txHash The transaction hash as a string
  * @param moduleAddress Optional module address for module executions
  * @param extraInfo Optional additional information to log (e.g. payment)
  */
-function handleSafeEthTransfer(
+export function processSafeEthTransfer(
   serviceSafe: Address,
   eventType: string,
   event: ethereum.Event,
+  readAddressType: AddressTypeReader,
   txHash: string,
   moduleAddress: Address | null = null,
   extraInfo: string | null = null
@@ -126,7 +128,7 @@ function handleSafeEthTransfer(
     // Always update ETH balance for outflows from service safe
     updateETHBalance(serviceSafe, value, false, block)
     
-    if (isWithdrawalRecipient(to!, serviceSafe, event, getAddressType)) {
+    if (isWithdrawalRecipient(to!, serviceSafe, event, readAddressType)) {
       let ethPrice = getEthUsd(block)
       let usd = value.toBigDecimal()
         .times(ethPrice)
@@ -145,10 +147,11 @@ export function handleExecutionSuccess(event: ExecutionSuccessEvent): void {
   let txHash = event.params.txHash.toHexString()
   let payment = event.params.payment
   
-  handleSafeEthTransfer(
+  processSafeEthTransfer(
     serviceSafe,
     "ExecutionSuccess",
     event,
+    getAddressType,
     event.transaction.hash.toHexString(), // Use actual transaction hash
     null,
     "payment: " + payment.toString()
@@ -161,10 +164,11 @@ export function handleExecutionFromModuleSuccess(event: ExecutionFromModuleSucce
   let moduleAddress = event.params.module
   let txHash = event.transaction.hash.toHexString()
   
-  handleSafeEthTransfer(
+  processSafeEthTransfer(
     serviceSafe,
     "ExecutionFromModuleSuccess",
     event,
+    getAddressType,
     txHash,
     moduleAddress
   )

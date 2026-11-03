@@ -2,17 +2,17 @@ import { assert, describe, test, clearStore, afterEach, beforeEach, createMocked
 import { Address, BigDecimal, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts"
 import { newMockEvent } from "matchstick-as/assembly/index"
 import { ClaimableRewardBeforeBlock, ProtocolPosition } from "../generated/schema"
-import { Collect } from "../generated/VeloNFTManager/VelodromePositionNFTManager"
+import { Collect, DecreaseLiquidity } from "../generated/VeloNFTManager/VelodromePositionNFTManager"
 import {
   Collect as UniV3Collect,
   DecreaseLiquidity as UniV3DecreaseLiquidity
 } from "../generated/UniV3NFTManager/UniswapV3PositionNFTManager"
-import { handleCollect } from "../src/veloNFTManager"
+import { handleCollect, handleDecreaseLiquidity } from "../src/veloNFTManager"
 import { handleUniV3Collect, handleUniV3DecreaseLiquidity } from "../src/uniV3NFTManager"
 import { processERC20Transfer } from "../src/tokenBalances"
-import { attributeRewardTransfer, recordReleasedPrincipal } from "../src/positionIncome"
+import { attributeRewardTransfer } from "../src/positionIncome"
 import { calculateActualROI } from "../src/roiCalculation"
-import { USDC_NATIVE, DAI, VELO, UNI_V3_MANAGER, PROTOCOL_VELODROME_V3, PROTOCOL_VELODROME_V2, PROTOCOL_UNISWAP_V3, PROTOCOL_AERO_CL } from "../src/constants"
+import { USDC_NATIVE, DAI, VELO, VELO_MANAGER, UNI_V3_MANAGER, PROTOCOL_VELODROME_V3, PROTOCOL_VELODROME_V2, PROTOCOL_UNISWAP_V3, PROTOCOL_AERO_CL } from "../src/constants"
 import { newLog, newReceipt, newTransfer, mockEthUsd, seedService, seedAddressType, seedTokenPrice, seedPosition, seededAddressType } from "./fixtures"
 import { OPERATOR_SAFE, AGENT_INSTANCE, SERVICE_SAFE, BLOCK_NUMBER, BLOCK_TIMESTAMP } from "./test-helpers"
 
@@ -57,7 +57,17 @@ describe("collected fees", () => {
   test("Collect finds the Velodrome CL position and records only the fee part", () => {
     let p = seedPosition(SERVICE_SAFE, PROTOCOL_VELODROME_V3, BigInt.fromI32(7), USDC_NATIVE, DAI, null, BigInt.zero(), "0")
     closeAt(p, "100")
-    recordReleasedPrincipal(PROTOCOL_VELODROME_V3, BigInt.fromI32(7), USDC_50, DAI_50)
+    // positions() reverting stops the refresh after the principal is recorded
+    createMockedFunction(VELO_MANAGER, "positions", "positions(uint256):(uint96,address,address,address,int24,int24,int24,uint128,uint256,uint256,uint128,uint128)")
+      .withArgs([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(7))])
+      .reverts()
+    let decrease = changetype<DecreaseLiquidity>(newMockEvent())
+    decrease.parameters = new Array()
+    decrease.parameters.push(new ethereum.EventParam("tokenId", ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(7))))
+    decrease.parameters.push(new ethereum.EventParam("liquidity", ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1))))
+    decrease.parameters.push(new ethereum.EventParam("amount0", ethereum.Value.fromUnsignedBigInt(USDC_50)))
+    decrease.parameters.push(new ethereum.EventParam("amount1", ethereum.Value.fromUnsignedBigInt(DAI_50)))
+    handleDecreaseLiquidity(decrease)
 
     handleCollect(newCollect(BigInt.fromI32(7), SERVICE_SAFE, BigInt.fromI64(51000000), BigInt.fromString("50500000000000000000")))
 

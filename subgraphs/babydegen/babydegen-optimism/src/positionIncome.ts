@@ -234,6 +234,10 @@ function nextGaugeWithdrawTokenId(
 export function attributeRewardTransfer(event: ethereum.Event, from: Address, safe: Address, amount: BigInt): boolean {
   let receipt = event.receipt
   if (receipt == null) {
+    log.warning("REWARDS: no receipt for tx {} — Transfer to safe {} not checked for a reward claim", [
+      event.transaction.hash.toHexString(),
+      safe.toHexString()
+    ])
     return false
   }
   if (attributeEmissionsClaim(event, safe, amount, receipt)) {

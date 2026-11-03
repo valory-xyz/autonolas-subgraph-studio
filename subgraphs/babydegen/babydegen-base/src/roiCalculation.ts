@@ -54,7 +54,6 @@ export function calculateActualROI(agent: Address): BigDecimal {
   return BigDecimal.zero()
 }
 
-// Everything a position paid out: its exit value plus the fees and rewards it paid before that
 function positionGrossGain(position: ProtocolPosition): BigDecimal {
   let exitAmountUSD = position.exitAmountUSD
   let gain = exitAmountUSD ? exitAmountUSD : BigDecimal.zero()

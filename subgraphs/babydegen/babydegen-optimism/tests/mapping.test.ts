@@ -259,6 +259,7 @@ describe("handleCreateMultisigWithAgents", () => {
       SERVICE_SAFE.toHexString()
     )
     assert.fieldEquals("Service", serviceEntityId, "isActive", "true")
+    assert.fieldEquals("Service", serviceEntityId, "agentInstances", "[" + AGENT_INSTANCE.toHexString() + "]")
 
     // Registration metadata should come from the ServiceRegistration entity
     assert.fieldEquals(

@@ -2,8 +2,8 @@ import { assert, describe, test, clearStore, afterEach, beforeEach } from "match
 import { Address, BigInt, ethereum } from "@graphprotocol/graph-ts"
 import { newMockEvent } from "matchstick-as/assembly/index"
 import { processERC20Transfer } from "../src/tokenBalances"
-import { processSafeReceived } from "../src/safe"
-import { SafeReceived } from "../generated/templates/Safe/Safe"
+import { processSafeReceived, processSafeEthTransfer } from "../src/safe"
+import { SafeReceived, ExecutionFromModuleSuccess } from "../generated/templates/Safe/Safe"
 import { handleRegisterInstance } from "../src/serviceRegistry"
 import { USDC_NATIVE, USDC_BRIDGED, WETH } from "../src/constants"
 import { createRegisterInstanceEvent } from "./mapping-utils"
@@ -166,6 +166,27 @@ describe("ETH funding uses the same user-side rule", () => {
     seedAddressType(USER_EOA, false, false)
     processSafeReceived(newSafeReceived(SAFE_CL, USER_EOA, BigInt.fromString("500000000000000000")), seededAddressType)
     fundingField(SAFE_CL, "totalInUsd", "1000")
+  })
+
+  test("ETH a module execution sends to the user's EOA is a withdrawal", () => {
+    seedService(SAFE_CL, OPERATOR_SAFE, AGENT_INSTANCE)
+    seedAddressType(USER_EOA, false, false)
+    let event = changetype<ExecutionFromModuleSuccess>(newMockEvent())
+    event.address = SAFE_CL
+    event.transaction.to = USER_EOA
+    event.transaction.value = BigInt.fromString("500000000000000000")
+    processSafeEthTransfer(SAFE_CL, "ExecutionFromModuleSuccess", event, seededAddressType, "")
+    fundingField(SAFE_CL, "totalWithdrawnUsd", "1000")
+  })
+
+  test("ETH a module execution sends to the agent EOA is a cost, not a withdrawal", () => {
+    seedService(SAFE_CL, OPERATOR_SAFE, AGENT_INSTANCE)
+    let event = changetype<ExecutionFromModuleSuccess>(newMockEvent())
+    event.address = SAFE_CL
+    event.transaction.to = AGENT_INSTANCE
+    event.transaction.value = BigInt.fromString("500000000000000000")
+    processSafeEthTransfer(SAFE_CL, "ExecutionFromModuleSuccess", event, seededAddressType, "")
+    assert.notInStore("FundingBalance", SAFE_CL.toHexString())
   })
 
   test("ETH to the operator Safe is a withdrawal and leaves the initial value alone", () => {
