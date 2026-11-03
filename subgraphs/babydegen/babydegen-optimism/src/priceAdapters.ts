@@ -204,6 +204,45 @@ export function getBalancerPrice(
   return finalPrice
 }
 
+// Velodrome V2 stable (x³y + y³x) pool adapter. The reserve ratio is only the marginal price
+// on a volatile x*y=k pool; on a stable pool it drifts far from it once the pool is imbalanced,
+// so quote 1 token through the pool's own curve with getAmountOut instead.
+export function getVelodromeV2StablePrice(
+  token: Address,
+  poolAddress: Address,
+  pairToken: Address
+): BigDecimal {
+  let targetTokenConfig = getTokenConfig(token)
+  let pairTokenConfig = getTokenConfig(pairToken)
+  if (targetTokenConfig == null || pairTokenConfig == null) {
+    return BigDecimal.fromString("0")
+  }
+
+  let pool = VelodromeV2Pool.bind(poolAddress)
+  let token0Result = pool.try_token0()
+  let token1Result = pool.try_token1()
+  if (token0Result.reverted || token1Result.reverted) {
+    return BigDecimal.fromString("0")
+  }
+  // getAmountOut returns the pool's other token, so that must be the pair token
+  let isPair = (token.equals(token0Result.value) && pairToken.equals(token1Result.value)) ||
+    (token.equals(token1Result.value) && pairToken.equals(token0Result.value))
+  if (!isPair) {
+    return BigDecimal.fromString("0")
+  }
+
+  let oneToken = BigInt.fromI32(10).pow(targetTokenConfig.decimals as u8)
+  let outResult = pool.try_getAmountOut(oneToken, token)
+  if (outResult.reverted) {
+    return BigDecimal.fromString("0")
+  }
+
+  let pairAmount = outResult.value.toBigDecimal().div(
+    BigInt.fromI32(10).pow(pairTokenConfig.decimals as u8).toBigDecimal()
+  )
+  return pairAmount.times(getPairTokenPrice(pairToken))
+}
+
 // Helper functions
 // Velodrome V2 (standard) price adapter - using getReserves instead of slot0
 export function getVelodromeV2Price(

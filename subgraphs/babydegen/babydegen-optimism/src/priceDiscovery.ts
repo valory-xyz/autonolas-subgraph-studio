@@ -303,6 +303,18 @@ function getPriceFromSource(
     }
   }
   
+  if (sourceType == "velodrome_v2_stable") {
+    // For Velodrome V2 stable pools: quoted through the pool curve, not the reserve ratio
+    let price = getVelodromeV2StablePrice(
+      Address.fromBytes(token.id),
+      sourceConfig.address,
+      sourceConfig.pairToken!
+    )
+    if (price.gt(BigDecimal.fromString("0")) && isValidPriceResult(price, token.symbol)) {
+      return new PriceResult(price, baseConfidence, "velodrome_v2_stable")
+    }
+  }
+  
   if (sourceType == "balancer_v2") {
     // For Balancer V2 weighted pools
     let price = getBalancerPrice(
@@ -387,5 +399,6 @@ import {
   getUniswapV3Price,
   getVelodromePrice,
   getVelodromeV2Price,
+  getVelodromeV2StablePrice,
   getBalancerPrice
 } from "./priceAdapters"

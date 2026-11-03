@@ -330,7 +330,8 @@ function initializeTokens(): void {
   // Pool addresses provided for accurate price tracking
 
   // BOLD (agent's, 0x0356…) - Velodrome V2 stable BOLD/USDC on the legacy factory, the deepest
-  // BOLD/USDC pool when this was added (deeper than the Aero v2 stable one)
+  // BOLD/USDC pool when this was added (deeper than the Aero v2 stable one). A stable pool, so it
+  // is quoted with getAmountOut rather than the reserve ratio.
   TOKENS.set(BOLD_V2.toHexString().toLowerCase(), new TokenConfig(
     BOLD_V2,
     "BOLD",
@@ -338,7 +339,7 @@ function initializeTokens(): void {
     [
       new PriceSourceConfig(
         Address.fromString("0x8828B7792499A7d86E931DF56E3D37C428d12d2b"),
-        "velodrome_v2",
+        "velodrome_v2_stable",
         1,
         85,
         USDC_NATIVE

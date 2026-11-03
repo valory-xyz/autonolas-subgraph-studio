@@ -338,7 +338,8 @@ handleBlock (every 1800 blocks)
 
 ### Tracked Tokens
 WETH, DAI, USDT, DOLA, BOLD (legacy `0x087c…`), LUSD, FRAX, sDAI, USDC (Native + Bridged), USDT0, oUSDT, USDGLO, VELO,
-plus (OPE-2009) the agent's BOLD `0x0356…` (Velodrome v2 stable BOLD/USDC `0x8828…`), USDS and
+plus (OPE-2009) the agent's BOLD `0x0356…` (Velodrome v2 stable BOLD/USDC `0x8828…`, quoted with
+`getAmountOut` by the `velodrome_v2_stable` source, since a stable pool's reserve ratio is not its price), USDS and
 xAERO. USDS and xAERO have no price source yet: tracked for balances, valued at $0, and
 `getPriceFromSources` logs a warning. Neither is on the $1 stablecoin fallback.
 
