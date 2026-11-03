@@ -16,7 +16,7 @@ import { getServiceByAgent } from "./config"
 import { updateFirstTradingTimestamp, calculatePortfolioMetrics, associateSwapsWithPosition } from "./helpers"
 import { getTokenDecimals, getTokenSymbol } from "./tokenUtils"
 import { BALANCER_VAULT, PROTOCOL_BALANCER } from "./constants"
-import { calculatePositionROI } from "./roiCalculation"
+import { calculatePositionROI, initializePositionIncome } from "./roiCalculation"
 
 // Helper function to convert token amount to human readable format
 function toHumanAmount(amount: BigInt, decimals: i32): BigDecimal {
@@ -106,6 +106,7 @@ export function refreshBalancerPositionWithEventAmounts(
   let pp = ProtocolPosition.load(positionId)
   if (!pp) {
     pp = new ProtocolPosition(positionId)
+    initializePositionIncome(pp)
     pp.agent = userAddress
     pp.service = userAddress // Link to service
     pp.protocol = PROTOCOL_BALANCER
@@ -322,6 +323,7 @@ export function refreshBalancerPosition(
   if (!pp) {
     // Create new position if it doesn't exist
     pp = new ProtocolPosition(positionId)
+    initializePositionIncome(pp)
     pp.agent = userAddress
     pp.service = userAddress // Link to service
     pp.protocol = PROTOCOL_BALANCER

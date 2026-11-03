@@ -89,6 +89,13 @@ type ProtocolPosition @entity(immutable: false) {
   # Rewards tracking
   claimableReward: BigDecimal        # Current claimable rewards amount
   claimableRewardUSD: BigDecimal     # Current claimable rewards in USD
+
+  # Income already paid out to the Safe (counted in position gain, not in portfolio value)
+  collectedFees0: BigDecimal!        # Fee part of Collect in token0, principal excluded
+  collectedFees1: BigDecimal!        # Fee part of Collect in token1, principal excluded
+  collectedFeesUSD: BigDecimal!      # Valued at each Collect
+  claimedRewards: BigDecimal!        # Reward token units (VELO / AERO / xAERO)
+  claimedRewardsUSD: BigDecimal!     # Valued at each claim
   
   # Protocol-specific
   tokenId: BigInt!          # NFT token ID
@@ -124,8 +131,8 @@ type ProtocolPosition @entity(immutable: false) {
   
   # Position ROI (for closed positions)
   investmentUSD: BigDecimal!        # entryAmountUSD + totalCostsUSD
-  grossGainUSD: BigDecimal!         # exitAmountUSD (total amount received)
-  netGainUSD: BigDecimal!           # exitAmountUSD - investmentUSD (actual profit/loss)
+  grossGainUSD: BigDecimal!         # exitAmountUSD + collectedFeesUSD + claimedRewardsUSD
+  netGainUSD: BigDecimal!           # grossGainUSD - investmentUSD (actual profit/loss)
   positionROI: BigDecimal!          # netGainUSD / investmentUSD * 100
 }
 
@@ -416,4 +423,23 @@ type NFTPositionMapping @entity(immutable: false) {
   id: Bytes!
   positionId: Bytes!
   protocol: String!
+}
+
+# Principal released by DecreaseLiquidity and not yet collected — Collect pays it out with the fees
+type UncollectedPrincipal @entity(immutable: false) {
+  id: Bytes!                        # "<protocol>-<tokenId>", as NFTPositionMapping
+  amount0: BigInt!
+  amount1: BigInt!
+}
+
+# A position's claimableReward as it stood before the first refresh in a block
+type ClaimableRewardBeforeBlock @entity(immutable: false) {
+  id: Bytes!                        # ProtocolPosition id
+  block: BigInt!
+  claimableReward: BigDecimal!
+}
+
+# Reward claim logs already credited to a position (one claim, one credit)
+type CreditedRewardClaim @entity(immutable: true) {
+  id: Bytes!                        # txHash + logIndex of the claim log
 }

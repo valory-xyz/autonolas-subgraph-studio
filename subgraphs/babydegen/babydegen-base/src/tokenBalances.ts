@@ -7,6 +7,7 @@ import { isUserSide, isWithdrawalRecipient, getAddressType, AddressTypeReader, g
 import { getTokenPriceUSD } from "./priceDiscovery"
 import { WETH, WHITELISTED_TOKENS } from "./constants"
 import { ensureAgentPortfolio, calculatePortfolioMetrics } from "./helpers"
+import { attributeRewardTransfer } from "./positionIncome"
 
 // Helper function to create block from timestamp for ETH price lookup
 function createBlockFromTimestamp(timestamp: BigInt): ethereum.Block {
@@ -184,6 +185,7 @@ export function processERC20Transfer(event: TransferEvent, readAddressType: Addr
   // Handle transfers TO service safes (deposits)
   let toService = getServiceByAgent(to)
   if (toService != null) {
+    attributeRewardTransfer(event, from, to, value)
     updateTokenBalance(to, tokenAddress, value, true, event.block)
     
     // ALWAYS ensure portfolio exists and is updated for ANY token activity

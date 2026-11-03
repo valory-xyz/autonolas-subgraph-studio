@@ -14,7 +14,8 @@ import { UNI_V3_MANAGER, UNI_V3_FACTORY, PROTOCOL_UNISWAP_V3 } from "./constants
 import { isServiceAgent, getServiceByAgent } from "./config"
 import { getTokenDecimals, getTokenSymbol } from "./tokenUtils"
 import { parseTotalSlippageFromBucket, associateSwapsWithPosition, ensureAgentPortfolio } from "./helpers"
-import { calculatePositionROI } from "./roiCalculation"
+import { calculatePositionROI, initializePositionIncome } from "./roiCalculation"
+import { mapNFTPosition } from "./positionIncome"
 
 // Helper function to convert token amount from wei to human readable
 function convertTokenAmount(amount: BigInt, tokenAddress: Address): BigDecimal {
@@ -157,6 +158,8 @@ export function refreshUniV3PositionWithEventAmounts(
   
   if (pp == null) {
     pp = new ProtocolPosition(positionId)
+    initializePositionIncome(pp)
+    mapNFTPosition(PROTOCOL_UNISWAP_V3, tokenId, positionId)
     pp.agent = nftOwner
     pp.protocol = PROTOCOL_UNISWAP_V3
     pp.pool = poolAddress
@@ -431,6 +434,8 @@ export function refreshUniV3Position(tokenId: BigInt, block: ethereum.Block, txH
   
   if (pp == null) {
     pp = new ProtocolPosition(positionId)
+    initializePositionIncome(pp)
+    mapNFTPosition(PROTOCOL_UNISWAP_V3, tokenId, positionId)
     pp.agent = nftOwner
     pp.protocol = PROTOCOL_UNISWAP_V3
     pp.pool = poolAddress

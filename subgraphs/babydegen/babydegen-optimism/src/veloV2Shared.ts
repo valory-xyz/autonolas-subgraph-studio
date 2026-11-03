@@ -16,7 +16,7 @@ import { getTokenPriceUSD } from "./priceDiscovery"
 import { getServiceByAgent } from "./config"
 import { parseTotalSlippageFromBucket, associateSwapsWithPosition, calculatePortfolioMetrics } from "./helpers"
 import { getTokenDecimals, getTokenSymbol } from "./tokenUtils"
-import { calculatePositionROI } from "./roiCalculation"
+import { calculatePositionROI, initializePositionIncome } from "./roiCalculation"
 import { PROTOCOL_VELODROME_V2, VELO, VELO_VOTER } from "./constants"
 
 // Resolve the Velodrome V2 gauge for a pool via the Voter (gauges(pool)), caching the result
@@ -97,6 +97,7 @@ export function refreshVeloV2PositionWithEventAmounts(
   let pp = ProtocolPosition.load(positionId)
   if (!pp) {
     pp = new ProtocolPosition(positionId)
+    initializePositionIncome(pp)
     pp.agent = userAddress
     pp.service = userAddress // Link to service
     pp.protocol = PROTOCOL_VELODROME_V2
@@ -272,6 +273,7 @@ export function refreshVeloV2Position(
     
     // Create a new position if it doesn't exist
     pp = new ProtocolPosition(positionId)
+    initializePositionIncome(pp)
     pp.agent = userAddress
     pp.service = userAddress // Link to service
     pp.protocol = PROTOCOL_VELODROME_V2

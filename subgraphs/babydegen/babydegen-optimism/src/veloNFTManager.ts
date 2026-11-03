@@ -11,6 +11,7 @@ import { refreshVeloCLPosition, refreshVeloCLPositionWithEventAmounts, refreshVe
 import { Address, Bytes, BigInt, log } from "@graphprotocol/graph-ts"
 import { ProtocolPosition, NFTPositionMapping } from "../generated/schema"
 import { calculatePortfolioMetrics } from "./helpers"
+import { nftPositionMappingId, recordReleasedPrincipal, recordCollectedFees } from "./positionIncome"
 
 const ZERO_ADDRESS = Address.fromString("0x0000000000000000000000000000000000000000")
 
@@ -27,7 +28,7 @@ export function handleNFTTransfer(event: Transfer): void {
     
     if (toService != null) {
       // Create mapping entity for this NFT
-      const mappingId = Bytes.fromUTF8(PROTOCOL_VELODROME_V3 + "-" + tokenId.toString())
+      const mappingId = nftPositionMappingId(PROTOCOL_VELODROME_V3, tokenId)
       let mapping = NFTPositionMapping.load(mappingId)
       
       if (mapping == null) {
@@ -76,7 +77,7 @@ export function handleIncreaseLiquidity(event: IncreaseLiquidity): void {
   const tokenId = event.params.tokenId
   
   // Look up position using mapping
-  const mappingId = Bytes.fromUTF8(PROTOCOL_VELODROME_V3 + "-" + tokenId.toString())
+  const mappingId = nftPositionMappingId(PROTOCOL_VELODROME_V3, tokenId)
   const mapping = NFTPositionMapping.load(mappingId)
   
   if (mapping == null) {
@@ -99,13 +100,15 @@ export function handleDecreaseLiquidity(event: DecreaseLiquidity): void {
   const tokenId = event.params.tokenId
   
   // Look up position using mapping
-  const mappingId = Bytes.fromUTF8(PROTOCOL_VELODROME_V3 + "-" + tokenId.toString())
+  const mappingId = nftPositionMappingId(PROTOCOL_VELODROME_V3, tokenId)
   const mapping = NFTPositionMapping.load(mappingId)
   
   if (mapping == null) {
     // Position not tracked (not owned by a service)
     return
   }
+  
+  recordReleasedPrincipal(PROTOCOL_VELODROME_V3, tokenId, event.params.amount0, event.params.amount1)
   
   // Check if this is a full withdrawal by looking at remaining liquidity
   // This will be handled in refreshVeloCLPositionWithExitAmounts
@@ -125,7 +128,7 @@ export function handleCollect(event: Collect): void {
   const tokenId = event.params.tokenId
   
   // Look up position using mapping
-  const mappingId = Bytes.fromUTF8(PROTOCOL_VELODROME_V3 + tokenId.toString())
+  const mappingId = nftPositionMappingId(PROTOCOL_VELODROME_V3, tokenId)
   const mapping = NFTPositionMapping.load(mappingId)
   
   if (mapping == null) {
@@ -139,8 +142,13 @@ export function handleCollect(event: Collect): void {
     return
   }
   
-  // Refresh position (fees collected don't change liquidity amounts)
-  refreshVeloCLPosition(mapping.positionId, tokenId, event.block, event.transaction.hash, false)
+  recordCollectedFees(position, PROTOCOL_VELODROME_V3, event.params.recipient, event.params.amount0, event.params.amount1, event.block.timestamp)
+  
+  // Refresh position (fees collected don't change liquidity amounts). A closed position keeps
+  // the exit amounts its DecreaseLiquidity recorded.
+  if (position.isActive) {
+    refreshVeloCLPosition(mapping.positionId, tokenId, event.block, event.transaction.hash, false)
+  }
   
   // Trigger portfolio recalculation
   calculatePortfolioMetrics(Address.fromBytes(position.agent), event.block)

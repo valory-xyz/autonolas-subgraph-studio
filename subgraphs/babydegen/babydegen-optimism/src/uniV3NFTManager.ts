@@ -15,6 +15,8 @@ import {
 import { getServiceByAgent } from "./config"
 import { ProtocolPosition } from "../generated/schema"
 import { log, Bytes } from "@graphprotocol/graph-ts"
+import { PROTOCOL_UNISWAP_V3 } from "./constants"
+import { loadMappedPosition, recordReleasedPrincipal, recordCollectedFees } from "./positionIncome"
 
 export function handleUniV3IncreaseLiquidity(event: IncreaseLiquidity): void {
   ensureUniV3PoolTemplate(event.params.tokenId)
@@ -30,6 +32,10 @@ export function handleUniV3IncreaseLiquidity(event: IncreaseLiquidity): void {
 }
 
 export function handleUniV3DecreaseLiquidity(event: DecreaseLiquidity): void {
+  if (loadMappedPosition(PROTOCOL_UNISWAP_V3, event.params.tokenId) != null) {
+    recordReleasedPrincipal(PROTOCOL_UNISWAP_V3, event.params.tokenId, event.params.amount0, event.params.amount1)
+  }
+
   // For DecreaseLiquidity, we need to check if this is a full exit (liquidity going to 0)
   // and if so, use the event amounts as exit amounts
   refreshUniV3PositionWithExitAmounts(
@@ -43,6 +49,10 @@ export function handleUniV3DecreaseLiquidity(event: DecreaseLiquidity): void {
 }
 
 export function handleUniV3Collect(event: Collect): void {
+  let position = loadMappedPosition(PROTOCOL_UNISWAP_V3, event.params.tokenId)
+  if (position != null) {
+    recordCollectedFees(position, PROTOCOL_UNISWAP_V3, event.params.recipient, event.params.amount0, event.params.amount1, event.block.timestamp)
+  }
   refreshUniV3Position(event.params.tokenId, event.block, event.transaction.hash)
 }
 

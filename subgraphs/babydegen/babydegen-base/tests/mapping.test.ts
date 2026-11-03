@@ -13,7 +13,7 @@ import {
 } from "../src/serviceRegistry"
 import { getTokenConfig, TokenConfig } from "../src/tokenConfig"
 import { getVelodromeV2Price } from "../src/priceAdapters"
-import { calculatePositionROI } from "../src/roiCalculation"
+import { calculatePositionROI, initializePositionIncome } from "../src/roiCalculation"
 import { refreshVeloV2Position, getVeloV2PositionId } from "../src/veloV2Shared"
 import { AgentSwapBuffer, SwapTransaction } from "../generated/schema"
 import { handleVeloV2Bootstrap } from "../src/veloV2Bootstrap"
@@ -520,6 +520,7 @@ function makeClosedPosition(
   p.netGainUSD = BigDecimal.zero()
   p.positionROI = BigDecimal.zero()
   p.exitAmountUSD = BigDecimal.fromString(exitUSD)
+  initializePositionIncome(p)
   p.save()
   return p
 }
@@ -619,6 +620,7 @@ function makeOpenV2Position(token0: Address, token1: Address): Bytes {
   p.grossGainUSD = BigDecimal.zero()
   p.netGainUSD = BigDecimal.zero()
   p.positionROI = BigDecimal.zero()
+  initializePositionIncome(p)
   p.save()
   return id
 }

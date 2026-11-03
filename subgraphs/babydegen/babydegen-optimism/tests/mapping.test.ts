@@ -14,6 +14,7 @@ import {
 import { refreshVeloV2Position, getVeloV2PositionId } from "../src/veloV2Shared"
 import { ProtocolPosition, Service } from "../generated/schema"
 import { VELO, VELO_VOTER } from "../src/constants"
+import { initializePositionIncome } from "../src/roiCalculation"
 import {
   createRegisterInstanceEvent,
   createCreateMultisigWithAgentsEvent
@@ -446,6 +447,7 @@ function makeOpenV2Position(token0: Address, token1: Address): Bytes {
   p.grossGainUSD = BigDecimal.zero()
   p.netGainUSD = BigDecimal.zero()
   p.positionROI = BigDecimal.zero()
+  initializePositionIncome(p)
   p.save()
   return id
 }

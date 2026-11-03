@@ -13,7 +13,8 @@ import { VELO_MANAGER, VELO_FACTORY, AERO, PROTOCOL_VELODROME_V3 } from "./const
 import { isServiceAgent, getServiceByAgent } from "./config"
 import { parseTotalSlippageFromBucket, associateSwapsWithPosition } from "./helpers"
 import { getTokenDecimals, getTokenSymbol } from "./tokenUtils"
-import { initializePositionCosts, calculatePositionROI } from "./roiCalculation"
+import { initializePositionCosts, calculatePositionROI, initializePositionIncome } from "./roiCalculation"
+import { recordClaimableRewardBeforeBlock } from "./positionIncome"
 
 function convertTokenAmount(amount: BigInt, tokenAddress: Address): BigDecimal {
   const decimals = getTokenDecimals(tokenAddress)
@@ -244,6 +245,7 @@ export function refreshVeloCLPosition(
     
     // Create new position
     position = new ProtocolPosition(positionId)
+    initializePositionIncome(position)
     position.agent = nftOwner
     position.service = nftOwner
     position.protocol = PROTOCOL_VELODROME_V3
@@ -387,6 +389,7 @@ export function refreshVeloCLPosition(
   position.amount1 = amount1Human
   position.amount1USD = usd1
   position.liquidity = data.value7
+  recordClaimableRewardBeforeBlock(position, block)
   position.claimableReward = rewardAmount
   position.claimableRewardUSD = rewardUSD
   

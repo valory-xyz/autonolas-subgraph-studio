@@ -64,6 +64,7 @@ export const PROTOCOL_BALANCER = "balancer"
 export const PROTOCOL_VELODROME_V2 = "velodrome-v2"
 export const PROTOCOL_VELODROME_V3 = "velodrome-v3"
 export const PROTOCOL_UNISWAP_V3 = "uniswap-v3"
+export const PROTOCOL_AERO_CL = "aero-cl"  // Aero CL positions; rewards attributed from the gauge's EmissionsClaimed
 
 // Excluded service IDs - these are testing agents
 export const EXCLUDED_SERVICE_IDS: BigInt[] = [
