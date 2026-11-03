@@ -22,7 +22,7 @@ Indexing **filters by Olas `agentId == 115`** and tracks every Basius service (c
 | Network | `optimism` | `base` |
 | DEXs tracked | Velodrome CL + V2, **Uniswap V3**, **Balancer** | **Aerodrome only** (CL = Slipstream, v2) |
 | Agent scoping | agent-id filter (`OPTIMUS_AGENT_ID = 40`) + excluded ids | agent-id filter (`BASIUS_AGENT_ID = 115`), all matching services |
-| Pricing | Chainlink + DEX | Chainlink (Base feeds) + Aerodrome; stables via $1 |
+| Pricing | Chainlink + DEX | Chainlink (Base feeds) + Aerodrome; stables referenced to the USDC feed |
 | Reward token | VELO | AERO |
 
 **Dropped files** (Uniswap V3 / Balancer / manual bootstrap / dead helpers):
@@ -70,7 +70,8 @@ Optimism values): StakingToken `0x2585e63df7BD9De8e058884D496658a030b5c6ce`, Act
 > helpers bind the Chainlink feed and the Aerodrome pools/gauges, **every** data source whose
 > handler reaches them must declare those ABIs — not just the pool/NFT templates. In
 > particular: token/funding sources need `AggregatorV3Interface` + `VelodromeCLPool` +
-> `VelodromeV2Pool` (token pricing via `priceAdapters`), `ServiceRegistryL2` needs
+> `VelodromeV2Pool` (token pricing via `priceAdapters`), token sources and the `Safe` template
+> need `GnosisSafe` (`getThreshold()` for the user-side check), `ServiceRegistryL2` needs
 > `AggregatorV3Interface` (`getEthUsd` seeds `firstFundingEthPrice`), and `PortfolioScheduler`
 > needs `VeloVoter` + `VeloV2Gauge` + `VeloCLGauge` (the snapshot block handler runs
 > `refreshAllActivePositions`, which re-binds each position's gauge). Run
@@ -117,8 +118,14 @@ Schema and the entire portfolio/ROI/APR/snapshot/population pipeline are **ident
 babydegen-optimism (network-agnostic). The website KPIs map to existing entities:
 
 - "APR relative to USDC – MA7D" → `DailyPopulationMetric.sma7dAPR`
-- "APR relative to ETH – MA7D" → `DailyPopulationMetric.sma7dEthAdjustedAPR`
+- "APR relative to ETH – MA7D" → `DailyPopulationMetric.sma7dEthAdjustedAPR` (deprecated: equals `sma7dAPR`)
 - per-day ROI (explorer heatmap) → `AgentPortfolioSnapshot.roi`
+
+Funding and withdrawals (every tracked token and ETH, receipt-based for contract recipients),
+pricing (no $1 fallback: last valid price marked `priceStale`, `depegged` below $0.98), the
+deprecated `ethAdjusted*` fields, collected fees and claimed rewards (`positionIncome.ts`) all
+work as described in the optimism `CLAUDE.md`. Aero CL rewards come from the gauge's
+`EmissionsClaimed`; on Base the reward AERO is minted to the claimer rather than sent by the gauge.
 
 Snapshots fire from the `PortfolioScheduler` block handler at UTC-midnight crossings.
 Block-handler interval is `every: 1800` (~1h on Base) — confirmed: a finer interval can't
