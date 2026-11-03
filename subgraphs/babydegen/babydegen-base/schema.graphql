@@ -60,10 +60,10 @@ type FundingBalance @entity(immutable: false) {
 }
 
 type ProtocolPosition @entity(immutable: false) {
-  id: Bytes!                # "<agent>-<tokenId>"
+  id: Bytes!                # CL: "<agent>-<protocol>-<tokenId>", v2: "<agent>-<protocol>-<pool>"
   agent: Bytes!             @index
   service: Service          # Link to service
-  protocol: String!         @index   # e.g. "aerodrome-cl", "aero-cl", "aero-v2"
+  protocol: String!         @index   # e.g. "aerodrome-cl", "aerodrome-v2", "aero-cl", "aero-v2"
   pool: Bytes!
   
   # Position status
