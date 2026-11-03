@@ -49,6 +49,11 @@ strings changed: `ProtocolPosition.protocol` is now `aerodrome-cl` / `aerodrome-
 | LiFi Diamond | `0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE` | CREATE2, same on all EVM |
 | USDC | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` | primary funding/valuation |
 | WETH / OLAS / AERO | `0x4200…0006` / `0x54330d28…` / `0x940181a9…` | |
+| Aero NFPM | `0x4857DB576eE0e45F10525eC59527BfD10beeC60b` | Aero CL positions (`AeroNFTManager`, start block 52881675) |
+| Aero CL factory | `0x9CB220581b91b0C83223012FE69688b92aD07a76` | `AERO_NFT_MANAGER.factory()` |
+| Aero v2 stable / volatile factory | `0x78589E87…EF2D` / `0x8E6a9FCd…76D2` | Aero v2 pool discovery |
+| Aero GaugeManager | `0xbF234b32c5e58868243A4a14831626f3EdE7b183` | `GaugeCreated` → Aero v2 pool→gauge map |
+| AERO (Aero) | `0x3f5bF3EdAc59d650D8fDf9657a71F2f904A3a4Ee` | Aero gauge reward token (`NEW_AERO`) |
 
 Chainlink feeds (Base, verified on-chain — live, 8 decimals): ETH/USD `0x71041ddd…`,
 USDC/USD `0x7e860098…`.
@@ -79,8 +84,8 @@ Optimism values): StakingToken `0x2585e63df7BD9De8e058884D496658a030b5c6ce`, Act
 
 ## Tracked tokens
 
-USDC (native), WETH, AERO, and the whitelisted stablecoins BOLD / msUSD / frxUSD / eUSD /
-axlUSDC. USDC+WETH price off Chainlink; stables resolve to ~$1 (referenced to the USDC feed
+USDC (native), WETH, AERO (legacy + Aero's), the whitelisted stablecoins BOLD / msUSD / frxUSD /
+eUSD / axlUSDC, and optimus#412's USDT / DAI / USDe / USDS (Chainlink-priced, see Aero below). USDC+WETH price off Chainlink; stables resolve to ~$1 (referenced to the USDC feed
 — confirmed fine by Divya); **AERO** (the CL-gauge reward token) prices off the Aerodrome
 AERO/USDC volatile pool `0x6cdcb1c4…` via the `velodrome_v2` adapter (`tokenConfig.ts`).
 **OLAS is not tracked** — Basius holds none and it isn't a trading asset for this agent.
@@ -110,6 +115,28 @@ AERO/USDC volatile pool `0x6cdcb1c4…` via the `velodrome_v2` adapter (`tokenCo
 > ROI, so a dropped mint pins ROI/APR at 0). If entry amounts are still zero on a later
 > refresh, `refreshVeloV2Position` backfills them from current amounts — keyed on
 > `entryAmountUSD == 0` alone, since `entryTimestamp` is always set at creation.
+
+## Aero (OPE-2009)
+
+Basius moved to Aero (the merged Velodrome/Aerodrome protocol, live 2026-10-22) in optimus
+v0.13.10. Aero positions are labelled **`aero-cl` / `aero-v2`**; legacy labels and ids are unchanged.
+
+- **CL** — `AeroNFTManager` reuses the Slipstream handlers except `handleAeroIncreaseLiquidity`
+  (Aero's `IncreaseLiquidity` adds `tickLower`/`tickUpper`). The emitting NFPM picks a `CLVenue`
+  (manager, CL factory, reward token, label) for the shared `veloCLShared.ts` refresh. Aero's
+  CLGauge has no `earned(address,uint256)`: `getAeroCLEarned` checks `stakedContains(agent,
+  tokenId)` (unstaked → 0, no revert) and reads `earned(agent, [tokenId])`, paid in Aero's AERO.
+- **v2** — both Aero factories (own `PoolCreated` ABI, no indexed `stable`) write a
+  `V2PoolVenue` and start an `AeroV2Pool` template (Aero's `Mint` has an indexed `to`; pools have
+  no `stable()`). Aero v2 pools have no `gauge()` and the Aero Voter has no `gauges(pool)`, so the
+  GaugeManager's `GaugeCreated` builds `AeroGauge { pool → gauge }`, read on every refresh by the
+  `aero-v2` branch of `resolveV2Gauge`. Verified against Aero v2 volatile AERO/USDC
+  `0xF634…B18E` → gauge `0xd424…5cd1` (`stakingToken()` = the pool).
+- **Pricing** — Aero's AERO prices off that same Aero v2 AERO/USDC volatile pool (~$16M USDC).
+  optimus#412's USDT / DAI / USDe / USDS price off their own Chainlink feeds (priority 1) with
+  the Aero CL tickSpacing-1 pool vs USDC as a priority-2 fallback (USDS: feed only). They are
+  **not** on `usdcReferencedStable` or `CRITICAL_STABLECOINS`. `getPriceFromSources` reads a
+  higher-numbered priority only when every better source failed.
 
 ## Schema, core logic, KPIs
 
