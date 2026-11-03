@@ -23,6 +23,8 @@ type Service @entity(immutable: false) {
   # Position tracking
   positions: [ProtocolPosition!]! @derivedFrom(field: "service")
   positionIds: [Bytes!]!             # Array of position IDs for iteration
+
+  agentInstances: [Bytes!]!          # Agent EOAs (RegisterInstance.agentInstance) — never the user side
 }
 
 type ServiceRegistration @entity(immutable: false) {
@@ -32,6 +34,7 @@ type ServiceRegistration @entity(immutable: false) {
   registrationBlock: BigInt!
   registrationTimestamp: BigInt!
   registrationTxHash: Bytes!
+  agentInstances: [Bytes!]!           # Every agentInstance registered for this serviceId
 }
 
 type ServiceIndex @entity(immutable: false) {
@@ -43,6 +46,7 @@ type ServiceIndex @entity(immutable: false) {
 type AddressType @entity(immutable: false) {
   id: Bytes!           # The address itself
   isContract: Boolean! # true = contract, false = EOA
+  isSafe: Boolean!     # contract answers getThreshold() — a Safe, so the user side
   checkedAt: BigInt!   # Block number when first checked
 }
 

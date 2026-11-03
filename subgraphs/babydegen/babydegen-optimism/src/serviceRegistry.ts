@@ -24,6 +24,15 @@ function isServiceExcluded(serviceId: BigInt): boolean {
   return false
 }
 
+function containsAddress(list: Bytes[], addr: Bytes): boolean {
+  for (let i = 0; i < list.length; i++) {
+    if (list[i].equals(addr)) {
+      return true
+    }
+  }
+  return false
+}
+
 export function handleRegisterInstance(event: RegisterInstance): void {
   // Filter for Optimus agents only
   if (!event.params.agentId.equals(OPTIMUS_AGENT_ID)) {
@@ -40,6 +49,13 @@ export function handleRegisterInstance(event: RegisterInstance): void {
   
   let tempId = Bytes.fromUTF8(serviceId.toString())
   
+  // Keep every agent EOA ever registered for this service: none of them is the user side
+  let previous = ServiceRegistration.load(tempId)
+  let agentInstances = previous != null ? previous.agentInstances : new Array<Bytes>()
+  if (!containsAddress(agentInstances, event.params.agentInstance)) {
+    agentInstances.push(event.params.agentInstance)
+  }
+  
   // Always overwrite with latest registration
   let registration = new ServiceRegistration(tempId)
   registration.serviceId = serviceId
@@ -47,6 +63,7 @@ export function handleRegisterInstance(event: RegisterInstance): void {
   registration.registrationBlock = event.block.number
   registration.registrationTimestamp = event.block.timestamp
   registration.registrationTxHash = event.transaction.hash
+  registration.agentInstances = agentInstances
   registration.save()
   
   // Update existing service if it exists
@@ -58,6 +75,7 @@ export function handleRegisterInstance(event: RegisterInstance): void {
       service.latestRegistrationBlock = event.block.number
       service.latestRegistrationTimestamp = event.block.timestamp
       service.latestRegistrationTxHash = event.transaction.hash
+      service.agentInstances = agentInstances
       service.updatedAt = event.block.timestamp
       service.save()
     }
@@ -90,6 +108,7 @@ export function handleCreateMultisigWithAgents(event: CreateMultisigWithAgents):
     existingService.latestRegistrationBlock = registration.registrationBlock
     existingService.latestRegistrationTimestamp = registration.registrationTimestamp
     existingService.latestRegistrationTxHash = registration.registrationTxHash
+    existingService.agentInstances = registration.agentInstances
     existingService.latestMultisigBlock = event.block.number
     existingService.latestMultisigTimestamp = event.block.timestamp
     existingService.latestMultisigTxHash = event.transaction.hash
@@ -119,6 +138,7 @@ export function handleCreateMultisigWithAgents(event: CreateMultisigWithAgents):
   
   // Initialize positionIds as empty array
   service.positionIds = []
+  service.agentInstances = registration.agentInstances
   
   // Set registration data
   service.latestRegistrationBlock = registration.registrationBlock

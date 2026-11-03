@@ -1,9 +1,8 @@
-import { Address, BigDecimal, ethereum, log } from "@graphprotocol/graph-ts"
+import { Address, BigDecimal, Bytes, ethereum, log } from "@graphprotocol/graph-ts"
 import { AggregatorV3Interface } from "../generated/templates/Safe/AggregatorV3Interface"
+import { GnosisSafe } from "../generated/templates/Safe/GnosisSafe"
 import { AddressType, Service } from "../generated/schema"
 import { 
-  USDC_NATIVE,
-  USDC_BRIDGED,
   ETH_USD_FEED,
   USDC_USD_FEED,
   getServiceByAgent
@@ -11,9 +10,10 @@ import {
 import { getTokenPriceUSD } from "./priceDiscovery"
 import { calculatePortfolioMetrics } from "./helpers"
 
-export const FUNDING_TOKENS: Address[] = [
-  USDC_NATIVE // Native USDC on Optimism only (USDC.e/Bridged excluded from funding)
-]
+// Transfer(address,address,uint256) — ERC-20 and ERC-721 share the topic; topics[2] is `to` in both
+export const TRANSFER_TOPIC = Bytes.fromHexString("0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef")
+// SafeReceived(address,uint256)
+export const SAFE_RECEIVED_TOPIC = Bytes.fromHexString("0x3d0ce9bfc3ed7d6862dbb28b2dea94561fe714a1b4d019aa8af39730d1ad7c3d")
 
 export function isEOA(addr: Address, block: ethereum.Block, txHash: string = ""): boolean {
   // Use the official Graph Protocol method to check if address has code
@@ -23,53 +23,100 @@ export function isEOA(addr: Address, block: ethereum.Block, txHash: string = "")
   return isEOA
 }
 
-// 🚀 PERFORMANCE OPTIMIZATION: Cached EOA check to avoid repeated RPC calls
-export function isEOACached(addr: Address, block: ethereum.Block, txHash: string = ""): boolean {
-  let addressId = addr
-  let addressType = AddressType.load(addressId)
-  
+// Reads whether an address has code and is a Safe. Handlers pass getAddressType; Matchstick has
+// no ethereum.hasCode, so tests pass a reader over AddressType rows they seeded.
+export type AddressTypeReader = (addr: Address, block: ethereum.Block) => AddressType
+
+// Cached code / Safe check to avoid repeated RPC calls
+export function getAddressType(addr: Address, block: ethereum.Block): AddressType {
+  let addressType = AddressType.load(addr)
   if (addressType != null) {
-    // Cache hit - return stored result (fast DB read)
-    let isEOA = !addressType.isContract
-    return isEOA
+    return addressType
   }
-  
-  // Cache miss - check blockchain and store result (one-time RPC call)
-  let hasCode = ethereum.hasCode(addr).inner
-  let isContract = hasCode
-  let isEOA = !isContract
-  
-  // Create and save cache entry
-  addressType = new AddressType(addressId)
-  addressType.isContract = isContract ? true : false
+
+  let isContract = ethereum.hasCode(addr).inner
+  addressType = new AddressType(addr)
+  addressType.isContract = isContract
+  addressType.isSafe = isContract && !GnosisSafe.bind(addr).try_getThreshold().reverted
   addressType.checkedAt = block.number
   addressType.save()
-  
-  return isEOA
+  return addressType
 }
 
-// Updated funding source check - now service-specific
-export function isFundingSource(
-  addr: Address, 
+function isAgentInstance(addr: Address, service: Service): boolean {
+  let agentInstances = service.agentInstances
+  for (let i = 0; i < agentInstances.length; i++) {
+    if (addr.equals(Address.fromBytes(agentInstances[i]))) {
+      return true
+    }
+  }
+  return false
+}
+
+// The user's side of a funding flow: the operator Safe, any other Safe, or an EOA that is not
+// one of the service's agent EOAs (gas sent to those is a cost, not a withdrawal)
+export function isUserSide(
+  addr: Address,
   serviceSafe: Address,
-  block: ethereum.Block, 
-  txHash: string = ""
+  block: ethereum.Block,
+  readAddressType: AddressTypeReader
 ): boolean {
-  // Get the service
   let service = getServiceByAgent(serviceSafe)
   if (service == null) {
-    log.warning("[FUNDING_SOURCE] txHash: {} - No service found for safe {}", [txHash, serviceSafe.toHexString()])
+    log.warning("[FUNDING_SOURCE] No service found for safe {}", [serviceSafe.toHexString()])
     return false
   }
-  
-  // Check if address is this service's operator
-  let isOperator = addr.equals(Address.fromBytes(service.operatorSafe))
-  
-  // Check if address is an EOA
-  let eoa = isEOACached(addr, block, txHash)
-  
-  let result = isOperator || eoa
-  return result
+  if (addr.equals(serviceSafe) || addr.equals(Address.zero()) || isAgentInstance(addr, service)) {
+    return false
+  }
+  if (addr.equals(Address.fromBytes(service.operatorSafe))) {
+    return true
+  }
+  let addressType = readAddressType(addr, block)
+  return !addressType.isContract || addressType.isSafe
+}
+
+// True when the receipt shows anything coming back to the Safe: an ERC-20 / ERC-721 Transfer
+// to it, or its own SafeReceived. Outflows in such a tx are swaps or LP entries.
+function receiptHasInflowTo(safe: Address, receipt: ethereum.TransactionReceipt): boolean {
+  let logs = receipt.logs
+  for (let i = 0; i < logs.length; i++) {
+    let topics = logs[i].topics
+    if (topics.length >= 3 && topics[0].equals(TRANSFER_TOPIC) &&
+        Address.fromBytes(changetype<Bytes>(topics[2].subarray(12))).equals(safe)) {
+      return true
+    }
+    if (topics.length >= 1 && topics[0].equals(SAFE_RECEIVED_TOPIC) && logs[i].address.equals(safe)) {
+      return true
+    }
+  }
+  return false
+}
+
+// An outflow to `addr` is a withdrawal when `addr` is the user side, or a contract that sent
+// nothing back to the Safe in the same tx (e.g. an EIP-7702 wallet). Needs `receipt: true`.
+export function isWithdrawalRecipient(
+  addr: Address,
+  serviceSafe: Address,
+  event: ethereum.Event,
+  readAddressType: AddressTypeReader
+): boolean {
+  if (isUserSide(addr, serviceSafe, event.block, readAddressType)) {
+    return true
+  }
+  let service = getServiceByAgent(serviceSafe)
+  if (service == null || addr.equals(serviceSafe) || addr.equals(Address.zero()) || isAgentInstance(addr, service)) {
+    return false
+  }
+  let receipt = event.receipt
+  if (receipt == null) {
+    log.warning("[WITHDRAWAL] No receipt for tx {} — outflow to contract {} not counted", [
+      event.transaction.hash.toHexString(),
+      addr.toHexString()
+    ])
+    return false
+  }
+  return !receiptHasInflowTo(serviceSafe, receipt)
 }
 
 // Legacy isSafe function - now checks if address is any service safe

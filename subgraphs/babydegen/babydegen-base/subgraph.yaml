@@ -4,8 +4,8 @@ schema:
 # BabyDegen Base (Basius) — Aerodrome-only port of babydegen-optimism.
 # Indexing filters by Olas agentId 115 and tracks every Basius service
 # (currently 607/610/611/612 on Base); see src/serviceRegistry.ts.
-# NOTE: only USDC (native) and ETH flows affect funding metrics; other token
-# transfers are tracked for balance only.
+# NOTE: every tracked token and ETH counts as funding in and out (see isUserSide /
+# isWithdrawalRecipient in src/common.ts); Transfer and Safe handlers need `receipt: true`.
 #
 # startBlock 47163056 = earliest agentId-115 (Basius) service registration
 # (service 607, 2026-06-10); nothing relevant exists on Base before it.
@@ -55,6 +55,8 @@ dataSources:
         - FundingBalance
         - TokenBalance
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
         # handleERC20Transfer prices the token via getTokenPriceUSD →
@@ -69,6 +71,7 @@ dataSources:
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleUSDC
+          receipt: true
       file: ./src/funding.ts
 
   - kind: ethereum
@@ -85,6 +88,8 @@ dataSources:
       entities:
         - TokenBalance
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
         # handleERC20Transfer prices the token via getTokenPriceUSD →
@@ -99,6 +104,7 @@ dataSources:
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
+          receipt: true
       file: ./src/tokenBalances.ts
 
   - kind: ethereum
@@ -115,6 +121,8 @@ dataSources:
       entities:
         - TokenBalance
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
         # handleERC20Transfer prices the token via getTokenPriceUSD →
@@ -129,6 +137,7 @@ dataSources:
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
+          receipt: true
       file: ./src/tokenBalances.ts
 
   - kind: ethereum
@@ -145,6 +154,8 @@ dataSources:
       entities:
         - TokenBalance
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
         # handleERC20Transfer prices the token via getTokenPriceUSD →
@@ -159,6 +170,7 @@ dataSources:
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
+          receipt: true
       file: ./src/tokenBalances.ts
 
   - kind: ethereum
@@ -175,6 +187,8 @@ dataSources:
       entities:
         - TokenBalance
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
         # handleERC20Transfer prices the token via getTokenPriceUSD →
@@ -189,6 +203,7 @@ dataSources:
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
+          receipt: true
       file: ./src/tokenBalances.ts
 
   - kind: ethereum
@@ -205,6 +220,8 @@ dataSources:
       entities:
         - TokenBalance
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
         # handleERC20Transfer prices the token via getTokenPriceUSD →
@@ -219,6 +236,7 @@ dataSources:
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
+          receipt: true
       file: ./src/tokenBalances.ts
 
   - kind: ethereum
@@ -235,6 +253,8 @@ dataSources:
       entities:
         - TokenBalance
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
         # handleERC20Transfer prices the token via getTokenPriceUSD →
@@ -249,6 +269,7 @@ dataSources:
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
+          receipt: true
       file: ./src/tokenBalances.ts
 
   - kind: ethereum
@@ -265,6 +286,8 @@ dataSources:
       entities:
         - TokenBalance
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
         # handleERC20Transfer prices the token via getTokenPriceUSD →
@@ -279,6 +302,7 @@ dataSources:
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
+          receipt: true
       file: ./src/tokenBalances.ts
 
   # ---- Aerodrome Slipstream (CL) positions ---------------------------------
@@ -500,6 +524,8 @@ templates:
         - FundingBalance
         - Service
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: Safe
           file: ../../../abis/Safe.json
         - name: AggregatorV3Interface
@@ -509,8 +535,11 @@ templates:
       eventHandlers:
         - event: SafeReceived(indexed address,uint256)
           handler: handleSafeReceived
+          receipt: true
         - event: ExecutionSuccess(bytes32,uint256)
           handler: handleExecutionSuccess
+          receipt: true
         - event: ExecutionFromModuleSuccess(indexed address)
           handler: handleExecutionFromModuleSuccess
+          receipt: true
       file: ./src/safe.ts

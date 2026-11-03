@@ -2,9 +2,7 @@ import { Transfer } from "../generated/USDC_Native/ERC20"
 import { log } from "@graphprotocol/graph-ts"
 import { handleERC20Transfer } from "./tokenBalances"
 
-// NOTE: This subgraph is configured to track USDC Native and ETH transfers for funding balance calculations.
-// Other ERC20 token outflows are tracked for token balance purposes but do not affect funding metrics.
-// All token handling is now centralized in handleERC20Transfer in tokenBalances.ts
+// All token handling, funding included, is centralized in handleERC20Transfer in tokenBalances.ts
 
 // Re-export handleERC20Transfer from tokenBalances
 export { handleERC20Transfer } from "./tokenBalances"

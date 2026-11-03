@@ -582,6 +582,7 @@ function createService(safe: Address): void {
   s.createdAt = BLOCK_TIMESTAMP
   s.updatedAt = BLOCK_TIMESTAMP
   s.positionIds = []
+  s.agentInstances = [AGENT_INSTANCE]
   s.save()
 }
 

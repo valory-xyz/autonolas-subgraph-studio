@@ -5,16 +5,19 @@ import {
   ExecutionSuccess as ExecutionSuccessEvent,
   ExecutionFromModuleSuccess as ExecutionFromModuleSuccessEvent
 } from "../generated/templates/Safe/Safe"
-import { isFundingSource, getEthUsd } from "./common"
+import { isUserSide, isWithdrawalRecipient, getAddressType, AddressTypeReader, getEthUsd } from "./common"
 import { getServiceByAgent } from "./config"
-import { updateFundingBalance } from "./tokenBalances"
+import { updateFundingBalance, updateWithdrawalBalance } from "./tokenBalances"
 import { updateETHBalance } from "./tokenBalances"
 
-// NOTE: This subgraph is configured to ONLY track USDC and ETH transfers for funding balance calculations.
-// ETH transfers out (through ExecutionSuccess and ExecutionFromModuleSuccess events) are now tracked for funding metrics.
-// ETH transfers in are tracked via SafeReceived events.
+// ETH funding uses the same user-side rule as ERC-20 funding in tokenBalances.ts.
+// ETH transfers in are tracked via SafeReceived events; out via ExecutionSuccess / ExecutionFromModuleSuccess.
 
 export function handleSafeReceived(event: SafeReceivedEvent): void {
+  processSafeReceived(event, getAddressType)
+}
+
+export function processSafeReceived(event: SafeReceivedEvent, readAddressType: AddressTypeReader): void {
   // Handle funding balance update for ETH received
   let from = event.params.sender
   let to = event.address // The safe that received ETH (emitted the event)
@@ -38,7 +41,7 @@ export function handleSafeReceived(event: SafeReceivedEvent): void {
   if (toService !== null) {
     // This is an inflow TO a service safe
     // Check if sender is valid funding source for this service
-    let isValidFundingSource = isFundingSource(from, to, event.block, txHash)
+    let isValidFundingSource = isUserSide(from, to, event.block, readAddressType)
     
     if (isValidFundingSource) {
       // Convert ETH to USD
@@ -72,12 +75,9 @@ export function handleSafeReceived(event: SafeReceivedEvent): void {
       
       let ethAmount = value.toBigDecimal().div(BigDecimal.fromString("1e18"))
       
-      // NEW LOGIC: Check if receiver is this service's operator safe
-      if (to.equals(Address.fromBytes(fromService.operatorSafe))) {
-        // This is Service Safe → Operator Safe transfer
-        
-        // Update funding balance for the SERVICE safe (outflow)
-        updateFundingBalance(from, usd, false, event.block.timestamp, txHash)
+      // Only Safes we index emit SafeReceived; the operator Safe and any other Safe are the user side
+      if (isUserSide(to, from, event.block, readAddressType)) {
+        updateWithdrawalBalance(from, usd, event.block.timestamp)
         
         // Update ETH balance for the service safe (outflow)
         updateETHBalance(from, value, false, event.block)
@@ -96,8 +96,7 @@ export function handleSafeReceived(event: SafeReceivedEvent): void {
  * Helper function to handle ETH transfers for both ExecutionSuccess and ExecutionFromModuleSuccess events
  * @param serviceSafe The safe address that executed the transaction
  * @param eventType String identifying the type of event ('execution' or 'module')
- * @param block The block where the transaction occurred
- * @param tx The transaction object
+ * @param event The Safe event, whose transaction and receipt are read
  * @param txHash The transaction hash as a string
  * @param moduleAddress Optional module address for module executions
  * @param extraInfo Optional additional information to log (e.g. payment)
@@ -105,8 +104,7 @@ export function handleSafeReceived(event: SafeReceivedEvent): void {
 function handleSafeEthTransfer(
   serviceSafe: Address,
   eventType: string,
-  block: ethereum.Block,
-  tx: ethereum.Transaction,
+  event: ethereum.Event,
   txHash: string,
   moduleAddress: Address | null = null,
   extraInfo: string | null = null
@@ -118,8 +116,9 @@ function handleSafeEthTransfer(
   }
   
   // For ETH transfers, we need the transaction information
-  let to = tx.to
-  let value = tx.value
+  let block = event.block
+  let to = event.transaction.to
+  let value = event.transaction.value
   
   // Check if this is a direct ETH transfer (value > 0 and to is valid)
   if (value.gt(BigInt.zero()) && to !== null) {
@@ -127,18 +126,13 @@ function handleSafeEthTransfer(
     // Always update ETH balance for outflows from service safe
     updateETHBalance(serviceSafe, value, false, block)
     
-    // Check if receiver is valid funding source for this service
-    let isValidFundingTarget = isFundingSource(to, serviceSafe, block, txHash)
-    
-    if (isValidFundingTarget) {
-      // Convert ETH to USD for funding balance
+    if (isWithdrawalRecipient(to!, serviceSafe, event, getAddressType)) {
       let ethPrice = getEthUsd(block)
       let usd = value.toBigDecimal()
         .times(ethPrice)
         .div(BigDecimal.fromString("1e18")) // ETH has 18 decimals
       
-      // Update funding balance for ETH outflow
-      updateFundingBalance(serviceSafe, usd, false, block.timestamp, txHash)
+      updateWithdrawalBalance(serviceSafe, usd, block.timestamp)
     }
   }
     
@@ -154,8 +148,7 @@ export function handleExecutionSuccess(event: ExecutionSuccessEvent): void {
   handleSafeEthTransfer(
     serviceSafe,
     "ExecutionSuccess",
-    event.block,
-    event.transaction,
+    event,
     event.transaction.hash.toHexString(), // Use actual transaction hash
     null,
     "payment: " + payment.toString()
@@ -171,8 +164,7 @@ export function handleExecutionFromModuleSuccess(event: ExecutionFromModuleSucce
   handleSafeEthTransfer(
     serviceSafe,
     "ExecutionFromModuleSuccess",
-    event.block,
-    event.transaction,
+    event,
     txHash,
     moduleAddress
   )
