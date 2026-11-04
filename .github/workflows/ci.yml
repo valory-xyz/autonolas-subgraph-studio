@@ -16,7 +16,8 @@ concurrency:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Matchstick 0.6.0 ships a Linux 22 binary; graph-cli rejects Ubuntu 26.
+    runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
       matrix:
