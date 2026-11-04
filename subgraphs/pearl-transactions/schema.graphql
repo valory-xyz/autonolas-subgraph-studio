@@ -207,6 +207,17 @@ type PendingRegistration @entity(immutable: false) {
   operators: [Bytes!]!
 }
 
+# Agent Signer (RegisterInstance.agentInstance) -> the service of its latest
+# registration. Read by handleSafeExecutionSuccess to attribute a Pearl Safe
+# -> Agent Signer native leg. Mutable, latest registration wins, and kept
+# out of TrackedAddress on purpose: that table is write-once and feeds
+# classifyTransfer, whose rows must not change.
+type AgentInstance @entity(immutable: false) {
+  id: Bytes!                          # Agent Signer address
+  service: Service!                   # written as an id, even while the Service is still buffered
+  updatedBlock: BigInt!
+}
+
 # Per-tx cursor for the bond-attribution queue. The SRTU TokenDeposit /
 # TokenRefund events carry no serviceId, so a token movement can only be
 # tied to a service via same-tx event order. On-chain the SRTU event

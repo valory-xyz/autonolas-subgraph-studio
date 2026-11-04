@@ -7,23 +7,35 @@ import {
   RemovedOwner as RemovedOwnerEvent,
   SafeReceived as SafeReceivedEvent,
 } from "../generated/templates/Safe/GnosisSafe";
-import { FundsMovement, MasterSafe, TrackedAddress } from "../generated/schema";
+import {
+  AgentInstance,
+  FundsMovement,
+  MasterSafe,
+  Service,
+  TrackedAddress,
+} from "../generated/schema";
 import {
   CATEGORY_AGENT_SAFE_TO_AGENT_EOA,
   CATEGORY_MASTER_FUNDING_IN,
   CATEGORY_MASTER_TO_AGENT,
   CATEGORY_SAFE_SETUP_TRANSFER,
   ROLE_AGENT,
+  ROLE_MASTER,
   SOURCE_RAW_TRANSFER,
   SOURCE_SEMANTIC,
 } from "./constants";
 import {
+  MULTISEND_V130,
+  NativeLeg,
   addToAgentFundingEvent,
   agentSafeTopUpId,
+  agentSignerLegId,
   classifyTransfer,
   fundsMovementId,
   getOrCreateAgentFundingEvent,
   markSetupTransferSeen,
+  multiSendTransactions,
+  unpackMultiSend,
 } from "./utils";
 
 // handleSafeReceived — native coin inbound. Reliable: the event
@@ -106,20 +118,25 @@ function hasExecTransactionSelector(input: Bytes): boolean {
   return true;
 }
 
-// handleSafeExecutionSuccess — native top-up Agent Safe → its own Agent
-// Signer (AGENT_SAFE_TO_AGENT_EOA). ExecutionSuccess carries no amount or
-// recipient, so they come from the outer tx: it must call the emitting Safe
-// directly with one plain CALL, no data, value > 0, paying the tx sender.
-// The check proves only that the Agent Safe paid the tx sender: the Agent
-// Signer submits its own Safe txs, so that payee is taken to be the Agent
-// Signer (the signer is not a tracked address). Relayed or module
-// executions are not decoded, and every other native outflow stays
-// unindexed.
+// handleSafeExecutionSuccess — native out from a Safe's own execTransaction.
+// ExecutionSuccess carries no amount or recipient, so they come from the
+// outer tx, which must call the emitting Safe directly. Two shapes:
+//
+//   * Agent Safe → its own Agent Signer (AGENT_SAFE_TO_AGENT_EOA): one plain
+//     CALL, no data, value > 0, paying the tx sender. The check proves only
+//     that the Agent Safe paid the tx sender: the Agent Signer submits its
+//     own Safe txs, so that payee is taken to be the Agent Signer.
+//   * Pearl Safe → Agent Signers (MASTER_TO_AGENT): a plain CALL, or a
+//     DELEGATECALL to MultiSend v1.3.0 unpacked leg by leg; see
+//     writeAgentSignerLegs.
+//
+// Relayed or module executions are not decoded, and every other native
+// outflow stays unindexed.
 //
 // Fires on every execution of every Safe sharing the template, so every
 // shape check runs before any store load (OPE-1965 D39).
 //
-// The row ID is one per tx: a reentrant execTransaction from the same Safe
+// Row IDs are fixed per tx: a reentrant execTransaction from the same Safe
 // (e.g. an Agent Signer with EIP-7702 code) emits a second ExecutionSuccess
 // in the same tx, which reads the same outer input and is skipped.
 export function handleSafeExecutionSuccess(
@@ -149,20 +166,48 @@ export function handleSafeExecutionSuccess(
   const args = decoded.toTuple();
 
   const operation = args[ARG_OPERATION].toBigInt();
-  if (!operation.isZero()) return;
-  if (args[ARG_DATA].toBytes().length != 0) return;
+  const data = args[ARG_DATA].toBytes();
   const value = args[ARG_VALUE].toBigInt();
-  if (value.le(BigInt.zero())) return;
-  const recipient = args[ARG_TO].toAddress();
-  if (!recipient.equals(event.transaction.from)) {
+  const target = args[ARG_TO].toAddress();
+  const plainNative =
+    operation.isZero() && data.length == 0 && value.gt(BigInt.zero());
+  const multiSend =
+    operation.equals(BigInt.fromI32(1)) && target.equals(MULTISEND_V130);
+  if (!plainNative && !multiSend) return;
+
+  const tracked = TrackedAddress.load(event.address);
+  if (tracked !== null && tracked.role == ROLE_MASTER) {
+    if (plainNative) {
+      const single: NativeLeg[] = [new NativeLeg(0, target, value)];
+      writeAgentSignerLegs(event, single);
+      return;
+    }
+    let legs: NativeLeg[] | null = null;
+    const transactions = multiSendTransactions(data);
+    if (transactions !== null) legs = unpackMultiSend(transactions);
+    if (legs === null) {
+      log.warning(
+        "Pearl Safe {} MultiSend calldata does not unpack (tx={}, data_len={}); skipping",
+        [
+          event.address.toHexString(),
+          event.transaction.hash.toHexString(),
+          data.length.toString(),
+        ]
+      );
+      return;
+    }
+    writeAgentSignerLegs(event, legs!);
+    return;
+  }
+
+  if (!plainNative) return;
+  if (!target.equals(event.transaction.from)) {
     log.debug(
       "Safe {} native CALL not paid to the tx sender (tx={}); skipping",
       [event.address.toHexString(), event.transaction.hash.toHexString()]
     );
     return;
   }
-
-  const tracked = TrackedAddress.load(event.address);
   if (tracked === null || tracked.role != ROLE_AGENT) {
     log.debug(
       "Safe {} with top-up shape is not an Agent Safe (role={}, tx={}); skipping",
@@ -191,11 +236,61 @@ export function handleSafeExecutionSuccess(
   // token = null (native); no TokenBalance for native.
   row.amount = value;
   row.from = event.address;
-  row.to = recipient;
+  row.to = target;
   row.blockNumber = event.block.number;
   row.blockTimestamp = event.block.timestamp;
   row.transactionHash = event.transaction.hash;
   row.save();
+}
+
+// writeAgentSignerLegs — each Pearl Safe → Agent Signer native leg becomes a
+// MASTER_TO_AGENT row in the tx's AgentFundingEvent, next to the Agent Safe
+// leg handleSafeReceived books. A leg counts only when its recipient is an
+// Agent Signer of a service whose Pearl Safe is the emitter; other
+// recipients (the Agent Safe, the Master EOA, anyone else) are left to their
+// own handlers.
+function writeAgentSignerLegs(
+  event: ExecutionSuccessEvent,
+  legs: NativeLeg[]
+): void {
+  for (let i = 0; i < legs.length; i++) {
+    const leg = legs[i];
+    const instance = AgentInstance.load(leg.to);
+    if (instance === null) continue;
+    const service = Service.load(instance.service);
+    if (service === null) continue;
+    const masterSafe = service.masterSafe;
+    if (masterSafe === null || !masterSafe.equals(event.address)) continue;
+
+    const id = agentSignerLegId(event.transaction.hash, leg.index);
+    if (FundsMovement.load(id) !== null) continue;
+
+    const row = new FundsMovement(id);
+    row.service = service.id;
+    row.masterSafe = event.address;
+    if (service.agentSafe !== null) {
+      row.agentSafe = service.agentSafe!;
+    }
+    row.category = CATEGORY_MASTER_TO_AGENT;
+    row.source = SOURCE_SEMANTIC;
+    // token = null (native); no TokenBalance for native.
+    row.amount = leg.value;
+    row.from = event.address;
+    row.to = leg.to;
+    row.blockNumber = event.block.number;
+    row.blockTimestamp = event.block.timestamp;
+    row.transactionHash = event.transaction.hash;
+
+    const afe = getOrCreateAgentFundingEvent(
+      event.transaction.hash,
+      event.address,
+      service.id,
+      event
+    );
+    row.agentFundingEvent = afe.id;
+    addToAgentFundingEvent(afe, leg.value, /* isNative = */ true);
+    row.save();
+  }
 }
 
 // handleSafeExecutionFromModuleSuccess — intentional no-op: a module
