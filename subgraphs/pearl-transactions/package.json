@@ -18,7 +18,7 @@
     "matchstick-as": "0.6.0"
   },
   "resolutions": {
-    "//": "Selective version resolutions. See subgraphs/staking/package.json for the full explainer; resolutions converge across all subgraph package.json files in this repo. zod: see SUPPLY-CHAIN-SECURITY.md §11.",
+    "//": "Selective version resolutions. See subgraphs/staking/package.json for the full explainer; resolutions converge across all subgraph package.json files in this repo. zod: see SUPPLY-CHAIN-SECURITY.md, \"Repo-specific watches\".",
     "immutable": "^5.1.5",
     "cross-spawn": "^7.0.6",
     "semver": "^7.5.2",

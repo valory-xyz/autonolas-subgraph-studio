@@ -126,7 +126,7 @@ Same fields as AgentPortfolio plus `timestamp`, `block`, `positionIds`.
 ### DeFi Positions
 
 #### ProtocolPosition
-Individual LP positions across protocols (id: `<agent>-<tokenId>`).
+Individual LP positions across protocols (id: `<agent>-<protocol>-<tokenId>` for CL, `<agent>-<protocol>-<pool>` for v2).
 | Field | Type | Notes |
 |-------|------|-------|
 | protocol | `String!` | "velodrome-v3" (Velodrome CL), "velodrome-v2", "aero-cl", "aero-v2", "uniswap-v3", "balancer" |
@@ -460,9 +460,9 @@ yarn test                           # Run Matchstick tests
 ### Critical Points
 1. **Agent filtering**: Only `OPTIMUS_AGENT_ID = 40` tracked. Test services [29, 37, 56, 58] excluded at registration.
 2. **Portfolio snapshots**: Immutable daily snapshots created at UTC midnight via block handler (every 1800 blocks). ID format: `<serviceSafe>-<dayTimestamp>`.
-3. **Position ID format**: `<agent>-<tokenId>` — unique per agent + NFT token combination.
+3. **Position ID format**: `<agent>-<protocol>-<tokenId>` (CL) / `<agent>-<protocol>-<pool>` (v2) — the label keeps the two NFPMs' token ids apart.
 4. **ROI from closed positions only**: `calculateActualROI()` uses only closed positions. Active positions contribute to `positionsValue` and `unrealisedPnL` but not ROI.
-5. **Multi-protocol support**: Velodrome CL, Velodrome V2, Uniswap V3, Balancer — each with separate handler files but unified portfolio calculation.
+5. **Multi-protocol support**: Velodrome CL, Velodrome V2, Aero CL, Aero v2, Uniswap V3, Balancer — each with separate handler files but unified portfolio calculation.
 6. **Price discovery is multi-source**: Chainlink primary, DEX fallback, stablecoin fallback. 5-minute cache. Confidence scoring.
 7. **Funding tracking**: Only USDC Native and ETH affect `FundingBalance`. Other tokens tracked for balance only. Funding direction determined by EOA/operator detection.
 8. **ETH-adjusted metrics**: Separates agent alpha from ETH price movement. `ETHDelta = (currentEthPrice/firstEthPrice - 1) * 100`.

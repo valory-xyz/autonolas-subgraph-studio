@@ -2,14 +2,15 @@
 
 Tracks portfolio performance and population-level metrics for the **Basius** agent
 (Pearl / BabyDegen agent economy) on **Base**. It monitors the agents' DeFi activity
-on **Aerodrome** (Slipstream concentrated-liquidity + v2 stable/volatile pools),
+on **Aerodrome** (Slipstream concentrated-liquidity + v2 stable/volatile pools) and **Aero**
+(the merged protocol's CL and v2 pools),
 tracking portfolio value, position management, funding flows, ROI/APR, and daily
 population statistics.
 
 It is a port of [`babydegen-optimism`](../babydegen-optimism): the portfolio scheduler,
 ROI/APR math, daily snapshots and population metrics are identical and network-agnostic.
 The differences are network configuration (Base addresses, Chainlink feeds), the DEX
-surface (Aerodrome only — Uniswap V3 and Balancer are dropped), and the agent scope.
+surface (Aerodrome and Aero — Uniswap V3 and Balancer are dropped), and the agent scope.
 
 ## Scope
 

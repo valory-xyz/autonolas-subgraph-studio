@@ -265,7 +265,7 @@ Comprehensive daily population-level metrics calculated at UTC midnight:
 - AUM tracking for staking APR calculations
 
 ### Multi-Protocol Support
-- Unified tracking across Velodrome CL, Velodrome V2, Uniswap V3, and Balancer V2
+- Unified tracking across Velodrome CL, Velodrome V2, Aero CL, Aero v2, Uniswap V3, and Balancer V2
 - Protocol-specific position metadata (ticks, fees, etc.)
 - Consistent position lifecycle tracking across all protocols
 
