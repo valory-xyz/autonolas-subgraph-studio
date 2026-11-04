@@ -267,6 +267,7 @@ const XAERO_PAID = BigInt.fromString("214333257835848575")
 const FIRST_CLAIM_PAID = BigInt.fromString("1500000000000000000")
 const SECOND_CLAIM_PAID = BigInt.fromString("250000000000000000")
 const BOTH_CLAIMS_PAID = FIRST_CLAIM_PAID.plus(SECOND_CLAIM_PAID)
+const COVERS_FIRST_CLAIM_ONLY = BigInt.fromString("1600000000000000000")
 
 function seedTwoAeroPositions(): ProtocolPosition[] {
   seedService(ACCOUNT_D14, OPERATOR_SAFE, AGENT_INSTANCE)
@@ -353,13 +354,27 @@ describe("Aero CL rewards from EmissionsClaimed", () => {
     positionField(positions[1], "claimedRewards", "0.25")
   })
 
-  test("a Transfer smaller than the claims credits only the claims it covers", () => {
+  test("a Transfer pays only the claims its amount covers, in log order", () => {
     let positions = seedTwoAeroPositions()
-    let event = newTransfer(XAERO, LEAF_EMISSIONS_HANDLER, ACCOUNT_D14, SECOND_CLAIM_PAID, 10, twoAeroClaimsReceipt())
+    let event = newTransfer(XAERO, LEAF_EMISSIONS_HANDLER, ACCOUNT_D14, COVERS_FIRST_CLAIM_ONLY, 10, twoAeroClaimsReceipt())
 
-    assert.assertTrue(attributeRewardTransfer(event, LEAF_EMISSIONS_HANDLER, ACCOUNT_D14, SECOND_CLAIM_PAID))
+    assert.assertTrue(attributeRewardTransfer(event, LEAF_EMISSIONS_HANDLER, ACCOUNT_D14, COVERS_FIRST_CLAIM_ONLY))
 
+    positionField(positions[0], "claimedRewards", "1.5")
+    positionField(positions[1], "claimedRewards", "0")
+  })
+
+  test("a Transfer of another token does not take the claims", () => {
+    let positions = seedTwoAeroPositions()
+    let receipt = twoAeroClaimsReceipt()
+    let other = newTransfer(DAI, OTHER, ACCOUNT_D14, BOTH_CLAIMS_PAID, 9, receipt)
+
+    assert.assertTrue(!attributeRewardTransfer(other, OTHER, ACCOUNT_D14, BOTH_CLAIMS_PAID))
     positionField(positions[0], "claimedRewards", "0")
+
+    let reward = newTransfer(XAERO, LEAF_EMISSIONS_HANDLER, ACCOUNT_D14, BOTH_CLAIMS_PAID, 10, receipt)
+    assert.assertTrue(attributeRewardTransfer(reward, LEAF_EMISSIONS_HANDLER, ACCOUNT_D14, BOTH_CLAIMS_PAID))
+    positionField(positions[0], "claimedRewards", "1.5")
     positionField(positions[1], "claimedRewards", "0.25")
   })
 })
