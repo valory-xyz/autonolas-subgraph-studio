@@ -18,7 +18,7 @@ import { refreshVeloV2Position, getVeloV2PositionId } from "../src/veloV2Shared"
 import { refreshAllActivePositions } from "../src/helpers"
 import { AgentSwapBuffer, SwapTransaction } from "../generated/schema"
 import { handleVeloV2Bootstrap } from "../src/veloV2Bootstrap"
-import { handleVeloV2Transfer, handleVeloV2Mint, handleAeroV2Mint } from "../src/veloV2Pool"
+import { handleVeloV2Transfer, handleVeloV2Burn, handleVeloV2Mint, handleAeroV2Mint } from "../src/veloV2Pool"
 import { ProtocolPosition, Service, V2PoolVenue } from "../generated/schema"
 import { handleNFTTransfer, handleAeroIncreaseLiquidity, handleDecreaseLiquidity, handleIncreaseLiquidity } from "../src/veloNFTManager"
 import { refreshVeloCLPosition, clVenueForManager } from "../src/veloCLShared"
@@ -60,6 +60,7 @@ import {
   createAeroV2PoolCreatedEvent,
   createGaugeCreatedEvent,
   createAeroV2MintEvent,
+  createV2BurnEvent,
   createDecreaseLiquidityEvent,
   createIncreaseLiquidityEvent
 } from "./mapping-utils"
@@ -1428,6 +1429,22 @@ describe("Aero CL positions (AeroNFTManager)", () => {
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "rewardsContract", NEW_CL_GAUGE.toHexString())
   })
 
+  test("an aero-cl gauge() revert falls back to the gauge already known", () => {
+    createService(SERVICE_SAFE)
+    mockChainlinkEthUsd()
+    mockAeroCLPosition()
+    mockAeroCLStaked(false)
+    const id = openAeroCLPosition()
+
+    createMockedFunction(AERO_CL_POOL, "gauge", "gauge():(address)").withArgs([]).reverts()
+    mockAeroCLStaked(true)
+    mockAeroCLEarned(BigInt.fromString("2000000000000000000"))
+    refreshVeloCLPosition(id, AERO_TOKEN_ID, aeroBlock(), TX_HASH, false)
+
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "rewardsContract", AERO_CL_GAUGE.toHexString())
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimableReward", "2")
+  })
+
   test("a staked position whose earned() reverts records 0", () => {
     createService(SERVICE_SAFE)
     mockChainlinkEthUsd()
@@ -1516,6 +1533,36 @@ describe("Legacy CL venue after the CLVenue refactor", () => {
     const pos = ProtocolPosition.load(id)!
     assert.assertTrue(pos.claimableRewardUSD!.gt(BigDecimal.fromString("2.59")))
     assert.assertTrue(pos.claimableRewardUSD!.lt(BigDecimal.fromString("2.61")))
+  })
+
+  test("a legacy CL gauge stays cached when the pool reports another one", () => {
+    createService(SERVICE_SAFE)
+    mockChainlinkEthUsd()
+    mockLegacyCLPosition()
+    mockAeroUsdcPool()
+    const id = openLegacyCLPosition()
+
+    createMockedFunction(LEGACY_CL_POOL, "gauge", "gauge():(address)")
+      .withArgs([]).returns([ethereum.Value.fromAddress(DUMMY1)])
+    refreshVeloCLPosition(id, AERO_TOKEN_ID, aeroBlock(), TX_HASH, false)
+
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "rewardsContract", LEGACY_CL_GAUGE.toHexString())
+  })
+
+  test("a legacy pool whose gauge() reverts still closes the position", () => {
+    createService(SERVICE_SAFE)
+    mockChainlinkEthUsd()
+    mockLegacyCLPosition()
+    mockAeroUsdcPool()
+    createMockedFunction(LEGACY_CL_POOL, "gauge", "gauge():(address)").withArgs([]).reverts()
+    const id = openLegacyCLPosition()
+    assert.assertTrue(!ProtocolPosition.load(id)!.rewardsContract)
+
+    mockCLPositions(VELO_MANAGER, BigInt.zero())
+    refreshVeloCLPosition(id, AERO_TOKEN_ID, aeroBlock(), TX_HASH, false)
+
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "isActive", "false")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimableReward", "0")
   })
 })
 
@@ -1621,6 +1668,41 @@ describe("Aero v2 pools (factories + GaugeManager)", () => {
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "liquidity", "500")
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimableReward", "0")
     assert.assertTrue(!ProtocolPosition.load(id)!.rewardsContract)
+  })
+
+  test("a Burn from an Aero v2 pool closes the aero-v2 position", () => {
+    createService(SERVICE_SAFE)
+    saveAeroV2Venue(false)
+    mockAeroV2PoolState(AERO_V2_POOL, AERO_V2_GAUGE)
+    createMockedFunction(AERO_V2_POOL, "balanceOf", "balanceOf(address):(uint256)")
+      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
+      .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(500))])
+    const transfer = createV2TransferEvent(AERO_V2_POOL, Address.zero(), SERVICE_SAFE, BigInt.fromI32(500))
+    transfer.block = aeroBlock()
+    transfer.transaction.hash = TX_HASH
+    handleVeloV2Transfer(transfer)
+    const id = Bytes.fromUTF8(SERVICE_SAFE.toHex() + "-aero-v2-" + AERO_V2_POOL.toHex())
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "isActive", "true")
+
+    // All LP burned: the safe holds none and there is no gauge to hold it
+    createMockedFunction(AERO_V2_POOL, "balanceOf", "balanceOf(address):(uint256)")
+      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
+      .returns([ethereum.Value.fromUnsignedBigInt(BigInt.zero())])
+    const burn = createV2BurnEvent(
+      AERO_V2_POOL,
+      ROUTER,
+      SERVICE_SAFE,
+      BigInt.fromString("1000000000000000000"),
+      BigInt.fromString("3000000000000000000")
+    )
+    burn.block = aeroBlock()
+    burn.transaction.hash = TX_HASH
+    handleVeloV2Burn(burn)
+
+    assert.entityCount("ProtocolPosition", 1)
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "isActive", "false")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "exitAmount0", "1")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "exitAmount1", "3")
   })
 
   test("a later GaugeCreated for the same pool replaces the gauge", () => {
@@ -1775,7 +1857,7 @@ describe("Chainlink-priced stablecoins (feed first, pool fallback)", () => {
     assert.fieldEquals("PriceUpdate", updateId.toHexString(), "source", USDT_FALLBACK_POOL.toHexString())
   })
 
-  test("a depeg reported by the feed is kept (0.5–1.5 band, not USDC's 0.95–1.05)", () => {
+  test("a USDe depeg reported by its feed is kept (0.5–1.5 band)", () => {
     mockStableFeed(USDE_USD_FEED, BigInt.fromI32(93000000), BLOCK_TIMESTAMP) // $0.93
     assert.stringEquals("0.93", getTokenPriceUSD(USDE, BLOCK_TIMESTAMP, true).toString())
   })
@@ -1786,6 +1868,11 @@ describe("Chainlink-priced stablecoins (feed first, pool fallback)", () => {
     assert.stringEquals("0.93", getTokenPriceUSD(USDT, BLOCK_TIMESTAMP, true).toString())
     mockStableFeed(DAI_USD_FEED, BigInt.fromI32(93000000), BLOCK_TIMESTAMP)
     assert.stringEquals("0.93", getTokenPriceUSD(DAI, BLOCK_TIMESTAMP, true).toString())
+  })
+
+  test("a USDe feed price outside the 0.5–1.5 band is rejected", () => {
+    mockStableFeed(USDE_USD_FEED, BigInt.fromI32(40000000), BLOCK_TIMESTAMP) // $0.40
+    assert.stringEquals("0", getTokenPriceUSD(USDE, BLOCK_TIMESTAMP, true).toString())
   })
 
   test("a feed price below the band is rejected (USDS has no pool to fall back to)", () => {

@@ -16,7 +16,7 @@ import { refreshAllActivePositions } from "../src/helpers"
 import { ProtocolPosition, Service, V2PoolVenue } from "../generated/schema"
 import { handleNFTTransfer, handleAeroIncreaseLiquidity, handleDecreaseLiquidity, handleIncreaseLiquidity } from "../src/veloNFTManager"
 import { refreshVeloCLPosition, clVenueForManager } from "../src/veloCLShared"
-import { handleVeloV2Transfer, handleAeroV2Mint } from "../src/veloV2Pool"
+import { handleVeloV2Transfer, handleVeloV2Burn, handleAeroV2Mint } from "../src/veloV2Pool"
 import { handleAeroV2PoolCreated } from "../src/veloV2Factory"
 import { handleAeroGaugeCreated } from "../src/aeroGaugeManager"
 import { getTokenConfig, TokenConfig } from "../src/tokenConfig"
@@ -46,6 +46,7 @@ import {
   createAeroV2PoolCreatedEvent,
   createGaugeCreatedEvent,
   createAeroV2MintEvent,
+  createV2BurnEvent,
   createDecreaseLiquidityEvent,
   createIncreaseLiquidityEvent
 } from "./mapping-utils"
@@ -925,6 +926,22 @@ describe("Aero CL positions (AeroNFTManager)", () => {
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "rewardsContract", NEW_CL_GAUGE.toHexString())
   })
 
+  test("an aero-cl gauge() revert falls back to the gauge already known", () => {
+    createService(SERVICE_SAFE)
+    mockChainlinkEthUsd()
+    mockAeroCLPosition()
+    mockAeroCLStaked(false)
+    const id = openAeroCLPosition()
+
+    createMockedFunction(AERO_CL_POOL, "gauge", "gauge():(address)").withArgs([]).reverts()
+    mockAeroCLStaked(true)
+    mockAeroCLEarned(BigInt.fromString("2000000000000000000"))
+    refreshVeloCLPosition(id, AERO_TOKEN_ID, v2Block(), TX_HASH, false)
+
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "rewardsContract", AERO_CL_GAUGE.toHexString())
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimableReward", "2")
+  })
+
   test("a staked position whose earned() reverts records 0", () => {
     createService(SERVICE_SAFE)
     mockChainlinkEthUsd()
@@ -1013,6 +1030,36 @@ describe("Legacy CL venue after the CLVenue refactor", () => {
     const pos = ProtocolPosition.load(id)!
     assert.assertTrue(pos.claimableRewardUSD!.gt(BigDecimal.fromString("2.59")))
     assert.assertTrue(pos.claimableRewardUSD!.lt(BigDecimal.fromString("2.61")))
+  })
+
+  test("a legacy CL gauge stays cached when the pool reports another one", () => {
+    createService(SERVICE_SAFE)
+    mockChainlinkEthUsd()
+    mockLegacyCLPosition()
+    mockVeloUsdcPool()
+    const id = openLegacyCLPosition()
+
+    createMockedFunction(LEGACY_CL_POOL, "gauge", "gauge():(address)")
+      .withArgs([]).returns([ethereum.Value.fromAddress(DUMMY1)])
+    refreshVeloCLPosition(id, AERO_TOKEN_ID, v2Block(), TX_HASH, false)
+
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "rewardsContract", LEGACY_CL_GAUGE.toHexString())
+  })
+
+  test("a legacy pool whose gauge() reverts still closes the position", () => {
+    createService(SERVICE_SAFE)
+    mockChainlinkEthUsd()
+    mockLegacyCLPosition()
+    mockVeloUsdcPool()
+    createMockedFunction(LEGACY_CL_POOL, "gauge", "gauge():(address)").withArgs([]).reverts()
+    const id = openLegacyCLPosition()
+    assert.assertTrue(!ProtocolPosition.load(id)!.rewardsContract)
+
+    mockCLPositions(VELO_MANAGER, BigInt.zero())
+    refreshVeloCLPosition(id, AERO_TOKEN_ID, v2Block(), TX_HASH, false)
+
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "isActive", "false")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimableReward", "0")
   })
 })
 
@@ -1112,6 +1159,41 @@ describe("Aero v2 pools (factories + GaugeManager)", () => {
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "liquidity", "500")
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimableReward", "0")
     assert.assertTrue(!ProtocolPosition.load(id)!.rewardsContract)
+  })
+
+  test("a Burn from an Aero v2 pool closes the aero-v2 position", () => {
+    createService(SERVICE_SAFE)
+    saveAeroV2Venue(false)
+    mockAeroV2PoolState(AERO_V2_POOL, AERO_V2_GAUGE)
+    createMockedFunction(AERO_V2_POOL, "balanceOf", "balanceOf(address):(uint256)")
+      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
+      .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(500))])
+    const transfer = createV2TransferEvent(AERO_V2_POOL, Address.zero(), SERVICE_SAFE, BigInt.fromI32(500))
+    transfer.block = v2Block()
+    transfer.transaction.hash = TX_HASH
+    handleVeloV2Transfer(transfer)
+    const id = Bytes.fromUTF8(SERVICE_SAFE.toHex() + "-aero-v2-" + AERO_V2_POOL.toHex())
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "isActive", "true")
+
+    // All LP burned: the safe holds none and there is no gauge to hold it
+    createMockedFunction(AERO_V2_POOL, "balanceOf", "balanceOf(address):(uint256)")
+      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
+      .returns([ethereum.Value.fromUnsignedBigInt(BigInt.zero())])
+    const burn = createV2BurnEvent(
+      AERO_V2_POOL,
+      ROUTER,
+      SERVICE_SAFE,
+      BigInt.fromString("1000000000000000000"),
+      BigInt.fromString("3000000000000000000")
+    )
+    burn.block = v2Block()
+    burn.transaction.hash = TX_HASH
+    handleVeloV2Burn(burn)
+
+    assert.entityCount("ProtocolPosition", 1)
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "isActive", "false")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "exitAmount0", "1")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "exitAmount1", "3")
   })
 
   test("a later GaugeCreated for the same pool replaces the gauge", () => {
@@ -1262,6 +1344,13 @@ describe("New Optimism tokens (BOLD 0x0356…, USDS, xAERO)", () => {
 
 const BOLD_STABLE_POOL = Address.fromString("0x8828B7792499A7d86E931DF56E3D37C428d12d2b")
 
+function mockBoldStablePair(token0: Address, token1: Address): void {
+  createMockedFunction(BOLD_STABLE_POOL, "token0", "token0():(address)")
+    .withArgs([]).returns([ethereum.Value.fromAddress(token0)])
+  createMockedFunction(BOLD_STABLE_POOL, "token1", "token1():(address)")
+    .withArgs([]).returns([ethereum.Value.fromAddress(token1)])
+}
+
 function mockBoldStableAmountOut(): void {
   createMockedFunction(BOLD_STABLE_POOL, "getAmountOut", "getAmountOut(uint256,address):(uint256)")
     .withArgs([
@@ -1277,10 +1366,7 @@ describe("BOLD (0x0356…) stable-pool pricing", () => {
   })
 
   test("is quoted through getAmountOut, not the imbalanced reserve ratio", () => {
-    createMockedFunction(BOLD_STABLE_POOL, "token0", "token0():(address)")
-      .withArgs([]).returns([ethereum.Value.fromAddress(BOLD_V2)])
-    createMockedFunction(BOLD_STABLE_POOL, "token1", "token1():(address)")
-      .withArgs([]).returns([ethereum.Value.fromAddress(USDC_OP)])
+    mockBoldStablePair(BOLD_V2, USDC_OP)
     // Reserves as on-chain (25,094 BOLD / 22,830 USDC) would read as ~$0.91; getReserves is not
     // mocked, so the test fails if the adapter reads it.
     mockBoldStableAmountOut()
@@ -1290,30 +1376,21 @@ describe("BOLD (0x0356…) stable-pool pricing", () => {
   })
 
   test("BOLD as the pool's token1 is quoted the same way", () => {
-    createMockedFunction(BOLD_STABLE_POOL, "token0", "token0():(address)")
-      .withArgs([]).returns([ethereum.Value.fromAddress(USDC_OP)])
-    createMockedFunction(BOLD_STABLE_POOL, "token1", "token1():(address)")
-      .withArgs([]).returns([ethereum.Value.fromAddress(BOLD_V2)])
+    mockBoldStablePair(USDC_OP, BOLD_V2)
     mockBoldStableAmountOut()
 
     assert.stringEquals("0.999289", getTokenPriceUSD(BOLD_V2, BLOCK_TIMESTAMP, true).toString())
   })
 
   test("a pool that doesn't pair BOLD with USDC is not used", () => {
-    createMockedFunction(BOLD_STABLE_POOL, "token0", "token0():(address)")
-      .withArgs([]).returns([ethereum.Value.fromAddress(BOLD_V2)])
-    createMockedFunction(BOLD_STABLE_POOL, "token1", "token1():(address)")
-      .withArgs([]).returns([ethereum.Value.fromAddress(DUMMY1)])
+    mockBoldStablePair(BOLD_V2, DUMMY1)
     mockBoldStableAmountOut()
 
     assert.stringEquals("0", getTokenPriceUSD(BOLD_V2, BLOCK_TIMESTAMP, true).toString())
   })
 
   test("a reverting getAmountOut leaves BOLD unpriced", () => {
-    createMockedFunction(BOLD_STABLE_POOL, "token0", "token0():(address)")
-      .withArgs([]).returns([ethereum.Value.fromAddress(BOLD_V2)])
-    createMockedFunction(BOLD_STABLE_POOL, "token1", "token1():(address)")
-      .withArgs([]).returns([ethereum.Value.fromAddress(USDC_OP)])
+    mockBoldStablePair(BOLD_V2, USDC_OP)
     createMockedFunction(BOLD_STABLE_POOL, "getAmountOut", "getAmountOut(uint256,address):(uint256)")
       .withArgs([
         ethereum.Value.fromUnsignedBigInt(BigInt.fromString("1000000000000000000")),

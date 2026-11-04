@@ -4,7 +4,7 @@ import {
   RegisterInstance,
   CreateMultisigWithAgents
 } from "../generated/ServiceRegistryL2/ServiceRegistryL2"
-import { Transfer as V2Transfer } from "../generated/templates/VeloV2Pool/VelodromeV2Pool"
+import { Transfer as V2Transfer, Burn as V2Burn } from "../generated/templates/VeloV2Pool/VelodromeV2Pool"
 import {
   Transfer as NFTTransfer,
   DecreaseLiquidity,
@@ -285,6 +285,25 @@ export function createIncreaseLiquidityEvent(
 
   event.parameters.push(new ethereum.EventParam("tokenId", ethereum.Value.fromUnsignedBigInt(tokenId)))
   event.parameters.push(new ethereum.EventParam("liquidity", ethereum.Value.fromUnsignedBigInt(liquidity)))
+  event.parameters.push(new ethereum.EventParam("amount0", ethereum.Value.fromUnsignedBigInt(amount0)))
+  event.parameters.push(new ethereum.EventParam("amount1", ethereum.Value.fromUnsignedBigInt(amount1)))
+
+  return event
+}
+
+export function createV2BurnEvent(
+  pool: Address,
+  sender: Address,
+  to: Address,
+  amount0: BigInt,
+  amount1: BigInt
+): V2Burn {
+  let event = changetype<V2Burn>(newMockEvent())
+  event.address = pool
+  event.parameters = new Array()
+
+  event.parameters.push(new ethereum.EventParam("sender", ethereum.Value.fromAddress(sender)))
+  event.parameters.push(new ethereum.EventParam("to", ethereum.Value.fromAddress(to)))
   event.parameters.push(new ethereum.EventParam("amount0", ethereum.Value.fromUnsignedBigInt(amount0)))
   event.parameters.push(new ethereum.EventParam("amount1", ethereum.Value.fromUnsignedBigInt(amount1)))
 
