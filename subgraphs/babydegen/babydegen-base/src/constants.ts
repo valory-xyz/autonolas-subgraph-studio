@@ -55,6 +55,7 @@ export const BASIUS_AGENT_ID = BigInt.fromI32(115)
 export const PROTOCOL_VELODROME_V2 = "aerodrome-v2"
 export const PROTOCOL_VELODROME_V3 = "aerodrome-cl"
 export const PROTOCOL_AERO_CL = "aero-cl"  // Aero CL positions; rewards attributed from the gauge's EmissionsClaimed
+export const AERO_CL_EMISSION_TOKEN = Address.fromString("0x3f5bf3edac59d650d8fdf9657a71f2f904a3a4ee") // AERO minted by Aero CL gauges (not the older AERO above)
 
 // Excluded service IDs — none currently; kept for parity with the optimism filter.
 export const EXCLUDED_SERVICE_IDS: BigInt[] = []

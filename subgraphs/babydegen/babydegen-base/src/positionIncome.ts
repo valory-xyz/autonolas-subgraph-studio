@@ -7,7 +7,7 @@ import {
   CreditedRewardClaim,
   Service
 } from "../generated/schema"
-import { PROTOCOL_VELODROME_V3, PROTOCOL_AERO_CL } from "./constants"
+import { PROTOCOL_VELODROME_V3, PROTOCOL_AERO_CL, AERO_CL_EMISSION_TOKEN } from "./constants"
 import { getTokenPriceUSD } from "./priceDiscovery"
 import { getTokenDecimals } from "./tokenUtils"
 import { calculatePositionROI } from "./roiCalculation"
@@ -188,6 +188,9 @@ function attributeEmissionsClaims(
   amount: BigInt,
   receipt: ethereum.TransactionReceipt
 ): boolean {
+  if (!event.address.equals(AERO_CL_EMISSION_TOKEN)) {
+    return false
+  }
   let paid = BigInt.zero()
   let credited = false
   let logs = receipt.logs
@@ -209,6 +212,14 @@ function attributeEmissionsClaims(
     creditReward(position, toHuman(claimAmount, event.address), getTokenPriceUSD(event.address, event.block.timestamp, false))
     paid = paid.plus(claimAmount)
     credited = true
+  }
+  if (credited && paid.lt(amount)) {
+    log.warning("REWARDS: tx {} — {} of {} paid to safe {} not attributed to a tokenId", [
+      event.transaction.hash.toHexString(),
+      amount.minus(paid).toString(),
+      amount.toString(),
+      safe.toHexString()
+    ])
   }
   return credited
 }
