@@ -54,7 +54,6 @@ export const AERO_NFT_MANAGER = Address.fromString("0x4857DB576eE0e45F10525eC595
 export const AERO_CL_FACTORY = Address.fromString("0xfeaB42D90055db3a0616249f76B6002D72266778")
 export const AERO_V2_STABLE_FACTORY = Address.fromString("0x78589E876edcEbdce72ee3436ab3c9AD3a7cEF2D")
 export const AERO_V2_VOLATILE_FACTORY = Address.fromString("0x8E6a9FCd1d638CC760Ffba397605Fe3355dE76D2")
-export const AERO_GAUGE_MANAGER = Address.fromString("0xbF234b32c5e58868243A4a14831626f3EdE7b183")        // GaugeCreated → Aero v2 pool->gauge map
 
 // Uniswap V3 addresses (Optimism mainnet)
 export const UNI_V3_MANAGER = Address.fromString("0xC36442b4a4522E871399CD717aBDD847Ab11FE88") // Uniswap V3 NFT Position Manager

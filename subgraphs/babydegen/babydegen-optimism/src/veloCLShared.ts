@@ -58,7 +58,13 @@ export function clVenueFor(protocol: string): CLVenue {
 }
 
 export function clVenueForManager(manager: Address): CLVenue {
-  return clVenueFor(manager.equals(AERO_NFT_MANAGER) ? PROTOCOL_AERO_CL : PROTOCOL_VELODROME_V3)
+  if (manager.equals(AERO_NFT_MANAGER)) {
+    return clVenueFor(PROTOCOL_AERO_CL)
+  }
+  if (!manager.equals(VELO_MANAGER)) {
+    log.critical("clVenueForManager: {} is not a known CL position manager", [manager.toHexString()])
+  }
+  return clVenueFor(PROTOCOL_VELODROME_V3)
 }
 
 // What refreshVeloCLPosition needs to create a position it hasn't seen: the NFT's owner and
@@ -437,7 +443,7 @@ function refreshOrCreateCLPosition(
     } else if (venue.protocol == PROTOCOL_AERO_CL) {
       log.warning(
         "xAERO rewards: gauge.earned() reverted for active CL position {} (gauge {}, account {}, tokenId {}) — recording 0 reward.",
-        [positionId.toHexString(), gaugeAddress.toHexString(), nftOwner.toHexString(), tokenId.toString()]
+        [positionId.toString(), gaugeAddress.toHexString(), nftOwner.toHexString(), tokenId.toString()]
       )
     }
   }
@@ -497,7 +503,7 @@ function resolveCLGauge(pool: VelodromeCLPool, position: ProtocolPosition, venue
   if (gaugeResult.reverted) {
     log.warning(
       "CL rewards: pool.gauge() reverted for position {} (pool {}, tokenId {}) — using the cached gauge, if any.",
-      [position.id.toHexString(), pool._address.toHexString(), position.tokenId.toString()]
+      [position.id.toString(), pool._address.toHexString(), position.tokenId.toString()]
     )
     return cached ? Address.fromBytes(cached!) : Address.zero()
   }

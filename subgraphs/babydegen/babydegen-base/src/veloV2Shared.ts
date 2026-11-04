@@ -64,7 +64,6 @@ function setV2PoolFee(pp: ProtocolPosition, poolContract: VelodromeV2Pool): void
 // See AERO-REWARDS-PLAN.md §7.
 function resolveV2Gauge(poolAddress: Address, pp: ProtocolPosition): Address {
   if (pp.protocol == PROTOCOL_AERO_V2) {
-    // Aero's V2Gauge has the same balanceOf/earned(address) as the legacy one, so VeloV2Gauge binds it.
     const aeroGauge = AeroGauge.load(poolAddress)
     if (aeroGauge == null) {
       return Address.zero() // pool has no gauge yet
@@ -406,6 +405,7 @@ export function refreshVeloV2Position(
   let rewardUSD = BigDecimal.zero()
   const gaugeAddr = resolveV2Gauge(poolAddress, pp)
   if (!gaugeAddr.equals(Address.zero())) {
+    // Aero's V2Gauge has the same balanceOf/earned(address) as the legacy one, so VeloV2Gauge binds it.
     const gauge = VeloV2Gauge.bind(gaugeAddr)
     const stakedRes = gauge.try_balanceOf(userAddress)
     if (!stakedRes.reverted) {

@@ -62,7 +62,6 @@ export const AERO_NFT_MANAGER = Address.fromString("0x4857DB576eE0e45F10525eC595
 export const AERO_CL_FACTORY = Address.fromString("0x9CB220581b91b0C83223012FE69688b92aD07a76")
 export const AERO_V2_STABLE_FACTORY = Address.fromString("0x78589E876edcEbdce72ee3436ab3c9AD3a7cEF2D")
 export const AERO_V2_VOLATILE_FACTORY = Address.fromString("0x8E6a9FCd1d638CC760Ffba397605Fe3355dE76D2")
-export const AERO_GAUGE_MANAGER = Address.fromString("0xbF234b32c5e58868243A4a14831626f3EdE7b183")        // GaugeCreated → Aero v2 pool->gauge map
 
 // ---- Olas service configuration (Base) --------------------------------------
 // Canonical ServiceRegistryL2 on Base = 0x3C1fF68f5aa342D296d4DEe4Bb1cACCA912D95fE (set in subgraph.yaml).

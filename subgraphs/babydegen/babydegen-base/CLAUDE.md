@@ -93,7 +93,7 @@ eUSD / axlUSDC, and USDT / DAI / USDe / USDS (Chainlink-priced, see Aero below).
 AERO/USDC volatile pool `0x6cdcb1c4…` via the `velodrome_v2` adapter (`tokenConfig.ts`).
 **OLAS is not tracked** — Basius holds none and it isn't a trading asset for this agent.
 
-> **AERO gauge rewards.** Both DEX paths now read claimable AERO from the position's gauge
+> **AERO gauge rewards (legacy Aerodrome venues; Aero: see below).** Both DEX paths now read claimable AERO from the position's gauge
 > into `usdCurrentWithRewards` (→ APR/ROI):
 > - **V2** (`refreshVeloV2Position`): resolves the gauge via Aerodrome **Voter** (`gauges(pool)`,
 >   `VELO_VOTER`), counts `gauge.balanceOf(safe)` as **staked LP** (so a staked position isn't
@@ -113,7 +113,7 @@ AERO/USDC volatile pool `0x6cdcb1c4…` via the `velodrome_v2` adapter (`tokenCo
 > (0 = stable, -1 = volatile, positive = CL tickSpacing).
 
 > **V2 entry amounts.** `Transfer(0x0 → safe)` creates the position and stores a
-> `PendingMintPosition` keyed by `getVeloV2PositionId` (protocol string `aerodrome-v2`); the
+> `PendingMintPosition` keyed by `getVeloV2PositionId` (protocol string from `v2ProtocolFor`: `aerodrome-v2` or `aero-v2`); the
 > same-tx `Mint` event then records the real entry amounts (entry USD feeds closed-position
 > ROI, so a dropped mint pins ROI/APR at 0). If entry amounts are still zero on a later
 > refresh, `refreshVeloV2Position` backfills them from current amounts — keyed on
