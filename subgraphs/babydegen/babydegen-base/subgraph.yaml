@@ -472,9 +472,7 @@ dataSources:
       file: ./src/veloNFTManager.ts
 
   # ---- Aero CL positions ----------------------------------------------------
-  # Same handlers as the Slipstream NFPM above, except IncreaseLiquidity, which on
-  # the Aero NFPM carries two extra tick arguments. The shared refresh binds the
-  # NFPM through VelodromePositionNFTManager (identical positions() layout).
+  # Slipstream handlers, except handleAeroIncreaseLiquidity (veloNFTManager.ts).
   - kind: ethereum
     name: AeroNFTManager
     network: base

@@ -57,7 +57,8 @@ strings changed: `ProtocolPosition.protocol` is now `aerodrome-cl` / `aerodrome-
 | AERO (Aero) | `0x3f5bF3EdAc59d650D8fDf9657a71F2f904A3a4Ee` | Aero gauge reward token (`AERO_PROTOCOL_AERO`) |
 
 Chainlink feeds (Base, verified on-chain — live, 8 decimals): ETH/USD `0x71041ddd…`,
-USDC/USD `0x7e860098…`.
+USDC/USD `0x7e860098…`, USDT/USD `0xf19d560e…`, DAI/USD `0x591e7923…`, USDe/USD `0x790181e9…`,
+USDS/USD `0x2330aaE3…` (`constants.ts`).
 
 **startBlock** = `47163056` (earliest agentId-115 service, #607, 2026-06-10) for every data
 source except the Aero ones, which start at their deployment: NFPM `52881675`, v2 volatile /
@@ -79,7 +80,7 @@ Optimism values): StakingToken `0x2585e63df7BD9De8e058884D496658a030b5c6ce`, Act
 > particular: token/funding sources need `AggregatorV3Interface` + `VelodromeCLPool` +
 > `VelodromeV2Pool` (token pricing via `priceAdapters`), `ServiceRegistryL2` needs
 > `AggregatorV3Interface` (`getEthUsd` seeds `firstFundingEthPrice`), and `PortfolioScheduler`
-> needs `VeloVoter` + `VeloV2Gauge` + `VeloCLGauge` (the snapshot block handler runs
+> needs `VeloVoter` + `VeloV2Gauge` + `VeloCLGauge` + `AeroCLGauge` (the snapshot block handler runs
 > `refreshAllActivePositions`, which re-binds each position's gauge). Run
 > `node scripts/check-subgraph-abis.mjs` to list candidate gaps (it over-approximates
 > branch-guarded binds — review against the code).
@@ -133,7 +134,7 @@ v0.13.10. Aero positions are labelled **`aero-cl` / `aero-v2`**; legacy labels a
   no `stable()`). Aero v2 pools have no `gauge()` and the Aero Voter has no `gauges(pool)`, so the
   GaugeManager's `GaugeCreated` builds `AeroGauge { pool → gauge }`, read on every refresh by the
   `aero-v2` branch of `resolveV2Gauge`.
-- **Pricing** — Aero's AERO prices off that same Aero v2 AERO/USDC volatile pool.
+- **Pricing** — Aero's AERO prices off the Aero v2 AERO/USDC volatile pool `0xF634058d…` (`tokenConfig.ts`).
   USDT / DAI / USDe / USDS price off their own Chainlink feeds (priority 1) with
   the Aero CL tickSpacing-1 USDC/USDT pool as USDT's priority-2 fallback. DAI / USDe / USDS are
   feed-only (the CL adapter mis-scales 18-vs-6-decimal pairs, so a pool would price them ~0). They are

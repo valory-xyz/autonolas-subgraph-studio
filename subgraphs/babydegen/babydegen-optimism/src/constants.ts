@@ -50,10 +50,10 @@ export const VELO_FACTORY = Address.fromString("0xCc0bDDB707055e04e497aB22a59c2a
 
 // Aero (merged Velodrome/Aerodrome, live 2026-10-22) — Optimism mainnet.
 // Same addresses as on Base except the CL factory, read from AERO_NFT_MANAGER.factory().
-export const AERO_NFT_MANAGER = Address.fromString("0x4857DB576eE0e45F10525eC59527BfD10beeC60b")          // Aero CL NFPM
-export const AERO_CL_FACTORY = Address.fromString("0xfeaB42D90055db3a0616249f76B6002D72266778")           // Aero CL factory
-export const AERO_V2_STABLE_FACTORY = Address.fromString("0x78589E876edcEbdce72ee3436ab3c9AD3a7cEF2D")    // Aero v2 stable pools
-export const AERO_V2_VOLATILE_FACTORY = Address.fromString("0x8E6a9FCd1d638CC760Ffba397605Fe3355dE76D2")  // Aero v2 volatile pools
+export const AERO_NFT_MANAGER = Address.fromString("0x4857DB576eE0e45F10525eC59527BfD10beeC60b")
+export const AERO_CL_FACTORY = Address.fromString("0xfeaB42D90055db3a0616249f76B6002D72266778")
+export const AERO_V2_STABLE_FACTORY = Address.fromString("0x78589E876edcEbdce72ee3436ab3c9AD3a7cEF2D")
+export const AERO_V2_VOLATILE_FACTORY = Address.fromString("0x8E6a9FCd1d638CC760Ffba397605Fe3355dE76D2")
 export const AERO_GAUGE_MANAGER = Address.fromString("0xbF234b32c5e58868243A4a14831626f3EdE7b183")        // GaugeCreated → Aero v2 pool->gauge map
 
 // Uniswap V3 addresses (Optimism mainnet)

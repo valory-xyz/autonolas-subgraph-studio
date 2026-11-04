@@ -24,7 +24,7 @@ surface (Aerodrome only — Uniswap V3 and Balancer are dropped), and the agent 
   > service on the generic agentId 9 — it is *not* Basius.
 - **DEX:** Aerodrome (a Velodrome fork — the existing `velo*` handlers and
   `abis/defi/Velodrome*` ABIs are reused; the consumer-facing `protocol` strings are
-  `aerodrome-cl` / `aerodrome-v2`).
+  `aerodrome-cl` / `aerodrome-v2`, plus `aero-cl` / `aero-v2` for Aero, the merged protocol).
 
 ## Status
 
