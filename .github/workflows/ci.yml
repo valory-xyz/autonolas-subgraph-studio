@@ -46,7 +46,7 @@ jobs:
             generate: true
           - subgraph: service-registry
             path: subgraphs/service-registry
-            manifest: subgraph.gnosis.yaml
+            manifest: subgraph.optimism.yaml
             generate: true
           - subgraph: pearl-transactions
             path: subgraphs/pearl-transactions
@@ -62,10 +62,6 @@ jobs:
             build-all-manifests: true
 
           # Nested subgraphs with standalone manifests
-          - subgraph: predict-omen
-            path: subgraphs/predict/predict-omen
-          - subgraph: predict-polymarket
-            path: subgraphs/predict/predict-polymarket
           - subgraph: babydegen-optimism
             path: subgraphs/babydegen/babydegen-optimism
           - subgraph: babydegen-base
@@ -192,8 +188,6 @@ jobs:
           - "subgraphs/pearl-transactions"
           - "subgraphs/legacy-mech-fees"
           - "subgraphs/new-mech-fees"
-          - "subgraphs/predict/predict-omen"
-          - "subgraphs/predict/predict-polymarket"
           - "subgraphs/babydegen/babydegen-optimism"
           - "subgraphs/babydegen/babydegen-base"
     steps:

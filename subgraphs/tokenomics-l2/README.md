@@ -2,6 +2,12 @@
 
 Tracks OLAS token transfers and holder balances across 6 Layer 2 networks using a shared codebase with per-network manifest generation.
 
+Robinhood holder tracking is deployed through the
+[Infra tokenomics squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/tokenomics),
+which also supports Base. These indexers track OLAS supply, holders and transfers,
+not Dispenser incentives. See the internal **[WD] Subgraph&Squids Development and Deployment Tracking**
+document for current deployments and consumer migrations.
+
 > **Technical reference**: See [CLAUDE.md](CLAUDE.md) for full schema reference, handler details, multi-network pattern, and AI context.
 
 ## Quick Overview

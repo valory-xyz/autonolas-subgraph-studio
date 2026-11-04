@@ -4,11 +4,12 @@ Indexes **funds movement for Pearl Master Safe and Agent Safe accounts** on
 Gnosis, Polygon, Optimism, Base. The on-chain backend for the Pearl wallet
 transaction-history view (VLOP-73).
 
-> **Status — implemented (phases 1a/1b/2a/2b); all four networks published
-> on The Graph.** As of 2026-06-12 Gnosis is at chain head; Optimism, Base
-> and Polygon are still backfilling (Polygon slowest — the USDC.e-dense
-> range; see [`INDEXING-PERFORMANCE.md`](./INDEXING-PERFORMANCE.md)). See
-> [`CLAUDE.md`](./CLAUDE.md) for architecture and
+> **Deployment:** Gnosis and Optimism use this subgraph; Base and Polygon
+> use the [Infra squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/pearl-transactions).
+> For Pearl's consumer configuration, see [olas-operate-app](https://github.com/valory-xyz/olas-operate-app).
+> Current versions and migrations are tracked in the internal
+> **[WD] Subgraph&Squids Development and Deployment Tracking** document.
+> See [`CLAUDE.md`](./CLAUDE.md) for architecture and
 > [`IMPLEMENTATION-PLAN.md`](./IMPLEMENTATION-PLAN.md) for the design.
 
 ## What it covers
@@ -140,5 +141,5 @@ verification checklist.
 - [`IMPLEMENTATION-PLAN.md`](./IMPLEMENTATION-PLAN.md) — full design.
 - [`subgraphs/staking`](../staking) — `StakingFactory`/`StakingProxy` source.
 - [`subgraphs/service-registry`](../service-registry) — `ServiceRegistryL2` source.
-- [`predict-polymarket`](../predict/predict-polymarket) / [`predict-omen`](../predict/predict-omen)
+- [Polymarket squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/predict-polymarket) / [Omen self-hosted subgraph](https://github.com/valory-xyz/autonolas-subgraph/tree/main/subgraphs/predict-omen)
   — in-market bet ledger; join on Agent Safe address.

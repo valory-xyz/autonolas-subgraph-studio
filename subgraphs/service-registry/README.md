@@ -1,6 +1,14 @@
 # Service Registry Subgraph
 
-Tracks the lifecycle of Olas services across Ethereum mainnet and 7 L2 networks, including agent registration, multisig creation, ERC-8004 agent identity, and daily activity metrics.
+Tracks Olas service lifecycle, multisigs, ERC-8004 identity and daily activity.
+
+**Current hosting:** Ethereum, Polygon, Optimism, Arbitrum and Celo use this
+Studio subgraph. Gnosis uses the
+[self-hosted subgraph](https://github.com/valory-xyz/autonolas-subgraph/tree/main/subgraphs/service-registry);
+Base and Robinhood use the
+[service-registry squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/service-registry).
+Retained manifests describe source coverage, not consumer routing. See the internal
+**[WD] Subgraph&Squids Development and Deployment Tracking** document for current endpoints and versions.
 
 > **Technical reference**: See [CLAUDE.md](CLAUDE.md) for full schema reference, handler details, business rules, multi-network configuration, and AI context.
 
