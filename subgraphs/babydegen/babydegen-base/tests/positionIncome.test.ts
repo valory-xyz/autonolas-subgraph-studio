@@ -332,6 +332,7 @@ describe("Aero CL rewards from EmissionsClaimed", () => {
 
   test("a Transfer of another token does not take the claims", () => {
     let positions = seedTwoAeroPositions()
+    seedTokenPrice(BOLD, "BOLD", 18, "1")
     let receipt = twoAeroClaimsReceipt()
     let other = newTransfer(BOLD, OTHER, ACCOUNT_D14, BOTH_CLAIMS_PAID, 9, receipt)
 
