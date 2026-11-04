@@ -179,23 +179,26 @@ function sum(values: BigDecimal[]): BigDecimal {
   return total
 }
 
-// Aero CL: the gauge's EmissionsClaimed names the tokenId. Its _rewardAmount picks out the
-// Transfer that paid it, whoever sent it (xAERO comes from LeafEmissionsHandler, Base AERO is minted)
-function attributeEmissionsClaim(
+// Aero CL: each EmissionsClaimed to the Safe names its tokenId and amount. One claimEmissions over
+// several tokenIds pays them all with a single Transfer, sent by whoever (xAERO comes from
+// LeafEmissionsHandler, Base AERO is minted), so a Transfer pays the claims its amount covers
+function attributeEmissionsClaims(
   event: ethereum.Event,
   safe: Address,
   amount: BigInt,
   receipt: ethereum.TransactionReceipt
 ): boolean {
+  let paid = BigInt.zero()
+  let credited = false
   let logs = receipt.logs
   for (let i = 0; i < logs.length; i++) {
     let topics = logs[i].topics
-    if (topics.length < 4 || !topics[0].equals(EMISSIONS_CLAIMED_TOPIC) ||
-        !wordToAddress(topics[3]).equals(safe) || !wordToBigInt(logs[i].data).equals(amount)) {
+    if (topics.length < 4 || !topics[0].equals(EMISSIONS_CLAIMED_TOPIC) || !wordToAddress(topics[3]).equals(safe)) {
       continue
     }
+    let claimAmount = wordToBigInt(logs[i].data)
     let claimId = event.transaction.hash.concatI32(logs[i].logIndex.toI32())
-    if (CreditedRewardClaim.load(claimId) != null) {
+    if (paid.plus(claimAmount).gt(amount) || CreditedRewardClaim.load(claimId) != null) {
       continue
     }
     let position = loadMappedPosition(PROTOCOL_AERO_CL, wordToBigInt(topics[2]))
@@ -203,10 +206,11 @@ function attributeEmissionsClaim(
       continue
     }
     new CreditedRewardClaim(claimId).save()
-    creditReward(position, toHuman(amount, event.address), getTokenPriceUSD(event.address, event.block.timestamp, false))
-    return true
+    creditReward(position, toHuman(claimAmount, event.address), getTokenPriceUSD(event.address, event.block.timestamp, false))
+    paid = paid.plus(claimAmount)
+    credited = true
   }
-  return false
+  return credited
 }
 
 // The tokenId of the first Withdraw(user = Safe, tokenId, …) the gauge emits after the reward Transfer
@@ -239,7 +243,7 @@ export function attributeRewardTransfer(event: ethereum.Event, from: Address, sa
     ])
     return false
   }
-  if (attributeEmissionsClaim(event, safe, amount, receipt)) {
+  if (attributeEmissionsClaims(event, safe, amount, receipt)) {
     return true
   }
 

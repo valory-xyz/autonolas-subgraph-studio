@@ -241,6 +241,27 @@ const ACCOUNT_D14 = Address.fromString("0x787fd1dc3b533171781e4ae1a563c1ac7b4435
 const BASE_AERO = Address.fromString("0x3f5bf3edac59d650d8fdf9657a71f2f904a3a4ee")
 const AERO_PAID = BigInt.fromString("2618141535596443223")
 
+// claimEmissions(safe, safe, [first, second]): one EmissionsClaimed per tokenId, paid by one Transfer of their sum
+const FIRST_CLAIM_PAID = BigInt.fromString("1500000000000000000")
+const SECOND_CLAIM_PAID = BigInt.fromString("250000000000000000")
+const BOTH_CLAIMS_PAID = FIRST_CLAIM_PAID.plus(SECOND_CLAIM_PAID)
+
+function seedTwoAeroPositions(): ProtocolPosition[] {
+  seedService(ACCOUNT_D14, OPERATOR_SAFE, AGENT_INSTANCE)
+  return [
+    seedPosition(ACCOUNT_D14, PROTOCOL_AERO_CL, BigInt.fromI32(1226169), USDC_NATIVE, BOLD, null, BigInt.fromI32(1), "0"),
+    seedPosition(ACCOUNT_D14, PROTOCOL_AERO_CL, BigInt.fromI32(1226170), USDC_NATIVE, BOLD, null, BigInt.fromI32(1), "0")
+  ]
+}
+
+function twoAeroClaimsReceipt(): ethereum.TransactionReceipt {
+  return newReceipt([
+    newLog("0x3f5bf3edac59d650d8fdf9657a71f2f904a3a4ee", ["0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef", "0x0000000000000000000000000000000000000000000000000000000000000000", "0x000000000000000000000000787fd1dc3b533171781e4ae1a563c1ac7b4435e4"], "0x00000000000000000000000000000000000000000000000018493fba64ef0000", 10),
+    newLog("0x46a9dca72d78366571be583aa69c1dc16e6889fb", ["0x7b6bd720815adbeaaaed4fc759e1a535705901f33709fbb33e62ee9a89427bb1", "0x000000000000000000000000787fd1dc3b533171781e4ae1a563c1ac7b4435e4", "0x000000000000000000000000000000000000000000000000000000000012b5b9", "0x000000000000000000000000787fd1dc3b533171781e4ae1a563c1ac7b4435e4"], "0x00000000000000000000000000000000000000000000000014d1120d7b160000", 11),
+    newLog("0x46a9dca72d78366571be583aa69c1dc16e6889fb", ["0x7b6bd720815adbeaaaed4fc759e1a535705901f33709fbb33e62ee9a89427bb1", "0x000000000000000000000000787fd1dc3b533171781e4ae1a563c1ac7b4435e4", "0x000000000000000000000000000000000000000000000000000000000012b5ba", "0x000000000000000000000000787fd1dc3b533171781e4ae1a563c1ac7b4435e4"], "0x00000000000000000000000000000000000000000000000003782dace9d90000", 12)
+  ])
+}
+
 describe("Aero CL rewards from EmissionsClaimed", () => {
   afterEach(() => {
     clearStore()
@@ -285,5 +306,26 @@ describe("Aero CL rewards from EmissionsClaimed", () => {
     assert.assertTrue(!attributeRewardTransfer(event, Address.zero(), ACCOUNT_D14, AERO_PAID))
 
     positionField(p, "claimedRewards", "2.618141535596443223")
+  })
+
+  test("one claimEmissions over two tokenIds credits each its own amount", () => {
+    let positions = seedTwoAeroPositions()
+    let event = newTransfer(BASE_AERO, Address.zero(), ACCOUNT_D14, BOTH_CLAIMS_PAID, 10, twoAeroClaimsReceipt())
+
+    assert.assertTrue(attributeRewardTransfer(event, Address.zero(), ACCOUNT_D14, BOTH_CLAIMS_PAID))
+    assert.assertTrue(!attributeRewardTransfer(event, Address.zero(), ACCOUNT_D14, BOTH_CLAIMS_PAID))
+
+    positionField(positions[0], "claimedRewards", "1.5")
+    positionField(positions[1], "claimedRewards", "0.25")
+  })
+
+  test("a Transfer smaller than the claims credits only the claims it covers", () => {
+    let positions = seedTwoAeroPositions()
+    let event = newTransfer(BASE_AERO, Address.zero(), ACCOUNT_D14, SECOND_CLAIM_PAID, 10, twoAeroClaimsReceipt())
+
+    assert.assertTrue(attributeRewardTransfer(event, Address.zero(), ACCOUNT_D14, SECOND_CLAIM_PAID))
+
+    positionField(positions[0], "claimedRewards", "0")
+    positionField(positions[1], "claimedRewards", "0.25")
   })
 })
