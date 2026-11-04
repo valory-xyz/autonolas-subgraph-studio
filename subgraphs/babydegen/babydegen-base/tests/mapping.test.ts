@@ -1637,11 +1637,14 @@ describe("optimus#412 stablecoins (Chainlink first, pool fallback)", () => {
       assert.i32Equals(1, cfg.priceSources[0].priority)
       assert.assertTrue(CRITICAL_STABLECOINS.indexOf(tokens[i].toHexString()) == -1)
     }
-    // USDT/DAI/USDe fall back to their Aero CL pool vs USDC; USDS has no pool
-    const dai = changetype<TokenConfig>(getTokenConfig(DAI))
-    assert.stringEquals("velodrome_slipstream", dai.priceSources[1].sourceType)
-    assert.i32Equals(2, dai.priceSources[1].priority)
-    assert.i32Equals(1, changetype<TokenConfig>(getTokenConfig(USDS)).priceSources.length)
+    // USDT falls back to its Aero CL pool vs USDC; DAI, USDe and USDS are feed-only
+    const usdt = changetype<TokenConfig>(getTokenConfig(USDT))
+    assert.stringEquals("velodrome_slipstream", usdt.priceSources[1].sourceType)
+    assert.i32Equals(2, usdt.priceSources[1].priority)
+    const feedOnly: Address[] = [DAI, USDE, USDS]
+    for (let i = 0; i < feedOnly.length; i++) {
+      assert.i32Equals(1, changetype<TokenConfig>(getTokenConfig(feedOnly[i])).priceSources.length)
+    }
   })
 
   test("a valid feed price is used and the fallback pool is not read", () => {

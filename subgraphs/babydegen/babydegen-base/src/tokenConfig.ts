@@ -216,15 +216,13 @@ function initializeTokens(): void {
     ]
   ))
 
-  // optimus#412 stablecoins. Fallback pools are the Aero CL tickSpacing-1 pools vs USDC.
-  // The DAI and USDe fallbacks are inert for now: the CL adapter's decimal adjustment is inverted
-  // for 18-vs-6-decimal pairs, so they price ~1e-24 and are rejected. USDT (6/6) works.
+  // optimus#412 stablecoins. USDT falls back to the Aero CL tickSpacing-1 USDC/USDT pool.
+  // DAI, USDe and USDS are feed-only: the CL adapter's decimal adjustment is inverted for
+  // 18-vs-6-decimal pairs, so a pool fallback would price them at ~1e-24.
   TOKENS.set(USDT.toHexString().toLowerCase(), chainlinkStable(USDT, "USDT", 6, "USDT_USD",
     Address.fromString("0xD448990883e3Bf9cDD8ebCA368A3ECF9D629aAf7"))) // Aero USDC/USDT CL
-  TOKENS.set(DAI.toHexString().toLowerCase(), chainlinkStable(DAI, "DAI", 18, "DAI_USD",
-    Address.fromString("0xeF48Feb4c2AcDC3b5b7ceF492B86933B9Bc69c94"))) // Aero DAI/USDC CL
-  TOKENS.set(USDE.toHexString().toLowerCase(), chainlinkStable(USDE, "USDe", 18, "USDE_USD",
-    Address.fromString("0x64F020b475ad7913259daCaFa452351b3390Ad6A"))) // Aero USDe/USDC CL
+  TOKENS.set(DAI.toHexString().toLowerCase(), chainlinkStable(DAI, "DAI", 18, "DAI_USD", null))
+  TOKENS.set(USDE.toHexString().toLowerCase(), chainlinkStable(USDE, "USDe", 18, "USDE_USD", null))
   TOKENS.set(USDS.toHexString().toLowerCase(), chainlinkStable(USDS, "USDS", 18, "USDS_USD", null))
 }
 

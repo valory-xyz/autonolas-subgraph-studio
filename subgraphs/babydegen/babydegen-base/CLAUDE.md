@@ -136,12 +136,12 @@ v0.13.10. Aero positions are labelled **`aero-cl` / `aero-v2`**; legacy labels a
   `0xF634…B18E` → gauge `0xd424…5cd1` (`stakingToken()` = the pool).
 - **Pricing** — Aero's AERO prices off that same Aero v2 AERO/USDC volatile pool.
   optimus#412's USDT / DAI / USDe / USDS price off their own Chainlink feeds (priority 1) with
-  the Aero CL tickSpacing-1 pool vs USDC as a priority-2 fallback (USDS: feed only). They are
+  the Aero CL tickSpacing-1 USDC/USDT pool as USDT's priority-2 fallback. DAI / USDe / USDS are
+  feed-only (the CL adapter mis-scales 18-vs-6-decimal pairs, so a pool would price them ~0). They are
   **not** on `usdcReferencedStable` or `CRITICAL_STABLECOINS`. `getPriceFromSources` reads a
   higher-numbered priority only when every better source failed. They validate against the
   0.5–1.5 band (not USDC's 0.95–1.05), so a depeg their feed reports is kept, and Chainlink
-  answers up to 90000s old are accepted (24h heartbeat + grace). The DAI/USDe pool fallbacks are
-  inert until the CL adapter's mixed-decimal adjustment is fixed.
+  answers up to 90000s old are accepted (24h heartbeat + grace).
 
 ## Schema, core logic, KPIs
 
