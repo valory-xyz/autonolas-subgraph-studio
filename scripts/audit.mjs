@@ -99,6 +99,21 @@ if (!stdout) {
   process.exit(2);
 }
 
+// A network/registry failure can emit JSON errors without any advisories.
+// Require the completed summary so a failed scan cannot pass the gate.
+const auditRows = stdout.split('\n').flatMap((line) => {
+  try { return [JSON.parse(line)]; } catch { return []; }
+});
+if (!auditRows.some((row) => row.type === 'auditSummary') ||
+    auditRows.some((row) => row.type === 'error')) {
+  console.error('::error::`yarn audit` did not complete successfully.');
+  for (const row of auditRows.filter((row) => row.type === 'error')) {
+    console.error(row.data);
+  }
+  if (stderr) console.error(stderr);
+  process.exit(2);
+}
+
 const advisories = parseAdvisories(stdout);
 
 const blocking = [];

@@ -143,7 +143,9 @@ jobs:
 
       # `yarn audit` reads yarn.lock directly; no install needed.
       - name: Run audit
-        run: yarn audit:prod
+        run: |
+          node --test scripts/audit.test.mjs
+          yarn audit:prod
 
   install-hooks:
     name: Install-hook audit
