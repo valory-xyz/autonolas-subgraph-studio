@@ -330,6 +330,16 @@ describe("Aero CL rewards from EmissionsClaimed", () => {
     positionField(positions[1], "claimedRewards", "0")
   })
 
+  test("a claim the Transfer cannot cover is skipped and later ones are still credited", () => {
+    let positions = seedTwoAeroPositions()
+    let event = newTransfer(BASE_AERO, Address.zero(), ACCOUNT_D14, SECOND_CLAIM_PAID, 10, twoAeroClaimsReceipt())
+
+    assert.assertTrue(attributeRewardTransfer(event, Address.zero(), ACCOUNT_D14, SECOND_CLAIM_PAID))
+
+    positionField(positions[0], "claimedRewards", "0")
+    positionField(positions[1], "claimedRewards", "0.25")
+  })
+
   test("a Transfer of another token does not take the claims", () => {
     let positions = seedTwoAeroPositions()
     seedTokenPrice(BOLD, "BOLD", 18, "1")
