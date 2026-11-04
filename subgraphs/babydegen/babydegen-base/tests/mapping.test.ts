@@ -1544,9 +1544,14 @@ describe("Legacy CL venue after the CLVenue refactor", () => {
 
     createMockedFunction(LEGACY_CL_POOL, "gauge", "gauge():(address)")
       .withArgs([]).returns([ethereum.Value.fromAddress(DUMMY1)])
+    // Reading the other gauge would record 5 rewards instead of the cached gauge's 2
+    createMockedFunction(DUMMY1, "earned", "earned(address,uint256):(uint256)")
+      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE), ethereum.Value.fromUnsignedBigInt(AERO_TOKEN_ID)])
+      .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromString("5000000000000000000"))])
     refreshVeloCLPosition(id, AERO_TOKEN_ID, aeroBlock(), TX_HASH, false)
 
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "rewardsContract", LEGACY_CL_GAUGE.toHexString())
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimableReward", "2")
   })
 
   test("a legacy pool whose gauge() reverts still closes the position", () => {
