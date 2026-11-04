@@ -1750,6 +1750,21 @@ describe("pearl-transactions / Pearl Safe → Agent Signer MASTER_TO_AGENT", () 
     assert.entityCount("FundsMovement", 0);
   });
 
+  test("a CALL to the Agent Signer carrying value and data writes no row", () => {
+    seedPearlFunding();
+    fundFromPearlSafe(
+      execTransactionInput(
+        MULTISEND,
+        BigInt.zero(),
+        multiSendData(packedLeg(0, SIGNER, AMOUNT, "a9059cbb")),
+        1
+      ),
+      mockTx(93)
+    );
+    assert.entityCount("FundsMovement", 0);
+    assert.entityCount("AgentFundingEvent", 0);
+  });
+
   test("DELEGATECALL to another contract writes no row", () => {
     seedPearlFunding();
     fundFromPearlSafe(
@@ -1804,11 +1819,12 @@ describe("pearl-transactions / unpackMultiSend", () => {
           packedLeg(0, AGENT_SAFE, BigInt.zero(), "a9059cbb") +
           packedLeg(1, AGENT_SAFE, AMOUNT) +
           packedLeg(0, AGENT_SAFE, BigInt.zero()) +
+          packedLeg(0, AGENT_SAFE, AMOUNT, "a9059cbb") + // value AND data
           packedLeg(0, SIGNER, AMOUNT)
       )
     )!;
     assert.i32Equals(legs.length, 1);
-    assert.i32Equals(legs[0].index, 3);
+    assert.i32Equals(legs[0].index, 4);
     assert.addressEquals(legs[0].to, SIGNER);
   });
 

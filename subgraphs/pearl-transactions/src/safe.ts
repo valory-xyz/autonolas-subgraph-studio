@@ -130,7 +130,9 @@ function hasExecTransactionSelector(input: Bytes): boolean {
 //     DELEGATECALL to MultiSend v1.3.0 unpacked leg by leg; see
 //     writeAgentSignerLegs.
 //
-// Relayed or module executions are not decoded, and every other native
+// A tx that does not call the Safe itself (a relay through a contract, or a
+// module execution) is skipped before decoding; for the Agent Safe, a call
+// whose recipient is not the tx sender is also skipped. Every other native
 // outflow stays unindexed.
 //
 // Fires on every execution of every Safe sharing the template, so every
