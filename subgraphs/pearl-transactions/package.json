@@ -18,7 +18,7 @@
     "matchstick-as": "0.6.0"
   },
   "resolutions": {
-    "//": "Selective version resolutions. See subgraphs/staking/package.json for the full explainer; resolutions converge across all subgraph package.json files in this repo. zod: **/web3-validator/zod forces zod 4 for advisory 1243066, which has no patched 3.x; web3-validator declares zod ^3, and under zod 4 its validation errors lose the failing value and type. Drop the override once web3-validator supports zod 4.",
+    "//": "Selective version resolutions. See subgraphs/staking/package.json for the full explainer; resolutions converge across all subgraph package.json files in this repo. zod: see SUPPLY-CHAIN-SECURITY.md §11.",
     "immutable": "^5.1.5",
     "cross-spawn": "^7.0.6",
     "semver": "^7.5.2",
