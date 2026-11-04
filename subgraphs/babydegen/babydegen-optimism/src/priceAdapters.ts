@@ -1,4 +1,4 @@
-import { Address, BigDecimal, BigInt, ethereum, Bytes } from "@graphprotocol/graph-ts"
+import { Address, BigDecimal, BigInt, ethereum, Bytes, log } from "@graphprotocol/graph-ts"
 import { VelodromeCLPool } from "../generated/VeloNFTManager/VelodromeCLPool"
 import { VelodromeV2Pool } from "../generated/templates/VeloV2Pool/VelodromeV2Pool"
 import { AggregatorV3Interface } from "../generated/templates/Safe/AggregatorV3Interface"
@@ -222,18 +222,21 @@ export function getVelodromeV2StablePrice(
   let token0Result = pool.try_token0()
   let token1Result = pool.try_token1()
   if (token0Result.reverted || token1Result.reverted) {
+    log.warning("velodrome_v2_stable: token0()/token1() reverted on pool {} pricing {}", [poolAddress.toHexString(), token.toHexString()])
     return BigDecimal.fromString("0")
   }
   // getAmountOut returns the pool's other token, so that must be the pair token
   let isPair = (token.equals(token0Result.value) && pairToken.equals(token1Result.value)) ||
     (token.equals(token1Result.value) && pairToken.equals(token0Result.value))
   if (!isPair) {
+    log.warning("velodrome_v2_stable: pool {} does not pair {} with {}", [poolAddress.toHexString(), token.toHexString(), pairToken.toHexString()])
     return BigDecimal.fromString("0")
   }
 
   let oneToken = BigInt.fromI32(10).pow(targetTokenConfig.decimals as u8)
   let outResult = pool.try_getAmountOut(oneToken, token)
   if (outResult.reverted) {
+    log.warning("velodrome_v2_stable: getAmountOut() reverted on pool {} pricing {}", [poolAddress.toHexString(), token.toHexString()])
     return BigDecimal.fromString("0")
   }
 

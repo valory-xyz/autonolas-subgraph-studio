@@ -7,7 +7,7 @@ import {
 } from "../generated/VeloNFTManager/VelodromePositionNFTManager"
 import { IncreaseLiquidity as AeroIncreaseLiquidity } from "../generated/AeroNFTManager/AeroPositionNFTManager"
 import { getServiceByAgent } from "./config"
-import { refreshVeloCLPosition, refreshVeloCLPositionWithEventAmounts, refreshVeloCLPositionWithExitAmounts, getVeloCLPositionId, clVenueForManager } from "./veloCLShared"
+import { refreshVeloCLPosition, refreshVeloCLPositionWithEventAmounts, refreshVeloCLPositionWithExitAmounts, getVeloCLPositionId, clVenueForManager, CLPositionCreate } from "./veloCLShared"
 import { Address, Bytes, BigInt, ethereum, log } from "@graphprotocol/graph-ts"
 import { ProtocolPosition, NFTPositionMapping } from "../generated/schema"
 import { calculatePortfolioMetrics } from "./helpers"
@@ -21,7 +21,8 @@ export function handleNFTTransfer(event: Transfer): void {
   const from = event.params.from
   const to = event.params.to
   const tokenId = event.params.tokenId
-  const protocol = clVenueForManager(event.address).protocol
+  const venue = clVenueForManager(event.address)
+  const protocol = venue.protocol
   
   // CASE 1: NFT Minted (Position Opened) - Transfer FROM zero address
   if (from.equals(ZERO_ADDRESS)) {
@@ -48,7 +49,7 @@ export function handleNFTTransfer(event: Transfer): void {
       
       if (position == null) {
         // Create placeholder position - amounts will be set by IncreaseLiquidity
-        refreshVeloCLPosition(positionId, tokenId, event.block, event.transaction.hash, false, to, protocol)
+        refreshVeloCLPosition(positionId, tokenId, event.block, event.transaction.hash, false, new CLPositionCreate(to, venue))
       }
     }
     return

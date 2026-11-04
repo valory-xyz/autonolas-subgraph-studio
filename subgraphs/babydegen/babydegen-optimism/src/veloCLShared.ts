@@ -57,9 +57,20 @@ export function clVenueFor(protocol: string): CLVenue {
   return new CLVenue(VELO_MANAGER, VELO_FACTORY, rewardTokenFor(PROTOCOL_VELODROME_V3), PROTOCOL_VELODROME_V3)
 }
 
-// The venue of the NFPM that emitted an event.
 export function clVenueForManager(manager: Address): CLVenue {
   return clVenueFor(manager.equals(AERO_NFT_MANAGER) ? PROTOCOL_AERO_CL : PROTOCOL_VELODROME_V3)
+}
+
+// What refreshVeloCLPosition needs to create a position it hasn't seen: the NFT's owner and
+// the venue of the NFPM that minted it.
+export class CLPositionCreate {
+  owner: Address
+  venue: CLVenue
+
+  constructor(owner: Address, venue: CLVenue) {
+    this.owner = owner
+    this.venue = venue
+  }
 }
 
 export function getVeloCLPositionId(userAddress: Address, tokenId: BigInt, protocol: string): Bytes {
@@ -253,8 +264,7 @@ export function refreshVeloCLPosition(
   block: ethereum.Block, 
   txHash: Bytes = Bytes.empty(), 
   updatePortfolio: boolean = true,
-  owner: Address | null = null,
-  protocol: string = "" // venue of the position to create; an existing one uses its own
+  create: CLPositionCreate | null = null
 ): void {
   let position = ProtocolPosition.load(positionId)
   let nftOwner: Address
@@ -262,12 +272,11 @@ export function refreshVeloCLPosition(
   let venue: CLVenue
   
   if (!position) {
-    if (owner !== null) {
-      nftOwner = owner
-    } else {
+    if (create === null) {
       return
     }
-    venue = clVenueFor(protocol)
+    nftOwner = create.owner
+    venue = create.venue
     
     // Verify this is a service agent
     if (!isServiceAgent(nftOwner)) {
@@ -379,7 +388,7 @@ export function refreshVeloCLPosition(
   let rewardAmount = BigDecimal.zero()
   let rewardUSD = BigDecimal.zero()
   
-  const gaugeAddress = resolveCLGauge(pool, position)
+  const gaugeAddress = resolveCLGauge(pool, position, venue)
 
   if (!gaugeAddress.equals(Address.zero())) {
     const earnedResult = venue.protocol == PROTOCOL_AERO_CL
@@ -441,16 +450,24 @@ export function refreshVeloCLPosition(
   }
 }
 
-// A CL pool's gauge, cached on the position once found. Returns Address.zero() when the pool
-// has no gauge: gauge() returns zero or reverts. Neither is cached, so a pool gauged later is
-// picked up on the next refresh.
-function resolveCLGauge(pool: VelodromeCLPool, position: ProtocolPosition): Address {
+// A CL pool's gauge; Address.zero() when the pool has none. Legacy gauges are cached on the
+// position once found. Aero CL gauges are re-read on every refresh, like Aero v2 ones, since
+// nothing here shows they can't be replaced. Neither a zero gauge nor a revert is cached, so a
+// pool gauged later is picked up on the next refresh.
+function resolveCLGauge(pool: VelodromeCLPool, position: ProtocolPosition, venue: CLVenue): Address {
   const cached = position.rewardsContract
-  if (cached) {
+  if (cached && venue.protocol != PROTOCOL_AERO_CL) {
     return Address.fromBytes(cached!)
   }
   const gaugeResult = pool.try_gauge()
-  if (gaugeResult.reverted || gaugeResult.value.equals(Address.zero())) {
+  if (gaugeResult.reverted) {
+    log.warning(
+      "CL rewards: pool.gauge() reverted for position {} (pool {}, tokenId {}) — recording 0 reward this refresh.",
+      [position.id.toHexString(), pool._address.toHexString(), position.tokenId.toString()]
+    )
+    return Address.zero()
+  }
+  if (gaugeResult.value.equals(Address.zero())) {
     return Address.zero()
   }
   position.rewardsContract = gaugeResult.value
