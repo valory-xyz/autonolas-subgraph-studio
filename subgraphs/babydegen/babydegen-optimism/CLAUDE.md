@@ -286,7 +286,7 @@ handleBlock (every 1800 blocks)
 ### Claimed rewards (`src/positionIncome.ts`)
 A reward Transfer into the Safe is credited to positions, never to funding:
 - From a gauge (`ProtocolPosition.rewardsContract`): to the tokenId of the first `Withdraw(user = Safe, tokenId, …)` that gauge emits after it in the receipt. With no such Withdraw, a CL `getReward(tokenId)` claim is split across the Safe's active CL positions on that gauge by `claimableReward` as it stood before the block (`ClaimableRewardBeforeBlock` — a refresh in the claim's block writes it to 0), by liquidity when all are 0. A v2 gauge holds one LP position per pool.
-- Aero CL (`aero-cl`): from the gauge's `EmissionsClaimed(_account, _tokenId, _recipient, _rewardAmount)` with `_recipient` = Safe, matched to the Transfer of `_rewardAmount`, credited once (`CreditedRewardClaim`).
+- Aero CL (`aero-cl`): from the gauge's `EmissionsClaimed(_account, _tokenId, _recipient, _rewardAmount)` with `_recipient` = Safe: each event credits its `_tokenId` its own `_rewardAmount`. A Transfer of the Aero CL emission token (`AERO_CL_EMISSION_TOKEN`: xAERO here, the new AERO on Base) pays the not-yet-credited events, in log order, whose amounts it covers; each is credited once (`CreditedRewardClaim`).
 Fees and rewards already sit in the Safe, so portfolio `finalValue` is unchanged by them.
 
 ### ETH-Adjusted Metrics
