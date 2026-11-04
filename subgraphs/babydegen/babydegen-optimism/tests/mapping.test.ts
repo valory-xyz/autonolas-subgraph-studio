@@ -1086,6 +1086,24 @@ describe("Aero v2 pools (factories + GaugeManager)", () => {
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "fee", "30")
   })
 
+  test("a stable Aero v2 venue gives fee 5", () => {
+    createService(SERVICE_SAFE)
+    const venue = new V2PoolVenue(AERO_V2_POOL)
+    venue.protocol = "aero-v2"
+    venue.stable = true
+    venue.save()
+    handleAeroGaugeCreated(createGaugeCreatedEvent(AERO_V2_POOL, AERO_V2_GAUGE))
+    mockAeroV2PoolState(AERO_V2_POOL, AERO_V2_GAUGE)
+    createMockedFunction(AERO_V2_GAUGE, "earned", "earned(address):(uint256)")
+      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)]).reverts()
+
+    refreshVeloV2Position(SERVICE_SAFE, AERO_V2_POOL, v2Block(), TX_HASH, false)
+
+    // stable() is mocked to revert, so 5 can only come from the venue row
+    const id = getVeloV2PositionId(SERVICE_SAFE, AERO_V2_POOL)
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "fee", "5")
+  })
+
   test("a legacy v2 pool with no venue row takes its fee from stable()", () => {
     createService(SERVICE_SAFE)
     mockChainlinkEthUsd()
