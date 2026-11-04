@@ -71,6 +71,15 @@ export class CLPositionCreate {
     this.owner = owner
     this.venue = venue
   }
+
+  positionId(tokenId: BigInt): Bytes {
+    return getVeloCLPositionId(this.owner, tokenId, this.venue.protocol)
+  }
+}
+
+// NFTPositionMapping key of a CL NFT. Not used by handleCollect, whose key has no separator.
+export function getCLMappingId(protocol: string, tokenId: BigInt): Bytes {
+  return Bytes.fromUTF8(protocol + "-" + tokenId.toString())
 }
 
 export function getVeloCLPositionId(userAddress: Address, tokenId: BigInt, protocol: string): Bytes {
@@ -260,11 +269,27 @@ export function refreshVeloCLPositionWithExitAmounts(
 
 export function refreshVeloCLPosition(
   positionId: Bytes,
-  tokenId: BigInt, 
-  block: ethereum.Block, 
-  txHash: Bytes = Bytes.empty(), 
-  updatePortfolio: boolean = true,
-  create: CLPositionCreate | null = null
+  tokenId: BigInt,
+  block: ethereum.Block,
+  txHash: Bytes = Bytes.empty(),
+  updatePortfolio: boolean = true
+): void {
+  refreshOrCreateCLPosition(positionId, tokenId, block, txHash, updatePortfolio, null)
+}
+
+// Creates the position for a newly minted NFT; its id comes from `create`, so it always
+// matches the owner and venue.
+export function createVeloCLPosition(create: CLPositionCreate, tokenId: BigInt, block: ethereum.Block, txHash: Bytes): void {
+  refreshOrCreateCLPosition(create.positionId(tokenId), tokenId, block, txHash, false, create)
+}
+
+function refreshOrCreateCLPosition(
+  positionId: Bytes,
+  tokenId: BigInt,
+  block: ethereum.Block,
+  txHash: Bytes,
+  updatePortfolio: boolean,
+  create: CLPositionCreate | null
 ): void {
   let position = ProtocolPosition.load(positionId)
   let nftOwner: Address
@@ -286,6 +311,10 @@ export function refreshVeloCLPosition(
     const mgr = VelodromePositionNFTManager.bind(venue.manager)
     const dataResult = mgr.try_positions(tokenId)
     if (dataResult.reverted) {
+      log.warning(
+        "CL create: positions() reverted for position {} (tokenId {}, venue {}, manager {}) — not created.",
+        [positionId.toString(), tokenId.toString(), venue.protocol, venue.manager.toHexString()]
+      )
       return
     }
     
@@ -293,6 +322,11 @@ export function refreshVeloCLPosition(
     poolAddress = getPoolAddress(venue, data.value2, data.value3, data.value4 as i32, tokenId)
     
     if (poolAddress.equals(Address.zero())) {
+      log.warning(
+        "CL create: no pool for position {} (tokenId {}, venue {}, factory {}, token0 {}, token1 {}, tickSpacing {}) — not created.",
+        [positionId.toString(), tokenId.toString(), venue.protocol, venue.factory.toHexString(),
+         data.value2.toHexString(), data.value3.toHexString(), data.value4.toString()]
+      )
       return
     }
     
@@ -462,10 +496,10 @@ function resolveCLGauge(pool: VelodromeCLPool, position: ProtocolPosition, venue
   const gaugeResult = pool.try_gauge()
   if (gaugeResult.reverted) {
     log.warning(
-      "CL rewards: pool.gauge() reverted for position {} (pool {}, tokenId {}) — recording 0 reward this refresh.",
+      "CL rewards: pool.gauge() reverted for position {} (pool {}, tokenId {}) — using the cached gauge, if any.",
       [position.id.toHexString(), pool._address.toHexString(), position.tokenId.toString()]
     )
-    return Address.zero()
+    return cached ? Address.fromBytes(cached!) : Address.zero()
   }
   if (gaugeResult.value.equals(Address.zero())) {
     return Address.zero()

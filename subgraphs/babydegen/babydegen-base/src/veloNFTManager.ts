@@ -7,7 +7,7 @@ import {
 } from "../generated/VeloNFTManager/VelodromePositionNFTManager"
 import { IncreaseLiquidity as AeroIncreaseLiquidity } from "../generated/AeroNFTManager/AeroPositionNFTManager"
 import { getServiceByAgent } from "./config"
-import { refreshVeloCLPosition, refreshVeloCLPositionWithEventAmounts, refreshVeloCLPositionWithExitAmounts, getVeloCLPositionId, clVenueForManager, CLPositionCreate } from "./veloCLShared"
+import { refreshVeloCLPosition, refreshVeloCLPositionWithEventAmounts, refreshVeloCLPositionWithExitAmounts, getVeloCLPositionId, clVenueForManager, CLPositionCreate, createVeloCLPosition, getCLMappingId } from "./veloCLShared"
 import { Address, Bytes, BigInt, ethereum, log } from "@graphprotocol/graph-ts"
 import { ProtocolPosition, NFTPositionMapping } from "../generated/schema"
 import { calculatePortfolioMetrics } from "./helpers"
@@ -31,25 +31,21 @@ export function handleNFTTransfer(event: Transfer): void {
     
     if (toService != null) {
       // Create mapping entity for this NFT
-      const mappingId = Bytes.fromUTF8(protocol + "-" + tokenId.toString())
+      const mappingId = getCLMappingId(protocol, tokenId)
       let mapping = NFTPositionMapping.load(mappingId)
       
+      const create = new CLPositionCreate(to, venue)
+      const positionId = create.positionId(tokenId)
       if (mapping == null) {
         mapping = new NFTPositionMapping(mappingId)
         mapping.protocol = protocol
-        const positionId = getVeloCLPositionId(to, tokenId, protocol)
         mapping.positionId = positionId
         mapping.save()
       }
       
-      // Create position entity with zero amounts
-      // (will be updated by IncreaseLiquidity event)
-      let positionId = getVeloCLPositionId(to, tokenId, protocol)
-      let position = ProtocolPosition.load(positionId)
-      
-      if (position == null) {
+      if (ProtocolPosition.load(positionId) == null) {
         // Create placeholder position - amounts will be set by IncreaseLiquidity
-        refreshVeloCLPosition(positionId, tokenId, event.block, event.transaction.hash, false, new CLPositionCreate(to, venue))
+        createVeloCLPosition(create, tokenId, event.block, event.transaction.hash)
       }
     }
     return
@@ -88,7 +84,7 @@ export function handleAeroIncreaseLiquidity(event: AeroIncreaseLiquidity): void 
 
 function increaseLiquidity(event: ethereum.Event, tokenId: BigInt, amount0: BigInt, amount1: BigInt): void {
   // Look up position using mapping
-  const mappingId = Bytes.fromUTF8(clVenueForManager(event.address).protocol + "-" + tokenId.toString())
+  const mappingId = getCLMappingId(clVenueForManager(event.address).protocol, tokenId)
   const mapping = NFTPositionMapping.load(mappingId)
   
   if (mapping == null) {
@@ -111,7 +107,7 @@ export function handleDecreaseLiquidity(event: DecreaseLiquidity): void {
   const tokenId = event.params.tokenId
   
   // Look up position using mapping
-  const mappingId = Bytes.fromUTF8(clVenueForManager(event.address).protocol + "-" + tokenId.toString())
+  const mappingId = getCLMappingId(clVenueForManager(event.address).protocol, tokenId)
   const mapping = NFTPositionMapping.load(mappingId)
   
   if (mapping == null) {

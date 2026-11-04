@@ -25,8 +25,9 @@ export function handleVeloV2PoolCreated(event: PoolCreated): void {
 }
 
 // Handle PoolCreated from both Aero v2 factories (stable and volatile share one ABI).
-// Same whitelist filter as the legacy factory; the venue row is what labels the pool's
-// positions aero-v2 and sends their gauge lookup to the GaugeManager map.
+// Unlike the legacy factory handler, only whitelisted pairs (isPoolRelevant, as in the LpSugar
+// bootstrap) are tracked; the venue row labels the pool's positions aero-v2 and sends their
+// gauge lookup to the GaugeManager map.
 export function handleAeroV2PoolCreated(event: AeroV2PoolCreated): void {
   if (!isPoolRelevant(event.params.token0, event.params.token1)) {
     return

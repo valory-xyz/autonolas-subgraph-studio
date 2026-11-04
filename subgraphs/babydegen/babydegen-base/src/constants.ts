@@ -1,4 +1,4 @@
-import { Address, BigInt } from "@graphprotocol/graph-ts"
+import { Address, BigInt, log } from "@graphprotocol/graph-ts"
 
 // =============================================================================
 // MATHEMATICAL CONSTANTS
@@ -80,7 +80,13 @@ export const PROTOCOL_AERO_V2 = "aero-v2"
 
 // Gauge reward token of a Velodrome-family venue: Aero's gauges pay Aero's AERO, the legacy Aerodrome ones legacy AERO.
 export function rewardTokenFor(protocol: string): Address {
-  return protocol == PROTOCOL_AERO_CL || protocol == PROTOCOL_AERO_V2 ? AERO_PROTOCOL_AERO : AERO
+  if (protocol == PROTOCOL_AERO_CL || protocol == PROTOCOL_AERO_V2) {
+    return AERO_PROTOCOL_AERO
+  }
+  if (protocol != PROTOCOL_VELODROME_V2 && protocol != PROTOCOL_VELODROME_V3) {
+    log.critical("rewardTokenFor: '{}' is not a Velodrome-family venue", [protocol])
+  }
+  return AERO
 }
 
 // Excluded service IDs — none currently; kept for parity with the optimism filter.
