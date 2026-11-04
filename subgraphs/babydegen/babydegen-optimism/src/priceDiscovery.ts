@@ -304,7 +304,6 @@ function getPriceFromSource(
   }
   
   if (sourceType == "velodrome_v2_stable") {
-    // For Velodrome V2 stable pools: quoted through the pool curve, not the reserve ratio
     let price = getVelodromeV2StablePrice(
       Address.fromBytes(token.id),
       sourceConfig.address,

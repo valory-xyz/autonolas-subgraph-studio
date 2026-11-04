@@ -315,7 +315,7 @@ dataSources:
     name: USDT
     network: base
     source:
-      address: "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2" # optimus#412 stablecoins (USDT/DAI/USDe/USDS)
+      address: "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2" # USDT
       abi: ERC20
       startBlock: 47163056
     mapping:
@@ -572,8 +572,7 @@ dataSources:
 
   # ---- Aero v2 pools + gauges ------------------------------------------------
   # Aero's v2 factories emit PoolCreated without the indexed `stable` flag, so they
-  # get their own ABI. Aero v2 pools have no gauge() and the Aero Voter has no
-  # gauges(pool): the pool->gauge map comes from the GaugeManager's GaugeCreated.
+  # get their own ABI. GaugeCreated feeds the AeroGauge map (resolveV2Gauge).
   - kind: ethereum/contract
     name: AeroV2StableFactory
     network: base

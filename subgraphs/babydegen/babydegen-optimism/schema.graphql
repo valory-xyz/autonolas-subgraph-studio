@@ -412,8 +412,8 @@ type NFTPositionMapping @entity(immutable: false) {
   protocol: String!
 }
 
-# Aero v2 pool -> gauge, from GaugeManager GaugeCreated (Aero v2 pools have no gauge() and the
-# Aero Voter has no gauges(pool)). CL pools get a row too; their path reads pool.gauge() instead.
+# Aero pool -> gauge, from GaugeManager GaugeCreated; read by resolveV2Gauge. CL pools get a row
+# too, unused: the CL path reads pool.gauge().
 type AeroGauge @entity(immutable: false) {
   id: Bytes!                # pool (GaugeCreated._target)
   gauge: Bytes!             # GaugeCreated._gauge; a later GaugeCreated for the same pool replaces it

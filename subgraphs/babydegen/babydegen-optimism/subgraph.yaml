@@ -470,7 +470,7 @@ dataSources:
     name: USDS
     network: optimism
     source:
-      address: "0x4F13a96EC5C4Cf34e442b46Bbd98a0791F20edC3" # optimus#412; unpriced
+      address: "0x4F13a96EC5C4Cf34e442b46Bbd98a0791F20edC3" # USDS
       abi: ERC20
       startBlock: 136563000
     mapping:
@@ -695,9 +695,8 @@ dataSources:
 
 
   # Aero v2 pools + gauges. Aero's v2 factories emit PoolCreated without the
-  # indexed `stable` flag, so they get their own ABI. Aero v2 pools have no
-  # gauge() and the Aero Voter has no gauges(pool): the pool->gauge map comes
-  # from the GaugeManager's GaugeCreated.
+  # indexed `stable` flag, so they get their own ABI. GaugeCreated feeds the
+  # AeroGauge map (resolveV2Gauge).
   - kind: ethereum/contract
     name: AeroV2StableFactory
     network: optimism

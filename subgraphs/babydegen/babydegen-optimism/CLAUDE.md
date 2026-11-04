@@ -228,7 +228,7 @@ Daily population-level stats at UTC midnight (id: `<dayTimestamp>`).
 - Rewards: Aero's CLGauge has no `earned(address,uint256)`. `getAeroCLEarned` checks
   `stakedContains(agent, tokenId)` (unstaked → 0) then reads `earned(agent, [tokenId])`.
   Rewards are **xAERO**, recorded as `claimableReward` with `claimableRewardUSD = 0`: its
-  Optimism pools are too thin to price (OPE-2009 D6).
+  Optimism pools are too thin to price.
 
 ### 4. UniV3NFTManager (Uniswap V3)
 **File**: `src/uniV3NFTManager.ts`
@@ -251,8 +251,7 @@ Daily population-level stats at UTC midnight (id: `<dayTimestamp>`).
 - Aero v2 pools have no `gauge()` and the Aero Voter has no `gauges(pool)`, so
   `handleAeroGaugeCreated` stores `AeroGauge { id: pool, gauge }` from GaugeManager
   `GaugeCreated`; the `aero-v2` branch of `resolveV2Gauge` reads it on every refresh (a later
-  `GaugeCreated` replaces it). Verified against Aero v2 stable BOLD/USDC `0x0fbB…6F13` →
-  gauge `0x377B…d49d` (`stakingToken()` = the pool).
+  `GaugeCreated` replaces it).
 
 ### 7. PortfolioScheduler (Block Handler)
 **File**: `src/portfolioScheduler.ts`
@@ -338,7 +337,7 @@ handleBlock (every 1800 blocks)
 
 ### Tracked Tokens
 WETH, DAI, USDT, DOLA, BOLD (legacy `0x087c…`), LUSD, FRAX, sDAI, USDC (Native + Bridged), USDT0, oUSDT, USDGLO, VELO,
-plus (OPE-2009) the agent's BOLD `0x0356…` (Velodrome v2 stable BOLD/USDC `0x8828…`, quoted with
+plus the agent's BOLD `0x0356…` (Velodrome v2 stable BOLD/USDC `0x8828…`, quoted with
 `getAmountOut` by the `velodrome_v2_stable` source, since a stable pool's reserve ratio is not its price), USDS and
 xAERO. USDS and xAERO have no price source yet: tracked for balances, valued at $0, and
 `getPriceFromSources` logs a warning. Neither is on the $1 stablecoin fallback.

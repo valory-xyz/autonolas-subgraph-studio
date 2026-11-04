@@ -388,7 +388,7 @@ export function refreshVeloCLPosition(
   
     if (!earnedResult.reverted) {
       rewardAmount = earnedResult.value.toBigDecimal().div(BigDecimal.fromString("1e18"))
-      // Both reward tokens (legacy AERO, Aero's AERO) are 18-dec, priced off AERO/USDC pools (tokenConfig.ts).
+      // Both reward tokens are 18-dec (rewardTokenFor).
       const rewardPrice = getTokenPriceUSD(venue.rewardToken, block.timestamp, false)
       rewardUSD = rewardAmount.times(rewardPrice)
     } else {

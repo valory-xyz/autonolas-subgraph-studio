@@ -55,7 +55,7 @@ function setV2PoolFee(pp: ProtocolPosition, poolContract: VelodromeV2Pool): void
 }
 
 // Resolve a v2 pool's gauge. Returns Address.zero() when the pool has no gauge.
-// - aero-v2: neither the pool nor the Aero Voter knows its gauge, so read the AeroGauge row
+// - aero-v2: Aero v2 pools have no gauge() and the Aero Voter has no gauges(pool), so read the AeroGauge row
 //   built from GaugeManager GaugeCreated (aeroGaugeManager.ts). Re-read on every refresh, not
 //   cached, since a later GaugeCreated replaces it; no row means no gauge yet.
 // - legacy: the Velodrome Voter's gauges(pool), cached on the position's rewardsContract. A Voter
@@ -419,8 +419,7 @@ export function refreshVeloV2Position(
     }
     const earnedRes = gauge.try_earned(userAddress)
     if (!earnedRes.reverted) {
-      // Velodrome V2 gauges emit VELO, Aero's emit xAERO; both 18-dec. xAERO has no price
-      // source, so its USD value is 0 (priceDiscovery.ts logs it).
+      // VELO and xAERO are both 18-dec.
       rewardAmount = earnedRes.value.toBigDecimal().div(BigDecimal.fromString("1e18"))
       rewardUSD = rewardAmount.times(getTokenPriceUSD(rewardTokenFor(pp.protocol), block.timestamp, false))
     } else {

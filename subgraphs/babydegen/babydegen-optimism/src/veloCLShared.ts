@@ -388,7 +388,7 @@ export function refreshVeloCLPosition(
   
     if (!earnedResult.reverted) {
       rewardAmount = earnedResult.value.toBigDecimal().div(BigDecimal.fromString("1e18"))
-      // VELO and xAERO are both 18-dec. xAERO has no price source, so its USD value is 0 (logged).
+      // VELO and xAERO are both 18-dec.
       const rewardPrice = getTokenPriceUSD(venue.rewardToken, block.timestamp, false)
       rewardUSD = rewardAmount.times(rewardPrice)
     } else if (venue.protocol == PROTOCOL_AERO_CL) {

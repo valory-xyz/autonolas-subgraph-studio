@@ -329,9 +329,7 @@ function initializeTokens(): void {
   // Note: These tokens now use pool-based price discovery similar to DOLA
   // Pool addresses provided for accurate price tracking
 
-  // BOLD (agent's, 0x0356…) - Velodrome V2 stable BOLD/USDC on the legacy factory, the deepest
-  // BOLD/USDC pool when this was added (deeper than the Aero v2 stable one). A stable pool, so it
-  // is quoted with getAmountOut rather than the reserve ratio.
+  // BOLD (agent's, 0x0356…) - priced off the Velodrome V2 stable BOLD/USDC pool.
   TOKENS.set(BOLD_V2.toHexString().toLowerCase(), new TokenConfig(
     BOLD_V2,
     "BOLD",
@@ -350,7 +348,8 @@ function initializeTokens(): void {
   // No feed and no pool with real liquidity yet: tracked for balances, valued at $0
   // (getPriceFromSources logs it) until a source exists. Not on the $1 stablecoin fallback.
   TOKENS.set(USDS.toHexString().toLowerCase(), new TokenConfig(USDS, "USDS", 18, []))
-  // xAERO - Aero gauge rewards. Its Optimism pools are too thin to price from.
+  // xAERO - Aero gauge rewards. Its Optimism pools are too thin to price from, so it values at $0
+  // (getPriceFromSources logs it).
   TOKENS.set(XAERO.toHexString().toLowerCase(), new TokenConfig(XAERO, "xAERO", 18, []))
 }
 

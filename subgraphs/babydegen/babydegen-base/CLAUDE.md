@@ -2,7 +2,7 @@
 
 Tracks the **Basius** babydegen agent's portfolio performance on **Base**. Port of
 `babydegen-optimism` repointed to Base + **Aerodrome**, plus **Aero** (the merged protocol Basius
-moved to in optimus v0.13.10; see "Aero (OPE-2009)" below).
+moved to in optimus v0.13.10; see "Aero" below).
 Indexing **filters by Olas `agentId == 115`** and tracks every Basius service (currently
 607/610/611/612 on Base), mirroring optimism's `OPTIMUS_AGENT_ID` filter.
 
@@ -23,8 +23,8 @@ Indexing **filters by Olas `agentId == 115`** and tracks every Basius service (c
 | Network | `optimism` | `base` |
 | DEXs tracked | Velodrome CL + V2, **Uniswap V3**, **Balancer** | **Aerodrome** (CL = Slipstream, v2) + **Aero** (CL, v2) |
 | Agent scoping | agent-id filter (`OPTIMUS_AGENT_ID = 40`) + excluded ids | agent-id filter (`BASIUS_AGENT_ID = 115`), all matching services |
-| Pricing | Chainlink + DEX | Chainlink (Base feeds) + Aerodrome; stables via $1 |
-| Reward token | VELO | AERO |
+| Pricing | Chainlink + DEX | Chainlink (Base feeds) + Aerodrome/Aero pools; whitelisted stables via $1, USDT/DAI/USDe/USDS via their own feeds |
+| Reward token | VELO | AERO (legacy) / Aero's AERO |
 
 **Dropped files** (Uniswap V3 / Balancer / manual bootstrap / dead helpers):
 `uniV3NFTManager.ts`, `uniV3Pool.ts`, `uniV3Shared.ts`, `balancerVault.ts`,
@@ -87,7 +87,7 @@ Optimism values): StakingToken `0x2585e63df7BD9De8e058884D496658a030b5c6ce`, Act
 ## Tracked tokens
 
 USDC (native), WETH, AERO (legacy + Aero's), the whitelisted stablecoins BOLD / msUSD / frxUSD /
-eUSD / axlUSDC, and optimus#412's USDT / DAI / USDe / USDS (Chainlink-priced, see Aero below). USDC+WETH price off Chainlink; stables resolve to ~$1 (referenced to the USDC feed
+eUSD / axlUSDC, and USDT / DAI / USDe / USDS (Chainlink-priced, see Aero below). USDC+WETH price off Chainlink; stables resolve to ~$1 (referenced to the USDC feed
 — confirmed fine by Divya); **AERO** (the CL-gauge reward token) prices off the Aerodrome
 AERO/USDC volatile pool `0x6cdcb1c4…` via the `velodrome_v2` adapter (`tokenConfig.ts`).
 **OLAS is not tracked** — Basius holds none and it isn't a trading asset for this agent.
@@ -118,7 +118,7 @@ AERO/USDC volatile pool `0x6cdcb1c4…` via the `velodrome_v2` adapter (`tokenCo
 > refresh, `refreshVeloV2Position` backfills them from current amounts — keyed on
 > `entryAmountUSD == 0` alone, since `entryTimestamp` is always set at creation.
 
-## Aero (OPE-2009)
+## Aero
 
 Basius moved to Aero (the merged Velodrome/Aerodrome protocol, live 2026-10-22) in optimus
 v0.13.10. Aero positions are labelled **`aero-cl` / `aero-v2`**; legacy labels and ids are unchanged.
@@ -132,10 +132,9 @@ v0.13.10. Aero positions are labelled **`aero-cl` / `aero-v2`**; legacy labels a
   `V2PoolVenue` and start an `AeroV2Pool` template (Aero's `Mint` has an indexed `to`; pools have
   no `stable()`). Aero v2 pools have no `gauge()` and the Aero Voter has no `gauges(pool)`, so the
   GaugeManager's `GaugeCreated` builds `AeroGauge { pool → gauge }`, read on every refresh by the
-  `aero-v2` branch of `resolveV2Gauge`. Verified against Aero v2 volatile AERO/USDC
-  `0xF634…B18E` → gauge `0xd424…5cd1` (`stakingToken()` = the pool).
+  `aero-v2` branch of `resolveV2Gauge`.
 - **Pricing** — Aero's AERO prices off that same Aero v2 AERO/USDC volatile pool.
-  optimus#412's USDT / DAI / USDe / USDS price off their own Chainlink feeds (priority 1) with
+  USDT / DAI / USDe / USDS price off their own Chainlink feeds (priority 1) with
   the Aero CL tickSpacing-1 USDC/USDT pool as USDT's priority-2 fallback. DAI / USDe / USDS are
   feed-only (the CL adapter mis-scales 18-vs-6-decimal pairs, so a pool would price them ~0). They are
   **not** on `usdcReferencedStable` or `CRITICAL_STABLECOINS`. `getPriceFromSources` reads a

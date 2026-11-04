@@ -29,8 +29,8 @@ export const OUSDT = Address.fromString("0x1217bfe6c773eec6cc4a38b5dc45b92292b6e
 export const USDGLO = Address.fromString("0x4f604735c1cf31399c6e711d5962b2b3e0225ad3") // USDGLO
 export const VELO = Address.fromString("0x9560e827aF36c94D2Ac33a39bCE1Fe78631088Db") // VELO
 export const BOLD_V2 = Address.fromString("0x03569CC076654F82679C4BA2124D64774781B01D") // BOLD the agent holds (same as Base); BOLD above keeps its history
-export const USDS = Address.fromString("0x4F13a96EC5C4Cf34e442b46Bbd98a0791F20edC3") // USDS (optimus#412) — no feed or pool, unpriced
-export const XAERO = Address.fromString("0xbdEaeA5205d16f34Cb40038052d91235D87B4C54") // xAERO — Aero gauge reward token on Optimism, unpriced
+export const USDS = Address.fromString("0x4F13a96EC5C4Cf34e442b46Bbd98a0791F20edC3") // USDS — unpriced (tokenConfig.ts)
+export const XAERO = Address.fromString("0xbdEaeA5205d16f34Cb40038052d91235D87B4C54") // xAERO — Aero gauge reward token, unpriced (tokenConfig.ts)
 
 // Chainlink price feeds (Optimism mainnet)
 export const ETH_USD_FEED = Address.fromString("0x13e3Ee699D1909E989722E753853AE30b17e08c5")

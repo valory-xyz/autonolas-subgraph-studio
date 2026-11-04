@@ -199,8 +199,7 @@ function initializeTokens(): void {
     ]
   ))
 
-  // AERO of Aero (the merged protocol) — Aero CL/v2 gauge reward token. Priced off the Aero v2
-  // AERO/USDC volatile pool, the deepest AERO/USDC pool on Base when this was added.
+  // AERO of Aero (the merged protocol) — Aero CL/v2 gauge reward token, priced off an Aero v2 AERO/USDC pool.
   TOKENS.set(AERO_PROTOCOL_AERO.toHexString().toLowerCase(), new TokenConfig(
     AERO_PROTOCOL_AERO,
     "AERO",
@@ -216,7 +215,7 @@ function initializeTokens(): void {
     ]
   ))
 
-  // optimus#412 stablecoins. USDT falls back to the Aero CL tickSpacing-1 USDC/USDT pool.
+  // Chainlink-priced stablecoins. USDT falls back to the Aero CL tickSpacing-1 USDC/USDT pool.
   // DAI, USDe and USDS are feed-only: the CL adapter's decimal adjustment is inverted for
   // 18-vs-6-decimal pairs, so a pool fallback would price them at ~1e-24.
   TOKENS.set(USDT.toHexString().toLowerCase(), chainlinkStable(USDT, "USDT", 6, "USDT_USD",
