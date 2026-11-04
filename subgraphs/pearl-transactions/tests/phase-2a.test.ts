@@ -1690,6 +1690,31 @@ describe("pearl-transactions / Pearl Safe → Agent Signer MASTER_TO_AGENT", () 
     assert.assertTrue(FundsMovement.load(agentSignerLegId(tx, 0))!.agentSafe === null);
   });
 
+  test("Agent Signer of a still-buffered service writes no row", () => {
+    seedMasterSafe(true);
+    seedAgentInstance(SIGNER, SERVICE_ID); // no Service entity yet
+    fundFromPearlSafe(execTransactionInput(SIGNER, AMOUNT, NO_DATA, 0), mockTx(91));
+    assert.entityCount("FundsMovement", 0);
+    assert.entityCount("AgentFundingEvent", 0);
+  });
+
+  test("Agent Signer of a service with no Pearl Safe yet writes no row", () => {
+    seedMasterSafe(true);
+    const svc = new Service(serviceBytes(SERVICE_ID));
+    svc.serviceId = BigInt.fromString(SERVICE_ID);
+    svc.agentIds = [40];
+    svc.operators = [];
+    svc.state = "REGISTERED";
+    svc.totalOlasRewardsClaimed = BigInt.zero();
+    svc.registeredTimestamp = BigInt.fromI32(1);
+    svc.updatedTimestamp = BigInt.fromI32(1);
+    svc.save();
+    seedAgentInstance(SIGNER, SERVICE_ID);
+    fundFromPearlSafe(execTransactionInput(SIGNER, AMOUNT, NO_DATA, 0), mockTx(92));
+    assert.entityCount("FundsMovement", 0);
+    assert.entityCount("AgentFundingEvent", 0);
+  });
+
   test("Agent Signer of another Pearl Safe's service writes no row", () => {
     seedPearlFunding();
     seedPearlService("43", OTHER_MASTER_SAFE, null);
