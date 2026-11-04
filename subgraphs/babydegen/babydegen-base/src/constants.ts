@@ -21,7 +21,7 @@ export const Q96 = BigInt.fromString("79228162514264337593543950336")
 export const USDC_NATIVE = Address.fromString("0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913") // Native USDC on Base (primary funding/valuation asset)
 export const WETH = Address.fromString("0x4200000000000000000000000000000000000006") // WETH on Base
 export const AERO = Address.fromString("0x940181a94A35A4569E4529A3CDfB74e38FD98631") // AERO (Aerodrome reward token) on Base
-export const NEW_AERO = Address.fromString("0x3f5bF3EdAc59d650D8fDf9657a71F2f904A3a4Ee") // AERO of Aero (the merged protocol) — Aero gauge reward token
+export const AERO_PROTOCOL_AERO = Address.fromString("0x3f5bF3EdAc59d650D8fDf9657a71F2f904A3a4Ee") // AERO of Aero (the merged protocol) — Aero gauge reward token
 
 // Whitelisted stablecoins (Base) — priced via $1 fallback until pools confirmed
 export const BOLD = Address.fromString("0x03569Cc076654F82679C4BA2124D64774781b01d") // BOLD
@@ -78,6 +78,11 @@ export const PROTOCOL_VELODROME_V3 = "aerodrome-cl"
 export const PROTOCOL_AERO_CL = "aero-cl"
 export const PROTOCOL_AERO_V2 = "aero-v2"
 
+// Gauge reward token of a Velodrome-family venue: Aero's gauges pay Aero's AERO, the legacy Aerodrome ones legacy AERO.
+export function rewardTokenFor(protocol: string): Address {
+  return protocol == PROTOCOL_AERO_CL || protocol == PROTOCOL_AERO_V2 ? AERO_PROTOCOL_AERO : AERO
+}
+
 // Excluded service IDs — none currently; kept for parity with the optimism filter.
 export const EXCLUDED_SERVICE_IDS: BigInt[] = []
 
@@ -91,7 +96,7 @@ export const WHITELISTED_TOKENS: string[] = [
   FRXUSD.toHexString(),
   EUSD.toHexString(),
   AXLUSDC.toHexString(),
-  NEW_AERO.toHexString(),
+  AERO_PROTOCOL_AERO.toHexString(),
   USDT.toHexString(),
   DAI.toHexString(),
   USDE.toHexString(),

@@ -10,7 +10,7 @@ import {
   FRXUSD,
   EUSD,
   AXLUSDC,
-  NEW_AERO,
+  AERO_PROTOCOL_AERO,
   USDT,
   DAI,
   USDE,
@@ -201,8 +201,8 @@ function initializeTokens(): void {
 
   // AERO of Aero (the merged protocol) — Aero CL/v2 gauge reward token. Priced off the Aero v2
   // AERO/USDC volatile pool, the deepest AERO/USDC pool on Base when this was added.
-  TOKENS.set(NEW_AERO.toHexString().toLowerCase(), new TokenConfig(
-    NEW_AERO,
+  TOKENS.set(AERO_PROTOCOL_AERO.toHexString().toLowerCase(), new TokenConfig(
+    AERO_PROTOCOL_AERO,
     "AERO",
     18,
     [

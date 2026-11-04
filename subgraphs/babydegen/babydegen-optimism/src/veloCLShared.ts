@@ -13,12 +13,11 @@ import { getTokenPriceUSD } from "./priceDiscovery"
 import {
   VELO_MANAGER,
   VELO_FACTORY,
-  VELO,
   PROTOCOL_VELODROME_V3,
   AERO_NFT_MANAGER,
   AERO_CL_FACTORY,
-  XAERO,
-  PROTOCOL_AERO_CL
+  PROTOCOL_AERO_CL,
+  rewardTokenFor
 } from "./constants"
 import { isServiceAgent, getServiceByAgent } from "./config"
 import { parseTotalSlippageFromBucket, associateSwapsWithPosition } from "./helpers"
@@ -50,9 +49,12 @@ export class CLVenue {
 
 export function clVenueFor(protocol: string): CLVenue {
   if (protocol == PROTOCOL_AERO_CL) {
-    return new CLVenue(AERO_NFT_MANAGER, AERO_CL_FACTORY, XAERO, PROTOCOL_AERO_CL)
+    return new CLVenue(AERO_NFT_MANAGER, AERO_CL_FACTORY, rewardTokenFor(protocol), protocol)
   }
-  return new CLVenue(VELO_MANAGER, VELO_FACTORY, VELO, PROTOCOL_VELODROME_V3)
+  if (protocol != PROTOCOL_VELODROME_V3) {
+    log.critical("clVenueFor: '{}' is not a CL venue", [protocol])
+  }
+  return new CLVenue(VELO_MANAGER, VELO_FACTORY, rewardTokenFor(PROTOCOL_VELODROME_V3), PROTOCOL_VELODROME_V3)
 }
 
 // The venue of the NFPM that emitted an event.
@@ -60,7 +62,7 @@ export function clVenueForManager(manager: Address): CLVenue {
   return clVenueFor(manager.equals(AERO_NFT_MANAGER) ? PROTOCOL_AERO_CL : PROTOCOL_VELODROME_V3)
 }
 
-export function getVeloCLPositionId(userAddress: Address, tokenId: BigInt, protocol: string = PROTOCOL_VELODROME_V3): Bytes {
+export function getVeloCLPositionId(userAddress: Address, tokenId: BigInt, protocol: string): Bytes {
   const positionId = userAddress.toHex() + "-" + protocol + "-" + tokenId.toString()
   return Bytes.fromUTF8(positionId)
 }
@@ -252,12 +254,12 @@ export function refreshVeloCLPosition(
   txHash: Bytes = Bytes.empty(), 
   updatePortfolio: boolean = true,
   owner: Address | null = null,
-  protocol: string = PROTOCOL_VELODROME_V3 // venue of a position not created yet; existing ones use their own
+  protocol: string = "" // venue of the position to create; an existing one uses its own
 ): void {
   let position = ProtocolPosition.load(positionId)
   let nftOwner: Address
   let poolAddress: Address
-  const venue = clVenueFor(position != null ? position!.protocol : protocol)
+  let venue: CLVenue
   
   if (!position) {
     if (owner !== null) {
@@ -265,6 +267,7 @@ export function refreshVeloCLPosition(
     } else {
       return
     }
+    venue = clVenueFor(protocol)
     
     // Verify this is a service agent
     if (!isServiceAgent(nftOwner)) {
@@ -333,6 +336,7 @@ export function refreshVeloCLPosition(
     initializePositionCosts(position)
   } else {
   // Use existing position
+    venue = clVenueFor(position.protocol)
     nftOwner = Address.fromBytes(position.agent)
     poolAddress = Address.fromBytes(position.pool)
   }
@@ -375,39 +379,24 @@ export function refreshVeloCLPosition(
   let rewardAmount = BigDecimal.zero()
   let rewardUSD = BigDecimal.zero()
   
-  // Get gauge address
-  let gaugeAddress: Address
-  let rewardsContract = position.rewardsContract
-  if (rewardsContract) {
-    gaugeAddress = Address.fromBytes(position.rewardsContract!)
-  } 
-  else {
-    const gaugeResult = pool.try_gauge()
-    if (!gaugeResult.reverted) {
-      gaugeAddress = gaugeResult.value
-      position.rewardsContract = gaugeAddress
-    } else {
-      position.usdCurrent = usd
-      position.save()
-      return
+  const gaugeAddress = resolveCLGauge(pool, position)
+
+  if (!gaugeAddress.equals(Address.zero())) {
+    const earnedResult = venue.protocol == PROTOCOL_AERO_CL
+      ? getAeroCLEarned(gaugeAddress, nftOwner, tokenId)
+      : VeloCLGauge.bind(gaugeAddress).try_earned(nftOwner, tokenId)
+  
+    if (!earnedResult.reverted) {
+      rewardAmount = earnedResult.value.toBigDecimal().div(BigDecimal.fromString("1e18"))
+      // VELO and xAERO are both 18-dec. xAERO has no price source, so its USD value is 0 (logged).
+      const rewardPrice = getTokenPriceUSD(venue.rewardToken, block.timestamp, false)
+      rewardUSD = rewardAmount.times(rewardPrice)
+    } else if (venue.protocol == PROTOCOL_AERO_CL) {
+      log.warning(
+        "xAERO rewards: gauge.earned() reverted for active CL position {} (gauge {}, account {}, tokenId {}) — recording 0 reward.",
+        [positionId.toHexString(), gaugeAddress.toHexString(), nftOwner.toHexString(), tokenId.toString()]
+      )
     }
-  }
-  
-  // Get claimable rewards from gauge
-  const earnedResult = venue.protocol == PROTOCOL_AERO_CL
-    ? getAeroCLEarned(gaugeAddress, nftOwner, tokenId)
-    : VeloCLGauge.bind(gaugeAddress).try_earned(nftOwner, tokenId)
-  
-  if (!earnedResult.reverted) {
-    rewardAmount = earnedResult.value.toBigDecimal().div(BigDecimal.fromString("1e18"))
-    // VELO and xAERO are both 18-dec. xAERO has no price source, so its USD value is 0 (logged).
-    const rewardPrice = getTokenPriceUSD(venue.rewardToken, block.timestamp, false)
-    rewardUSD = rewardAmount.times(rewardPrice)
-  } else if (venue.protocol == PROTOCOL_AERO_CL) {
-    log.warning(
-      "xAERO rewards: gauge.earned() reverted for active CL position {} (gauge {}, account {}, tokenId {}) — recording 0 reward.",
-      [positionId.toHexString(), gaugeAddress.toHexString(), nftOwner.toHexString(), tokenId.toString()]
-    )
   }
 
   // Separate base position value from rewards to avoid double-counting
@@ -452,6 +441,22 @@ export function refreshVeloCLPosition(
   }
 }
 
+// A CL pool's gauge, cached on the position once found. Returns Address.zero() when the pool
+// has no gauge: gauge() returns zero or reverts. Neither is cached, so a pool gauged later is
+// picked up on the next refresh.
+function resolveCLGauge(pool: VelodromeCLPool, position: ProtocolPosition): Address {
+  const cached = position.rewardsContract
+  if (cached) {
+    return Address.fromBytes(cached!)
+  }
+  const gaugeResult = pool.try_gauge()
+  if (gaugeResult.reverted || gaugeResult.value.equals(Address.zero())) {
+    return Address.zero()
+  }
+  position.rewardsContract = gaugeResult.value
+  return gaugeResult.value
+}
+
 // Aero's CLGauge has no earned(address,uint256); earned(account, [tokenId]) reads one
 // position, but reverts unless that account has the NFT staked. An unstaked position earns
 // nothing, so it reads as 0 rather than as the revert the caller logs.
@@ -459,7 +464,11 @@ function getAeroCLEarned(gaugeAddress: Address, account: Address, tokenId: BigIn
   const gauge = AeroCLGauge.bind(gaugeAddress)
   const staked = gauge.try_stakedContains(account, tokenId)
   if (staked.reverted) {
-    return new ethereum.CallResult<BigInt>()
+    log.warning(
+      "Aero CL rewards: gauge.stakedContains() reverted (gauge {}, account {}, tokenId {}) — recording 0 reward.",
+      [gaugeAddress.toHexString(), account.toHexString(), tokenId.toString()]
+    )
+    return ethereum.CallResult.fromValue(BigInt.zero())
   }
   if (!staked.value) {
     return ethereum.CallResult.fromValue(BigInt.zero())

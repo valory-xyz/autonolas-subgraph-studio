@@ -17,7 +17,7 @@ import { getServiceByAgent } from "./config"
 import { parseTotalSlippageFromBucket, associateSwapsWithPosition, calculatePortfolioMetrics } from "./helpers"
 import { getTokenDecimals, getTokenSymbol } from "./tokenUtils"
 import { calculatePositionROI } from "./roiCalculation"
-import { PROTOCOL_VELODROME_V2, VELO, VELO_VOTER, PROTOCOL_AERO_V2, XAERO } from "./constants"
+import { PROTOCOL_VELODROME_V2, VELO_VOTER, PROTOCOL_AERO_V2, rewardTokenFor, WHITELISTED_TOKENS } from "./constants"
 
 // A pool's venue is recorded by the factory handler that created it; pools with no
 // V2PoolVenue row came from the legacy factory.
@@ -26,8 +26,18 @@ export function v2ProtocolFor(poolAddress: Address): string {
   return venue != null ? venue.protocol : PROTOCOL_VELODROME_V2
 }
 
-function v2RewardTokenFor(protocol: string): Address {
-  return protocol == PROTOCOL_AERO_V2 ? XAERO : VELO
+function isTokenWhitelisted(tokenAddress: Address): boolean {
+  let tokenString = tokenAddress.toHexString().toLowerCase()
+  for (let i = 0; i < WHITELISTED_TOKENS.length; i++) {
+    if (WHITELISTED_TOKENS[i].toLowerCase() == tokenString) {
+      return true
+    }
+  }
+  return false
+}
+
+export function isPoolRelevant(token0: Address, token1: Address): boolean {
+  return isTokenWhitelisted(token0) && isTokenWhitelisted(token1)
 }
 
 // Fee tier of a v2 pool: 5 (0.05%) stable, 30 (0.30%) volatile. Aero v2 pools have no stable();
@@ -412,7 +422,7 @@ export function refreshVeloV2Position(
       // Velodrome V2 gauges emit VELO, Aero's emit xAERO; both 18-dec. xAERO has no price
       // source, so its USD value is 0 (priceDiscovery.ts logs it).
       rewardAmount = earnedRes.value.toBigDecimal().div(BigDecimal.fromString("1e18"))
-      rewardUSD = rewardAmount.times(getTokenPriceUSD(v2RewardTokenFor(pp.protocol), block.timestamp, false))
+      rewardUSD = rewardAmount.times(getTokenPriceUSD(rewardTokenFor(pp.protocol), block.timestamp, false))
     } else {
       // Same silent-zero guard as the CL path: earned(address) reverting on a staked
       // position means a non-standard gauge ABI — log it instead of recording 0 quietly.

@@ -78,6 +78,11 @@ export const PROTOCOL_UNISWAP_V3 = "uniswap-v3"
 export const PROTOCOL_AERO_CL = "aero-cl"
 export const PROTOCOL_AERO_V2 = "aero-v2"
 
+// Gauge reward token of a Velodrome-family venue: Aero's gauges pay xAERO, the legacy Velodrome ones VELO.
+export function rewardTokenFor(protocol: string): Address {
+  return protocol == PROTOCOL_AERO_CL || protocol == PROTOCOL_AERO_V2 ? XAERO : VELO
+}
+
 // Excluded service IDs - these are testing agents
 export const EXCLUDED_SERVICE_IDS: BigInt[] = [
   BigInt.fromI32(29),

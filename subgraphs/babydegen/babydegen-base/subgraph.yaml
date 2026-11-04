@@ -282,7 +282,7 @@ dataSources:
       file: ./src/tokenBalances.ts
 
   - kind: ethereum
-    name: NEW_AERO
+    name: AERO_PROTOCOL_AERO
     network: base
     source:
       address: "0x3f5bF3EdAc59d650D8fDf9657a71F2f904A3a4Ee" # AERO of Aero (merged protocol) — Aero gauge reward token

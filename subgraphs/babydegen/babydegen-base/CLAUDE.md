@@ -54,7 +54,7 @@ strings changed: `ProtocolPosition.protocol` is now `aerodrome-cl` / `aerodrome-
 | Aero CL factory | `0x9CB220581b91b0C83223012FE69688b92aD07a76` | `AERO_NFT_MANAGER.factory()` |
 | Aero v2 stable / volatile factory | `0x78589E87…EF2D` / `0x8E6a9FCd…76D2` | Aero v2 pool discovery |
 | Aero GaugeManager | `0xbF234b32c5e58868243A4a14831626f3EdE7b183` | `GaugeCreated` → Aero v2 pool→gauge map |
-| AERO (Aero) | `0x3f5bF3EdAc59d650D8fDf9657a71F2f904A3a4Ee` | Aero gauge reward token (`NEW_AERO`) |
+| AERO (Aero) | `0x3f5bF3EdAc59d650D8fDf9657a71F2f904A3a4Ee` | Aero gauge reward token (`AERO_PROTOCOL_AERO`) |
 
 Chainlink feeds (Base, verified on-chain — live, 8 decimals): ETH/USD `0x71041ddd…`,
 USDC/USD `0x7e860098…`.

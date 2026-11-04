@@ -8,7 +8,7 @@ import {
   FRXUSD,
   EUSD,
   AXLUSDC,
-  NEW_AERO,
+  AERO_PROTOCOL_AERO,
   USDT,
   DAI,
   USDE,
@@ -27,7 +27,7 @@ export function getTokenDecimals(tokenAddress: Address): i32 {
   if (tokenHex == FRXUSD.toHexString().toLowerCase()) return 18       // frxUSD
   if (tokenHex == EUSD.toHexString().toLowerCase()) return 18         // eUSD
   if (tokenHex == AXLUSDC.toHexString().toLowerCase()) return 6       // axlUSDC
-  if (tokenHex == NEW_AERO.toHexString().toLowerCase()) return 18     // AERO (Aero)
+  if (tokenHex == AERO_PROTOCOL_AERO.toHexString().toLowerCase()) return 18     // AERO (Aero)
   if (tokenHex == USDT.toHexString().toLowerCase()) return 6          // USDT
   if (tokenHex == DAI.toHexString().toLowerCase()) return 18          // DAI
   if (tokenHex == USDE.toHexString().toLowerCase()) return 18         // USDe
@@ -50,7 +50,7 @@ export function getTokenSymbol(tokenAddress: Address): string {
   if (tokenHex == FRXUSD.toHexString().toLowerCase()) return "frxUSD"
   if (tokenHex == EUSD.toHexString().toLowerCase()) return "eUSD"
   if (tokenHex == AXLUSDC.toHexString().toLowerCase()) return "axlUSDC"
-  if (tokenHex == NEW_AERO.toHexString().toLowerCase()) return "AERO"
+  if (tokenHex == AERO_PROTOCOL_AERO.toHexString().toLowerCase()) return "AERO"
   if (tokenHex == USDT.toHexString().toLowerCase()) return "USDT"
   if (tokenHex == DAI.toHexString().toLowerCase()) return "DAI"
   if (tokenHex == USDE.toHexString().toLowerCase()) return "USDe"
