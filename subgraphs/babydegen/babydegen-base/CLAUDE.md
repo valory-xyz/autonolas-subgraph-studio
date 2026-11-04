@@ -82,7 +82,7 @@ Optimism values): StakingToken `0x2585e63df7BD9De8e058884D496658a030b5c6ce`, Act
 
 USDC (native), WETH, AERO, and the whitelisted stablecoins BOLD / msUSD / frxUSD / eUSD /
 axlUSDC. USDC+WETH price off Chainlink; stables resolve to ~$1 (referenced to the USDC feed
-— confirmed fine by Divya); **AERO** (the CL-gauge reward token) prices off the Aerodrome
+— confirmed fine by Divya); **AERO** `0x940181a9…` (the Aerodrome CL-gauge reward token; Aero CL gauges pay the new AERO `0x3f5b…a4ee` instead) prices off the Aerodrome
 AERO/USDC volatile pool `0x6cdcb1c4…` via the `velodrome_v2` adapter (`tokenConfig.ts`).
 **OLAS is not tracked** — Basius holds none and it isn't a trading asset for this agent.
 
@@ -125,7 +125,8 @@ Funding and withdrawals (every tracked token and ETH, receipt-based for contract
 pricing (no $1 fallback: last valid price marked `priceStale`, `depegged` below $0.98), the
 deprecated `ethAdjusted*` fields, collected fees and claimed rewards (`positionIncome.ts`) all
 work as described in the optimism `CLAUDE.md`. Aero CL rewards come from the gauge's
-`EmissionsClaimed`; on Base the reward AERO is minted to the claimer rather than sent by the gauge.
+`EmissionsClaimed`, credited only from Transfers of `AERO_CL_EMISSION_TOKEN`, the new AERO `0x3f5b…a4ee`
+(not the `AERO` `0x940181a9…` above), which the Aero CL gauge mints to the claimer rather than sending it.
 
 Snapshots fire from the `PortfolioScheduler` block handler at UTC-midnight crossings.
 Block-handler interval is `every: 1800` (~1h on Base) — confirmed: a finer interval can't
