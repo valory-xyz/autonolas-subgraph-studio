@@ -7,9 +7,16 @@ import { calculatePortfolioMetrics, ensureAgentPortfolio } from "../src/helpers"
 import { calculateUninvestedValue } from "../src/tokenBalances"
 import { USDC_BRIDGED, USDT, DOLA, SDAI, BOLD, BOLD_V2, FRAX, LUSD, VELO, WBTC, SUSD, USDS, OUSDT, USDC_NATIVE, USDC_USD_FEED, USDT_USD_FEED, DAI_USD_FEED, WBTC_USD_FEED, SUSD_USD_FEED } from "../src/constants"
 import { processERC20Transfer } from "../src/tokenBalances"
-import { mockUsdcUsd, mockEthUsd, seedService, seedTokenPrice, seedAddressType, seededAddressType, newTransfer, newReceipt } from "./fixtures"
+import { mockUsdcUsd, mockEthUsd, seedService, seedTokenPrice, seedAddressType, seededAddressType, newTransfer, newReceipt, seedPosition } from "./fixtures"
 import { OPERATOR_SAFE, AGENT_INSTANCE, SERVICE_SAFE, BLOCK_NUMBER, BLOCK_TIMESTAMP } from "./test-helpers"
 import { createRegisterInstanceEvent } from "./mapping-utils"
+import { TOKENS, TokenConfig, PriceSourceConfig } from "../src/tokenConfig"
+
+const HOP_P = Address.fromString("0x00000000000000000000000000000000000000a7")
+const HOP_Q = Address.fromString("0x00000000000000000000000000000000000000a8")
+const HOP_T_P_POOL = Address.fromString("0x00000000000000000000000000000000000000c7")
+const HOP_P_Q_POOL = Address.fromString("0x00000000000000000000000000000000000000c8")
+const HOP_Q_USDC_POOL = Address.fromString("0x00000000000000000000000000000000000000c9")
 
 const DOLA_USDC_POOL = Address.fromString("0x6c5019d345ec05004a7e7b0623a91a0d9b8d590d")
 const SDAI_USDC_CL_POOL = Address.fromString("0x131525f3fa23d65dc2b1eb8b6483a28c43b06916")
@@ -275,6 +282,12 @@ describe("portfolio value", () => {
     portfolio.firstTradingTimestamp = BLOCK_TIMESTAMP.minus(BigInt.fromI32(86400 * 10))
     portfolio.save()
 
+    // A closed position: $100 in, $120 out, so roi and apr are non-zero and differ
+    let closed = seedPosition(SERVICE_SAFE, "velodrome-v3", BigInt.fromI32(1), USDC_NATIVE, USDC_NATIVE, null, BigInt.zero(), "0")
+    closed.isActive = false
+    closed.exitAmountUSD = BigDecimal.fromString("120")
+    closed.save()
+
     let event = createRegisterInstanceEvent(OPERATOR_SAFE, BigInt.fromI32(1), AGENT_INSTANCE, BigInt.fromI32(40))
     event.block.number = BLOCK_NUMBER
     event.block.timestamp = BLOCK_TIMESTAMP
@@ -284,8 +297,10 @@ describe("portfolio value", () => {
     assert.stringEquals(p.unrealisedPnL.toString(), "10")
     assert.stringEquals(p.ethAdjustedUnrealisedPnL.toString(), p.unrealisedPnL.toString())
     assert.stringEquals(p.ethAdjustedProjectedUnrealisedPnL.toString(), p.projectedUnrealisedPnL.toString())
-    assert.stringEquals(p.ethAdjustedRoi.toString(), p.roi.toString())
-    assert.stringEquals(p.ethAdjustedApr.toString(), p.apr.toString())
+    assert.stringEquals(p.roi.toString(), "20")
+    assert.stringEquals(p.ethAdjustedRoi.toString(), "20")
+    assert.stringEquals(p.apr.toString(), "730")
+    assert.stringEquals(p.ethAdjustedApr.toString(), "730")
   })
 })
 
@@ -385,13 +400,15 @@ describe("pair-leg pricing", () => {
     let usdc = ethereum.Value.fromUnsignedBigInt(BigInt.fromI64(50000000000))
     let velo = ethereum.Value.fromUnsignedBigInt(BigInt.fromString("1000000000000000000000000"))
     createMockedFunction(VELO_USDC_POOL, "stable", "stable():(bool)").withArgs([]).returns([ethereum.Value.fromBoolean(false)])
-    mockUsdcFeedAt(100000000, BLOCK_TIMESTAMP.minus(BigInt.fromI32(90001)))
 
     // VELO as token1
     createMockedFunction(VELO_USDC_POOL, "token0", "token0():(address)").withArgs([]).returns([ethereum.Value.fromAddress(USDC_NATIVE)])
     createMockedFunction(VELO_USDC_POOL, "token1", "token1():(address)").withArgs([]).returns([ethereum.Value.fromAddress(VELO)])
     createMockedFunction(VELO_USDC_POOL, "getReserves", "getReserves():(uint256,uint256,uint256)").withArgs([])
       .returns([usdc, velo, ethereum.Value.fromUnsignedBigInt(BigInt.zero())])
+    mockUsdcFeedAt(100000000)
+    assert.stringEquals(getVelodromeV2Price(VELO, VELO_USDC_POOL, USDC_NATIVE, BLOCK_TIMESTAMP).toString(), "0.05")
+    mockUsdcFeedAt(100000000, BLOCK_TIMESTAMP.minus(BigInt.fromI32(90001)))
     assert.stringEquals(getVelodromeV2Price(VELO, VELO_USDC_POOL, USDC_NATIVE, BLOCK_TIMESTAMP).toString(), "0")
 
     // VELO as token0
@@ -399,6 +416,9 @@ describe("pair-leg pricing", () => {
     createMockedFunction(VELO_USDC_POOL, "token1", "token1():(address)").withArgs([]).returns([ethereum.Value.fromAddress(USDC_NATIVE)])
     createMockedFunction(VELO_USDC_POOL, "getReserves", "getReserves():(uint256,uint256,uint256)").withArgs([])
       .returns([velo, usdc, ethereum.Value.fromUnsignedBigInt(BigInt.zero())])
+    mockUsdcFeedAt(100000000)
+    assert.stringEquals(getVelodromeV2Price(VELO, VELO_USDC_POOL, USDC_NATIVE, BLOCK_TIMESTAMP).toString(), "0.05")
+    mockUsdcFeedAt(100000000, BLOCK_TIMESTAMP.minus(BigInt.fromI32(90001)))
     assert.stringEquals(getVelodromeV2Price(VELO, VELO_USDC_POOL, USDC_NATIVE, BLOCK_TIMESTAMP).toString(), "0")
   })
 
@@ -411,5 +431,23 @@ describe("pair-leg pricing", () => {
   test("a stablecoin above $1.50 is rejected, whatever its symbol", () => {
     mockImbalancedStablePool(Address.fromString("0x8828B7792499A7d86E931DF56E3D37C428d12d2b"), BOLD_V2, USDC_NATIVE, ONE_18, 1600000)
     assert.stringEquals(getTokenPriceUSD(BOLD_V2, BLOCK_TIMESTAMP).toString(), "0")
+  })
+})
+
+describe("pair-leg hops", () => {
+  afterEach(() => {
+    clearStore()
+    TOKENS.delete(HOP_P.toHexString().toLowerCase())
+    TOKENS.delete(HOP_Q.toHexString().toLowerCase())
+  })
+
+  test("a pair leg is priced through its own pool only when that pool's pair leg has a feed", () => {
+    // P's only pool pairs it with Q, which has a pool to USDC but no feed: one hop is allowed, two are not
+    TOKENS.set(HOP_P.toHexString().toLowerCase(), new TokenConfig(HOP_P, "P", 18, [new PriceSourceConfig(HOP_P_Q_POOL, "velodrome_v2", 1, 80, HOP_Q)]))
+    TOKENS.set(HOP_Q.toHexString().toLowerCase(), new TokenConfig(HOP_Q, "Q", 18, [new PriceSourceConfig(HOP_Q_USDC_POOL, "velodrome_v2", 1, 80, USDC_NATIVE)]))
+    mockImbalancedStablePool(HOP_Q_USDC_POOL, HOP_Q, USDC_NATIVE, BigInt.fromString("1000000000000000000"), 1000000)
+    mockImbalancedStablePool(HOP_P_Q_POOL, HOP_P, HOP_Q, BigInt.fromString("1000000000000000000"), 1000000000000000000)
+    mockImbalancedStablePool(HOP_T_P_POOL, DOLA, HOP_P, BigInt.fromString("1000000000000000000"), 1000000000000000000)
+    assert.stringEquals(getVelodromeV2Price(DOLA, HOP_T_P_POOL, HOP_P, BLOCK_TIMESTAMP).toString(), "0")
   })
 })

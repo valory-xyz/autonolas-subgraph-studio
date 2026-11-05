@@ -17,7 +17,7 @@ import { calculateActualROI } from "../src/roiCalculation"
 import { calculatePortfolioMetrics } from "../src/helpers"
 import { searchAndAssociateRecentSwaps } from "../src/swapTracking"
 import { refreshBalancerPosition, refreshBalancerPositionWithEventAmounts, getBalancerPositionId } from "../src/balancerShared"
-import { USDC_NATIVE, DAI, VELO, VELO_MANAGER, UNI_V3_MANAGER, PROTOCOL_VELODROME_V3, PROTOCOL_VELODROME_V2, PROTOCOL_UNISWAP_V3, PROTOCOL_AERO_CL, AERO_NFT_MANAGER, UNI_V3_FACTORY } from "../src/constants"
+import { USDC_NATIVE, DAI, VELO, VELO_MANAGER, UNI_V3_MANAGER, PROTOCOL_VELODROME_V3, PROTOCOL_VELODROME_V2, PROTOCOL_UNISWAP_V3, PROTOCOL_AERO_CL, AERO_NFT_MANAGER, UNI_V3_FACTORY, BALANCER_VAULT } from "../src/constants"
 import { newLog, newReceipt, newTransfer, mockEthUsd, seedService, seedAddressType, seedTokenPrice, seedPosition, seededAddressType } from "./fixtures"
 import { OPERATOR_SAFE, AGENT_INSTANCE, SERVICE_SAFE, BLOCK_NUMBER, BLOCK_TIMESTAMP } from "./test-helpers"
 
@@ -825,6 +825,7 @@ describe("Balancer positions start with zero income", () => {
     let id = getBalancerPositionId(SERVICE_SAFE, BALANCER_POOL)
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "collectedFeesUSD", "0")
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimedRewardsUSD", "0")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "usdCurrentWithRewards", "0")
   })
 
   test("a position created by a refresh has its fee and reward fields set", () => {
@@ -834,5 +835,21 @@ describe("Balancer positions start with zero income", () => {
     let id = getBalancerPositionId(SERVICE_SAFE, BALANCER_POOL)
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "collectedFeesUSD", "0")
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimedRewardsUSD", "0")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "usdCurrentWithRewards", "0")
+  })
+
+  test("a position a refresh creates while the pool holds its BPT is saved with every required field", () => {
+    createMockedFunction(BALANCER_POOL, "balanceOf", "balanceOf(address):(uint256)")
+      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
+      .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromString("1000000000000000000"))])
+    // The vault read fails, so the position keeps what its create branch set
+    createMockedFunction(BALANCER_VAULT, "getPoolTokens", "getPoolTokens(bytes32):(address[],uint256[],uint256)")
+      .withArgs([ethereum.Value.fromFixedBytes(BALANCER_POOL_ID)])
+      .reverts()
+    refreshBalancerPosition(SERVICE_SAFE, BALANCER_POOL, BALANCER_POOL_ID, balancerBlock(), Bytes.fromI32(1), false)
+
+    let id = getBalancerPositionId(SERVICE_SAFE, BALANCER_POOL)
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "isActive", "true")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "usdCurrentWithRewards", "0")
   })
 })

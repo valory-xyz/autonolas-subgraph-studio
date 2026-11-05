@@ -5,9 +5,16 @@ import { getTokenPriceUSD } from "../src/priceDiscovery"
 import { getVelodromePrice, getVelodromeV2Price } from "../src/priceAdapters"
 import { calculatePortfolioMetrics, ensureAgentPortfolio } from "../src/helpers"
 import { USDC_NATIVE, BOLD, AERO, DAI, USDC_USD_FEED } from "../src/constants"
-import { mockUsdcUsd, mockEthUsd, seedService, seedTokenPrice } from "./fixtures"
+import { mockUsdcUsd, mockEthUsd, seedService, seedTokenPrice, seedPosition } from "./fixtures"
 import { OPERATOR_SAFE, AGENT_INSTANCE, SERVICE_SAFE, BLOCK_NUMBER, BLOCK_TIMESTAMP } from "./test-helpers"
 import { createRegisterInstanceEvent } from "./mapping-utils"
+import { TOKENS, TokenConfig, PriceSourceConfig } from "../src/tokenConfig"
+
+const HOP_P = Address.fromString("0x00000000000000000000000000000000000000a7")
+const HOP_Q = Address.fromString("0x00000000000000000000000000000000000000a8")
+const HOP_T_P_POOL = Address.fromString("0x00000000000000000000000000000000000000c7")
+const HOP_P_Q_POOL = Address.fromString("0x00000000000000000000000000000000000000c8")
+const HOP_Q_USDC_POOL = Address.fromString("0x00000000000000000000000000000000000000c9")
 
 
 function mockUsdcFeed(answer: i64, updatedAt: BigInt = BLOCK_TIMESTAMP): void {
@@ -226,6 +233,12 @@ describe("portfolio value", () => {
     portfolio.firstTradingTimestamp = BLOCK_TIMESTAMP.minus(BigInt.fromI32(86400 * 10))
     portfolio.save()
 
+    // A closed position: $100 in, $120 out, so roi and apr are non-zero and differ
+    let closed = seedPosition(SERVICE_SAFE, "velodrome-v3", BigInt.fromI32(1), USDC_NATIVE, USDC_NATIVE, null, BigInt.zero(), "0")
+    closed.isActive = false
+    closed.exitAmountUSD = BigDecimal.fromString("120")
+    closed.save()
+
     let event = createRegisterInstanceEvent(OPERATOR_SAFE, BigInt.fromI32(1), AGENT_INSTANCE, BigInt.fromI32(115))
     event.block.number = BLOCK_NUMBER
     event.block.timestamp = BLOCK_TIMESTAMP
@@ -235,8 +248,10 @@ describe("portfolio value", () => {
     assert.stringEquals(p.unrealisedPnL.toString(), "10")
     assert.stringEquals(p.ethAdjustedUnrealisedPnL.toString(), p.unrealisedPnL.toString())
     assert.stringEquals(p.ethAdjustedProjectedUnrealisedPnL.toString(), p.projectedUnrealisedPnL.toString())
-    assert.stringEquals(p.ethAdjustedRoi.toString(), p.roi.toString())
-    assert.stringEquals(p.ethAdjustedApr.toString(), p.apr.toString())
+    assert.stringEquals(p.roi.toString(), "20")
+    assert.stringEquals(p.ethAdjustedRoi.toString(), "20")
+    assert.stringEquals(p.apr.toString(), "730")
+    assert.stringEquals(p.ethAdjustedApr.toString(), "730")
   })
 })
 
@@ -273,5 +288,23 @@ describe("pair-leg pricing", () => {
     // BOLD is referenced to the USDC/USD feed
     mockUsdcFeed(160000000)
     assert.stringEquals(getTokenPriceUSD(BOLD, BLOCK_TIMESTAMP).toString(), "0")
+  })
+})
+
+describe("pair-leg hops", () => {
+  afterEach(() => {
+    clearStore()
+    TOKENS.delete(HOP_P.toHexString().toLowerCase())
+    TOKENS.delete(HOP_Q.toHexString().toLowerCase())
+  })
+
+  test("a pair leg is priced through its own pool only when that pool's pair leg has a feed", () => {
+    // P's only pool pairs it with Q, which has a pool to USDC but no feed: one hop is allowed, two are not
+    TOKENS.set(HOP_P.toHexString().toLowerCase(), new TokenConfig(HOP_P, "P", 18, [new PriceSourceConfig(HOP_P_Q_POOL, "velodrome_v2", 1, 80, HOP_Q)]))
+    TOKENS.set(HOP_Q.toHexString().toLowerCase(), new TokenConfig(HOP_Q, "Q", 18, [new PriceSourceConfig(HOP_Q_USDC_POOL, "velodrome_v2", 1, 80, USDC_NATIVE)]))
+    mockImbalancedStablePool(HOP_Q_USDC_POOL, HOP_Q, USDC_NATIVE, BigInt.fromString("1000000000000000000"), 1000000)
+    mockImbalancedStablePool(HOP_P_Q_POOL, HOP_P, HOP_Q, BigInt.fromString("1000000000000000000"), 1000000000000000000)
+    mockImbalancedStablePool(HOP_T_P_POOL, BOLD, HOP_P, BigInt.fromString("1000000000000000000"), 1000000000000000000)
+    assert.stringEquals(getVelodromeV2Price(BOLD, HOP_T_P_POOL, HOP_P, BLOCK_TIMESTAMP).toString(), "0")
   })
 })
