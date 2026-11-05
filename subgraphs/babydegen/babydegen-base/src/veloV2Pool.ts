@@ -16,7 +16,7 @@ import { getServiceByAgent } from "./config"
 import { PendingMintPosition, ProtocolPosition } from "../generated/schema"
 import { getTokenPriceUSD } from "./priceDiscovery"
 import { convertTokenAmount } from "./tokenUtils"
-import { Address, BigDecimal, ethereum } from "@graphprotocol/graph-ts"
+import { Address, ethereum } from "@graphprotocol/graph-ts"
 
 
 // Store pending position that needs mint data
@@ -111,8 +111,6 @@ function recordMintEntryAmounts(event: ethereum.Event, amount0: BigInt, amount1:
     let position = ProtocolPosition.load(pending.positionId)
     
     if (position != null) {
-      // Get token decimals for conversion
-      
       // Convert to human amounts
       const amount0Human = convertTokenAmount(amount0, Address.fromBytes(position.token0!))
       const amount1Human = convertTokenAmount(amount1, Address.fromBytes(position.token1!))

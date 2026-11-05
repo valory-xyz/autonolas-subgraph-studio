@@ -14,11 +14,11 @@ import { ERC20 } from "../generated/BalancerVault/ERC20"
 import { getTokenPriceUSD } from "./priceDiscovery"
 import { getServiceByAgent } from "./config"
 import { updateFirstTradingTimestamp, calculatePortfolioMetrics, associateSwapsWithPosition } from "./helpers"
-import { getTokenDecimals, getTokenSymbol } from "./tokenUtils"
+import { getTokenSymbol, convertTokenAmount } from "./tokenUtils"
 import { BALANCER_VAULT, PROTOCOL_BALANCER } from "./constants"
 import { calculatePositionROI, initializePositionIncome } from "./roiCalculation"
 
-// Helper function to convert token amount to human readable format
+// BPT amounts, supply and the swap fee are 18-decimal fixed point
 function toHumanAmount(amount: BigInt, decimals: i32): BigDecimal {
   if (amount.equals(BigInt.zero())) {
     return BigDecimal.zero()
@@ -216,8 +216,7 @@ export function refreshBalancerPositionWithEventAmounts(
       const delta = deltas[i]
       
       if (delta.gt(BigInt.zero())) {
-        const tokenDecimals = getTokenDecimals(token)
-        const deltaHuman = toHumanAmount(delta, tokenDecimals)
+        const deltaHuman = convertTokenAmount(delta, token)
         const tokenPrice = getTokenPriceUSD(token, block.timestamp, false)
         const deltaUSD = tokenPrice.times(deltaHuman)
         
@@ -269,8 +268,7 @@ export function refreshBalancerPositionWithEventAmounts(
       const delta = deltas[i]
       
       if (delta.lt(BigInt.zero())) {
-        const tokenDecimals = getTokenDecimals(token)
-        const deltaHuman = toHumanAmount(delta.neg(), tokenDecimals)
+        const deltaHuman = convertTokenAmount(delta.neg(), token)
         const tokenPrice = getTokenPriceUSD(token, block.timestamp, false)
         const deltaUSD = tokenPrice.times(deltaHuman)
         
@@ -425,8 +423,7 @@ export function refreshBalancerPosition(
           const token = poolTokens[i]
           const balance = poolBalances[i]
           
-          const tokenDecimals = getTokenDecimals(token)
-          const balanceHuman = toHumanAmount(balance, tokenDecimals)
+          const balanceHuman = convertTokenAmount(balance, token)
           const userTokenAmount = balanceHuman.times(userShare)
           
           const tokenPrice = getTokenPriceUSD(token, block.timestamp, false)

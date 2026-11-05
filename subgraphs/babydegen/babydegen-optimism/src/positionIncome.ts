@@ -84,7 +84,17 @@ export function recordCollectedFees(
 
   let token0Bytes = position.token0
   let token1Bytes = position.token1
-  if (!recipient.equals(Address.fromBytes(position.agent)) || !token0Bytes || !token1Bytes) {
+  if (!recipient.equals(Address.fromBytes(position.agent))) {
+    // Scoped rule: only a Collect to the Safe is the Safe's fee
+    log.info("FEES: {} tokenId {} Collect to {}, not safe {} — no fee booked", [
+      protocol, position.tokenId.toString(), recipient.toHexString(), Address.fromBytes(position.agent).toHexString()
+    ])
+    return
+  }
+  if (!token0Bytes || !token1Bytes) {
+    log.warning("FEES: {} tokenId {} position {} has no token0/token1 — Collect to safe {} not booked", [
+      protocol, position.tokenId.toString(), position.id.toString(), recipient.toHexString()
+    ])
     return
   }
 

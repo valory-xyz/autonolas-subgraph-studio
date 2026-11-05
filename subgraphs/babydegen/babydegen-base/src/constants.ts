@@ -38,10 +38,8 @@ export const USDS = Address.fromString("0x820C137fa70C8691f0e44Dc420a5e53c168921
 
 // ---- Chainlink price feeds (Base mainnet) -----------------------------------
 // Base DOES have Chainlink feeds (unlike the Mode port), so keep Chainlink primary.
-// Both verified on-chain (live, 8 decimals, "ETH / USD" / "USDC / USD").
 export const ETH_USD_FEED = Address.fromString("0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70")
 export const USDC_USD_FEED = Address.fromString("0x7e860098F58bBFC8648a4311b374B1D669a2bc6B")
-// Verified on-chain: live, 8 decimals, "USDT / USD" / "DAI / USD" / "USDe / USD" / "USDS / USD"
 export const USDT_USD_FEED = Address.fromString("0xf19d560eB8d2ADf07BD6D13ed03e1D11215721F9")
 export const DAI_USD_FEED = Address.fromString("0x591e79239a7d679378eC8c847e5038150364C78F")
 export const USDE_USD_FEED = Address.fromString("0x790181e93e9F4Eedb5b864860C12e4d2CffFe73B")
@@ -121,3 +119,7 @@ export const STABLECOINS: string[] = [
   USDE.toHexString(),
   USDS.toHexString()
 ]
+
+// Default v2 pool swap fees, in basis points
+export const V2_STABLE_FEE_BPS = 5
+export const V2_VOLATILE_FEE_BPS = 30

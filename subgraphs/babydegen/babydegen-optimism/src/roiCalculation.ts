@@ -118,20 +118,8 @@ export function aggregateClosedPositionMetrics(agent: Address): PositionAggregat
   return new PositionAggregates(totalInvestments, totalGrossGains, totalCosts)
 }
 
-/**
- * Update position costs (called when swaps are associated)
- */
-export function updatePositionCosts(position: ProtocolPosition, additionalCosts: BigDecimal): void {
-  position.totalCostsUSD = position.totalCostsUSD.plus(additionalCosts)
-  position.investmentUSD = position.entryAmountUSD.plus(position.totalCostsUSD)
-  
-  saveWithROI(position)
-}
-
 export function saveWithROI(position: ProtocolPosition): void {
-  if (!position.isActive && position.exitAmountUSD) {
-    calculatePositionROI(position)
-  }
+  calculatePositionROI(position)
   position.save()
 }
 

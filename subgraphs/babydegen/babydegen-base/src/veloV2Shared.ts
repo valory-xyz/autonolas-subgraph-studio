@@ -17,7 +17,7 @@ import { getServiceByAgent } from "./config"
 import { parseTotalSlippageFromBucket, associateSwapsWithPosition, calculatePortfolioMetrics } from "./helpers"
 import { getTokenSymbol, convertTokenAmount } from "./tokenUtils"
 import { calculatePositionROI, initializePositionIncome } from "./roiCalculation"
-import { PROTOCOL_VELODROME_V2, VELO_VOTER, PROTOCOL_AERO_V2, rewardTokenFor, WHITELISTED_TOKENS } from "./constants"
+import { PROTOCOL_VELODROME_V2, VELO_VOTER, PROTOCOL_AERO_V2, rewardTokenFor, WHITELISTED_TOKENS, V2_STABLE_FEE_BPS, V2_VOLATILE_FEE_BPS } from "./constants"
 
 // A pool's venue is recorded by the factory handler that created it; pools with no
 // V2PoolVenue row came from the legacy factory.
@@ -45,12 +45,12 @@ export function isPoolRelevant(token0: Address, token1: Address): boolean {
 function setV2PoolFee(pp: ProtocolPosition, poolContract: VelodromeV2Pool): void {
   const venue = V2PoolVenue.load(Address.fromBytes(pp.pool))
   if (venue != null) {
-    pp.fee = venue.stable ? 5 : 30
+    pp.fee = venue.stable ? V2_STABLE_FEE_BPS : V2_VOLATILE_FEE_BPS
     return
   }
   const stableResult = poolContract.try_stable()
   if (!stableResult.reverted) {
-    pp.fee = stableResult.value ? 5 : 30
+    pp.fee = stableResult.value ? V2_STABLE_FEE_BPS : V2_VOLATILE_FEE_BPS
   }
 }
 
@@ -412,8 +412,9 @@ export function refreshVeloV2Position(
     }
     const earnedRes = gauge.try_earned(userAddress)
     if (!earnedRes.reverted) {
-      rewardAmount = convertTokenAmount(earnedRes.value, rewardTokenFor(pp.protocol))
-      rewardUSD = rewardAmount.times(getTokenPriceUSD(rewardTokenFor(pp.protocol), block.timestamp, false))
+      const rewardToken = rewardTokenFor(pp.protocol)
+      rewardAmount = convertTokenAmount(earnedRes.value, rewardToken)
+      rewardUSD = rewardAmount.times(getTokenPriceUSD(rewardToken, block.timestamp, false))
     } else {
       // Symmetric with the CL guard: earned(address) reverting on a staked position is the
       // silent-zero failure mode (non-standard gauge ABI). Log it loudly. See AERO-REWARDS-PLAN.md.

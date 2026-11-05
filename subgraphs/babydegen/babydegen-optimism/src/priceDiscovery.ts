@@ -151,7 +151,7 @@ function getPriceFromSources(
     return new PriceResult(BigDecimal.fromString("0"), BigDecimal.fromString("0"), "none")
   }
   if (config.priceSources.length == 0) {
-    log.warning("PRICE: {} ({}) has no price source — valued at $0", [config.symbol, token.id.toHexString()])
+    log.warning("PRICING: {} ({}) has no price source — valued at $0", [config.symbol, token.id.toHexString()])
     return new PriceResult(BigDecimal.fromString("0"), BigDecimal.fromString("0"), "none")
   }
   
