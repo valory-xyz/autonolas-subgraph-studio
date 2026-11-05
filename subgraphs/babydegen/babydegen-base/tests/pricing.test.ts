@@ -78,6 +78,11 @@ describe("stablecoin pricing", () => {
     assert.fieldEquals("Token", USDC_NATIVE.toHexString(), "priceStale", "false")
   })
 
+  test("USDC at $1.05 is rejected", () => {
+    mockUsdcFeed(105000000)
+    assert.stringEquals(getTokenPriceUSD(USDC_NATIVE, BLOCK_TIMESTAMP).toString(), "0")
+  })
+
   test("depegged starts just below $0.98", () => {
     mockUsdcFeed(97999999)
     getTokenPriceUSD(USDC_NATIVE, BLOCK_TIMESTAMP)

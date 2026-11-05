@@ -672,6 +672,24 @@ describe("Velodrome V2 gauge-staked positions", () => {
     assert.stringEquals(reentered.grossGainUSD.toString(), "110")
   })
 
+  test("an active pool's refresh keeps its fees and rewards", () => {
+    createService(SERVICE_SAFE)
+    const id = makeOpenV2Position(DUMMY0, DUMMY1)
+    const open = ProtocolPosition.load(id)!
+    open.collectedFeesUSD = BigDecimal.fromString("2")
+    open.claimedRewardsUSD = BigDecimal.fromString("5")
+    open.save()
+    mockV2PoolState()
+    createMockedFunction(V2_GAUGE, "earned", "earned(address):(uint256)")
+      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
+      .reverts()
+
+    refreshVeloV2Position(SERVICE_SAFE, V2_POOL, v2Block(), TX_HASH, false)
+
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "collectedFeesUSD", "2")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimedRewardsUSD", "5")
+  })
+
   test("pool with no gauge (Voter returns 0x0) → position closes cleanly", () => {
     createService(SERVICE_SAFE)
     const id = makeOpenV2Position(DUMMY0, DUMMY1)

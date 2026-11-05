@@ -400,6 +400,26 @@ describe("ETH funding uses the same user-side rule", () => {
     fundingField(SAFE_CL, "totalWithdrawnUsd", "0")
   })
 
+  test("a Deposit log not emitted by WETH is not a return", () => {
+    fundOneEth(SAFE_CL)
+    seedAddressType(WETH, true, false)
+    let receipt = newReceipt([
+      newLog(SOME_CONTRACT.toHexString(), [WETH_DEPOSIT_TOPIC, addressTopic(SAFE_CL)], "0x00000000000000000000000000000000000000000000000006f05b59d3b20000", 1)
+    ])
+    processSafeEthTransfer(SAFE_CL, newExecution(SAFE_CL, execCallTo(WETH), BigInt.zero(), receipt), seededAddressType)
+    fundingField(SAFE_CL, "totalWithdrawnUsd", "1000")
+  })
+
+  test("a WETH Deposit for another address is not a return", () => {
+    fundOneEth(SAFE_CL)
+    seedAddressType(WETH, true, false)
+    let receipt = newReceipt([
+      newLog(WETH.toHexString(), [WETH_DEPOSIT_TOPIC, addressTopic(OTHER_SAFE)], "0x00000000000000000000000000000000000000000000000006f05b59d3b20000", 1)
+    ])
+    processSafeEthTransfer(SAFE_CL, newExecution(SAFE_CL, execCallTo(WETH), BigInt.zero(), receipt), seededAddressType)
+    fundingField(SAFE_CL, "totalWithdrawnUsd", "1000")
+  })
+
   test("ETH sent to a contract that sends nothing back to the Safe is a withdrawal", () => {
     fundOneEth(SAFE_CL)
     seedAddressType(SOME_CONTRACT, true, false)

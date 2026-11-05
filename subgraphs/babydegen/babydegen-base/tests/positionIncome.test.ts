@@ -148,6 +148,15 @@ describe("collected fees", () => {
     assert.fieldEquals("AgentPortfolio", SERVICE_SAFE.toHexString(), "totalGrossGains", "105")
   })
 
+  test("each fee leg is valued at its own token's price", () => {
+    seedTokenPrice(BOLD, "BOLD", 18, "2")
+    let p = seedPosition(SERVICE_SAFE, PROTOCOL_VELODROME_V3, BigInt.fromI32(7), USDC_NATIVE, BOLD, null, BigInt.zero(), "0")
+    closeAt(p, "100")
+    // 1 USDC at $1 and 0.5 BOLD at $2
+    handleCollect(newCollect(BigInt.fromI32(7), SERVICE_SAFE, BigInt.fromI64(1000000), BigInt.fromString("500000000000000000")))
+    positionField(p, "collectedFeesUSD", "2")
+  })
+
   test("a Collect paid to another address is not the Safe's fee", () => {
     let p = seedPosition(SERVICE_SAFE, PROTOCOL_VELODROME_V3, BigInt.fromI32(7), USDC_NATIVE, BOLD, null, BigInt.zero(), "0")
     closeAt(p, "100")

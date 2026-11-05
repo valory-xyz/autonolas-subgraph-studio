@@ -5,7 +5,7 @@ import { getTokenPriceUSD } from "../src/priceDiscovery"
 import { getVelodromePrice, getVelodromeV2Price } from "../src/priceAdapters"
 import { calculatePortfolioMetrics, ensureAgentPortfolio } from "../src/helpers"
 import { calculateUninvestedValue } from "../src/tokenBalances"
-import { USDT, DOLA, SDAI, BOLD, BOLD_V2, FRAX, LUSD, VELO, WBTC, SUSD, USDS, OUSDT, USDC_NATIVE, USDC_USD_FEED, USDT_USD_FEED, DAI_USD_FEED, WBTC_USD_FEED, SUSD_USD_FEED } from "../src/constants"
+import { USDC_BRIDGED, USDT, DOLA, SDAI, BOLD, BOLD_V2, FRAX, LUSD, VELO, WBTC, SUSD, USDS, OUSDT, USDC_NATIVE, USDC_USD_FEED, USDT_USD_FEED, DAI_USD_FEED, WBTC_USD_FEED, SUSD_USD_FEED } from "../src/constants"
 import { processERC20Transfer } from "../src/tokenBalances"
 import { mockUsdcUsd, mockEthUsd, seedService, seedTokenPrice, seedAddressType, seededAddressType, newTransfer, newReceipt } from "./fixtures"
 import { OPERATOR_SAFE, AGENT_INSTANCE, SERVICE_SAFE, BLOCK_NUMBER, BLOCK_TIMESTAMP } from "./test-helpers"
@@ -368,6 +368,11 @@ describe("pair-leg pricing", () => {
   test("USDC at $1.05 is rejected", () => {
     mockUsdcFeedAt(105000000)
     assert.stringEquals(getTokenPriceUSD(USDC_NATIVE, BLOCK_TIMESTAMP).toString(), "0")
+  })
+
+  test("USDC.e at $1.05 is rejected", () => {
+    mockUsdcFeedAt(105000000)
+    assert.stringEquals(getTokenPriceUSD(USDC_BRIDGED, BLOCK_TIMESTAMP).toString(), "0")
   })
 
   test("BOLD (0x0356…) is priced from its BOLD/USDC stable pool's quote", () => {
