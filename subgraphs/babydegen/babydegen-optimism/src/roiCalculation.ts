@@ -14,7 +14,7 @@ export function calculateActualROI(agent: Address): BigDecimal {
   }
   
   let totalInvestments = BigDecimal.zero()  // Sum of Ii (entry amounts only)
-  let totalGrossGains = BigDecimal.zero()   // Sum of Gi (exit amounts)
+  let totalGrossGains = BigDecimal.zero()   // Sum of Gi
   let totalCosts = BigDecimal.zero()        // Sum of Ci (costs only)
   
   // Iterate through all positions

@@ -106,7 +106,7 @@ export const WHITELISTED_TOKENS: string[] = [
   USDS.toHexString()
 ]
 
-// USD stablecoins: no lower price bound, and depegged below DEPEG_THRESHOLD (priceDiscovery.ts)
+// USD stablecoins (price band and depeg flag: priceDiscovery.ts)
 export const STABLECOINS: string[] = [
   USDC_NATIVE.toHexString(),
   BOLD.toHexString(),

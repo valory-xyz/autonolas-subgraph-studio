@@ -40,8 +40,8 @@ export function isPoolRelevant(token0: Address, token1: Address): boolean {
   return isTokenWhitelisted(token0) && isTokenWhitelisted(token1)
 }
 
-// Fee tier of a v2 pool: 5 (0.05%) stable, 30 (0.30%) volatile. Aero v2 pools have no stable();
-// the factory that created them recorded which kind they are in V2PoolVenue.
+// Fee tier of a v2 pool by kind. Aero v2 pools have no stable(); the factory that created them
+// recorded which kind they are in V2PoolVenue.
 function setV2PoolFee(pp: ProtocolPosition, poolContract: VelodromeV2Pool): void {
   const venue = V2PoolVenue.load(Address.fromBytes(pp.pool))
   if (venue != null) {
@@ -56,13 +56,13 @@ function setV2PoolFee(pp: ProtocolPosition, poolContract: VelodromeV2Pool): void
 
 // Resolve a v2 pool's gauge. Returns Address.zero() when the pool has no gauge.
 // - aero-v2: Aero v2 pools have no gauge() and the Aero Voter has no gauges(pool), so read the AeroGauge row
-//   built from GaugeManager GaugeCreated (aeroGaugeManager.ts), re-read on every refresh and written
+//   built from GaugeManager GaugeCreated, re-read on every refresh and written
 //   to rewardsContract (which positionIncome matches rewards on) but never read back from it; no
 //   row means no gauge yet.
 // - legacy: the Aerodrome Voter's gauges(pool), cached on the position's rewardsContract. A Voter
 //   revert (transient) is logged and not cached, so the next refresh retries; a zero gauge
-//   (legitimate) is silent and not cached, so a later-gauged pool is picked up.
-// See AERO-REWARDS-PLAN.md §7.
+//   (legitimate) is silent and not cached, so a later-gauged pool is picked up. See
+//   AERO-REWARDS-PLAN.md §7.
 function resolveV2Gauge(poolAddress: Address, pp: ProtocolPosition): Address {
   if (pp.protocol == PROTOCOL_AERO_V2) {
     const aeroGauge = AeroGauge.load(poolAddress)

@@ -120,8 +120,8 @@ function usdcReferencedStable(address: Address, symbol: string, decimals: i32): 
   ])
 }
 
-// A stablecoin priced off its own Chainlink feed, with an Aero USDC pool as the priority-2
-// fallback when the feed gives no valid price.
+// A stablecoin priced off its own Chainlink feed, with an optional Aero USDC pool as the
+// priority-2 fallback when the feed gives no valid price.
 function chainlinkStable(
   address: Address,
   symbol: string,

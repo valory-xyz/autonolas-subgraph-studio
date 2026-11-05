@@ -9,7 +9,7 @@ Indexing **filters by Olas `agentId == 115`** and tracks every Basius service (c
 > **Id note:** 115 is the **agent** id, not a service id. (Service *115* is an unrelated
 > 2025 service on the generic agent 9 — an early Divya/Tanya mix-up, resolved on-chain.)
 
-> Status: **Phase 1 complete.** Builds + 19 tests green. Registry, Aerodrome surface (ABI
+> Status: **Phase 1 complete.** Builds and tests green. Registry, Aerodrome surface (ABI
 > compatibility verified vs deployed contracts; LpSugar bootstrap uses `forSwaps`), Chainlink
 > feeds, LiFi, v2 PoolFactory, startBlock and cadence all confirmed. AERO is priced off the
 > Aerodrome AERO/USDC volatile pool; OLAS dropped (not held). Phase 2 (per-day transactions /
@@ -171,15 +171,22 @@ The `ethAdjusted*` fields are deprecated and equal their unadjusted counterparts
 
 ### Pricing (`priceDiscovery.ts`, `priceAdapters.ts`, `tokenConfig.ts`)
 - No $1 fallback. With no valid price a token keeps its last valid price with `priceStale = true`
-  (logged once, `PRICING:`); a token never priced is 0. Stablecoins have no lower bound, and a
-  `STABLECOINS` member priced below $0.98 has `depegged = true`.
+  (logged once, `PRICING:`); a token never priced is 0.
 - `getTokenPriceUSD` reads sources by priority; a higher-numbered one only when every better
   source failed. Chainlink answers up to 90000s old are accepted (24h heartbeat + grace).
-- A pool's pair leg is priced from its own token config (its Chainlink source), never taken as $1;
-  a pair leg with none gives no pool price. Feed staleness is judged against the event's block.
-- Every `STABLECOINS` token gets the no-floor band ($0–1.50; USDC $0–1.05).
-- A stable pool's `getAmountOut` quote is net of the pool's swap fee (about 0.9995 × at the default 5 bps stable fee). The bias is accepted: it is far inside the $0.98 depeg threshold. A v2 pool whose `stable()` is true is
+- A pool's pair leg is priced from its own token config, never taken as $1: its Chainlink source,
+  else its `velodrome_v2` pool when that pool's pair leg has one; otherwise the pool gives no
+  price. Feed staleness is judged against the event's block.
+- `STABLECOINS` tokens have no lower price bound ($0–1.50; USDC $0–1.05), so a depeg is recorded:
+  `depegged` below `DEPEG_THRESHOLD`.
+- A stable pool's `getAmountOut` quote is net of the pool's swap fee (about 0.9995 × at the default 5 bps stable fee). The bias is accepted: it is far inside the `DEPEG_THRESHOLD` depeg line. A v2 pool whose `stable()` is true is
   priced from its `getAmountOut` quote for one token, not its reserve ratio.
+
+### CL exits (`veloCLShared.ts`)
+- A `DecreaseLiquidity` leaving zero liquidity, or whose `positions()` reverts because the NFT is
+  burned later in the same block (`eth_call` reads end-of-block state), closes the position: the
+  exit is valued from the event amounts and the stored tokens, decreases in the burn block add up,
+  and a `CL exit:` warning is logged.
 
 ### Position income (`positionIncome.ts`)
 - `ProtocolPosition.collectedFees0/1` and `collectedFeesUSD`: every `Collect` first pays out the

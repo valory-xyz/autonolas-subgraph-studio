@@ -1,8 +1,7 @@
 specVersion: 0.0.8
 schema:
   file: ./schema.graphql
-# NOTE: token Transfer handlers and the Safe's ExecutionSuccess read the receipt (`receipt: true`);
-# the funding and withdrawal rules are in CLAUDE.md.
+# NOTE: see CLAUDE.md for the funding and withdrawal rules and which handlers set `receipt: true`.
 dataSources:
   - kind: ethereum
     name: ServiceRegistryL2
