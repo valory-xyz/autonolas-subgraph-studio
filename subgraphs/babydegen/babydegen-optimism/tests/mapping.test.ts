@@ -37,7 +37,10 @@ import {
   AERO_V2_VOLATILE_FACTORY,
   WHITELISTED_TOKENS
 } from "../src/constants"
-import { mockUsdcUsd } from "./fixtures"
+import { mockUsdcUsd, seedPosition, seedAddressType, seededAddressType, newTransfer, newReceipt } from "./fixtures"
+import { processERC20Transfer } from "../src/tokenBalances"
+import { PROTOCOL_VELODROME_V3 } from "../src/constants"
+import { ClaimableRewardBeforeBlock } from "../generated/schema"
 import {
   createRegisterInstanceEvent,
   createCreateMultisigWithAgentsEvent,
@@ -1019,6 +1022,37 @@ function openLegacyCLPosition(): Bytes {
 describe("Legacy CL venue after the CLVenue refactor", () => {
   afterEach(() => {
     clearStore()
+  })
+
+  test("a claim is split by what each position had earned before its block's first refresh", () => {
+    createService(SERVICE_SAFE)
+    mockChainlinkEthUsd()
+    mockLegacyCLPosition()
+    mockVeloUsdcPool()
+    const a = openLegacyCLPosition() // claimable 2
+    const b = seedPosition(SERVICE_SAFE, PROTOCOL_VELODROME_V3, BigInt.fromI32(43), DUMMY0, DUMMY1, LEGACY_CL_GAUGE, BigInt.fromI32(1), "1")
+    // A row from an earlier block says nothing about this block
+    const stale = new ClaimableRewardBeforeBlock(b.id)
+    stale.block = BLOCK_NUMBER
+    stale.claimableReward = BigDecimal.fromString("9")
+    stale.save()
+
+    // In the claim's block a refresh reads earned() = 0 before the reward Transfer is handled
+    const claimBlock = v2Block()
+    claimBlock.number = BLOCK_NUMBER.plus(BigInt.fromI32(1))
+    createMockedFunction(LEGACY_CL_GAUGE, "earned", "earned(address,uint256):(uint256)")
+      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE), ethereum.Value.fromUnsignedBigInt(AERO_TOKEN_ID)])
+      .returns([ethereum.Value.fromUnsignedBigInt(BigInt.zero())])
+    refreshVeloCLPosition(a, AERO_TOKEN_ID, claimBlock, TX_HASH, false)
+    assert.fieldEquals("ProtocolPosition", a.toHexString(), "claimableReward", "0")
+
+    seedAddressType(LEGACY_CL_GAUGE, true, false)
+    const claim = newTransfer(VELO, LEGACY_CL_GAUGE, SERVICE_SAFE, BigInt.fromString("3000000000000000000"), 1, newReceipt([]))
+    claim.block.number = claimBlock.number
+    processERC20Transfer(claim, seededAddressType)
+
+    assert.fieldEquals("ProtocolPosition", a.toHexString(), "claimedRewards", "2")
+    assert.fieldEquals("ProtocolPosition", b.id.toHexString(), "claimedRewards", "1")
   })
 
   test("mint + 4-arg IncreaseLiquidity through the legacy NFPM keeps its label, mapping and reward token", () => {
