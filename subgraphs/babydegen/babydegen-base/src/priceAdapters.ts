@@ -1,9 +1,9 @@
-import { Address, BigDecimal, BigInt, ethereum, Bytes } from "@graphprotocol/graph-ts"
+import { Address, BigDecimal, BigInt, ethereum, Bytes, log } from "@graphprotocol/graph-ts"
 import { VelodromeCLPool } from "../generated/VeloNFTManager/VelodromeCLPool"
 import { VelodromeV2Pool } from "../generated/templates/VeloV2Pool/VelodromeV2Pool"
 import { AggregatorV3Interface } from "../generated/templates/Safe/AggregatorV3Interface"
 import { getTokenConfig } from "./tokenConfig"
-import { WETH, Q96, STABLECOINS, ETH_USD_FEED } from "./constants"
+import { WETH, Q96, ETH_USD_FEED, USDC_NATIVE, USDT, DAI, USDE, USDS, USDC_USD_FEED, USDT_USD_FEED, DAI_USD_FEED, USDE_USD_FEED, USDS_USD_FEED } from "./constants"
 
 // Chainlink price adapter with validation
 export function getChainlinkPrice(feedAddress: Address, blockTimestamp: BigInt = BigInt.fromI32(0)): BigDecimal {
@@ -168,6 +168,7 @@ export function getVelodromeV2Price(
     let oneToken = BigInt.fromI32(10).pow(targetTokenConfig.decimals as u8)
     let quote = pool.try_getAmountOut(oneToken, token)
     if (quote.reverted) {
+      log.warning("PRICING: getAmountOut() reverted on stable pool {} pricing {}", [poolAddress.toHexString(), token.toHexString()])
       return BigDecimal.fromString("0")
     }
     let pairUnit = BigInt.fromI32(10).pow(pairTokenConfig.decimals as u8).toBigDecimal()
@@ -252,25 +253,24 @@ export function getVelodromeV2Price(
   return BigDecimal.fromString("0")
 }
 
+// A pool's pair leg is priced from its own Chainlink feed, never assumed to be $1 (no recursion)
 function getPairTokenPrice(pairToken: Address, blockTimestamp: BigInt = BigInt.fromI32(0)): BigDecimal {
-  let tokenHex = pairToken.toHexString().toLowerCase()
-  
-  // Direct stablecoin pricing - NO RECURSION (Base stablecoin set from constants)
-  for (let i = 0; i < STABLECOINS.length; i++) {
-    if (tokenHex == STABLECOINS[i]) {
-      return BigDecimal.fromString("1.0")
-    }
+  let feed = pairTokenFeed(pairToken)
+  if (feed !== null) {
+    return getChainlinkPrice(feed, blockTimestamp)
   }
+  log.warning("PRICING: pair token {} has no price feed — its pools give no price", [pairToken.toHexString()])
+  return BigDecimal.zero()
+}
 
-  // WETH - direct Chainlink call (NO RECURSION)
-  if (tokenHex == WETH.toHexString().toLowerCase()) {
-    // Pass block timestamp for staleness checking if available
-    let ethPrice = getChainlinkPrice(ETH_USD_FEED, blockTimestamp)
-    return ethPrice.gt(BigDecimal.fromString("0")) ? ethPrice : BigDecimal.fromString("3000.0")
-  }
-  
-  // Safe fallback for unknown tokens
-  return BigDecimal.fromString("1.0")
+function pairTokenFeed(token: Address): Address | null {
+  if (token.equals(USDC_NATIVE)) return USDC_USD_FEED
+  if (token.equals(USDT)) return USDT_USD_FEED
+  if (token.equals(DAI)) return DAI_USD_FEED
+  if (token.equals(USDE)) return USDE_USD_FEED
+  if (token.equals(USDS)) return USDS_USD_FEED
+  if (token.equals(WETH)) return ETH_USD_FEED
+  return null
 }
 
 function sqrtPriceToToken0Price(
@@ -300,8 +300,8 @@ function sqrtPriceToToken0Price(
   
   let price = sqrtPrice.times(sqrtPrice) // Square it safely
   
-  // Decimal adjustment with bounds checking
-  let decimalDiff = token1Decimals - token0Decimals
+  // sqrtPrice² is raw token1 per raw token0; scale by 10^(token0Decimals - token1Decimals)
+  let decimalDiff = token0Decimals - token1Decimals
   if (decimalDiff > 0 && decimalDiff <= 18) {
     let multiplier = BigDecimal.fromString("1")
     for (let i = 0; i < decimalDiff; i++) {

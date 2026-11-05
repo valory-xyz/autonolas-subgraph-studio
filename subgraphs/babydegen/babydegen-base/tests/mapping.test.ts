@@ -49,6 +49,7 @@ import {
   AERO_V2_STABLE_FACTORY,
   AERO_V2_VOLATILE_FACTORY
 } from "../src/constants"
+import { mockUsdcUsd } from "./fixtures"
 import {
   createRegisterInstanceEvent,
   createCreateMultisigWithAgentsEvent,
@@ -491,7 +492,8 @@ describe("getVelodromeV2Price — AERO/USDC volatile pool", () => {
     createMockedFunction(POOL, "token1", "token1():(address)")
       .withArgs([])
       .returns([ethereum.Value.fromAddress(USDC_NATIVE)])
-    // 1,000,000 AERO (1e24) vs 1,300,000 USDC (1.3e12) → price = 1.3 USDC/AERO × $1
+    // 1,000,000 AERO (1e24) vs 1,300,000 USDC (1.3e12) → price = 1.3 USDC/AERO × $1 (USDC feed)
+    mockUsdcUsd()
     // A volatile pool: priced from its reserves
     createMockedFunction(POOL, "stable", "stable():(bool)").withArgs([]).returns([ethereum.Value.fromBoolean(false)])
     createMockedFunction(POOL, "getReserves", "getReserves():(uint256,uint256,uint256)")
@@ -687,6 +689,7 @@ function mockV2PoolState(): void {
 const AERO_PRICE_POOL = Address.fromString("0x6cdcb1c4a4d1c3c6d054b27ac5b77e89eafb971d")
 
 function mockAeroUsdcPool(): void {
+  mockUsdcUsd()
   // On-chain ordering (verified): USDC (0x8335…) < AERO (0x9401…), so USDC is token0. Mock it
   // that way so the test exercises the same getVelodromeV2Price branch production hits.
   createMockedFunction(AERO_PRICE_POOL, "token0", "token0():(address)")
@@ -1174,6 +1177,7 @@ function aeroBlock(): ethereum.Block {
 // AERO_PROTOCOL_AERO (0x3f5b…) sorts before USDC (0x8335…), so it is token0 on-chain.
 // 1M AERO vs 600k USDC → AERO ≈ $0.60.
 function mockAeroProtocolAeroUsdcPool(): void {
+  mockUsdcUsd()
   createMockedFunction(AERO_PROTOCOL_AERO_PRICE_POOL, "token0", "token0():(address)")
     .withArgs([]).returns([ethereum.Value.fromAddress(AERO_PROTOCOL_AERO)])
   createMockedFunction(AERO_PROTOCOL_AERO_PRICE_POOL, "token1", "token1():(address)")

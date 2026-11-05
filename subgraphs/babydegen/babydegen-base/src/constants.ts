@@ -108,7 +108,7 @@ export const WHITELISTED_TOKENS: string[] = [
   USDS.toHexString()
 ]
 
-// USD stablecoins: priced at $1 as a pool's pair leg, and depegged below $0.98
+// USD stablecoins: depegged below $0.98
 export const STABLECOINS: string[] = [
   USDC_NATIVE.toHexString(),
   BOLD.toHexString(),

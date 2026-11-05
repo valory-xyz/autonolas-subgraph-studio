@@ -2,10 +2,10 @@ import { assert, describe, test, clearStore, afterEach, createMockedFunction } f
 import { Address, BigDecimal, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts"
 import { FundingBalance, TokenBalance, AgentPortfolio } from "../generated/schema"
 import { getTokenPriceUSD } from "../src/priceDiscovery"
-import { getVelodromeV2Price } from "../src/priceAdapters"
+import { getVelodromePrice, getVelodromeV2Price } from "../src/priceAdapters"
 import { calculatePortfolioMetrics, ensureAgentPortfolio } from "../src/helpers"
-import { USDC_NATIVE, BOLD, USDC_USD_FEED } from "../src/constants"
-import { mockEthUsd, seedService, seedTokenPrice } from "./fixtures"
+import { USDC_NATIVE, BOLD, AERO, DAI, USDC_USD_FEED } from "../src/constants"
+import { mockUsdcUsd, mockEthUsd, seedService, seedTokenPrice } from "./fixtures"
 import { OPERATOR_SAFE, AGENT_INSTANCE, SERVICE_SAFE, BLOCK_NUMBER, BLOCK_TIMESTAMP } from "./test-helpers"
 import { createRegisterInstanceEvent } from "./mapping-utils"
 
@@ -30,8 +30,10 @@ function revertUsdcFeed(): void {
 
 // An imbalanced stable pool: reserves say $0.755, the pool's own quote for 1 BOLD is $0.994053
 const STABLE_POOL = Address.fromString("0x00000000000000000000000000000000000000c0")
+const AERO_USDC_POOL = Address.fromString("0x6cdcb1c4a4d1c3c6d054b27ac5b77e89eafb971d")
 
 function mockImbalancedStablePool(pool: Address, token: Address, pairToken: Address, oneToken: BigInt, quote: i64): void {
+  mockUsdcUsd()
   createMockedFunction(pool, "token0", "token0():(address)").withArgs([]).returns([ethereum.Value.fromAddress(pairToken)])
   createMockedFunction(pool, "token1", "token1():(address)").withArgs([]).returns([ethereum.Value.fromAddress(token)])
   createMockedFunction(pool, "getReserves", "getReserves():(uint256,uint256,uint256)").withArgs([]).returns([
@@ -109,6 +111,51 @@ describe("stablecoin pricing", () => {
   test("a stable pool prices from its quote, not its reserve ratio", () => {
     mockImbalancedStablePool(STABLE_POOL, BOLD, USDC_NATIVE, BigInt.fromString("1000000000000000000"), 994053)
     assert.stringEquals(getVelodromeV2Price(BOLD, STABLE_POOL, USDC_NATIVE).toString(), "0.994053")
+  })
+
+  test("a pool's USDC leg is priced from the USDC feed, not $1", () => {
+    mockImbalancedStablePool(STABLE_POOL, BOLD, USDC_NATIVE, BigInt.fromString("1000000000000000000"), 994053)
+    mockUsdcFeed(90000000)
+    assert.stringEquals(getVelodromeV2Price(BOLD, STABLE_POOL, USDC_NATIVE).toString(), "0.8946477")
+  })
+
+  test("a pair token with no feed gives no pool price", () => {
+    mockImbalancedStablePool(STABLE_POOL, AERO, BOLD, BigInt.fromString("1000000000000000000"), 994053000000000000)
+    assert.stringEquals(getVelodromeV2Price(AERO, STABLE_POOL, BOLD).toString(), "0")
+  })
+
+  test("a CL pool of 6- and 18-decimal tokens is priced with the decimals the right way round", () => {
+    mockUsdcUsd()
+    const pool = Address.fromString("0x00000000000000000000000000000000000000c2")
+    // USDC token0 (6 dec), DAI token1 (18 dec); sqrtPrice 800,000 → 0.64 DAI per USDC → $1.5625
+    createMockedFunction(pool, "slot0", "slot0():(uint160,int24,uint16,uint16,uint16,bool)")
+      .withArgs([])
+      .returns([
+        ethereum.Value.fromUnsignedBigInt(BigInt.fromString("63382530011411470074835160268800000")),
+        ethereum.Value.fromI32(0),
+        ethereum.Value.fromI32(0),
+        ethereum.Value.fromI32(0),
+        ethereum.Value.fromI32(0),
+        ethereum.Value.fromBoolean(true)
+      ])
+    createMockedFunction(pool, "token0", "token0():(address)").withArgs([]).returns([ethereum.Value.fromAddress(USDC_NATIVE)])
+    createMockedFunction(pool, "token1", "token1():(address)").withArgs([]).returns([ethereum.Value.fromAddress(DAI)])
+    assert.stringEquals(getVelodromePrice(DAI, pool, USDC_NATIVE).toString(), "1.5625")
+  })
+
+  test("a token that is not a stablecoin is never marked depegged", () => {
+    mockUsdcUsd()
+    // AERO token0, USDC token1: 1,000,000 AERO vs 600,000 USDC → $0.60
+    createMockedFunction(AERO_USDC_POOL, "token0", "token0():(address)").withArgs([]).returns([ethereum.Value.fromAddress(AERO)])
+    createMockedFunction(AERO_USDC_POOL, "token1", "token1():(address)").withArgs([]).returns([ethereum.Value.fromAddress(USDC_NATIVE)])
+    createMockedFunction(AERO_USDC_POOL, "stable", "stable():(bool)").withArgs([]).returns([ethereum.Value.fromBoolean(false)])
+    createMockedFunction(AERO_USDC_POOL, "getReserves", "getReserves():(uint256,uint256,uint256)").withArgs([]).returns([
+      ethereum.Value.fromUnsignedBigInt(BigInt.fromString("1000000000000000000000000")),
+      ethereum.Value.fromUnsignedBigInt(BigInt.fromI64(600000000000)),
+      ethereum.Value.fromUnsignedBigInt(BigInt.zero())
+    ])
+    assert.stringEquals(getTokenPriceUSD(AERO, BLOCK_TIMESTAMP).toString(), "0.6")
+    assert.fieldEquals("Token", AERO.toHexString(), "depegged", "false")
   })
 
   test("BOLD is not given $1 when its reference feed fails", () => {

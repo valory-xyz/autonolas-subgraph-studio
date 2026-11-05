@@ -216,8 +216,7 @@ function initializeTokens(): void {
   ))
 
   // Chainlink-priced stablecoins. USDT falls back to the Aero CL tickSpacing-1 USDC/USDT pool.
-  // DAI, USDe and USDS are feed-only: the CL adapter's decimal adjustment is inverted for
-  // 18-vs-6-decimal pairs, so a pool fallback would price them at ~1e-24.
+  // DAI, USDe and USDS are feed-only.
   TOKENS.set(USDT.toHexString().toLowerCase(), chainlinkStable(USDT, "USDT", 6, "USDT_USD",
     Address.fromString("0xD448990883e3Bf9cDD8ebCA368A3ECF9D629aAf7"))) // Aero USDC/USDT CL
   TOKENS.set(DAI.toHexString().toLowerCase(), chainlinkStable(DAI, "DAI", 18, "DAI_USD", null))

@@ -138,7 +138,7 @@ v0.13.10. Aero positions are labelled **`aero-cl` / `aero-v2`**; legacy labels a
 - **Pricing** — Aero's AERO prices off the Aero v2 AERO/USDC volatile pool `0xF634058d…` (`tokenConfig.ts`).
   USDT / DAI / USDe / USDS price off their own Chainlink feeds (priority 1) with
   the Aero CL tickSpacing-1 USDC/USDT pool as USDT's priority-2 fallback. DAI / USDe / USDS are
-  feed-only (the CL adapter mis-scales 18-vs-6-decimal pairs, so a pool would price them ~0). They are
+  feed-only (no pool fallback is configured for them). They are
   **not** on `usdcReferencedStable`, and they are in `STABLECOINS`, so `depegged` is set below $0.98.
   `getPriceFromSources` reads a higher-numbered priority only when every better source failed. They
   validate against the 0–1.5 band (no lower bound, so a depeg their feed reports is kept), and

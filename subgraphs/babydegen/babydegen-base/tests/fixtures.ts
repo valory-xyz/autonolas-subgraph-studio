@@ -3,6 +3,7 @@ import { Address, BigDecimal, BigInt, Bytes, ethereum } from "@graphprotocol/gra
 import { Transfer } from "../generated/USDC_Native/ERC20"
 import { AddressType, NFTPositionMapping, ProtocolPosition, Service, Token } from "../generated/schema"
 import { initializePositionIncome } from "../src/roiCalculation"
+import { USDC_USD_FEED } from "../src/constants"
 import { ETH_USD_FEED, ETH_PRICE_RAW, BLOCK_NUMBER, BLOCK_TIMESTAMP, TX_HASH, SERVICE_ID } from "./test-helpers"
 
 export const TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
@@ -57,6 +58,19 @@ export function mockEthUsd(): void {
     .returns([
       ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1)),
       ethereum.Value.fromSignedBigInt(ETH_PRICE_RAW),
+      ethereum.Value.fromUnsignedBigInt(BLOCK_TIMESTAMP),
+      ethereum.Value.fromUnsignedBigInt(BLOCK_TIMESTAMP),
+      ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1))
+    ])
+}
+
+// The USDC/USD feed at $1: a USDC-paired pool's price is read against it
+export function mockUsdcUsd(): void {
+  createMockedFunction(USDC_USD_FEED, "latestRoundData", "latestRoundData():(uint80,int256,uint256,uint256,uint80)")
+    .withArgs([])
+    .returns([
+      ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1)),
+      ethereum.Value.fromSignedBigInt(BigInt.fromI32(100000000)),
       ethereum.Value.fromUnsignedBigInt(BLOCK_TIMESTAMP),
       ethereum.Value.fromUnsignedBigInt(BLOCK_TIMESTAMP),
       ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1))

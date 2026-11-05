@@ -1,11 +1,11 @@
-import { Address, BigDecimal, BigInt, ethereum, Bytes } from "@graphprotocol/graph-ts"
+import { Address, BigDecimal, BigInt, ethereum, Bytes, log } from "@graphprotocol/graph-ts"
 import { VelodromeCLPool } from "../generated/VeloNFTManager/VelodromeCLPool"
 import { VelodromeV2Pool } from "../generated/templates/VeloV2Pool/VelodromeV2Pool"
 import { AggregatorV3Interface } from "../generated/templates/Safe/AggregatorV3Interface"
 import { BalancerV2WeightedPool } from "../generated/BalancerVault/BalancerV2WeightedPool"
 import { BalancerV2Vault } from "../generated/BalancerVault/BalancerV2Vault"
 import { getTokenConfig } from "./tokenConfig"
-import { USDC_NATIVE, USDT, DAI, LUSD, DOLA, WETH, Q96, BALANCER_VAULT } from "./constants"
+import { USDC_NATIVE, USDT, DAI, LUSD, WETH, Q96, BALANCER_VAULT, ETH_USD_FEED, USDC_USD_FEED, USDT_USD_FEED, DAI_USD_FEED } from "./constants"
 
 // Chainlink price adapter with validation
 export function getChainlinkPrice(feedAddress: Address, blockTimestamp: BigInt = BigInt.fromI32(0)): BigDecimal {
@@ -251,6 +251,7 @@ export function getVelodromeV2Price(
     let oneToken = BigInt.fromI32(10).pow(targetTokenConfig.decimals as u8)
     let quote = pool.try_getAmountOut(oneToken, token)
     if (quote.reverted) {
+      log.warning("PRICING: getAmountOut() reverted on stable pool {} pricing {}", [poolAddress.toHexString(), token.toHexString()])
       return BigDecimal.fromString("0")
     }
     let pairUnit = BigInt.fromI32(10).pow(pairTokenConfig.decimals as u8).toBigDecimal()
@@ -335,34 +336,27 @@ export function getVelodromeV2Price(
   return BigDecimal.fromString("0")
 }
 
+// A pool's pair leg is priced from its own Chainlink feed, never assumed to be $1. LUSD has no
+// feed, so it is priced from its own USDC pool; no other pair token recurses.
 function getPairTokenPrice(pairToken: Address, blockTimestamp: BigInt = BigInt.fromI32(0)): BigDecimal {
-  let tokenHex = pairToken.toHexString().toLowerCase()
-  
-  // Direct stablecoin pricing - NO RECURSION
-  let stablecoins = [
-    USDC_NATIVE.toHexString().toLowerCase(),
-    USDT.toHexString().toLowerCase(),
-    DAI.toHexString().toLowerCase(),
-    LUSD.toHexString().toLowerCase(),
-    DOLA.toHexString().toLowerCase()  // Add DOLA to direct stablecoin list
-  ]
-  
-  for (let i = 0; i < stablecoins.length; i++) {
-    if (tokenHex == stablecoins[i]) {
-      return BigDecimal.fromString("1.0")
-    }
+  let feed = pairTokenFeed(pairToken)
+  if (feed !== null) {
+    return getChainlinkPrice(feed, blockTimestamp)
   }
-  
-  // WETH - direct Chainlink call (NO RECURSION)
-  if (tokenHex == WETH.toHexString().toLowerCase()) {
-    let ethFeed = Address.fromString("0x13e3Ee699D1909E989722E753853AE30b17e08c5")
-    // Pass block timestamp for staleness checking if available
-    let ethPrice = getChainlinkPrice(ethFeed, blockTimestamp)
-    return ethPrice.gt(BigDecimal.fromString("0")) ? ethPrice : BigDecimal.fromString("3000.0")
+  if (pairToken.equals(LUSD)) {
+    let lusd = getTokenConfig(LUSD)!.priceSources[0]
+    return getVelodromeV2Price(LUSD, lusd.address, lusd.pairToken!)
   }
-  
-  // Safe fallback for unknown tokens
-  return BigDecimal.fromString("1.0")
+  log.warning("PRICING: pair token {} has no price source — its pools give no price", [pairToken.toHexString()])
+  return BigDecimal.zero()
+}
+
+function pairTokenFeed(token: Address): Address | null {
+  if (token.equals(USDC_NATIVE)) return USDC_USD_FEED
+  if (token.equals(USDT)) return USDT_USD_FEED
+  if (token.equals(DAI)) return DAI_USD_FEED
+  if (token.equals(WETH)) return ETH_USD_FEED
+  return null
 }
 
 function sqrtPriceToToken0Price(
@@ -392,8 +386,8 @@ function sqrtPriceToToken0Price(
   
   let price = sqrtPrice.times(sqrtPrice) // Square it safely
   
-  // Decimal adjustment with bounds checking
-  let decimalDiff = token1Decimals - token0Decimals
+  // sqrtPrice² is raw token1 per raw token0; scale by 10^(token0Decimals - token1Decimals)
+  let decimalDiff = token0Decimals - token1Decimals
   if (decimalDiff > 0 && decimalDiff <= 18) {
     let multiplier = BigDecimal.fromString("1")
     for (let i = 0; i < decimalDiff; i++) {

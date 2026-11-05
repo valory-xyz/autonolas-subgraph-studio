@@ -37,6 +37,7 @@ import {
   AERO_V2_VOLATILE_FACTORY,
   WHITELISTED_TOKENS
 } from "../src/constants"
+import { mockUsdcUsd } from "./fixtures"
 import {
   createRegisterInstanceEvent,
   createCreateMultisigWithAgentsEvent,
@@ -515,6 +516,7 @@ const VELO_PRICE_POOL = Address.fromString("0xa0A215dE234276CAc1b844fD58901351a5
 const USDC_OP = Address.fromString("0x0b2c639c533813f4aa9d7837caf62653d097ff85")
 
 function mockVeloUsdcPool(): void {
+  mockUsdcUsd()
   // On-chain ordering: USDC (0x0b2c…) < VELO (0x9560…), so USDC is token0. Mock it that way
   // so the test exercises the same getVelodromeV2Price branch production hits.
   createMockedFunction(VELO_PRICE_POOL, "token0", "token0():(address)")
@@ -1355,6 +1357,7 @@ const BOLD_STABLE_POOL = Address.fromString("0x8828B7792499A7d86E931DF56E3D37C42
 
 // A stable pool, holding 25,094 BOLD / 22,830 USDC as on-chain: its reserve ratio reads ~$0.91
 function mockBoldStablePool(token0: Address, token1: Address): void {
+  mockUsdcUsd()
   createMockedFunction(BOLD_STABLE_POOL, "token0", "token0():(address)")
     .withArgs([]).returns([ethereum.Value.fromAddress(token0)])
   createMockedFunction(BOLD_STABLE_POOL, "token1", "token1():(address)")
