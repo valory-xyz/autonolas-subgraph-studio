@@ -21,10 +21,10 @@ Indexing **filters by Olas `agentId == 115`** and tracks every Basius service (c
 | Aspect | Optimism | Base (this subgraph) |
 |--------|----------|----------------------|
 | Network | `optimism` | `base` |
-| DEXs tracked | Velodrome CL + V2, **Uniswap V3**, **Balancer** | **Aerodrome** (CL = Slipstream, v2) + **Aero** (CL, v2) |
+| DEXs tracked | Velodrome CL + V2, **Aero** (CL, v2), **Uniswap V3**, **Balancer** | **Aerodrome** (CL = Slipstream, v2) + **Aero** (CL, v2) |
 | Agent scoping | agent-id filter (`OPTIMUS_AGENT_ID = 40`) + excluded ids | agent-id filter (`BASIUS_AGENT_ID = 115`), all matching services |
 | Pricing | Chainlink + DEX | Chainlink (Base feeds) + Aerodrome/Aero pools; whitelisted stables referenced to the USDC feed, USDT/DAI/USDe/USDS via their own feeds |
-| Reward token | VELO | AERO (legacy) / Aero's AERO |
+| Reward token | VELO (Velodrome) / xAERO (Aero) | AERO (legacy) / Aero's AERO |
 
 **Dropped files** (Uniswap V3 / Balancer / manual bootstrap / dead helpers):
 `uniV3NFTManager.ts`, `uniV3Pool.ts`, `uniV3Shared.ts`, `balancerVault.ts`,

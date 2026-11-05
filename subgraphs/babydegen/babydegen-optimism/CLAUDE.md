@@ -97,6 +97,9 @@ Registered autonomous agent service.
 | positionIds | `[String!]!` | Array of position identifiers |
 | agentInstances | `[Bytes!]!` | Agent EOAs from `RegisterInstance` — never the user side of a funding flow |
 
+#### ServiceRegistration
+One per serviceId (id: serviceId as a UTF-8 string), written by `RegisterInstance`. `agentInstances` collects every agent EOA registered for the service, and can fill before the `Service` exists; it is copied onto `Service.agentInstances`, which the funding rules read.
+
 #### ServiceIndex
 Maps serviceId to current service safe (handles safe migrations).
 
@@ -149,6 +152,24 @@ Individual LP positions across protocols (id: `<agent>-<protocol>-<tokenId>` for
 | collectedFees0/1, collectedFeesUSD | `BigDecimal!` | Fee part of each `Collect` paid to the Safe (principal excluded), USD at the Collect |
 | claimedRewards, claimedRewardsUSD | `BigDecimal!` | Gauge rewards claimed for this position (reward-token units), USD at the claim |
 | swapSlippageUSD | `BigDecimal!` | Associated swap slippage costs |
+
+#### NFTPositionMapping
+NFT to position (id: `<protocol>-<tokenId>`), so a CL or Uniswap V3 event finds its position without `ownerOf`.
+
+#### UncollectedPrincipal
+Principal a `DecreaseLiquidity` released and no `Collect` has paid out yet (id: `<protocol>-<tokenId>`, as `NFTPositionMapping`). Each `Collect` pays it first; only the rest counts as fees.
+
+#### ClaimableRewardBeforeBlock
+A position's `claimableReward` as it stood before the first refresh in a block (id: the position id), so a reward claim in that block is split by what each position had earned when no `Withdraw` names its tokenId.
+
+#### CreditedRewardClaim
+Immutable marker for a reward claim log already credited to a position (id: tx hash + log index), so one `EmissionsClaimed` is credited once.
+
+#### V2PoolVenue
+Venue of a v2 pool, written by the Aero v2 factory handler that created it (id: pool address; `protocol`, `stable`). A pool with no row is a legacy Velodrome v2 pool.
+
+#### AeroGauge
+Aero pool to gauge, from the GaugeManager's `GaugeCreated` (id: pool address). Read by `resolveV2Gauge`; a later `GaugeCreated` for the same pool replaces it.
 
 ### Token & Pricing
 
@@ -350,6 +371,7 @@ Deprecated: every `ethAdjusted*` field equals its unadjusted counterpart. Subtra
 - Stablecoins have no lower price bound, so a depeg is recorded: `depegged` below $0.98
 - A pool's pair leg is priced from its own token config, never taken as $1: its Chainlink source, else its `velodrome_v2` pool when that pool's pair leg has a feed (LUSD); otherwise the pool gives no price (`getPairTokenPrice`). Feed staleness is judged against the event's block, with a 90000s limit (24h heartbeat + grace)
 - The no-floor stablecoin band ($0–1.50; USDC $0–1.05) applies to every `STABLECOINS` token
+- Sources are read by priority: a priority-2 source (e.g. BOLD's BOLD/LUSD pool) counts only when every priority-1 source gives no price; sources sharing a priority are averaged by confidence. Base does the same
 - A stable pool's `getAmountOut` quote is net of the pool's swap fee, so its price reads below the fee-free price by that fee (about 0.9995 × at Velodrome's default 5 bps stable fee)
 
 ### Caching
