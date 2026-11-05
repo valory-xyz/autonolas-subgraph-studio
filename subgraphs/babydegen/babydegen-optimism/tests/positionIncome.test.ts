@@ -317,14 +317,8 @@ describe("collected fees", () => {
       .withArgs([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(9))])
       .reverts()
 
-    let decrease = changetype<UniV3DecreaseLiquidity>(newMockEvent())
-    decrease.parameters = new Array()
-    decrease.parameters.push(new ethereum.EventParam("tokenId", ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(9))))
-    decrease.parameters.push(new ethereum.EventParam("liquidity", ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1))))
-    decrease.parameters.push(new ethereum.EventParam("amount0", ethereum.Value.fromUnsignedBigInt(USDC_50)))
-    decrease.parameters.push(new ethereum.EventParam("amount1", ethereum.Value.fromUnsignedBigInt(DAI_50)))
-    handleUniV3DecreaseLiquidity(decrease)
-    handleUniV3Collect(changetype<UniV3Collect>(newCollect(BigInt.fromI32(9), SERVICE_SAFE, BigInt.fromI64(52000000), DAI_50)))
+    handleUniV3DecreaseLiquidity(changetype<UniV3DecreaseLiquidity>(newDecrease(BigInt.fromI32(9), USDC_50, DAI_50, UNI_V3_MANAGER)))
+    handleUniV3Collect(changetype<UniV3Collect>(newCollect(BigInt.fromI32(9), SERVICE_SAFE, BigInt.fromI64(52000000), DAI_50, UNI_V3_MANAGER)))
 
     positionField(p, "collectedFeesUSD", "2")
   })
