@@ -287,6 +287,19 @@ function execCallTo(to: Address): string {
   return EXEC_ETH_TO_USER.slice(0, 10) + "000000000000000000000000" + to.toHexString().slice(2) + EXEC_ETH_TO_USER.slice(74)
 }
 
+// execTransaction calldata with its operation word (the fourth argument) replaced
+function withOperation(input: string, operation: i32): string {
+  let start = 2 + 8 + 3 * 64
+  let word = "000000000000000000000000000000000000000000000000000000000000000" + operation.toString()
+  return input.slice(0, start) + word + input.slice(start + 64)
+}
+
+// execTransaction calldata whose delegatecall data starts with another selector than multiSend
+function withDelegatecallSelector(input: string, selector: string): string {
+  let at = input.indexOf("8d80ff0a", 10)
+  return input.slice(0, at) + selector + input.slice(at + 8)
+}
+
 function newModuleExecution(safe: Address): ExecutionFromModuleSuccess {
   let event = changetype<ExecutionFromModuleSuccess>(newMockEvent())
   event.address = safe
@@ -460,6 +473,20 @@ describe("ETH funding uses the same user-side rule", () => {
   test("a packed DELEGATECALL's value field moves no ETH", () => {
     fundOneEth(SAFE_CL)
     processSafeEthTransfer(SAFE_CL, newExecution(SAFE_CL, EXEC_MULTISEND_DELEGATECALL_VALUE, BigInt.zero(), null), seededAddressType)
+    ethBalance(SAFE_CL, "1")
+    fundingField(SAFE_CL, "totalWithdrawnUsd", "0")
+  })
+
+  test("a DELEGATECALL to something other than MultiSend is not read", () => {
+    fundOneEth(SAFE_CL)
+    processSafeEthTransfer(SAFE_CL, newExecution(SAFE_CL, withDelegatecallSelector(EXEC_MULTISEND, "deadbeef"), BigInt.zero(), null), seededAddressType)
+    ethBalance(SAFE_CL, "1")
+    fundingField(SAFE_CL, "totalWithdrawnUsd", "0")
+  })
+
+  test("an operation other than Call or DelegateCall is not read", () => {
+    fundOneEth(SAFE_CL)
+    processSafeEthTransfer(SAFE_CL, newExecution(SAFE_CL, withOperation(EXEC_MULTISEND, 2), BigInt.zero(), null), seededAddressType)
     ethBalance(SAFE_CL, "1")
     fundingField(SAFE_CL, "totalWithdrawnUsd", "0")
   })
