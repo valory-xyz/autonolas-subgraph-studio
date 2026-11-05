@@ -16,6 +16,7 @@ import { attributeRewardTransfer, recordClaimableRewardBeforeBlock } from "../sr
 import { calculateActualROI } from "../src/roiCalculation"
 import { calculatePortfolioMetrics } from "../src/helpers"
 import { searchAndAssociateRecentSwaps } from "../src/swapTracking"
+import { refreshBalancerPosition, refreshBalancerPositionWithEventAmounts, getBalancerPositionId } from "../src/balancerShared"
 import { USDC_NATIVE, DAI, VELO, VELO_MANAGER, UNI_V3_MANAGER, PROTOCOL_VELODROME_V3, PROTOCOL_VELODROME_V2, PROTOCOL_UNISWAP_V3, PROTOCOL_AERO_CL, AERO_NFT_MANAGER, UNI_V3_FACTORY } from "../src/constants"
 import { newLog, newReceipt, newTransfer, mockEthUsd, seedService, seedAddressType, seedTokenPrice, seedPosition, seededAddressType } from "./fixtures"
 import { OPERATOR_SAFE, AGENT_INSTANCE, SERVICE_SAFE, BLOCK_NUMBER, BLOCK_TIMESTAMP } from "./test-helpers"
@@ -732,5 +733,53 @@ describe("Aero CL rewards from EmissionsClaimed", () => {
     assert.assertTrue(attributeRewardTransfer(reward, LEAF_EMISSIONS_HANDLER, ACCOUNT_D14, BOTH_CLAIMS_PAID))
     positionField(positions[0], "claimedRewards", "1.5")
     positionField(positions[1], "claimedRewards", "0.25")
+  })
+})
+
+const BALANCER_POOL = Address.fromString("0x00000000000000000000000000000000000000b1")
+const BALANCER_POOL_ID = Bytes.fromHexString("0x00000000000000000000000000000000000000b1000200000000000000000001")
+
+function mockBalancerPool(pool: Address): void {
+  createMockedFunction(pool, "getSwapFeePercentage", "getSwapFeePercentage():(uint256)").withArgs([]).reverts()
+  // No BPT left: the refresh closes the position without reading the vault
+  createMockedFunction(pool, "balanceOf", "balanceOf(address):(uint256)")
+    .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
+    .returns([ethereum.Value.fromUnsignedBigInt(BigInt.zero())])
+}
+
+function balancerBlock(): ethereum.Block {
+  let block = newMockEvent().block
+  block.number = BLOCK_NUMBER
+  block.timestamp = BLOCK_TIMESTAMP
+  return block
+}
+
+describe("Balancer positions start with zero income", () => {
+  beforeEach(() => {
+    mockEthUsd()
+    seedTokenPrice(USDC_NATIVE, "USDC", 6, "1")
+    seedTokenPrice(DAI, "DAI", 18, "1")
+    seedService(SERVICE_SAFE, OPERATOR_SAFE, AGENT_INSTANCE)
+  })
+  afterEach(() => {
+    clearStore()
+  })
+
+  test("a position created by a join has its fee and reward fields set", () => {
+    mockBalancerPool(BALANCER_POOL)
+    refreshBalancerPositionWithEventAmounts(SERVICE_SAFE, BALANCER_POOL, BALANCER_POOL_ID, [USDC_NATIVE, DAI], [USDC_50, DAI_50], balancerBlock(), Bytes.fromI32(1))
+
+    let id = getBalancerPositionId(SERVICE_SAFE, BALANCER_POOL)
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "collectedFeesUSD", "0")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimedRewardsUSD", "0")
+  })
+
+  test("a position created by a refresh has its fee and reward fields set", () => {
+    mockBalancerPool(BALANCER_POOL)
+    refreshBalancerPosition(SERVICE_SAFE, BALANCER_POOL, BALANCER_POOL_ID, balancerBlock(), Bytes.fromI32(1), false)
+
+    let id = getBalancerPositionId(SERVICE_SAFE, BALANCER_POOL)
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "collectedFeesUSD", "0")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimedRewardsUSD", "0")
   })
 })

@@ -362,6 +362,7 @@ export function refreshBalancerPosition(
     pp.fee = 30 // Default fee
     
     pp.usdCurrent = BigDecimal.zero()
+    pp.usdCurrentWithRewards = BigDecimal.zero()
     pp.amount0 = BigDecimal.zero()
     pp.amount0USD = BigDecimal.zero()
     pp.amount1 = BigDecimal.zero()
@@ -383,6 +384,7 @@ export function refreshBalancerPosition(
     // Position is closed
     pp.isActive = false
     pp.usdCurrent = BigDecimal.zero()
+    pp.usdCurrentWithRewards = BigDecimal.zero()
     pp.amount0 = BigDecimal.zero()
     pp.amount0USD = BigDecimal.zero()
     pp.amount1 = BigDecimal.zero()
