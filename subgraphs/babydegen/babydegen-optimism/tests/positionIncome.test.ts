@@ -1,7 +1,7 @@
 import { assert, describe, test, clearStore, afterEach, beforeEach, createMockedFunction } from "matchstick-as/assembly/index"
 import { Address, BigDecimal, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts"
 import { newMockEvent } from "matchstick-as/assembly/index"
-import { ClaimableRewardBeforeBlock, ProtocolPosition } from "../generated/schema"
+import { AgentSwapBuffer, ClaimableRewardBeforeBlock, ProtocolPosition } from "../generated/schema"
 import { Collect, DecreaseLiquidity } from "../generated/VeloNFTManager/VelodromePositionNFTManager"
 import {
   Collect as UniV3Collect,
@@ -15,6 +15,7 @@ import { processERC20Transfer } from "../src/tokenBalances"
 import { attributeRewardTransfer, recordClaimableRewardBeforeBlock } from "../src/positionIncome"
 import { calculateActualROI } from "../src/roiCalculation"
 import { calculatePortfolioMetrics } from "../src/helpers"
+import { searchAndAssociateRecentSwaps } from "../src/swapTracking"
 import { USDC_NATIVE, DAI, VELO, VELO_MANAGER, UNI_V3_MANAGER, PROTOCOL_VELODROME_V3, PROTOCOL_VELODROME_V2, PROTOCOL_UNISWAP_V3, PROTOCOL_AERO_CL, AERO_NFT_MANAGER, UNI_V3_FACTORY } from "../src/constants"
 import { newLog, newReceipt, newTransfer, mockEthUsd, seedService, seedAddressType, seedTokenPrice, seedPosition, seededAddressType } from "./fixtures"
 import { OPERATOR_SAFE, AGENT_INSTANCE, SERVICE_SAFE, BLOCK_NUMBER, BLOCK_TIMESTAMP } from "./test-helpers"
@@ -115,6 +116,31 @@ describe("collected fees", () => {
     handleCollect(newCollect(BigInt.fromI32(7), SERVICE_SAFE, BigInt.fromI64(31000000), BigInt.zero()))
     positionField(p, "collectedFees0", "1")
     positionField(p, "collectedFeesUSD", "1")
+  })
+
+  test("a swap linked to a closed position keeps its fees and rewards in the gross gain", () => {
+    let p = seedPosition(SERVICE_SAFE, PROTOCOL_VELODROME_V3, BigInt.fromI32(7), USDC_NATIVE, DAI, null, BigInt.zero(), "0")
+    closeAt(p, "110")
+    p.collectedFeesUSD = BigDecimal.fromString("2")
+    p.claimedRewardsUSD = BigDecimal.fromString("3")
+    p.save()
+    // One swap with $5 of slippage waiting in the agent's newest bucket
+    let buffer = new AgentSwapBuffer(SERVICE_SAFE)
+    buffer.agent = SERVICE_SAFE
+    buffer.bucket0Swaps = BLOCK_TIMESTAMP.toString() + ",0x01,5," + BLOCK_TIMESTAMP.toString() + ",0x01"
+    buffer.bucket1Swaps = ""
+    buffer.bucket2Swaps = ""
+    buffer.bucket3Swaps = ""
+    buffer.totalSlippageUSD = BigDecimal.fromString("5")
+    buffer.lastUpdated = BLOCK_TIMESTAMP
+    buffer.currentBucketIndex = BigInt.zero()
+    buffer.save()
+
+    searchAndAssociateRecentSwaps(p)
+
+    positionField(p, "investmentUSD", "105")
+    positionField(p, "grossGainUSD", "115")
+    positionField(p, "netGainUSD", "10")
   })
 
   test("the portfolio's gross gain adds closed positions' fees and rewards to their exit", () => {
