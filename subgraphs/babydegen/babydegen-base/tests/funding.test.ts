@@ -60,8 +60,13 @@ describe("funding: every tracked token counts", () => {
   test("the agent EOA is never the user side, in or out", () => {
     seedService(SAFE_CL, OPERATOR_SAFE, AGENT_INSTANCE)
     seedAddressType(AGENT_INSTANCE, false, false)
-    processERC20Transfer(newTransfer(USDC_NATIVE, AGENT_INSTANCE, SAFE_CL, BigInt.fromI64(5000000), 1, newReceipt([])), seededAddressType)
-    processERC20Transfer(newTransfer(USDC_NATIVE, SAFE_CL, AGENT_INSTANCE, BigInt.fromI64(5000000), 2, newReceipt([])), seededAddressType)
+    // The agent EOA sends its own txs, so it is also tx.from
+    let deposit = newTransfer(USDC_NATIVE, AGENT_INSTANCE, SAFE_CL, BigInt.fromI64(5000000), 1, newReceipt([]))
+    deposit.transaction.from = AGENT_INSTANCE
+    let outflow = newTransfer(USDC_NATIVE, SAFE_CL, AGENT_INSTANCE, BigInt.fromI64(5000000), 2, newReceipt([]))
+    outflow.transaction.from = AGENT_INSTANCE
+    processERC20Transfer(deposit, seededAddressType)
+    processERC20Transfer(outflow, seededAddressType)
     assert.notInStore("FundingBalance", SAFE_CL.toHexString())
   })
 
@@ -88,6 +93,14 @@ describe("funding: every tracked token counts", () => {
   })
 })
 
+// SafeReceived(address indexed sender, uint256 value), emitted by `safe`
+function safeReceivedLog(safe: Address, logIndex: i32): ethereum.Log {
+  return newLog(safe.toHexString(), [
+    "0x3d0ce9bfc3ed7d6862dbb28b2dea94561fe714a1b4d019aa8af39730d1ad7c3d",
+    "0x0000000000000000000000004200000000000000000000000000000000000006"
+  ], "0x00000000000000000000000000000000000000000000000000038d7ea4c68000", logIndex)
+}
+
 describe("withdrawals to contracts are decided by the receipt", () => {
   beforeEach(() => {
     mockEthUsd()
@@ -95,6 +108,29 @@ describe("withdrawals to contracts are decided by the receipt", () => {
   })
   afterEach(() => {
     clearStore()
+  })
+
+  test("a swap whose only return is the Safe's own SafeReceived (native ETH) is not a withdrawal", () => {
+    seedService(SAFE_CL, OPERATOR_SAFE, AGENT_INSTANCE)
+    seedAddressType(SOME_CONTRACT, true, false)
+    let receipt = newReceipt([safeReceivedLog(SAFE_CL, 3)])
+    processERC20Transfer(newTransfer(USDC_NATIVE, SAFE_CL, SOME_CONTRACT, BigInt.fromI64(5000000), 2, receipt), seededAddressType)
+    assert.notInStore("FundingBalance", SAFE_CL.toHexString())
+  })
+
+  test("a SafeReceived emitted by another address does not count as a return", () => {
+    seedService(SAFE_CL, OPERATOR_SAFE, AGENT_INSTANCE)
+    seedAddressType(SOME_CONTRACT, true, false)
+    let receipt = newReceipt([safeReceivedLog(OTHER_SAFE, 3)])
+    processERC20Transfer(newTransfer(USDC_NATIVE, SAFE_CL, SOME_CONTRACT, BigInt.fromI64(5000000), 2, receipt), seededAddressType)
+    fundingField(SAFE_CL, "totalWithdrawnUsd", "5")
+  })
+
+  test("an outflow to a contract with no receipt is not counted", () => {
+    seedService(SAFE_CL, OPERATOR_SAFE, AGENT_INSTANCE)
+    seedAddressType(SOME_CONTRACT, true, false)
+    processERC20Transfer(newTransfer(USDC_NATIVE, SAFE_CL, SOME_CONTRACT, BigInt.fromI64(5000000), 2, null), seededAddressType)
+    assert.notInStore("FundingBalance", SAFE_CL.toHexString())
   })
 
   test("EIP-7702 wallet, nothing back to the Safe (0xf2a832e7): withdrawal", () => {

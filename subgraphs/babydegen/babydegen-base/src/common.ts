@@ -43,14 +43,18 @@ export function getAddressType(addr: Address, block: ethereum.Block): AddressTyp
   return addressType
 }
 
-function isAgentInstance(addr: Address, service: Service): boolean {
-  let agentInstances = service.agentInstances
-  for (let i = 0; i < agentInstances.length; i++) {
-    if (addr.equals(Address.fromBytes(agentInstances[i]))) {
+export function containsAddress(list: Bytes[], addr: Bytes): boolean {
+  for (let i = 0; i < list.length; i++) {
+    if (list[i].equals(addr)) {
       return true
     }
   }
   return false
+}
+
+// The service's own side: its Safe, its agent EOAs, or the zero address (mint / burn)
+function isServiceOwnAddress(addr: Address, serviceSafe: Address, service: Service): boolean {
+  return addr.equals(serviceSafe) || addr.equals(Address.zero()) || containsAddress(service.agentInstances, addr)
 }
 
 // The user's side of a funding flow: the operator Safe, any other Safe, or an EOA that is not
@@ -66,7 +70,7 @@ export function isUserSide(
     log.warning("[FUNDING_SOURCE] No service found for safe {}", [serviceSafe.toHexString()])
     return false
   }
-  if (addr.equals(serviceSafe) || addr.equals(Address.zero()) || isAgentInstance(addr, service)) {
+  if (isServiceOwnAddress(addr, serviceSafe, service)) {
     return false
   }
   // The tx sender is always an EOA, though an EIP-7702 one has code and is no Safe
@@ -106,7 +110,7 @@ export function isWithdrawalRecipient(
     return true
   }
   let service = getServiceByAgent(serviceSafe)
-  if (service == null || addr.equals(serviceSafe) || addr.equals(Address.zero()) || isAgentInstance(addr, service)) {
+  if (service == null || isServiceOwnAddress(addr, serviceSafe, service)) {
     return false
   }
   let receipt = event.receipt

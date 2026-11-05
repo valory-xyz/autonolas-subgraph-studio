@@ -12,21 +12,12 @@ import { BigInt, Bytes, store, log, Address } from "@graphprotocol/graph-ts"
 import { BASIUS_AGENT_ID, EXCLUDED_SERVICE_IDS } from "./constants"
 import { registerServiceForSnapshots } from "./portfolioScheduler"
 import { ensureAgentPortfolio } from "./helpers"
-import { getEthUsd } from "./common"
+import { getEthUsd, containsAddress } from "./common"
 
 // Helper function to check if a service ID should be excluded from tracking
 function isServiceExcluded(serviceId: BigInt): boolean {
   for (let i = 0; i < EXCLUDED_SERVICE_IDS.length; i++) {
     if (serviceId.equals(EXCLUDED_SERVICE_IDS[i])) {
-      return true
-    }
-  }
-  return false
-}
-
-function containsAddress(list: Bytes[], addr: Bytes): boolean {
-  for (let i = 0; i < list.length; i++) {
-    if (list[i].equals(addr)) {
       return true
     }
   }
