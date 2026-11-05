@@ -243,8 +243,9 @@ function warnIfAeroV2Reward(event: ethereum.Event, safe: Address, service: Servi
   let positionIds = service.positionIds
   for (let i = 0; i < positionIds.length; i++) {
     let position = ProtocolPosition.load(positionIds[i])
-    if (position != null && position.isActive && position.protocol == PROTOCOL_AERO_V2) {
-      log.warning("REWARDS: tx {} — Aero reward Transfer to safe {}, which holds aero-v2 positions, is not attributed to a position", [
+    // A closed position counts too: a v2 gauge reward is often claimed after the exit
+    if (position != null && position.protocol == PROTOCOL_AERO_V2) {
+      log.warning("REWARDS: tx {} — Aero reward Transfer to safe {}, which holds or held aero-v2 positions, is not attributed to a position", [
         event.transaction.hash.toHexString(),
         safe.toHexString()
       ])
@@ -295,11 +296,7 @@ export function attributeRewardTransfer(event: ethereum.Event, from: Address, sa
   let positionIds = service.positionIds
   for (let i = 0; i < positionIds.length; i++) {
     let position = ProtocolPosition.load(positionIds[i])
-    if (position == null) {
-      continue
-    }
-    let gauge = position.rewardsContract
-    if (gauge && Address.fromBytes(gauge!).equals(from)) {
+    if (position != null && isEmittedByGauge(position, from)) {
       onGauge.push(position)
     }
   }

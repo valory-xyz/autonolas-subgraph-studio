@@ -195,8 +195,8 @@ The `ethAdjusted*` fields are deprecated and equal their unadjusted counterparts
 - A Withdraw naming a tokenId the Safe does not track is logged, not split. A v2 reward after the
   exit goes to the most recently closed v2 position on that gauge. An `EmissionsClaimed` counts
   only when the position's own gauge emitted it.
-- `aero-v2` rewards are not attributed to a position yet; a reward Transfer to a Safe holding
-  `aero-v2` positions logs a `REWARDS:` warning.
+- `aero-v2` rewards are not attributed to a position yet; a reward Transfer to a Safe that holds
+  or held an `aero-v2` position (rewards are often claimed after the exit) logs a `REWARDS:` warning.
 - `grossGainUSD = exitAmountUSD + collectedFeesUSD + claimedRewardsUSD`.
 
 Snapshots fire from the `PortfolioScheduler` block handler at UTC-midnight crossings.
