@@ -9,9 +9,9 @@ import {
 } from "../generated/schema"
 import { PROTOCOL_VELODROME_V3, PROTOCOL_AERO_CL, PROTOCOL_AERO_V2, rewardTokenFor } from "./constants"
 import { getTokenPriceUSD } from "./priceDiscovery"
-import { getTokenDecimals } from "./tokenUtils"
+import { convertTokenAmount } from "./tokenUtils"
 import { uintAt, addressAt } from "./common"
-import { calculatePositionROI } from "./roiCalculation"
+import { saveWithROI } from "./roiCalculation"
 
 // Withdraw(address indexed user, uint256 indexed tokenId, uint128 indexed liquidityToStake) — Velodrome CL gauge
 const CL_GAUGE_WITHDRAW_TOPIC = Bytes.fromHexString("0x8903a5b5d08a841e7f68438387f1da20c84dea756379ed37e633ff3854b99b84")
@@ -38,19 +38,8 @@ export function loadMappedPosition(protocol: string, tokenId: BigInt): ProtocolP
   return mapping != null ? ProtocolPosition.load(mapping.positionId) : null
 }
 
-function toHuman(amount: BigInt, token: Address): BigDecimal {
-  return amount.toBigDecimal().div(BigDecimal.fromString("1e" + getTokenDecimals(token).toString()))
-}
-
 function minBigInt(a: BigInt, b: BigInt): BigInt {
   return a.lt(b) ? a : b
-}
-
-function saveWithROI(position: ProtocolPosition): void {
-  if (!position.isActive && position.exitAmountUSD) {
-    calculatePositionROI(position)
-  }
-  position.save()
 }
 
 // ---------------------------------------------------------------------------
@@ -101,8 +90,8 @@ export function recordCollectedFees(
 
   let token0 = Address.fromBytes(token0Bytes!)
   let token1 = Address.fromBytes(token1Bytes!)
-  let fee0Human = toHuman(fee0, token0)
-  let fee1Human = toHuman(fee1, token1)
+  let fee0Human = convertTokenAmount(fee0, token0)
+  let fee1Human = convertTokenAmount(fee1, token1)
   let feeUSD = fee0Human.times(getTokenPriceUSD(token0, timestamp, false))
     .plus(fee1Human.times(getTokenPriceUSD(token1, timestamp, false)))
 
@@ -230,7 +219,7 @@ function attributeEmissionsClaims(
       continue
     }
     new CreditedRewardClaim(claimId).save()
-    creditReward(position, toHuman(claimAmount, event.address), getTokenPriceUSD(event.address, event.block.timestamp, false))
+    creditReward(position, convertTokenAmount(claimAmount, event.address), getTokenPriceUSD(event.address, event.block.timestamp, false))
     paid = paid.plus(claimAmount)
     credited = true
   }
@@ -319,7 +308,7 @@ export function attributeRewardTransfer(event: ethereum.Event, from: Address, sa
     return false
   }
 
-  let rewardAmount = toHuman(amount, event.address)
+  let rewardAmount = convertTokenAmount(amount, event.address)
   let priceUSD = getTokenPriceUSD(event.address, event.block.timestamp, false)
 
   let tokenId = nextGaugeWithdrawTokenId(event, from, safe, receipt)

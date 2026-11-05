@@ -127,11 +127,14 @@ export function updatePositionCosts(position: ProtocolPosition, additionalCosts:
   position.totalCostsUSD = position.totalCostsUSD.plus(additionalCosts)
   position.investmentUSD = position.entryAmountUSD.plus(position.totalCostsUSD)
   
-  // Recalculate position ROI if position is closed
+  saveWithROI(position)
+}
+
+// Saves the position, recalculating its ROI first when it is closed
+export function saveWithROI(position: ProtocolPosition): void {
   if (!position.isActive && position.exitAmountUSD) {
     calculatePositionROI(position)
   }
-  
   position.save()
 }
 

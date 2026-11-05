@@ -21,15 +21,10 @@ import {
 } from "./constants"
 import { isServiceAgent, getServiceByAgent } from "./config"
 import { parseTotalSlippageFromBucket, associateSwapsWithPosition } from "./helpers"
-import { getTokenDecimals, getTokenSymbol } from "./tokenUtils"
+import { getTokenDecimals, getTokenSymbol, convertTokenAmount } from "./tokenUtils"
 import { initializePositionCosts, calculatePositionROI, initializePositionIncome } from "./roiCalculation"
 import { recordClaimableRewardBeforeBlock, nftPositionMappingId } from "./positionIncome"
 
-function convertTokenAmount(amount: BigInt, tokenAddress: Address): BigDecimal {
-  const decimals = getTokenDecimals(tokenAddress)
-  const divisor = BigDecimal.fromString("1e" + decimals.toString())
-  return amount.toBigDecimal().div(divisor)
-}
 
 // A CL position manager and what goes with it. The legacy Slipstream NFPM and Aero's share
 // the positions()/pool/factory interfaces, so one refresh path serves both; the venue picks

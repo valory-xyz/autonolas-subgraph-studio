@@ -1,4 +1,4 @@
-import { Address, log } from "@graphprotocol/graph-ts"
+import { Address, BigDecimal, BigInt, log } from "@graphprotocol/graph-ts"
 import { 
   USDC_NATIVE, 
   USDC_BRIDGED, 
@@ -79,4 +79,9 @@ export function getTokenSymbol(tokenAddress: Address): string {
   // Return the address as fallback for unknown tokens
   log.warning("TOKEN_UTILS: Unknown token symbol for {}, using address", [tokenHex])
   return tokenHex
+}
+
+// A raw token amount in whole tokens, by the token's decimals
+export function convertTokenAmount(amount: BigInt, tokenAddress: Address): BigDecimal {
+  return amount.toBigDecimal().div(BigDecimal.fromString("1e" + getTokenDecimals(tokenAddress).toString()))
 }

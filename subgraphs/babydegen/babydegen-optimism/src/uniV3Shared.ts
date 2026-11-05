@@ -12,17 +12,12 @@ import { addAgentNFTToPool, removeAgentNFTFromPool, getCachedPoolAddress, cacheP
 import { getTokenPriceUSD } from "./priceDiscovery"
 import { UNI_V3_MANAGER, UNI_V3_FACTORY, PROTOCOL_UNISWAP_V3 } from "./constants"
 import { isServiceAgent, getServiceByAgent } from "./config"
-import { getTokenDecimals, getTokenSymbol } from "./tokenUtils"
+import { getTokenDecimals, getTokenSymbol, convertTokenAmount } from "./tokenUtils"
 import { parseTotalSlippageFromBucket, associateSwapsWithPosition, ensureAgentPortfolio } from "./helpers"
 import { calculatePositionROI, initializePositionIncome } from "./roiCalculation"
 import { mapNFTPosition } from "./positionIncome"
 
 // Helper function to convert token amount from wei to human readable
-function convertTokenAmount(amount: BigInt, tokenAddress: Address): BigDecimal {
-  const decimals = getTokenDecimals(tokenAddress)
-  const divisor = BigDecimal.fromString("1e" + decimals.toString())
-  return amount.toBigDecimal().div(divisor)
-}
 
 // Create or get Uniswap V3 position ID (consistent with Velodrome V2 pattern)
 export function getUniV3PositionId(userAddress: Address, tokenId: BigInt): Bytes {

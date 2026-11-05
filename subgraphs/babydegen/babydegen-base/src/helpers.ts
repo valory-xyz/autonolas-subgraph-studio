@@ -17,35 +17,6 @@ import { TokenBalance } from "../generated/schema"
 import { refreshVeloV2Position } from "./veloV2Shared"
 import { refreshVeloCLPosition } from "./veloCLShared"
 
-// ETH-adjusted metrics calculation class
-class EthAdjustedMetrics {
-  ethAdjustedActualROI: BigDecimal
-  ethAdjustedUnrealisedPnL: BigDecimal
-  ethAdjustedActualAPR: BigDecimal
-  ethAdjustedProjectedUnrealisedPnL: BigDecimal
-  currentEthPrice: BigDecimal
-  firstFundingEthPrice: BigDecimal
-  ethDelta: BigDecimal
-  
-  constructor(
-    ethAdjustedActualROI: BigDecimal,
-    ethAdjustedUnrealisedPnL: BigDecimal,
-    ethAdjustedActualAPR: BigDecimal,
-    ethAdjustedProjectedUnrealisedPnL: BigDecimal,
-    currentEthPrice: BigDecimal,
-    firstFundingEthPrice: BigDecimal,
-    ethDelta: BigDecimal
-  ) {
-    this.ethAdjustedActualROI = ethAdjustedActualROI
-    this.ethAdjustedUnrealisedPnL = ethAdjustedUnrealisedPnL
-    this.ethAdjustedActualAPR = ethAdjustedActualAPR
-    this.ethAdjustedProjectedUnrealisedPnL = ethAdjustedProjectedUnrealisedPnL
-    this.currentEthPrice = currentEthPrice
-    this.firstFundingEthPrice = firstFundingEthPrice
-    this.ethDelta = ethDelta
-  }
-}
-
 // Helper function to create block from timestamp for ETH price lookup
 function createBlockFromTimestamp(timestamp: BigInt): ethereum.Block {
   return new ethereum.Block(
@@ -64,27 +35,6 @@ function createBlockFromTimestamp(timestamp: BigInt): ethereum.Block {
     BigInt.zero(),
     BigInt.zero(),
     BigInt.zero()
-  )
-}
-
-// ETH-adjusted metrics equal the unadjusted ones: subtracting ETH's whole price move
-// misstated every Safe that did not hold ETH. The fields stay for existing queries.
-function calculateEthAdjustedMetrics(
-  portfolio: AgentPortfolio,
-  actualROI: BigDecimal,
-  unrealisedPnL: BigDecimal,
-  actualAPR: BigDecimal,
-  projectedUnrealisedPnL: BigDecimal,
-  block: ethereum.Block
-): EthAdjustedMetrics {
-  return new EthAdjustedMetrics(
-    actualROI,
-    unrealisedPnL,
-    actualAPR,
-    projectedUnrealisedPnL,
-    getEthUsd(block),
-    portfolio.firstFundingEthPrice,
-    BigDecimal.zero()
   )
 }
 
@@ -427,16 +377,6 @@ export function calculatePortfolioMetrics(
     }
   }
   
-  //  Calculate ETH-adjusted metrics
-  let ethAdjustedMetrics = calculateEthAdjustedMetrics(
-    portfolio,
-    actualROI,
-    roi,  // unrealisedPnL (portfolio-based)
-    actualAPR,
-    apr,  // projectedUnrealisedPnL (portfolio-based)
-    block
-  )
-  
   // Update portfolio with standard values
   portfolio.finalValue = finalValue
   portfolio.finalValueWithoutRewards = finalValueWithoutRewards
@@ -455,16 +395,17 @@ export function calculatePortfolioMetrics(
   
   portfolio.lastUpdated = block.timestamp
   
-  // Update portfolio with ETH-adjusted values
-  portfolio.ethAdjustedRoi = ethAdjustedMetrics.ethAdjustedActualROI
-  portfolio.ethAdjustedApr = ethAdjustedMetrics.ethAdjustedActualAPR
-  portfolio.ethAdjustedUnrealisedPnL = ethAdjustedMetrics.ethAdjustedUnrealisedPnL
-  portfolio.ethAdjustedProjectedUnrealisedPnL = ethAdjustedMetrics.ethAdjustedProjectedUnrealisedPnL
-  portfolio.currentEthPrice = ethAdjustedMetrics.currentEthPrice
+  // Deprecated: the ethAdjusted* fields equal the unadjusted values. Subtracting ETH's whole price
+  // move misstated every Safe that did not hold ETH; the fields stay for existing queries.
+  portfolio.ethAdjustedRoi = actualROI
+  portfolio.ethAdjustedApr = actualAPR
+  portfolio.ethAdjustedUnrealisedPnL = roi
+  portfolio.ethAdjustedProjectedUnrealisedPnL = apr
+  portfolio.currentEthPrice = getEthUsd(block)
   
   // firstFundingEthPrice is set in updateFundingBalance or registration fallback
   if (portfolio.firstFundingEthPrice.equals(BigDecimal.zero())) {
-    portfolio.firstFundingEthPrice = ethAdjustedMetrics.currentEthPrice
+    portfolio.firstFundingEthPrice = portfolio.currentEthPrice
   }
   
   // Update aggregation fields
