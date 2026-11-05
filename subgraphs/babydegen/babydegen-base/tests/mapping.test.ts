@@ -2049,6 +2049,10 @@ describe("Aero v2 pools (factories + GaugeManager)", () => {
     mint.block = aeroBlock()
     mint.transaction.hash = TX_HASH
     handleAeroV2Mint(mint)
+    // The first cycle's Mint sets its investment from its entry
+    const first = ProtocolPosition.load(getVeloV2PositionId(SERVICE_SAFE, AERO_V2_POOL))!
+    assert.assertTrue(first.entryAmountUSD.gt(BigDecimal.zero()))
+    assert.stringEquals(first.investmentUSD.toString(), first.entryAmountUSD.plus(first.swapSlippageUSD).toString())
 
     // The first cycle closed with an exit, then $2 of fees and $5 of rewards were credited
     const id = getVeloV2PositionId(SERVICE_SAFE, AERO_V2_POOL)
@@ -2101,8 +2105,8 @@ describe("Aero v2 pools (factories + GaugeManager)", () => {
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "swapSlippageUSD", "0")
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "entryTxHash", reentryTx.toHexString())
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "entryTimestamp", reentryBlock.timestamp.toString())
-    // investmentUSD is only read once the row closes again; the re-entry must not carry the old cycle's
-    assert.assertTrue(reentered.investmentUSD.notEqual(BigDecimal.fromString("999")))
+    // The re-entry writes investmentUSD from this cycle's entry alone, so the old cycle's 999 is not carried
+    assert.stringEquals(reentered.investmentUSD.toString(), reentered.entryAmountUSD.plus(reentered.swapSlippageUSD).toString())
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "grossGainUSD", "0")
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "netGainUSD", "0")
   })

@@ -155,7 +155,9 @@ function recordMintEntryAmounts(event: ethereum.Event, amount0: BigInt, amount1:
       position.entryAmount1 = amount1Human
       position.entryAmount1USD = amount1USD
       position.entryAmountUSD = totalUSD
-      
+      // The Mint is the entry, so the investment the next close's ROI divides by is this cycle's
+      // entry plus the swap costs already linked to it
+      position.investmentUSD = totalUSD.plus(position.swapSlippageUSD)
       
       position.save()
       
