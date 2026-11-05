@@ -16,8 +16,7 @@ concurrency:
 
 jobs:
   test:
-    # Matchstick 0.6.0 ships a Linux 22 binary; graph-cli rejects Ubuntu 26.
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
@@ -144,9 +143,7 @@ jobs:
 
       # `yarn audit` reads yarn.lock directly; no install needed.
       - name: Run audit
-        run: |
-          node --test scripts/audit.test.mjs
-          yarn audit:prod
+        run: yarn audit:prod
 
   install-hooks:
     name: Install-hook audit

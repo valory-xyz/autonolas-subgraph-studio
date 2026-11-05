@@ -23,7 +23,7 @@ subgraphs/
   liquidity/                   # Protocol Owned Liquidity — Ethereum mainnet (OLAS-ETH + bridged L2 LP tokens)
   liquidity-l2/                # Protocol Owned Liquidity — L2 pools (6 networks; template pattern with manual overrides for Base dual-pool and Celo Ubeswap)
   new-mech-fees/               # Multi-network mech fees (Gnosis, Base, Polygon, Optimism, Arbitrum, Celo, Ethereum — 7 networks)
-  pearl-transactions/          # Pearl Master/Agent Safe funds movement → wallet transaction history, VLOP-73 (Gnosis, Polygon, Optimism, Base — template pattern). Phases 1a/1b/2a/2b shipped; Gnosis+Polygon deployed. Design: subgraphs/pearl-transactions/IMPLEMENTATION-PLAN.md.
+  pearl-transactions/          # Pearl Master/Agent Safe funds movement → wallet transaction history, VLOP-73 (Gnosis, Polygon, Optimism, Base — template pattern). Phases 1a/1b/2a/2b shipped; Gnosis and Optimism consumers use this subgraph; Base and Polygon use the Infra squid. Design: subgraphs/pearl-transactions/IMPLEMENTATION-PLAN.md.
   service-registry/            # Service registry (Gnosis self-hosted; Base/Robinhood squid; hybrid: hand-crafted mainnet manifest + L2 template)
   staking/                     # Staking contracts (7 networks, template pattern)
   tokenomics-eth/              # Tokenomics L1 (Ethereum mainnet, standalone)
@@ -59,9 +59,9 @@ yarn test                              # Run Matchstick tests
 
 CI runs on every PR via `.github/workflows/ci.yml` — a matrix over the remaining subgraph targets runs `yarn graph codegen` followed by `yarn graph test` (Matchstick) for each. Template subgraphs run `yarn generate-manifests` first; per-network subgraphs symlink a representative manifest (`subgraph.gnosis.yaml`) before testing. Deployment is handled via `.github/workflows/deploy-subgraph.yaml` (manual dispatch from main).
 
-Two additional CI workflows enforce supply-chain hygiene (advisory-only at first; promote to required-status when the team is ready):
-- `.github/workflows/supply-chain.yml` — matrix audit + install-hook + lockfile-lint over all 13 paths.
-- `.github/workflows/gitleaks.yml` — secret scanning with SHA-256 verified gitleaks binary.
+Supply-chain checks are jobs in `.github/workflows/ci.yml`: advisory auditing,
+install-hook checks and lockfile lint run over the remaining package paths;
+the `scan` job runs secret scanning with a checksum-verified gitleaks binary.
 
 ## Conventions
 
@@ -98,4 +98,4 @@ Each subgraph should have its own `CLAUDE.md` with subgraph-specific context (en
 2. If adding a new subgraph, create a CLAUDE.md for it following the pattern in existing subgraphs (see `subgraphs/babydegen/babydegen-optimism/CLAUDE.md` for examples)
 3. Keep CLAUDE.md concise but comprehensive — it serves as the primary AI context for future development
 
-Active trader sources: Polystrat/Polymarket uses `autonolas-subgraph/squids/predict-polymarket`; Omen uses `autonolas-subgraph/subgraphs/predict-omen` (self-hosted). Neither has a Studio implementation.
+Active trader sources: Polystrat/Polymarket uses `autonolas-subgraph/squids/predict-polymarket`; Omen uses `autonolas-subgraph/subgraphs/predict-omen` (self-hosted). Their Studio source implementations have been removed from this repository; deprecation of published deployments and consumer verification remain operational follow-up (see README.md).

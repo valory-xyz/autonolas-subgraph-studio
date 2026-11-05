@@ -45,8 +45,9 @@ integer (divide by `Token.decimals` — **stablecoins are 6, OLAS/native 18**).
 
 ## Query endpoints
 
-Studio: `https://api.studio.thegraph.com/query/1716136/pearl-<network>-transactions/<version>`
-(`<network>` = `gnosis` | `polygon`; current `<version>` = `v0.0.5`).
+Gnosis and Optimism consumers use this subgraph. Consult the internal deployment
+tracker for current endpoints and versions; historical Studio URLs may still be
+queryable after consumers migrate. Base and Polygon consumers use the Infra squid.
 
 ### Wallet history for a Master Safe
 
@@ -115,7 +116,8 @@ emits no opening-balance row).
   *inflows* and all *token* flows are covered.
 - **Arbitrary tokens** — only the wallet's token set is indexed (OLAS,
   wrapped-native, USDC/USDC.e/pUSD per chain).
-- In-market bet flows (Polymarket/Omen) — `predict-polymarket` / `predict-omen`;
+- In-market bet flows — the [Polymarket squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/predict-polymarket)
+  and [Omen self-hosted subgraph](https://github.com/valory-xyz/autonolas-subgraph/tree/main/subgraphs/predict-omen);
   join on Agent Safe address.
 - USD valuation — raw token amounts only.
 - Pre-Master-Safe Master EOA history — frontend reads opening balances via

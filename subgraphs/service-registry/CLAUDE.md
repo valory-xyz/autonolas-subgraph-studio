@@ -2,6 +2,13 @@
 
 Tracks service lifecycle, multisigs, ERC-8004 identity and daily activity. Gnosis uses the self-hosted `autonolas-subgraph/subgraphs/service-registry` implementation; its Studio manifest and network entry have been removed. Base and Robinhood use the Infra squid. See the internal **[WD] Subgraph&Squids Development and Deployment Tracking** document for active deployments.
 
+This cleanup removes the Gnosis configuration explicitly retired from this
+repository. It does not remove every manifest whose consumers use another backend:
+Base's manifest, network entry and `deploy-base` script remain available for source
+coverage and explicit manual Studio deployment. Their presence is not a recommendation
+to switch consumers from the squid; check the deployment tracker before deploying
+or changing consumer routing. Retiring Base's Studio configuration is a separate decision.
+
 ## Table of Contents
 - [Architecture Overview](#architecture-overview)
 - [Schema Reference](#schema-reference)
