@@ -23,7 +23,7 @@ import { handleAeroV2PoolCreated } from "../src/veloV2Factory"
 import { handleAeroGaugeCreated } from "../src/aeroGaugeManager"
 import { getTokenConfig, TokenConfig } from "../src/tokenConfig"
 import { getTokenPriceUSD } from "../src/priceDiscovery"
-import { initializePositionIncome } from "../src/roiCalculation"
+import { calculatePositionROI, initializePositionIncome } from "../src/roiCalculation"
 import {
   VELO,
   VELO_VOTER,
@@ -610,6 +610,34 @@ describe("Velodrome V2 gauge-staked positions", () => {
     // usdCurrent is 0 (dummy tokens), so usdCurrentWithRewards == rewardUSD ~2.6.
     assert.assertTrue(pos.usdCurrentWithRewards.gt(BigDecimal.fromString("2.59")))
     assert.assertTrue(pos.usdCurrentWithRewards.lt(BigDecimal.fromString("2.61")))
+  })
+
+  test("a re-entered pool starts its income from zero, so the next close counts only its own", () => {
+    createService(SERVICE_SAFE)
+    const id = makeOpenV2Position(DUMMY0, DUMMY1)
+    // The first cycle closed with $2 of fees and $5 of rewards credited after its exit
+    const closed = ProtocolPosition.load(id)!
+    closed.isActive = false
+    closed.collectedFeesUSD = BigDecimal.fromString("2")
+    closed.claimedRewardsUSD = BigDecimal.fromString("5")
+    closed.save()
+    // Re-entry: the gauge holds LP again
+    mockV2PoolState()
+    createMockedFunction(V2_GAUGE, "earned", "earned(address):(uint256)")
+      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
+      .reverts()
+
+    refreshVeloV2Position(SERVICE_SAFE, V2_POOL, v2Block(), TX_HASH, false)
+
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "isActive", "true")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "collectedFeesUSD", "0")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimedRewardsUSD", "0")
+    // Second close: $110 out against the $100 in
+    const reentered = ProtocolPosition.load(id)!
+    reentered.isActive = false
+    reentered.exitAmountUSD = BigDecimal.fromString("110")
+    calculatePositionROI(reentered)
+    assert.stringEquals(reentered.grossGainUSD.toString(), "110")
   })
 
   test("pool with no gauge (Voter returns 0x0) → position closes cleanly", () => {
