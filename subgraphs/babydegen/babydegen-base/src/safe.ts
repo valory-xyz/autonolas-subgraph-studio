@@ -10,14 +10,14 @@ import { getServiceByAgent } from "./config"
 import { updateFundingBalance, updateWithdrawalBalance } from "./tokenBalances"
 import { updateETHBalance } from "./tokenBalances"
 
-// ETH funding uses the same user-side rule as ERC-20 funding in tokenBalances.ts.
-// ETH transfers in are tracked via SafeReceived events; out from the execTransaction calldata.
+// ETH funding and withdrawals use the same user-side rule as ERC-20 ones (isUserSide, common.ts).
+// ETH in comes from SafeReceived; ETH out from the execTransaction calldata, and from the
+// SafeReceived of another Safe we index when that calldata could not be read.
 
 const EXEC_TRANSACTION_SELECTOR = "0x6a761202" // execTransaction(address,uint256,bytes,uint8,uint256,uint256,uint256,address,address,bytes)
 const MULTI_SEND_SELECTOR = "0x8d80ff0a"       // multiSend(bytes)
 const OPERATION_CALL = 0
 const OPERATION_DELEGATECALL = 1
-const WORD = ABI_WORD
 // MultiSend packs each call as operation (1 byte) | to (20) | value (32) | data length (32) | data
 const PACKED_CALL_HEADER = 85
 
@@ -43,62 +43,30 @@ export function processSafeReceived(event: SafeReceivedEvent, readAddressType: A
     "timestamp", event.block.timestamp.toString()
   ])
   
-  // Check if the receiving safe is a service safe
   let toService = getServiceByAgent(to)
-  
   if (toService !== null) {
-    // This is an inflow TO a service safe
-    // Check if sender is valid funding source for this service
-    let isValidFundingSource = isUserSide(from, to, event, readAddressType)
-    
-    if (isValidFundingSource) {
-      // Convert ETH to USD
-      let ethPrice = getEthUsd(event.block)
-      let usd = value.toBigDecimal()
-        .times(ethPrice)
-        .div(BigDecimal.fromString("1e18")) // ETH has 18 decimals
-      
-      // Update funding balance
-      updateFundingBalance(to, usd, event.block.timestamp, txHash)
-      
-      // Also update ETH balance in TokenBalance
-      updateETHBalance(to, value, true, event.block)
-    } else {
-      // Still update ETH balance even if not from a funding source
-      updateETHBalance(to, value, true, event.block)
+    if (isUserSide(from, to, event, readAddressType)) {
+      updateFundingBalance(to, ethUsdValue(value, event.block), event.block.timestamp, txHash)
     }
-  } else {
-    // Receiver is NOT a service safe
-    // Check if the sender is a service safe (this would be an ETH outflow from service safe to external address)
-    let fromService = getServiceByAgent(from)
-    
-    // processSafeEthTransfer already counts a send it reads from the service Safe's own calldata
-    if (fromService !== null && !decodedSendOf(from, event.transaction, to, value)) {
-      // This is an ETH outflow from service safe to external address
-      
-      // Convert ETH to USD
-      let ethPrice = getEthUsd(event.block)
-      let usd = value.toBigDecimal()
-        .times(ethPrice)
-        .div(BigDecimal.fromString("1e18")) // ETH has 18 decimals
-      
-      let ethAmount = value.toBigDecimal().div(BigDecimal.fromString("1e18"))
-      
-      // Only Safes we index emit SafeReceived; the operator Safe and any other Safe are the user side
-      if (isUserSide(to, from, event, readAddressType)) {
-        updateWithdrawalBalance(from, usd, event.block.timestamp)
-        
-        // Update ETH balance for the service safe (outflow)
-        updateETHBalance(from, value, false, event.block)
-        
-        return // Exit early since we handled this case
-      }
-      
-      
-      // Always update ETH balance for the service safe (outflow)
-      updateETHBalance(from, value, false, event.block)
-    }
+    updateETHBalance(to, value, true, event.block)
+    return
   }
+
+  // An outflow from a service Safe to this Safe; processSafeEthTransfer already counts a send it
+  // reads from the service Safe's own calldata
+  let fromService = getServiceByAgent(from)
+  if (fromService === null || decodedSendOf(from, event.transaction, to, value)) {
+    return
+  }
+  // Only Safes we index emit SafeReceived; the operator Safe and any other Safe are the user side
+  if (isUserSide(to, from, event, readAddressType)) {
+    updateWithdrawalBalance(from, ethUsdValue(value, event.block), event.block.timestamp)
+  }
+  updateETHBalance(from, value, false, event.block)
+}
+
+function ethUsdValue(wei: BigInt, block: ethereum.Block): BigDecimal {
+  return wei.toBigDecimal().times(getEthUsd(block)).div(BigDecimal.fromString("1e18"))
 }
 
 // ETH the Safe sends to one address in one call of an execTransaction
@@ -130,7 +98,7 @@ function unreadable(): EthSends {
 
 // A word read as a byte offset or length, or -1 when it cannot be one inside `bytes`
 function sizeAt(bytes: Uint8Array, offset: i32): i32 {
-  if (offset < 0 || offset + WORD > bytes.length) {
+  if (offset < 0 || offset + ABI_WORD > bytes.length) {
     return -1
   }
   let size = uintAt(bytes, offset)
@@ -145,10 +113,10 @@ function hasSelector(bytes: Uint8Array, selector: string): boolean {
 function bytesArgAt(args: Uint8Array, head: i32): Uint8Array | null {
   let offset = sizeAt(args, head)
   let length = offset < 0 ? -1 : sizeAt(args, offset)
-  if (length < 0 || offset + WORD + length > args.length) {
+  if (length < 0 || offset + ABI_WORD + length > args.length) {
     return null
   }
-  return args.subarray(offset + WORD, offset + WORD + length)
+  return args.subarray(offset + ABI_WORD, offset + ABI_WORD + length)
 }
 
 // The calls with value packed in multiSend(bytes transactions) calldata
@@ -188,19 +156,19 @@ function ethSentBySafe(safe: Address, tx: ethereum.Transaction): EthSends {
     return unreadable()
   }
   let args = tx.input.subarray(4)
-  if (args.length < 4 * WORD) {
+  if (args.length < 4 * ABI_WORD) {
     return unreadable()
   }
   let to = addressAt(args, 0)
-  let value = uintAt(args, WORD)
-  let operation = uintAt(args, 3 * WORD)
+  let value = uintAt(args, ABI_WORD)
+  let operation = uintAt(args, 3 * ABI_WORD)
   if (operation.equals(BigInt.fromI32(OPERATION_CALL))) {
     return new EthSends(value.gt(BigInt.zero()) ? [new EthSend(to, value)] : [], true)
   }
   if (!operation.equals(BigInt.fromI32(OPERATION_DELEGATECALL))) {
     return unreadable()
   }
-  let data = bytesArgAt(args, 2 * WORD)
+  let data = bytesArgAt(args, 2 * ABI_WORD)
   if (data === null) {
     return unreadable()
   }
@@ -246,10 +214,7 @@ export function processSafeEthTransfer(
     let send = sends[i]
     updateETHBalance(serviceSafe, send.value, false, block)
     if (isWithdrawalRecipient(send.to, serviceSafe, event, readAddressType)) {
-      let usd = send.value.toBigDecimal()
-        .times(getEthUsd(block))
-        .div(BigDecimal.fromString("1e18")) // ETH has 18 decimals
-      updateWithdrawalBalance(serviceSafe, usd, block.timestamp)
+      updateWithdrawalBalance(serviceSafe, ethUsdValue(send.value, block), block.timestamp)
     }
   }
 }

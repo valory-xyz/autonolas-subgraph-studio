@@ -1,10 +1,11 @@
-import { assert, describe, test, clearStore, afterEach, beforeEach } from "matchstick-as/assembly/index"
+import { assert, describe, test, clearStore, afterEach, beforeEach, createMockedFunction } from "matchstick-as/assembly/index"
 import { Address, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts"
 import { newMockEvent } from "matchstick-as/assembly/index"
 import { processERC20Transfer } from "../src/tokenBalances"
 import { processSafeReceived, processSafeEthTransfer, handleExecutionFromModuleSuccess } from "../src/safe"
 import { SafeReceived, ExecutionSuccess, ExecutionFromModuleSuccess } from "../generated/templates/Safe/Safe"
 import { handleRegisterInstance } from "../src/serviceRegistry"
+import { isSafeContract } from "../src/common"
 import { USDC_NATIVE, BOLD, WETH } from "../src/constants"
 import { createRegisterInstanceEvent } from "./mapping-utils"
 import { TRANSFER_TOPIC, newLog, newReceipt, newTransfer, mockEthUsd, seedService, seedAddressType, seedTokenPrice, seededAddressType } from "./fixtures"
@@ -23,6 +24,8 @@ const SAFE_CL = Address.fromString("0xd32613ed605be41d9c7fbc85f2ccb4fba59778ac")
 const CL_POOL = Address.fromString("0x1737275d53a5ca5dac582a493aa32c85ba2cfad3")
 
 // An address as an indexed event topic
+const WETH_DEPOSIT_TOPIC = "0xe1fffcc4923d04b559f4d29a8bfc6cda04eb5b0d3c460751c2402c5c5cc9109c"
+
 function addressTopic(addr: Address): string {
   return "0x000000000000000000000000" + addr.toHexString().slice(2)
 }
@@ -256,6 +259,11 @@ function newExecution(safe: Address, input: string, txValue: BigInt, receipt: et
   return event
 }
 
+// An execTransaction Call of 0.5 ETH to `to` (EXEC_ETH_TO_USER with its `to` word replaced)
+function execCallTo(to: Address): string {
+  return EXEC_ETH_TO_USER.slice(0, 10) + "000000000000000000000000" + to.toHexString().slice(2) + EXEC_ETH_TO_USER.slice(74)
+}
+
 function newModuleExecution(safe: Address): ExecutionFromModuleSuccess {
   let event = changetype<ExecutionFromModuleSuccess>(newMockEvent())
   event.address = safe
@@ -410,6 +418,48 @@ describe("ETH funding uses the same user-side rule", () => {
     fundingField(SAFE_CL, "totalWithdrawnUsd", "0")
   })
 
+  test("ETH the Safe wraps into WETH is not a withdrawal", () => {
+    fundOneEth(SAFE_CL)
+    seedAddressType(WETH, true, false)
+    // WETH9.deposit() emits Deposit(dst = Safe, wad), not a Transfer
+    let receipt = newReceipt([
+      newLog(WETH.toHexString(), [WETH_DEPOSIT_TOPIC, addressTopic(SAFE_CL)], "0x00000000000000000000000000000000000000000000000006f05b59d3b20000", 1)
+    ])
+    processSafeEthTransfer(SAFE_CL, newExecution(SAFE_CL, execCallTo(WETH), BigInt.zero(), receipt), seededAddressType)
+    ethBalance(SAFE_CL, "0.5")
+    fundingField(SAFE_CL, "totalWithdrawnUsd", "0")
+  })
+
+  test("ETH sent to a contract that sends nothing back to the Safe is a withdrawal", () => {
+    fundOneEth(SAFE_CL)
+    seedAddressType(SOME_CONTRACT, true, false)
+    processSafeEthTransfer(SAFE_CL, newExecution(SAFE_CL, execCallTo(SOME_CONTRACT), BigInt.zero(), newReceipt([])), seededAddressType)
+    ethBalance(SAFE_CL, "0.5")
+    fundingField(SAFE_CL, "totalWithdrawnUsd", "1000")
+  })
+
+  test("the LiFi swap with no USDT back to the Safe is a withdrawal", () => {
+    fundOneEth(SAFE_CL)
+    seedAddressType(LIFI_DIAMOND, true, false)
+    let receipt = newReceipt([
+      newLog("0xd32613ed605be41d9c7fbc85f2ccb4fba59778ac", ["0x442e715f626346e8c54381002da614f62bee8d27386535b2521ec8540898556e"], "0xa0a97b459f1a6c17443e764ae4fedc38d3f886bb41eb355465ad1bd5608c28630000000000000000000000000000000000000000000000000000000000000000", 22)
+    ])
+    let event = newExecution(SAFE_CL, EXEC_LIFI_SWAP_0XE843, BigInt.zero(), receipt)
+    event.logIndex = BigInt.fromI32(22)
+    processSafeEthTransfer(SAFE_CL, event, seededAddressType)
+    fundingField(SAFE_CL, "totalWithdrawnUsd", "5.548869277816")
+  })
+
+  test("ETH a relayed execution sends to another Safe is a withdrawal, from that Safe's SafeReceived", () => {
+    fundOneEth(SAFE_CL)
+    seedAddressType(OTHER_SAFE, true, true)
+    let received = newSafeReceived(OTHER_SAFE, SAFE_CL, BigInt.fromString("500000000000000000"))
+    received.transaction.to = SOME_CONTRACT
+    processSafeReceived(received, seededAddressType)
+    fundingField(SAFE_CL, "totalWithdrawnUsd", "1000")
+    ethBalance(SAFE_CL, "0.5")
+  })
+
   test("ETH swapped through LiFi with USDT back to the Safe (Optimism 0xe843e2fa calldata): not a withdrawal", () => {
     fundOneEth(SAFE_CL)
     seedAddressType(LIFI_DIAMOND, true, false)
@@ -431,5 +481,26 @@ describe("ETH funding uses the same user-side rule", () => {
     processSafeReceived(newSafeReceived(OPERATOR_SAFE, SAFE_CL, BigInt.fromString("500000000000000000")), seededAddressType)
     fundingField(SAFE_CL, "totalWithdrawnUsd", "1000")
     fundingField(SAFE_CL, "netUsd", "2000")
+  })
+})
+
+describe("a Safe is a contract that answers getThreshold()", () => {
+  afterEach(() => {
+    clearStore()
+  })
+
+  test("a contract whose getThreshold() answers is a Safe", () => {
+    createMockedFunction(OTHER_SAFE, "getThreshold", "getThreshold():(uint256)").withArgs([]).returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1))])
+    assert.assertTrue(isSafeContract(OTHER_SAFE, true))
+  })
+
+  test("a contract whose getThreshold() reverts is not a Safe", () => {
+    createMockedFunction(SOME_CONTRACT, "getThreshold", "getThreshold():(uint256)").withArgs([]).reverts()
+    assert.assertTrue(!isSafeContract(SOME_CONTRACT, true))
+  })
+
+  test("an address with no code is not a Safe, whatever getThreshold() says", () => {
+    createMockedFunction(USER_EOA, "getThreshold", "getThreshold():(uint256)").withArgs([]).returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1))])
+    assert.assertTrue(!isSafeContract(USER_EOA, false))
   })
 })

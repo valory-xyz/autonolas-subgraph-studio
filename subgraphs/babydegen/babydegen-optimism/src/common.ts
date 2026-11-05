@@ -9,11 +9,14 @@ import {
 } from "./config"
 import { getTokenPriceUSD } from "./priceDiscovery"
 import { calculatePortfolioMetrics } from "./helpers"
+import { WETH } from "./constants"
 
 // Transfer(address,address,uint256) — ERC-20 and ERC-721 share the topic; topics[2] is `to` in both
 export const TRANSFER_TOPIC = Bytes.fromHexString("0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef")
 // SafeReceived(address,uint256)
 export const SAFE_RECEIVED_TOPIC = Bytes.fromHexString("0x3d0ce9bfc3ed7d6862dbb28b2dea94561fe714a1b4d019aa8af39730d1ad7c3d")
+// WETH9 Deposit(address indexed dst, uint256 wad): wrapping emits this, not a Transfer
+const WETH_DEPOSIT_TOPIC = Bytes.fromHexString("0xe1fffcc4923d04b559f4d29a8bfc6cda04eb5b0d3c460751c2402c5c5cc9109c")
 
 export function isEOA(addr: Address, block: ethereum.Block, txHash: string = ""): boolean {
   // Use the official Graph Protocol method to check if address has code
@@ -37,10 +40,15 @@ export function getAddressType(addr: Address, block: ethereum.Block): AddressTyp
   let isContract = ethereum.hasCode(addr).inner
   addressType = new AddressType(addr)
   addressType.isContract = isContract
-  addressType.isSafe = isContract && !GnosisSafe.bind(addr).try_getThreshold().reverted
+  addressType.isSafe = isSafeContract(addr, isContract)
   addressType.checkedAt = block.number
   addressType.save()
   return addressType
+}
+
+// A Safe is a contract that answers getThreshold()
+export function isSafeContract(addr: Address, isContract: boolean): boolean {
+  return isContract && !GnosisSafe.bind(addr).try_getThreshold().reverted
 }
 
 export function containsAddress(list: Bytes[], addr: Bytes): boolean {
@@ -94,7 +102,8 @@ export function addressAt(bytes: Uint8Array, offset: i32): Address {
 }
 
 // True when the receipt shows anything coming back to the Safe: an ERC-20 / ERC-721 Transfer
-// to it, or its own SafeReceived. Outflows in such a tx are swaps or LP entries.
+// to it, a WETH Deposit for it (wrapping), or its own SafeReceived. Outflows in such a tx are
+// swaps, wraps or LP entries.
 function receiptHasInflowTo(safe: Address, receipt: ethereum.TransactionReceipt): boolean {
   let logs = receipt.logs
   for (let i = 0; i < logs.length; i++) {
@@ -104,6 +113,10 @@ function receiptHasInflowTo(safe: Address, receipt: ethereum.TransactionReceipt)
       return true
     }
     if (topics.length >= 1 && topics[0].equals(SAFE_RECEIVED_TOPIC) && logs[i].address.equals(safe)) {
+      return true
+    }
+    if (topics.length >= 2 && topics[0].equals(WETH_DEPOSIT_TOPIC) && logs[i].address.equals(WETH) &&
+        addressAt(topics[1], 0).equals(safe)) {
       return true
     }
   }
