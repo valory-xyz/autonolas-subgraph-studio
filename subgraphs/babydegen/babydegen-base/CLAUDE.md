@@ -157,7 +157,7 @@ The `ethAdjusted*` fields are deprecated and equal their unadjusted counterparts
   cached as `AddressType.isSafe`), the tx sender (an EIP-7702 wallet included), or an EOA that is
   not one of `Service.agentInstances`. The Safe itself, its agent EOAs and the zero address never are.
 - An outflow to any other contract is a withdrawal only when the receipt shows nothing coming
-  back to the Safe: no ERC-20/ERC-721 `Transfer` to it and no `SafeReceived` it emitted
+  back to the Safe: no ERC-20/ERC-721 `Transfer` to it, no WETH `Deposit` for it (wrapping) and no `SafeReceived` it emitted
   (`isWithdrawalRecipient`). With no receipt it is not counted. Token and Safe handlers set `receipt: true`.
 - ETH in comes from `SafeReceived`. ETH out is decoded from the Safe's `execTransaction` calldata
   (`ethSentBySafe`): its Call's value, or each Call of a `multiSend` it delegatecalls. ETH to an
@@ -177,7 +177,7 @@ The `ethAdjusted*` fields are deprecated and equal their unadjusted counterparts
 - A pool's pair leg is priced from its own token config (its Chainlink source), never taken as $1;
   a pair leg with none gives no pool price. Feed staleness is judged against the event's block.
 - Every `STABLECOINS` token gets the no-floor band ($0–1.50; USDC $0–1.05).
-- A stable pool's `getAmountOut` quote is net of the pool's swap fee (about 0.9995 × at the default 5 bps stable fee). A v2 pool whose `stable()` is true is
+- A stable pool's `getAmountOut` quote is net of the pool's swap fee (about 0.9995 × at the default 5 bps stable fee). The bias is accepted: it is far inside the $0.98 depeg threshold. A v2 pool whose `stable()` is true is
   priced from its `getAmountOut` quote for one token, not its reserve ratio.
 
 ### Position income (`positionIncome.ts`)

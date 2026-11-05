@@ -1,6 +1,6 @@
 # BabyDegen Optimism Subgraph
 
-Tracks autonomous agent portfolio performance and population-level metrics for the BabyDegen agent economy on Optimism. Monitors agents participating in DeFi protocols (Velodrome CL, Velodrome V2, Uniswap V3, Balancer), tracking portfolio performance, position management, funding flows, and aggregated population statistics.
+Tracks autonomous agent portfolio performance and population-level metrics for the BabyDegen agent economy on Optimism. Monitors agents participating in DeFi protocols (Velodrome CL, Velodrome V2, Aero CL, Aero v2, Uniswap V3, Balancer), tracking portfolio performance, position management, funding flows, and aggregated population statistics.
 
 ## Table of Contents
 - [Architecture Overview](#architecture-overview)
@@ -238,7 +238,7 @@ Daily population-level stats at UTC midnight (id: `<dayTimestamp>`).
 **Files**: `src/funding.ts`, `src/tokenBalances.ts`
 - `handleUSDC` → redirects to `handleERC20Transfer`
 - `handleERC20Transfer`: Central handler for all token transfers. Updates TokenBalance with USD values, attributes gauge rewards to positions, and updates FundingBalance
-- **Every tracked token and ETH counts as funding in, or as a withdrawal out, valued at its price at the transfer.** The user side (`isUserSide`, `common.ts`) is the operator Safe, any Safe, the tx sender, or an EOA that is not one of the service's agent EOAs; the zero address (mints) and the agent EOAs never are. The tx-sender rule covers EIP-7702 wallets, which have code and are no Safe. An outflow to any other contract is a withdrawal only when the tx receipt shows nothing coming back to the Safe — no ERC-20/ERC-721 `Transfer` to it and no `SafeReceived` (`isWithdrawalRecipient`). This catches EIP-7702 wallets (they have code) and keeps swaps and LP entries out. Every Transfer and Safe handler sets `receipt: true`
+- **Every tracked token and ETH counts as funding in, or as a withdrawal out, valued at its price at the transfer.** The user side (`isUserSide`, `common.ts`) is the operator Safe, any Safe, the tx sender, or an EOA that is not one of the service's agent EOAs; the zero address (mints) and the agent EOAs never are. The tx-sender rule covers EIP-7702 wallets, which have code and are no Safe. An outflow to any other contract is a withdrawal only when the tx receipt shows nothing coming back to the Safe — no ERC-20/ERC-721 `Transfer` to it, no WETH `Deposit` for it (wrapping) and no `SafeReceived` (`isWithdrawalRecipient`). This catches EIP-7702 wallets (they have code) and keeps swaps and LP entries out. Every Transfer and Safe handler sets `receipt: true`
 - Withdrawals go to `totalWithdrawnUsd` (added back into `finalValue`); they never reduce `netUsd`
 - Matchstick has no `ethereum.hasCode`, so `processERC20Transfer` / `processSafeReceived` take the address-type reader; handlers pass `getAddressType`, tests pass a reader over seeded `AddressType` rows
 
@@ -372,7 +372,7 @@ Deprecated: every `ethAdjusted*` field equals its unadjusted counterpart. Subtra
 - A pool's pair leg is priced from its own token config, never taken as $1: its Chainlink source, else its `velodrome_v2` pool when that pool's pair leg has a feed (LUSD); otherwise the pool gives no price (`getPairTokenPrice`). Feed staleness is judged against the event's block, with a 90000s limit (24h heartbeat + grace)
 - The no-floor stablecoin band ($0–1.50; USDC $0–1.05) applies to every `STABLECOINS` token
 - Sources are read by priority: a priority-2 source (e.g. BOLD's BOLD/LUSD pool) counts only when every priority-1 source gives no price; sources sharing a priority are averaged by confidence. Base does the same
-- A stable pool's `getAmountOut` quote is net of the pool's swap fee, so its price reads below the fee-free price by that fee (about 0.9995 × at Velodrome's default 5 bps stable fee)
+- A stable pool's `getAmountOut` quote is net of the pool's swap fee, so its price reads below the fee-free price by that fee (about 0.9995 × at Velodrome's default 5 bps stable fee). This bias is accepted: it is far inside the $0.98 depeg threshold, and adding the fee back would need a factory `getFee` read per quote
 
 ### Caching
 - 5-minute cache for token prices

@@ -437,7 +437,7 @@ function refreshOrCreateCLPosition(
       const rewardPrice = getTokenPriceUSD(venue.rewardToken, block.timestamp, false)
       rewardUSD = rewardAmount.times(rewardPrice)
     } else {
-      // earned() reverted on an active position: the silent-zero failure mode (AERO-REWARDS-PLAN.md), so log it.
+      // Logged rather than recorded as a silent 0 (see AERO-REWARDS-PLAN.md for the legacy path)
       log.warning(
         "AERO rewards: gauge.earned() reverted for active CL position {} (gauge {}, account {}, tokenId {}) — recording 0 reward. See AERO-REWARDS-PLAN.md.",
         [positionId.toString(), gaugeAddress.toHexString(), nftOwner.toHexString(), tokenId.toString()]

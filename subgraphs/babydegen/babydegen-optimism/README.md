@@ -120,7 +120,7 @@ Cached address type checking (EOA vs Contract) for performance optimization.
 Tracks funding flows for each service:
 - **totalInUsd**: Total funding received from the user side (the operator Safe, any Safe, the tx sender, or an EOA that is not an agent EOA), in every tracked token and ETH, valued at the transfer
 - **totalOutUsd**: Deprecated; no longer written and stays 0 (outflows are recorded only in `totalWithdrawnUsd`). `fundingOutTxs` likewise stays empty
-- **totalWithdrawnUsd**: Total withdrawn to the user side, or to a contract that sent nothing back to the Safe in the same tx (separate tracking)
+- **totalWithdrawnUsd**: Total withdrawn to the user side, or to a contract when the tx receipt shows nothing coming back to the Safe (no Transfer to it, no WETH Deposit for it, no SafeReceived)
 - **netUsd**: Equals `totalInUsd`; withdrawals never reduce it
 - **firstInTimestamp**: First funding timestamp
 
@@ -218,15 +218,15 @@ Comprehensive daily population-level metrics calculated at UTC midnight:
 - **medianUnrealisedPnL**: Median unrealised PnL across all agents
 - **medianProjectedUnrealisedPnL**: Median projected unrealised PnL across all agents
 
-**ETH-Adjusted Population Metrics:**
-- **medianEthAdjustedUnrealisedPnL**: Median ETH-adjusted unrealised PnL
-- **medianEthAdjustedProjectedUnrealisedPnL**: Median ETH-adjusted projected unrealised PnL
+**ETH-Adjusted Population Metrics (deprecated):**
+- **medianEthAdjustedUnrealisedPnL**: Deprecated: equals `medianUnrealisedPnL`
+- **medianEthAdjustedProjectedUnrealisedPnL**: Deprecated: equals `medianProjectedUnrealisedPnL`
 
 **Lifetime Active Agent Metrics (>2 positions):**
 - **medianLifetimeActiveUnrealisedPnL**: Median unrealised PnL for lifetime active agents
 - **medianLifetimeActiveProjectedUnrealisedPnL**: Median projected unrealised PnL for lifetime active agents
-- **medianLifetimeActiveEthAdjustedUnrealisedPnL**: Median ETH-adjusted unrealised PnL for lifetime active agents
-- **medianLifetimeActiveEthAdjustedProjectedUnrealisedPnL**: Median ETH-adjusted projected unrealised PnL for lifetime active agents
+- **medianLifetimeActiveEthAdjustedUnrealisedPnL**: Deprecated: equals `medianLifetimeActiveUnrealisedPnL`
+- **medianLifetimeActiveEthAdjustedProjectedUnrealisedPnL**: Deprecated: equals `medianLifetimeActiveProjectedUnrealisedPnL`
 - **medianLifetimeActiveAUM**: Median AUM for lifetime active agents
 - **totalLifetimeActiveFundedAUM**: Total funded AUM for lifetime active agents
 - **totalLifetimeActiveAgents**: Number of lifetime active agents
@@ -238,13 +238,13 @@ Comprehensive daily population-level metrics calculated at UTC midnight:
 
 **7-Day Simple Moving Averages:**
 - **sma7dUnrealisedPnL/sma7dProjectedUnrealisedPnL**: 7-day SMAs of unrealized metrics
-- **sma7dEthAdjustedUnrealisedPnL/sma7dEthAdjustedProjectedUnrealisedPnL**: 7-day SMAs of ETH-adjusted unrealized metrics
+- **sma7dEthAdjustedUnrealisedPnL/sma7dEthAdjustedProjectedUnrealisedPnL**: Deprecated: equal `sma7dUnrealisedPnL` / `sma7dProjectedUnrealisedPnL`
 - **sma7dLifetimeActive...**: 7-day SMAs for lifetime active agent metrics
 - **sma7dAUM**: 7-day SMA of median AUM
 
 **Historical Data Arrays:**
 - **historicalMedianUnrealisedPnL/historicalMedianProjectedUnrealisedPnL**: Arrays storing last 7 days of values for SMA calculations
-- **historicalMedianEthAdjusted...**: Arrays for ETH-adjusted historical data
+- **historicalMedianEthAdjusted...**: Deprecated: equal the matching `historicalMedian...` arrays
 - **historicalMedianLifetimeActive...**: Arrays for lifetime active agent historical data
 
 **Metadata:**

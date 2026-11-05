@@ -36,12 +36,12 @@ reused directly. Uniswap V3, Balancer, and Mode's STURDY vault are not in scope.
 | Website metric | Source entity/field |
 |----------------|---------------------|
 | APR relative to USDC – MA7D | `DailyPopulationMetric.sma7dAPR` |
-| APR relative to ETH – MA7D | `DailyPopulationMetric.sma7dEthAdjustedAPR` |
+| APR relative to ETH – MA7D | `DailyPopulationMetric.sma7dEthAdjustedAPR` (deprecated: equals `sma7dAPR`) |
 | Weekly ROI / APR (KPIs) | `AgentPortfolio.roi` / `.apr` |
 | Explorer "ROI per day" heatmap | `AgentPortfolioSnapshot.roi` (per agent, per UTC day) |
 
-`apr = roi * 365 / daysSinceFirstTrade`; ETH-adjusted strips
-`ETHDelta = (curEth/firstEth − 1) * 100`.
+`apr = roi * 365 / daysSinceFirstTrade`. The `ethAdjusted*` fields are deprecated and equal their
+unadjusted counterparts; they no longer strip an ETH delta.
 
 ## Phase 1 — core subgraph (DONE in this PR, modulo TODOs)
 
