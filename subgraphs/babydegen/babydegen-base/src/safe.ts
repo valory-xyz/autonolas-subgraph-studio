@@ -1,4 +1,4 @@
-import { BigInt, BigDecimal, ethereum, Address, log } from "@graphprotocol/graph-ts"
+import { BigInt, BigDecimal, Bytes, ethereum, Address, log } from "@graphprotocol/graph-ts"
 import {
   Safe,
   SafeReceived as SafeReceivedEvent,
@@ -11,7 +11,15 @@ import { updateFundingBalance, updateWithdrawalBalance } from "./tokenBalances"
 import { updateETHBalance } from "./tokenBalances"
 
 // ETH funding uses the same user-side rule as ERC-20 funding in tokenBalances.ts.
-// ETH transfers in are tracked via SafeReceived events; out via ExecutionSuccess / ExecutionFromModuleSuccess.
+// ETH transfers in are tracked via SafeReceived events; out from the execTransaction calldata.
+
+const EXEC_TRANSACTION_SELECTOR = "0x6a761202" // execTransaction(address,uint256,bytes,uint8,uint256,uint256,uint256,address,address,bytes)
+const MULTI_SEND_SELECTOR = "0x8d80ff0a"       // multiSend(bytes)
+const OPERATION_CALL = 0
+const OPERATION_DELEGATECALL = 1
+const WORD = 32
+// MultiSend packs each call as operation (1 byte) | to (20) | value (32) | data length (32) | data
+const PACKED_CALL_HEADER = 85
 
 export function handleSafeReceived(event: SafeReceivedEvent): void {
   processSafeReceived(event, getAddressType)
@@ -92,8 +100,95 @@ export function processSafeReceived(event: SafeReceivedEvent, readAddressType: A
   }
 }
 
+// ETH the Safe sends to one address in one call of an execTransaction
+class EthSend {
+  to: Address
+  value: BigInt
+
+  constructor(to: Address, value: BigInt) {
+    this.to = to
+    this.value = value
+  }
+}
+
+function uintAt(bytes: Uint8Array, offset: i32): BigInt {
+  return BigInt.fromUnsignedBytes(changetype<Bytes>(bytes.slice(offset, offset + WORD).reverse()))
+}
+
+// A word read as a byte offset or length, or -1 when it cannot be one inside `bytes`
+function sizeAt(bytes: Uint8Array, offset: i32): i32 {
+  if (offset < 0 || offset + WORD > bytes.length) {
+    return -1
+  }
+  let size = uintAt(bytes, offset)
+  return size.gt(BigInt.fromI32(bytes.length)) ? -1 : size.toI32()
+}
+
+function hasSelector(bytes: Uint8Array, selector: string): boolean {
+  return bytes.length >= 4 && Bytes.fromUint8Array(bytes.subarray(0, 4)).toHexString() == selector
+}
+
+// The calls with value packed in multiSend(bytes transactions) calldata
+function multiSendEthSends(data: Uint8Array): EthSend[] {
+  let sends: EthSend[] = []
+  let args = data.subarray(4)
+  let offset = sizeAt(args, 0)
+  let length = offset < 0 ? -1 : sizeAt(args, offset)
+  if (length < 0 || offset + WORD + length > args.length) {
+    return sends
+  }
+  let packed = args.subarray(offset + WORD, offset + WORD + length)
+  let i = 0
+  while (i + PACKED_CALL_HEADER <= packed.length) {
+    let operation = packed[i] as i32
+    let to = Address.fromBytes(Bytes.fromUint8Array(packed.subarray(i + 1, i + 21)))
+    let value = uintAt(packed, i + 21)
+    let dataLength = sizeAt(packed, i + 53)
+    if (dataLength < 0) {
+      break
+    }
+    if (operation == OPERATION_CALL && value.gt(BigInt.zero())) {
+      sends.push(new EthSend(to, value))
+    }
+    i += PACKED_CALL_HEADER + dataLength
+  }
+  return sends
+}
+
+// ETH the Safe itself sends when the tx calls its execTransaction: the Call's value, or each Call
+// of a MultiSend it delegatecalls. The outer tx's own value is the executor's, not the Safe's. A
+// module execution's calldata belongs to the module, so its ETH is not visible here.
+function ethSentBySafe(safe: Address, tx: ethereum.Transaction): EthSend[] {
+  let sends: EthSend[] = []
+  let txTo = tx.to
+  if (txTo === null || !txTo.equals(safe) || !hasSelector(tx.input, EXEC_TRANSACTION_SELECTOR)) {
+    return sends
+  }
+  let args = tx.input.subarray(4)
+  if (args.length < 4 * WORD) {
+    return sends
+  }
+  let to = Address.fromBytes(Bytes.fromUint8Array(args.subarray(12, WORD)))
+  let value = uintAt(args, WORD)
+  let dataOffset = sizeAt(args, 2 * WORD)
+  let operation = uintAt(args, 3 * WORD)
+  if (operation.equals(BigInt.fromI32(OPERATION_CALL))) {
+    if (value.gt(BigInt.zero())) {
+      sends.push(new EthSend(to, value))
+    }
+    return sends
+  }
+  let dataLength = dataOffset < 0 ? -1 : sizeAt(args, dataOffset)
+  if (!operation.equals(BigInt.fromI32(OPERATION_DELEGATECALL)) || dataLength < 0 ||
+      dataOffset + WORD + dataLength > args.length) {
+    return sends
+  }
+  let data = args.subarray(dataOffset + WORD, dataOffset + WORD + dataLength)
+  return hasSelector(data, MULTI_SEND_SELECTOR) ? multiSendEthSends(data) : sends
+}
+
 /**
- * Helper function to handle ETH transfers for both ExecutionSuccess and ExecutionFromModuleSuccess events
+ * ETH the service Safe sends out in an ExecutionSuccess / ExecutionFromModuleSuccess transaction
  * @param serviceSafe The safe address that executed the transaction
  * @param event The Safe event, whose transaction and receipt are read
  * @param readAddressType Address-type reader, getAddressType outside tests
@@ -103,35 +198,21 @@ export function processSafeEthTransfer(
   event: ethereum.Event,
   readAddressType: AddressTypeReader
 ): void {
-  let service = getServiceByAgent(serviceSafe)
-  
-  if (service === null) {
-    return // Not a service safe
+  if (getServiceByAgent(serviceSafe) === null) {
+    return
   }
-  
-  // For ETH transfers, we need the transaction information
   let block = event.block
-  let to = event.transaction.to
-  let value = event.transaction.value
-  
-  // Check if this is a direct ETH transfer (value > 0 and to is valid)
-  if (value.gt(BigInt.zero()) && to !== null) {
-    
-    // Always update ETH balance for outflows from service safe
-    updateETHBalance(serviceSafe, value, false, block)
-    
-    if (isWithdrawalRecipient(to!, serviceSafe, event, readAddressType)) {
-      let ethPrice = getEthUsd(block)
-      let usd = value.toBigDecimal()
-        .times(ethPrice)
+  let sends = ethSentBySafe(serviceSafe, event.transaction)
+  for (let i = 0; i < sends.length; i++) {
+    let send = sends[i]
+    updateETHBalance(serviceSafe, send.value, false, block)
+    if (isWithdrawalRecipient(send.to, serviceSafe, event, readAddressType)) {
+      let usd = send.value.toBigDecimal()
+        .times(getEthUsd(block))
         .div(BigDecimal.fromString("1e18")) // ETH has 18 decimals
-      
       updateWithdrawalBalance(serviceSafe, usd, block.timestamp)
     }
   }
-    
-  // For complex transactions (like swaps), ETH might leave through internal calls
-  // These are tracked via SafeReceived events on the receiving contracts
 }
 
 export function handleExecutionSuccess(event: ExecutionSuccessEvent): void {
