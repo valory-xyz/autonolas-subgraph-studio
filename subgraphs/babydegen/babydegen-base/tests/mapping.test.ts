@@ -1488,6 +1488,23 @@ describe("Aero CL positions (AeroNFTManager)", () => {
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "exitAmount1", "3")
   })
 
+  test("a refresh after a burn that recorded no exit writes the exit", () => {
+    createService(SERVICE_SAFE)
+    mockChainlinkEthUsd()
+    mockAeroCLPosition()
+    mockAeroCLStaked(false)
+    const id = openAeroCLPosition()
+    const burn = createNFTTransferEvent(AERO_NFT_MANAGER, SERVICE_SAFE, Address.zero(), AERO_TOKEN_ID)
+    burn.block = aeroBlock()
+    burn.transaction.hash = TX_HASH
+    handleNFTTransfer(burn)
+    assert.assertTrue(ProtocolPosition.load(id)!.exitAmountUSD === null)
+
+    mockCLPositions(AERO_NFT_MANAGER, BigInt.zero())
+    refreshVeloCLPosition(id, AERO_TOKEN_ID, aeroBlock(), TX_HASH, false)
+    assert.assertTrue(ProtocolPosition.load(id)!.exitAmountUSD !== null)
+  })
+
   test("two decreases in the burn block add up to the exit", () => {
     createService(SERVICE_SAFE)
     mockChainlinkEthUsd()

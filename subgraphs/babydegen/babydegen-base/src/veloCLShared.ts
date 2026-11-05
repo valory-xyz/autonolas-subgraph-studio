@@ -218,6 +218,9 @@ export function refreshVeloCLPositionWithExitAmounts(
   }
   
   if (closedWithoutExit(pp)) {
+    log.warning("CL exit: tx {} — DecreaseLiquidity for position {} (tokenId {}) skipped: closed with no exit recorded", [
+      txHash.toHexString(), positionId.toString(), tokenId.toString()
+    ])
     return
   }
   
@@ -233,11 +236,8 @@ export function refreshVeloCLPositionWithExitAmounts(
     ])
   }
   const isFullExit = dataResult.reverted || dataResult.value.value7.equals(BigInt.zero())
-  const token0Bytes = pp.token0
-  const token1Bytes = pp.token1
   
-  if (isFullExit && token0Bytes && token1Bytes) {
-    recordFullExit(pp, Address.fromBytes(token0Bytes!), Address.fromBytes(token1Bytes!), eventAmount0, eventAmount1, block, txHash)
+  if (isFullExit && recordFullExit(pp, eventAmount0, eventAmount1, block, txHash)) {
     removeAgentNFTFromPool(venue.protocol, Address.fromBytes(pp.pool), tokenId)
     pp.save()
     refreshPortfolio(nftOwner, block)

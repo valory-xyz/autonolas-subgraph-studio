@@ -84,6 +84,8 @@ describe("collected fees", () => {
 
   test("decreases in the burn block add up to the exit, in USD too", () => {
     let p = seedPosition(SERVICE_SAFE, PROTOCOL_VELODROME_V3, BigInt.fromI32(7), USDC_NATIVE, BOLD, null, BigInt.zero(), "0")
+    p.usdCurrentWithRewards = BigDecimal.fromString("7")
+    p.save()
     createMockedFunction(VELO_MANAGER, "positions", "positions(uint256):(uint96,address,address,address,int24,int24,int24,uint128,uint256,uint256,uint128,uint128)")
       .withArgs([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(7))])
       .reverts()
@@ -92,6 +94,7 @@ describe("collected fees", () => {
 
     positionField(p, "exitAmount0USD", "100")
     positionField(p, "exitAmount1USD", "100")
+    positionField(p, "usdCurrentWithRewards", "0")
     positionField(p, "exitAmountUSD", "200")
   })
 

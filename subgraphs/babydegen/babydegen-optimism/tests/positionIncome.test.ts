@@ -49,6 +49,24 @@ function newCollect(tokenId: BigInt, recipient: Address, amount0: BigInt, amount
 const USDC_50 = BigInt.fromI64(50000000)
 const DAI_50 = BigInt.fromString("50000000000000000000")
 
+function mockUniV3Owner(tokenId: i32, owner: Address): void {
+  createMockedFunction(UNI_V3_MANAGER, "ownerOf", "ownerOf(uint256):(address)")
+    .withArgs([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(tokenId))])
+    .returns([ethereum.Value.fromAddress(owner)])
+}
+
+function newUniV3Transfer(from: Address, to: Address, tokenId: i32): UniV3Transfer {
+  let event = changetype<UniV3Transfer>(newMockEvent())
+  event.address = UNI_V3_MANAGER
+  event.parameters = new Array()
+  event.parameters.push(new ethereum.EventParam("from", ethereum.Value.fromAddress(from)))
+  event.parameters.push(new ethereum.EventParam("to", ethereum.Value.fromAddress(to)))
+  event.parameters.push(new ethereum.EventParam("tokenId", ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(tokenId))))
+  event.block.number = BLOCK_NUMBER
+  event.block.timestamp = BLOCK_TIMESTAMP
+  return event
+}
+
 function revertUniV3Positions(tokenId: i32): void {
   createMockedFunction(UNI_V3_MANAGER, "positions", "positions(uint256):(uint96,address,address,address,uint24,int24,int24,uint128,uint256,uint256,uint128,uint128)")
     .withArgs([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(tokenId))])
@@ -98,6 +116,8 @@ describe("collected fees", () => {
 
   test("decreases in the burn block add up to the exit, in USD too", () => {
     let p = seedPosition(SERVICE_SAFE, PROTOCOL_VELODROME_V3, BigInt.fromI32(7), USDC_NATIVE, DAI, null, BigInt.zero(), "0")
+    p.usdCurrentWithRewards = BigDecimal.fromString("7")
+    p.save()
     createMockedFunction(VELO_MANAGER, "positions", "positions(uint256):(uint96,address,address,address,int24,int24,int24,uint128,uint256,uint256,uint128,uint128)")
       .withArgs([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(7))])
       .reverts()
@@ -106,6 +126,7 @@ describe("collected fees", () => {
 
     positionField(p, "exitAmount0USD", "100")
     positionField(p, "exitAmount1USD", "100")
+    positionField(p, "usdCurrentWithRewards", "0")
     positionField(p, "exitAmountUSD", "200")
   })
 
@@ -397,13 +418,36 @@ describe("collected fees", () => {
 
   test("Uniswap V3: a decrease after the NFT was transferred away is not this position's exit", () => {
     let p = seedPosition(SERVICE_SAFE, PROTOCOL_UNISWAP_V3, BigInt.fromI32(9), USDC_NATIVE, DAI, null, BigInt.zero(), "0")
-    // handleUniV3Transfer closed it with no exit amounts, in this block
-    p.isActive = false
-    p.exitTimestamp = newDecrease(BigInt.fromI32(9), USDC_50, DAI_50, UNI_V3_MANAGER).block.timestamp
-    p.save()
     revertUniV3Positions(9)
+    mockUniV3Owner(9, OTHER)
+    handleUniV3Transfer(newUniV3Transfer(SERVICE_SAFE, OTHER, 9))
+    positionField(p, "isActive", "false")
+
     handleUniV3DecreaseLiquidity(changetype<UniV3DecreaseLiquidity>(newDecrease(BigInt.fromI32(9), USDC_50, DAI_50, UNI_V3_MANAGER)))
     assert.assertTrue(ProtocolPosition.load(p.id)!.exitAmountUSD === null)
+  })
+
+  test("Uniswap V3: a decrease on an NFT another address now owns is skipped, though the row is open", () => {
+    let p = seedPosition(SERVICE_SAFE, PROTOCOL_UNISWAP_V3, BigInt.fromI32(9), USDC_NATIVE, DAI, null, BigInt.zero(), "0")
+    revertUniV3Positions(9)
+    mockUniV3Owner(9, OTHER)
+    handleUniV3DecreaseLiquidity(changetype<UniV3DecreaseLiquidity>(newDecrease(BigInt.fromI32(9), USDC_50, DAI_50, UNI_V3_MANAGER)))
+    positionField(p, "isActive", "true")
+    assert.assertTrue(ProtocolPosition.load(p.id)!.exitAmountUSD === null)
+  })
+
+  test("Uniswap V3: an NFT sent out and back keeps its position, and its exit is recorded", () => {
+    let p = seedPosition(SERVICE_SAFE, PROTOCOL_UNISWAP_V3, BigInt.fromI32(9), USDC_NATIVE, DAI, null, BigInt.zero(), "0")
+    revertUniV3Positions(9)
+    mockUniV3Owner(9, OTHER)
+    handleUniV3Transfer(newUniV3Transfer(SERVICE_SAFE, OTHER, 9))
+    mockUniV3Owner(9, SERVICE_SAFE)
+    handleUniV3Transfer(newUniV3Transfer(OTHER, SERVICE_SAFE, 9))
+    positionField(p, "isActive", "true")
+
+    handleUniV3DecreaseLiquidity(changetype<UniV3DecreaseLiquidity>(newDecrease(BigInt.fromI32(9), USDC_50, DAI_50, UNI_V3_MANAGER)))
+    positionField(p, "isActive", "false")
+    positionField(p, "exitAmountUSD", "100")
   })
 
   test("Uniswap V3: a Collect on a closed position recalculates the portfolio", () => {

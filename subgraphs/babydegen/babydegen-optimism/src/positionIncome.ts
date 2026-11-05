@@ -410,16 +410,22 @@ export function exitClosedInBlock(pp: ProtocolPosition, block: ethereum.Block): 
 }
 
 // Closes the position on a full-exit DecreaseLiquidity, valued from the event amounts and the
-// stored tokens; a second one in the same block adds to the exit
+// position's stored tokens; a second one in the same block adds to the exit. False when the
+// position has no tokens on record, so nothing can be valued
 export function recordFullExit(
   pp: ProtocolPosition,
-  token0: Address,
-  token1: Address,
   amount0: BigInt,
   amount1: BigInt,
   block: ethereum.Block,
   txHash: Bytes
-): void {
+): boolean {
+  let token0Bytes = pp.token0
+  let token1Bytes = pp.token1
+  if (!token0Bytes || !token1Bytes) {
+    return false
+  }
+  let token0 = Address.fromBytes(token0Bytes!)
+  let token1 = Address.fromBytes(token1Bytes!)
   let exitAmount0 = convertTokenAmount(amount0, token0)
   let exitAmount1 = convertTokenAmount(amount1, token1)
   let exitUsd0 = exitAmount0.times(getTokenPriceUSD(token0, block.timestamp, false))
@@ -448,4 +454,5 @@ export function recordFullExit(
   pp.usdCurrentWithRewards = BigDecimal.zero()
   pp.liquidity = BigInt.zero()
   calculatePositionROI(pp)
+  return true
 }
