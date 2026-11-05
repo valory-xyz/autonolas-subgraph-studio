@@ -82,6 +82,36 @@ describe("collected fees", () => {
     positionField(p, "positionROI", "1.5")
   })
 
+  test("decreases in the burn block add up to the exit, in USD too", () => {
+    let p = seedPosition(SERVICE_SAFE, PROTOCOL_VELODROME_V3, BigInt.fromI32(7), USDC_NATIVE, BOLD, null, BigInt.zero(), "0")
+    createMockedFunction(VELO_MANAGER, "positions", "positions(uint256):(uint96,address,address,address,int24,int24,int24,uint128,uint256,uint256,uint128,uint128)")
+      .withArgs([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(7))])
+      .reverts()
+    handleDecreaseLiquidity(newDecrease(BigInt.fromI32(7), USDC_50, BOLD_50))
+    handleDecreaseLiquidity(newDecrease(BigInt.fromI32(7), USDC_50, BOLD_50))
+
+    positionField(p, "exitAmount0USD", "100")
+    positionField(p, "exitAmount1USD", "100")
+    positionField(p, "exitAmountUSD", "200")
+  })
+
+  test("a full-exit decrease on a row closed in an earlier block replaces its exit", () => {
+    let p = seedPosition(SERVICE_SAFE, PROTOCOL_VELODROME_V3, BigInt.fromI32(7), USDC_NATIVE, BOLD, null, BigInt.zero(), "0")
+    closeAt(p, "120")
+    p.exitTimestamp = BLOCK_TIMESTAMP.minus(BigInt.fromI32(100))
+    p.exitAmount0 = BigDecimal.fromString("60")
+    p.exitAmount0USD = BigDecimal.fromString("60")
+    p.exitAmount1 = BigDecimal.fromString("60")
+    p.exitAmount1USD = BigDecimal.fromString("60")
+    p.save()
+    createMockedFunction(VELO_MANAGER, "positions", "positions(uint256):(uint96,address,address,address,int24,int24,int24,uint128,uint256,uint256,uint128,uint128)")
+      .withArgs([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(7))])
+      .reverts()
+    handleDecreaseLiquidity(newDecrease(BigInt.fromI32(7), USDC_50, BOLD_50))
+
+    positionField(p, "exitAmountUSD", "100")
+  })
+
   test("a fee on a closed position with no recorded investment is still saved", () => {
     let p = seedPosition(SERVICE_SAFE, PROTOCOL_VELODROME_V3, BigInt.fromI32(8), USDC_NATIVE, BOLD, null, BigInt.zero(), "0")
     p.entryAmountUSD = BigDecimal.zero()

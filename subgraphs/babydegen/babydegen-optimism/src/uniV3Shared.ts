@@ -15,7 +15,7 @@ import { isServiceAgent, getServiceByAgent } from "./config"
 import { getTokenSymbol, convertTokenAmount } from "./tokenUtils"
 import { parseTotalSlippageFromBucket, associateSwapsWithPosition, ensureAgentPortfolio } from "./helpers"
 import { calculatePositionROI, initializePositionIncome } from "./roiCalculation"
-import { mapNFTPosition } from "./positionIncome"
+import { mapNFTPosition, loadMappedPosition } from "./positionIncome"
 
 // Create or get Uniswap V3 position ID (consistent with Velodrome V2 pattern)
 export function getUniV3PositionId(userAddress: Address, tokenId: BigInt): Bytes {
@@ -259,69 +259,58 @@ export function refreshUniV3PositionWithExitAmounts(
   liquidityRemoved: BigInt,
   txHash: Bytes = Bytes.empty()
 ): void {
-  const mgr = UniswapV3PositionNFTManager.bind(UNI_V3_MANAGER)
-  
-  // First, get the actual NFT owner
-  const ownerResult = mgr.try_ownerOf(tokenId)
-  if (ownerResult.reverted) {
-    log.error("UNISWAP V3: Failed to get owner for tokenId: {}", [tokenId.toString()])
-    return
-  }
-  
-  const nftOwner = ownerResult.value
-
-  // AGENT FILTERING: Only process positions owned by a service
-  if (!isServiceAgent(nftOwner)) {
-    return
-  }
-
-  const dataResult = mgr.try_positions(tokenId)
-  
-  if (dataResult.reverted) {
-    log.error("UNISWAP V3: positions() call failed for tokenId: {}", [tokenId.toString()])
-    return
-  }
-  
-  const data = dataResult.value
-  
-  // Load existing position using consistent ID pattern
-  const positionId = getUniV3PositionId(nftOwner, tokenId)
-  let pp = ProtocolPosition.load(positionId)
-  
+  // Found through its mapping, not ownerOf(), which reverts once the NFT is burned
+  let pp = loadMappedPosition(PROTOCOL_UNISWAP_V3, tokenId)
   if (pp == null) {
-    log.error("UNISWAP V3: Position {} not found for exit processing", [tokenId.toString()])
     return
   }
+  const nftOwner = Address.fromBytes(pp.agent)
+
+  // positions() reads end-of-block state, so it reverts when the NFT is burned later in the block:
+  // the liquidity is gone, and the exit is valued from the event amounts and the stored tokens
+  const mgr = UniswapV3PositionNFTManager.bind(UNI_V3_MANAGER)
+  const dataResult = mgr.try_positions(tokenId)
+  if (dataResult.reverted) {
+    log.warning("UNISWAP V3 exit: positions() reverted for position {} (tokenId {}) — burned in this block; exit taken from the DecreaseLiquidity amounts", [
+      pp.id.toString(), tokenId.toString()
+    ])
+  }
+  const isFullExit = dataResult.reverted || dataResult.value.value7.equals(BigInt.zero())
+  const token0Bytes = pp.token0
+  const token1Bytes = pp.token1
   
-  // Check if this is a full exit (all liquidity removed)
-  const remainingLiquidity = data.value7
-  const isFullExit = remainingLiquidity.equals(BigInt.zero())
-  
-  if (isFullExit) {
+  if (isFullExit && token0Bytes && token1Bytes) {
+    const token0 = Address.fromBytes(token0Bytes!)
+    const token1 = Address.fromBytes(token1Bytes!)
+    const token0Price = getTokenPriceUSD(token0, block.timestamp, false)
+    const token1Price = getTokenPriceUSD(token1, block.timestamp, false)
     
-    // USD pricing for exit amounts
-    const token0Price = getTokenPriceUSD(data.value2, block.timestamp, false)
-    const token1Price = getTokenPriceUSD(data.value3, block.timestamp, false)
-    
-    // Convert exit amounts from wei to human readable
-    const exitAmount0Human = convertTokenAmount(eventAmount0, data.value2)
-    const exitAmount1Human = convertTokenAmount(eventAmount1, data.value3)
+    const exitAmount0Human = convertTokenAmount(eventAmount0, token0)
+    const exitAmount1Human = convertTokenAmount(eventAmount1, token1)
     
     const exitUsd0 = exitAmount0Human.times(token0Price)
     const exitUsd1 = exitAmount1Human.times(token1Price)
     const exitUsd = exitUsd0.plus(exitUsd1)
     
-    // Set exit data using ACTUAL EVENT AMOUNTS
+    // Every decrease in the burn block lands here; one already closed in this block adds to its exit
+    const prevExit = pp.exitTimestamp
+    if (!pp.isActive && prevExit !== null && prevExit.equals(block.timestamp)) {
+      pp.exitAmount0 = pp.exitAmount0!.plus(exitAmount0Human)
+      pp.exitAmount0USD = pp.exitAmount0USD!.plus(exitUsd0)
+      pp.exitAmount1 = pp.exitAmount1!.plus(exitAmount1Human)
+      pp.exitAmount1USD = pp.exitAmount1USD!.plus(exitUsd1)
+      pp.exitAmountUSD = pp.exitAmountUSD!.plus(exitUsd)
+    } else {
+      pp.exitAmount0 = exitAmount0Human
+      pp.exitAmount0USD = exitUsd0
+      pp.exitAmount1 = exitAmount1Human
+      pp.exitAmount1USD = exitUsd1
+      pp.exitAmountUSD = exitUsd
+    }
     pp.isActive = false
     pp.exitTxHash = txHash
     pp.exitTimestamp = block.timestamp
-    pp.exitAmount0 = exitAmount0Human
-    pp.exitAmount0USD = exitUsd0
-    pp.exitAmount1 = exitAmount1Human
-    pp.exitAmount1USD = exitUsd1
-    pp.exitAmountUSD = exitUsd
     
-    // Update current amounts to 0 (since position is closed)
     pp.amount0 = BigDecimal.zero()
     pp.amount1 = BigDecimal.zero()
     pp.amount0USD = BigDecimal.zero()
@@ -330,12 +319,8 @@ export function refreshUniV3PositionWithExitAmounts(
     pp.usdCurrentWithRewards = BigDecimal.zero()
     pp.liquidity = BigInt.zero()
     
-    // FIXED: Calculate position ROI when position closes
     calculatePositionROI(pp)
-    
-    // Remove from cache
-    const poolAddress = getUniV3PoolAddress(data.value2, data.value3, data.value4, tokenId)
-    removeAgentNFTFromPool(PROTOCOL_UNISWAP_V3, poolAddress, tokenId)
+    removeAgentNFTFromPool(PROTOCOL_UNISWAP_V3, Address.fromBytes(pp.pool), tokenId)
     
     pp.save()
     refreshPortfolio(nftOwner, block)

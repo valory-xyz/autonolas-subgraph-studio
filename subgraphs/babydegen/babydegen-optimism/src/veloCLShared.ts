@@ -246,8 +246,7 @@ export function refreshVeloCLPositionWithExitAmounts(
     const exitUsd1 = exitAmount1Human.times(token1Price)
     const exitUsd = exitUsd0.plus(exitUsd1)
     
-    // positions() reads end-of-block state, so every decrease in the burn block lands here: one
-    // already closed in this block adds to its exit
+    // One already closed in this block adds to its exit
     const prevExit = pp.exitTimestamp
     if (!pp.isActive && prevExit !== null && prevExit.equals(block.timestamp)) {
       pp.exitAmount0 = pp.exitAmount0!.plus(exitAmount0Human)
@@ -482,14 +481,19 @@ function refreshOrCreateCLPosition(
   }
   
   if (isPositionClosed(data.value7, amount0Human, amount1Human)) {
+    // A row a DecreaseLiquidity already closed in this block keeps that exit: a refresh in between
+    // (e.g. an IncreaseLiquidity) reads the end-of-block zero liquidity, not this exit's amounts
+    const prevExit = position.exitTimestamp
+    if (position.isActive || prevExit === null || !prevExit.equals(block.timestamp)) {
+      position.exitTxHash = txHash
+      position.exitTimestamp = block.timestamp
+      position.exitAmount0 = amount0Human
+      position.exitAmount0USD = usd0
+      position.exitAmount1 = amount1Human
+      position.exitAmount1USD = usd1
+      position.exitAmountUSD = usd
+    }
     position.isActive = false
-    position.exitTxHash = txHash
-    position.exitTimestamp = block.timestamp
-    position.exitAmount0 = amount0Human
-    position.exitAmount0USD = usd0
-    position.exitAmount1 = amount1Human
-    position.exitAmount1USD = usd1
-    position.exitAmountUSD = usd
     
     calculatePositionROI(position)
     removeAgentNFTFromPool(venue.protocol, poolAddress, tokenId)
@@ -503,9 +507,7 @@ function refreshOrCreateCLPosition(
 }
 
 // A CL pool's gauge; Address.zero() when the pool has none. Legacy gauges are cached on the
-// position once found. Aero CL gauges are re-read on every refresh, like Aero v2 ones, since
-// nothing here shows they can't be replaced. Neither a zero gauge nor a revert is cached, so a
-// pool gauged later is picked up on the next refresh.
+// position; Aero CL gauges are re-read on every refresh. A zero gauge or a revert is not cached.
 function resolveCLGauge(pool: VelodromeCLPool, position: ProtocolPosition, venue: CLVenue): Address {
   const cached = position.rewardsContract
   if (cached && venue.protocol != PROTOCOL_AERO_CL) {

@@ -49,6 +49,12 @@ function newCollect(tokenId: BigInt, recipient: Address, amount0: BigInt, amount
 const USDC_50 = BigInt.fromI64(50000000)
 const DAI_50 = BigInt.fromString("50000000000000000000")
 
+function revertUniV3Positions(tokenId: i32): void {
+  createMockedFunction(UNI_V3_MANAGER, "positions", "positions(uint256):(uint96,address,address,address,uint24,int24,int24,uint128,uint256,uint256,uint128,uint128)")
+    .withArgs([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(tokenId))])
+    .reverts()
+}
+
 function newDecrease(tokenId: BigInt, amount0: BigInt, amount1: BigInt, manager: Address = VELO_MANAGER): DecreaseLiquidity {
   let event = changetype<DecreaseLiquidity>(newMockEvent())
   event.address = manager
@@ -88,6 +94,51 @@ describe("collected fees", () => {
     positionField(p, "exitAmountUSD", "100")
     positionField(p, "netGainUSD", "1.5")
     positionField(p, "positionROI", "1.5")
+  })
+
+  test("decreases in the burn block add up to the exit, in USD too", () => {
+    let p = seedPosition(SERVICE_SAFE, PROTOCOL_VELODROME_V3, BigInt.fromI32(7), USDC_NATIVE, DAI, null, BigInt.zero(), "0")
+    createMockedFunction(VELO_MANAGER, "positions", "positions(uint256):(uint96,address,address,address,int24,int24,int24,uint128,uint256,uint256,uint128,uint128)")
+      .withArgs([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(7))])
+      .reverts()
+    handleDecreaseLiquidity(newDecrease(BigInt.fromI32(7), USDC_50, DAI_50))
+    handleDecreaseLiquidity(newDecrease(BigInt.fromI32(7), USDC_50, DAI_50))
+
+    positionField(p, "exitAmount0USD", "100")
+    positionField(p, "exitAmount1USD", "100")
+    positionField(p, "exitAmountUSD", "200")
+  })
+
+  test("a full-exit decrease on a row closed in an earlier block replaces its exit", () => {
+    let p = seedPosition(SERVICE_SAFE, PROTOCOL_VELODROME_V3, BigInt.fromI32(7), USDC_NATIVE, DAI, null, BigInt.zero(), "0")
+    closeAt(p, "120")
+    p.exitTimestamp = BLOCK_TIMESTAMP.minus(BigInt.fromI32(100))
+    p.exitAmount0 = BigDecimal.fromString("60")
+    p.exitAmount0USD = BigDecimal.fromString("60")
+    p.exitAmount1 = BigDecimal.fromString("60")
+    p.exitAmount1USD = BigDecimal.fromString("60")
+    p.save()
+    createMockedFunction(VELO_MANAGER, "positions", "positions(uint256):(uint96,address,address,address,int24,int24,int24,uint128,uint256,uint256,uint128,uint128)")
+      .withArgs([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(7))])
+      .reverts()
+    handleDecreaseLiquidity(newDecrease(BigInt.fromI32(7), USDC_50, DAI_50))
+
+    positionField(p, "exitAmountUSD", "100")
+  })
+
+  test("Uniswap V3: an exit whose NFT is burned in the same block is taken from the decrease amounts, and decreases add up", () => {
+    let p = seedPosition(SERVICE_SAFE, PROTOCOL_UNISWAP_V3, BigInt.fromI32(9), USDC_NATIVE, DAI, null, BigInt.zero(), "0")
+    // End-of-block state: the NFT is gone, so ownerOf() and positions() revert
+    createMockedFunction(UNI_V3_MANAGER, "ownerOf", "ownerOf(uint256):(address)")
+      .withArgs([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(9))])
+      .reverts()
+    revertUniV3Positions(9)
+    handleUniV3DecreaseLiquidity(changetype<UniV3DecreaseLiquidity>(newDecrease(BigInt.fromI32(9), USDC_50, DAI_50, UNI_V3_MANAGER)))
+    positionField(p, "isActive", "false")
+    positionField(p, "exitAmountUSD", "100")
+
+    handleUniV3DecreaseLiquidity(changetype<UniV3DecreaseLiquidity>(newDecrease(BigInt.fromI32(9), USDC_50, DAI_50, UNI_V3_MANAGER)))
+    positionField(p, "exitAmountUSD", "200")
   })
 
   test("a fee on a closed position with no recorded investment is still saved", () => {
@@ -333,6 +384,7 @@ describe("collected fees", () => {
     createMockedFunction(UNI_V3_MANAGER, "ownerOf", "ownerOf(uint256):(address)")
       .withArgs([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(9))])
       .reverts()
+    revertUniV3Positions(9)
 
     handleUniV3DecreaseLiquidity(changetype<UniV3DecreaseLiquidity>(newDecrease(BigInt.fromI32(9), USDC_50, DAI_50, UNI_V3_MANAGER)))
     handleUniV3Collect(changetype<UniV3Collect>(newCollect(BigInt.fromI32(9), SERVICE_SAFE, BigInt.fromI64(52000000), DAI_50, UNI_V3_MANAGER)))
