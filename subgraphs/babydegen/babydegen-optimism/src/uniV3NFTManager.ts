@@ -10,14 +10,15 @@ import {
   refreshUniV3Position, 
   refreshUniV3PositionWithEventAmounts, 
   refreshUniV3PositionWithExitAmounts,
-  handleUniV3NFTTransferForCache
+  handleUniV3NFTTransferForCache,
+  getUniV3PositionId
 } from "./uniV3Shared"
 import { getServiceByAgent } from "./config"
 import { ProtocolPosition } from "../generated/schema"
 import { log, Bytes, Address } from "@graphprotocol/graph-ts"
 import { calculatePortfolioMetrics } from "./helpers"
 import { PROTOCOL_UNISWAP_V3 } from "./constants"
-import { loadMappedPosition, recordReleasedPrincipal, recordCollectedFees } from "./positionIncome"
+import { loadMappedPosition, recordReleasedPrincipal, recordCollectedFees, closedWithoutExit } from "./positionIncome"
 
 export function handleUniV3IncreaseLiquidity(event: IncreaseLiquidity): void {
   ensureUniV3PoolTemplate(event.params.tokenId)
@@ -71,17 +72,22 @@ export function handleUniV3Transfer(event: Transfer): void {
 
   if (toService) {
     ensureUniV3PoolTemplate(event.params.tokenId)
+    // An NFT coming back to the Safe that a Transfer out had closed (no exit recorded) is open again
+    let returned = ProtocolPosition.load(getUniV3PositionId(event.params.to, event.params.tokenId))
+    if (returned != null && closedWithoutExit(returned)) {
+      returned.isActive = true
+      returned.exitTxHash = null
+      returned.exitTimestamp = null
+      returned.save()
+    }
   }
   
   if (fromService) {
-    // Mark position as closed when NFT is transferred out
-    const positionId = event.params.from.toHex() + "-" + event.params.tokenId.toString()
-    const id = Bytes.fromUTF8(positionId)
-    let position = ProtocolPosition.load(id)
+    // Transferred out: closed with no exit amounts, so the new owner's DecreaseLiquidity is not this
+    // position's exit (a burn follows the agent's own full-exit DecreaseLiquidity)
+    let position = ProtocolPosition.load(getUniV3PositionId(event.params.from, event.params.tokenId))
     
     if (position && position.isActive) {
-      // SIMPLIFIED: Only mark as inactive, never set exit amounts
-      // Exit amounts will always be set by DecreaseLiquidity events
       position.isActive = false
       position.exitTxHash = event.transaction.hash
       position.exitTimestamp = event.block.timestamp

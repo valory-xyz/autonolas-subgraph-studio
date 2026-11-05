@@ -264,13 +264,19 @@ export function refreshUniV3PositionWithExitAmounts(
   if (pp == null) {
     return
   }
-  if (closedWithoutExit(pp)) {
+  const nftOwner = Address.fromBytes(pp.agent)
+  const mgr = UniswapV3PositionNFTManager.bind(UNI_V3_MANAGER)
+  // A decrease on an NFT the Safe no longer holds is its new owner's, not this position's exit;
+  // an ownerOf() revert means the NFT is burned later in this block
+  const ownerResult = mgr.try_ownerOf(tokenId)
+  if (closedWithoutExit(pp) || (!ownerResult.reverted && !ownerResult.value.equals(nftOwner))) {
+    log.warning("UNISWAP V3 exit: tx {} — DecreaseLiquidity for position {} (tokenId {}) skipped: the NFT left safe {}", [
+      txHash.toHexString(), pp.id.toString(), tokenId.toString(), nftOwner.toHexString()
+    ])
     return
   }
-  const nftOwner = Address.fromBytes(pp.agent)
 
   // positions() reads end-of-block state, so it reverts when the NFT is burned later in the block
-  const mgr = UniswapV3PositionNFTManager.bind(UNI_V3_MANAGER)
   const dataResult = mgr.try_positions(tokenId)
   if (dataResult.reverted) {
     log.warning("UNISWAP V3 exit: positions() reverted for position {} (tokenId {}) — burned in this block; exit taken from the DecreaseLiquidity amounts", [
@@ -278,11 +284,8 @@ export function refreshUniV3PositionWithExitAmounts(
     ])
   }
   const isFullExit = dataResult.reverted || dataResult.value.value7.equals(BigInt.zero())
-  const token0Bytes = pp.token0
-  const token1Bytes = pp.token1
   
-  if (isFullExit && token0Bytes && token1Bytes) {
-    recordFullExit(pp, Address.fromBytes(token0Bytes!), Address.fromBytes(token1Bytes!), eventAmount0, eventAmount1, block, txHash)
+  if (isFullExit && recordFullExit(pp, eventAmount0, eventAmount1, block, txHash)) {
     removeAgentNFTFromPool(PROTOCOL_UNISWAP_V3, Address.fromBytes(pp.pool), tokenId)
     pp.save()
     refreshPortfolio(nftOwner, block)
