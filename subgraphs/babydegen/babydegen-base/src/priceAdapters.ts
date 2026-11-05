@@ -2,8 +2,8 @@ import { Address, BigDecimal, BigInt, ethereum, Bytes, log } from "@graphprotoco
 import { VelodromeCLPool } from "../generated/VeloNFTManager/VelodromeCLPool"
 import { VelodromeV2Pool } from "../generated/templates/VeloV2Pool/VelodromeV2Pool"
 import { AggregatorV3Interface } from "../generated/templates/Safe/AggregatorV3Interface"
-import { getTokenConfig } from "./tokenConfig"
-import { WETH, Q96, ETH_USD_FEED, USDC_NATIVE, USDT, DAI, USDE, USDS, USDC_USD_FEED, USDT_USD_FEED, DAI_USD_FEED, USDE_USD_FEED, USDS_USD_FEED } from "./constants"
+import { getTokenConfig, TokenConfig, PriceSourceConfig } from "./tokenConfig"
+import { Q96 } from "./constants"
 
 // Chainlink price adapter with validation
 export function getChainlinkPrice(feedAddress: Address, blockTimestamp: BigInt = BigInt.fromI32(0)): BigDecimal {
@@ -49,7 +49,8 @@ export function getUniswapV3Price(
   token: Address,
   poolAddress: Address,
   pairToken: Address,
-  fee: number
+  fee: number,
+  blockTimestamp: BigInt = BigInt.zero()
 ): BigDecimal {
   
   let pool = VelodromeCLPool.bind(poolAddress) // Same interface
@@ -88,7 +89,6 @@ export function getUniswapV3Price(
 
   // Get current block timestamp from slot0 if available
   // Convert to BigInt as observationCardinality is a number
-  let blockTimestamp = BigInt.fromI32(slot0.value2) // observationCardinality contains the timestamp
   
   if (token.equals(token0)) {
     token0Decimals = targetTokenConfig.decimals
@@ -115,10 +115,11 @@ export function getUniswapV3Price(
 export function getVelodromePrice(
   token: Address,
   poolAddress: Address,
-  pairToken: Address
+  pairToken: Address,
+  blockTimestamp: BigInt = BigInt.zero()
 ): BigDecimal {
   // Use same logic as Uniswap V3 since Velodrome CL uses similar interface
-  return getUniswapV3Price(token, poolAddress, pairToken, 0)
+  return getUniswapV3Price(token, poolAddress, pairToken, 0, blockTimestamp)
 }
 
 // Helper functions
@@ -126,7 +127,8 @@ export function getVelodromePrice(
 export function getVelodromeV2Price(
   token: Address,
   poolAddress: Address,
-  pairToken: Address
+  pairToken: Address,
+  blockTimestamp: BigInt = BigInt.zero()
 ): BigDecimal {
   
   let pool = VelodromeV2Pool.bind(poolAddress)
@@ -160,7 +162,6 @@ export function getVelodromeV2Price(
   let reserves = reservesResult.value
   let reserve0 = reserves.value0
   let reserve1 = reserves.value1
-  let blockTimestampLast = BigInt.fromI32(reserves.value2.toI32())
   
   // On a stable (curve) pool the reserve ratio is not the price: quote one token instead
   let stableResult = pool.try_stable()
@@ -172,7 +173,7 @@ export function getVelodromeV2Price(
       return BigDecimal.fromString("0")
     }
     let pairUnit = BigInt.fromI32(10).pow(pairTokenConfig.decimals as u8).toBigDecimal()
-    return quote.value.toBigDecimal().div(pairUnit).times(getPairTokenPrice(pairToken, blockTimestampLast))
+    return quote.value.toBigDecimal().div(pairUnit).times(getPairTokenPrice(pairToken, blockTimestamp))
   }
   
   // Get token decimals
@@ -210,7 +211,7 @@ export function getVelodromeV2Price(
     }
     
     // Multiply by pair token price to get USD value
-    let pairPrice = getPairTokenPrice(pairToken, blockTimestampLast)
+    let pairPrice = getPairTokenPrice(pairToken, blockTimestamp)
     let finalPrice = rawPrice.times(pairPrice)
     
     return finalPrice
@@ -244,7 +245,7 @@ export function getVelodromeV2Price(
     }
     
     // Multiply by pair token price to get USD value
-    let pairPrice = getPairTokenPrice(pairToken, blockTimestampLast)
+    let pairPrice = getPairTokenPrice(pairToken, blockTimestamp)
     let finalPrice = rawPrice.times(pairPrice)
     
     return finalPrice
@@ -253,23 +254,33 @@ export function getVelodromeV2Price(
   return BigDecimal.fromString("0")
 }
 
-// A pool's pair leg is priced from its own Chainlink feed, never assumed to be $1 (no recursion)
+// A pool's pair leg is priced from its own token config, never assumed to be $1: its Chainlink
+// feed, else its velodrome_v2 pool when that pool's pair leg has a feed (one hop, so no deeper recursion)
 function getPairTokenPrice(pairToken: Address, blockTimestamp: BigInt = BigInt.fromI32(0)): BigDecimal {
-  let feed = pairTokenFeed(pairToken)
-  if (feed !== null) {
-    return getChainlinkPrice(feed, blockTimestamp)
+  let config = getTokenConfig(pairToken)
+  if (config !== null) {
+    let feed = sourceOfType(config!, "chainlink")
+    if (feed !== null) {
+      return getChainlinkPrice(feed!.address, blockTimestamp)
+    }
+    let pool = sourceOfType(config!, "velodrome_v2")
+    if (pool !== null && pool!.pairToken !== null) {
+      let poolPairConfig = getTokenConfig(pool!.pairToken!)
+      if (poolPairConfig !== null && sourceOfType(poolPairConfig!, "chainlink") !== null) {
+        return getVelodromeV2Price(pairToken, pool!.address, pool!.pairToken!, blockTimestamp)
+      }
+    }
   }
-  log.warning("PRICING: pair token {} has no price feed — its pools give no price", [pairToken.toHexString()])
+  log.warning("PRICING: pair token {} has no feed or feed-paired pool — its pools give no price", [pairToken.toHexString()])
   return BigDecimal.zero()
 }
 
-function pairTokenFeed(token: Address): Address | null {
-  if (token.equals(USDC_NATIVE)) return USDC_USD_FEED
-  if (token.equals(USDT)) return USDT_USD_FEED
-  if (token.equals(DAI)) return DAI_USD_FEED
-  if (token.equals(USDE)) return USDE_USD_FEED
-  if (token.equals(USDS)) return USDS_USD_FEED
-  if (token.equals(WETH)) return ETH_USD_FEED
+function sourceOfType(config: TokenConfig, sourceType: string): PriceSourceConfig | null {
+  for (let i = 0; i < config.priceSources.length; i++) {
+    if (config.priceSources[i].sourceType == sourceType) {
+      return config.priceSources[i]
+    }
+  }
   return null
 }
 

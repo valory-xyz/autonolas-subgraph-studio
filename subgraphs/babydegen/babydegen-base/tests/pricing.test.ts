@@ -10,14 +10,14 @@ import { OPERATOR_SAFE, AGENT_INSTANCE, SERVICE_SAFE, BLOCK_NUMBER, BLOCK_TIMEST
 import { createRegisterInstanceEvent } from "./mapping-utils"
 
 
-function mockUsdcFeed(answer: i64): void {
+function mockUsdcFeed(answer: i64, updatedAt: BigInt = BLOCK_TIMESTAMP): void {
   createMockedFunction(USDC_USD_FEED, "latestRoundData", "latestRoundData():(uint80,int256,uint256,uint256,uint80)")
     .withArgs([])
     .returns([
       ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1)),
       ethereum.Value.fromSignedBigInt(BigInt.fromI64(answer)),
-      ethereum.Value.fromUnsignedBigInt(BLOCK_TIMESTAMP),
-      ethereum.Value.fromUnsignedBigInt(BLOCK_TIMESTAMP),
+      ethereum.Value.fromUnsignedBigInt(updatedAt),
+      ethereum.Value.fromUnsignedBigInt(updatedAt),
       ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1))
     ])
 }
@@ -214,5 +214,41 @@ describe("portfolio value", () => {
     assert.stringEquals(p.ethAdjustedProjectedUnrealisedPnL.toString(), p.projectedUnrealisedPnL.toString())
     assert.stringEquals(p.ethAdjustedRoi.toString(), p.roi.toString())
     assert.stringEquals(p.ethAdjustedApr.toString(), p.apr.toString())
+  })
+})
+
+describe("pair-leg pricing", () => {
+  afterEach(() => {
+    clearStore()
+  })
+
+  test("a stable pool whose getAmountOut reverts gives no price", () => {
+    mockImbalancedStablePool(STABLE_POOL, BOLD, USDC_NATIVE, BigInt.fromString("1000000000000000000"), 994053)
+    createMockedFunction(STABLE_POOL, "getAmountOut", "getAmountOut(uint256,address):(uint256)")
+      .withArgs([ethereum.Value.fromUnsignedBigInt(BigInt.fromString("1000000000000000000")), ethereum.Value.fromAddress(BOLD)])
+      .reverts()
+    assert.stringEquals(getVelodromeV2Price(BOLD, STABLE_POOL, USDC_NATIVE).toString(), "0")
+  })
+
+  test("a pair-leg feed is judged stale against the block", () => {
+    mockUsdcUsd()
+    // AERO token0, USDC token1: 1,000,000 AERO vs 600,000 USDC → $0.60
+    createMockedFunction(AERO_USDC_POOL, "token0", "token0():(address)").withArgs([]).returns([ethereum.Value.fromAddress(AERO)])
+    createMockedFunction(AERO_USDC_POOL, "token1", "token1():(address)").withArgs([]).returns([ethereum.Value.fromAddress(USDC_NATIVE)])
+    createMockedFunction(AERO_USDC_POOL, "stable", "stable():(bool)").withArgs([]).returns([ethereum.Value.fromBoolean(false)])
+    // The USDC feed is 90001s older than the block; the pool's own last-trade time (0) is no clock
+    createMockedFunction(AERO_USDC_POOL, "getReserves", "getReserves():(uint256,uint256,uint256)").withArgs([]).returns([
+      ethereum.Value.fromUnsignedBigInt(BigInt.fromString("1000000000000000000000000")),
+      ethereum.Value.fromUnsignedBigInt(BigInt.fromI64(600000000000)),
+      ethereum.Value.fromUnsignedBigInt(BigInt.zero())
+    ])
+    mockUsdcFeed(100000000, BLOCK_TIMESTAMP.minus(BigInt.fromI32(90001)))
+    assert.stringEquals(getTokenPriceUSD(AERO, BLOCK_TIMESTAMP).toString(), "0")
+  })
+
+  test("a stablecoin above $1.50 is rejected, whatever its symbol", () => {
+    // BOLD is referenced to the USDC/USD feed
+    mockUsdcFeed(160000000)
+    assert.stringEquals(getTokenPriceUSD(BOLD, BLOCK_TIMESTAMP).toString(), "0")
   })
 })

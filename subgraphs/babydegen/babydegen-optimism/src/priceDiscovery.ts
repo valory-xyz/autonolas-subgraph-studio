@@ -219,7 +219,7 @@ function getPriceFromSource(
   if (sourceType == "chainlink") {
     // Pass block timestamp for staleness checking
     let price = getChainlinkPrice(sourceConfig.address, timestamp)
-    if (price.gt(BigDecimal.fromString("0")) && isValidPriceResult(price, token.symbol)) {
+    if (price.gt(BigDecimal.fromString("0")) && isValidPriceResult(price, token)) {
       return new PriceResult(price, baseConfidence, "chainlink")
     }
   }
@@ -228,7 +228,7 @@ function getPriceFromSource(
     // Used for tokens without direct feeds (USDC.e referencing USDC)
     // Pass block timestamp for staleness checking
     let price = getChainlinkPrice(sourceConfig.address, timestamp)
-    if (price.gt(BigDecimal.fromString("0")) && isValidPriceResult(price, token.symbol)) {
+    if (price.gt(BigDecimal.fromString("0")) && isValidPriceResult(price, token)) {
       // Slightly lower confidence for reference prices
       return new PriceResult(price, baseConfidence.times(BigDecimal.fromString("0.9")), "chainlink_ref")
     }
@@ -239,9 +239,10 @@ function getPriceFromSource(
       Address.fromBytes(token.id),
       sourceConfig.address,
       sourceConfig.pairToken!,
-      sourceConfig.fee
+      sourceConfig.fee,
+      timestamp
     )
-    if (price.gt(BigDecimal.fromString("0")) && isValidPriceResult(price, token.symbol)) {
+    if (price.gt(BigDecimal.fromString("0")) && isValidPriceResult(price, token)) {
       return new PriceResult(price, baseConfidence, "uniswap_v3")
     }
   }
@@ -251,9 +252,10 @@ function getPriceFromSource(
     let price = getVelodromePrice(
       Address.fromBytes(token.id),
       sourceConfig.address,
-      sourceConfig.pairToken!
+      sourceConfig.pairToken!,
+      timestamp
     )
-    if (price.gt(BigDecimal.fromString("0")) && isValidPriceResult(price, token.symbol)) {
+    if (price.gt(BigDecimal.fromString("0")) && isValidPriceResult(price, token)) {
       return new PriceResult(price, baseConfidence, "velodrome_cl")
     }
   }
@@ -263,9 +265,10 @@ function getPriceFromSource(
     let price = getVelodromeV2Price(
       Address.fromBytes(token.id),
       sourceConfig.address,
-      sourceConfig.pairToken!
+      sourceConfig.pairToken!,
+      timestamp
     )
-    if (price.gt(BigDecimal.fromString("0")) && isValidPriceResult(price, token.symbol)) {
+    if (price.gt(BigDecimal.fromString("0")) && isValidPriceResult(price, token)) {
       return new PriceResult(price, baseConfidence, "velodrome_v2")
     }
   }
@@ -275,9 +278,10 @@ function getPriceFromSource(
     let price = getBalancerPrice(
       Address.fromBytes(token.id),
       sourceConfig.address,
-      sourceConfig.pairToken!
+      sourceConfig.pairToken!,
+      timestamp
     )
-    if (price.gt(BigDecimal.fromString("0")) && isValidPriceResult(price, token.symbol)) {
+    if (price.gt(BigDecimal.fromString("0")) && isValidPriceResult(price, token)) {
       return new PriceResult(price, baseConfidence, "balancer_v2")
     }
   }
@@ -319,36 +323,26 @@ function createPriceUpdate(
   update.save()
 }
 
-function isValidPriceResult(price: BigDecimal, tokenSymbol: string): boolean {
-  // Set price validation bounds based on token type
+function isValidPriceResult(price: BigDecimal, token: Token): boolean {
+  let symbol = token.symbol
   let minPrice: BigDecimal
   let maxPrice: BigDecimal
-  
-  // Different bounds for stablecoins vs other tokens
-  // Stablecoins have no lower bound, so a depeg is recorded rather than rejected
-  if (tokenSymbol == "USDC" || tokenSymbol == "USDT" || 
-      tokenSymbol == "DAI" || tokenSymbol == "USDC.e") {
+  // Stablecoins (STABLECOINS) have no lower bound, so a depeg is recorded rather than rejected
+  if (symbol == "USDC" || symbol == "USDC.e") {
     minPrice = BigDecimal.zero()
-    maxPrice = BigDecimal.fromString("1.05")   // $1.05
-  } else if (tokenSymbol == "LUSD" || tokenSymbol == "FRAX" || 
-      tokenSymbol == "DOLA" || tokenSymbol == "sUSD") {
+    maxPrice = BigDecimal.fromString("1.05")
+  } else if (isStablecoin(Address.fromBytes(token.id))) {
     minPrice = BigDecimal.zero()
-    maxPrice = BigDecimal.fromString("1.5")    // $1.50
-  } else if (tokenSymbol == "WBTC") {
+    maxPrice = BigDecimal.fromString("1.5")
+  } else if (symbol == "WBTC") {
     // Above the generic $100,000 cap
     minPrice = BigDecimal.fromString("1")
     maxPrice = BigDecimal.fromString("10000000")
   } else {
-    // Non-stablecoin tokens can have a wider range
-    minPrice = BigDecimal.fromString("0.0001") // $0.0001
-    maxPrice = BigDecimal.fromString("100000") // $100,000
+    minPrice = BigDecimal.fromString("0.0001")
+    maxPrice = BigDecimal.fromString("100000")
   }
-  
-  if (price.le(minPrice) || price.ge(maxPrice)) {
-    return false
-  }
-  
-  return true
+  return price.gt(minPrice) && price.lt(maxPrice)
 }
 
 // Import price adapter functions 
