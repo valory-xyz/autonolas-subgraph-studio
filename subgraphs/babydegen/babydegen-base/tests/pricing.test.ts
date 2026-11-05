@@ -1,6 +1,6 @@
 import { assert, describe, test, clearStore, afterEach, createMockedFunction } from "matchstick-as/assembly/index"
 import { Address, BigDecimal, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts"
-import { FundingBalance, TokenBalance, AgentPortfolio } from "../generated/schema"
+import { FundingBalance, TokenBalance, AgentPortfolio, V2PoolVenue } from "../generated/schema"
 import { getTokenPriceUSD } from "../src/priceDiscovery"
 import { getVelodromePrice, getVelodromeV2Price } from "../src/priceAdapters"
 import { calculatePortfolioMetrics, ensureAgentPortfolio } from "../src/helpers"
@@ -373,5 +373,22 @@ describe("source priority", () => {
     mockPrioFeed(PRIO_FEED_A, 200000000) // $2
     mockPrioFeed(PRIO_FEED_B, 300000000) // $3
     assert.stringEquals(getTokenPriceUSD(PRIO_TOKEN, BLOCK_TIMESTAMP).toString(), "2.5")
+  })
+})
+
+describe("Aero v2 stable pools", () => {
+  afterEach(() => {
+    clearStore()
+  })
+
+  test("a pool its venue row marks stable is priced from its quote, though it has no stable()", () => {
+    const pool = Address.fromString("0x00000000000000000000000000000000000000c5")
+    mockImbalancedStablePool(pool, BOLD, USDC_NATIVE, BigInt.fromString("1000000000000000000"), 994053)
+    createMockedFunction(pool, "stable", "stable():(bool)").withArgs([]).reverts()
+    const venue = new V2PoolVenue(pool)
+    venue.protocol = "aero-v2"
+    venue.stable = true
+    venue.save()
+    assert.stringEquals(getVelodromeV2Price(BOLD, pool, USDC_NATIVE, BLOCK_TIMESTAMP).toString(), "0.994053")
   })
 })

@@ -13,6 +13,7 @@ import { VeloVoter } from "../generated/templates/VeloV2Pool/VeloVoter"
 import { VeloV2Gauge } from "../generated/templates/VeloV2Pool/VeloV2Gauge"
 import { VeloV2Pool as VeloV2PoolTemplate } from "../generated/templates"
 import { getTokenPriceUSD } from "./priceDiscovery"
+import { v2PoolStable, V2_POOL_STABLE, V2_POOL_UNKNOWN } from "./priceAdapters"
 import { getServiceByAgent } from "./config"
 import { parseTotalSlippageFromBucket, associateSwapsWithPosition, calculatePortfolioMetrics } from "./helpers"
 import { getTokenSymbol, convertTokenAmount } from "./tokenUtils"
@@ -40,17 +41,11 @@ export function isPoolRelevant(token0: Address, token1: Address): boolean {
   return isTokenWhitelisted(token0) && isTokenWhitelisted(token1)
 }
 
-// Fee tier of a v2 pool by kind. Aero v2 pools have no stable(); the factory that created them
-// recorded which kind they are in V2PoolVenue.
+// Fee tier of a v2 pool by kind (v2PoolStable)
 function setV2PoolFee(pp: ProtocolPosition, poolContract: VelodromeV2Pool): void {
-  const venue = V2PoolVenue.load(Address.fromBytes(pp.pool))
-  if (venue != null) {
-    pp.fee = venue.stable ? V2_STABLE_FEE_BPS : V2_VOLATILE_FEE_BPS
-    return
-  }
-  const stableResult = poolContract.try_stable()
-  if (!stableResult.reverted) {
-    pp.fee = stableResult.value ? V2_STABLE_FEE_BPS : V2_VOLATILE_FEE_BPS
+  const stable = v2PoolStable(poolContract)
+  if (stable != V2_POOL_UNKNOWN) {
+    pp.fee = stable == V2_POOL_STABLE ? V2_STABLE_FEE_BPS : V2_VOLATILE_FEE_BPS
   }
 }
 

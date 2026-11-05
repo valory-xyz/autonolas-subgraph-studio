@@ -4,6 +4,7 @@ import { VelodromeV2Pool } from "../generated/templates/VeloV2Pool/VelodromeV2Po
 import { AggregatorV3Interface } from "../generated/templates/Safe/AggregatorV3Interface"
 import { getTokenConfig, TokenConfig, PriceSourceConfig } from "./tokenConfig"
 import { convertTokenAmount } from "./tokenUtils"
+import { V2PoolVenue } from "../generated/schema"
 import { Q96 } from "./constants"
 
 // Chainlink price adapter with validation
@@ -170,8 +171,7 @@ export function getVelodromeV2Price(
   let reserve1 = reserves.value1
   
   // On a stable (curve) pool the reserve ratio is not the price: quote one token instead
-  let stableResult = pool.try_stable()
-  if (!stableResult.reverted && stableResult.value) {
+  if (v2PoolStable(pool) == V2_POOL_STABLE) {
     let oneToken = BigInt.fromI32(10).pow(targetTokenConfig.decimals as u8)
     let quote = pool.try_getAmountOut(oneToken, token)
     if (quote.reverted) {
@@ -285,6 +285,24 @@ function getPairTokenPrice(pairToken: Address, blockTimestamp: BigInt): BigDecim
   }
   log.warning("PRICING: pair token {} has no valid feed price and no feed-paired pool — its pools give no price", [pairToken.toHexString()])
   return BigDecimal.zero()
+}
+
+export const V2_POOL_VOLATILE = 0
+export const V2_POOL_STABLE = 1
+export const V2_POOL_UNKNOWN = -1
+
+// Whether a v2 pool is stable: the V2PoolVenue row its factory wrote first (Aero v2 pools have no
+// stable()), else the pool's stable()
+export function v2PoolStable(pool: VelodromeV2Pool): i32 {
+  let venue = V2PoolVenue.load(pool._address)
+  if (venue != null) {
+    return venue.stable ? V2_POOL_STABLE : V2_POOL_VOLATILE
+  }
+  let stableResult = pool.try_stable()
+  if (stableResult.reverted) {
+    return V2_POOL_UNKNOWN
+  }
+  return stableResult.value ? V2_POOL_STABLE : V2_POOL_VOLATILE
 }
 
 function poolPairs(pool: Address, token0: Address, token1: Address, token: Address, pairToken: Address): boolean {
