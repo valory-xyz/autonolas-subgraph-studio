@@ -2062,6 +2062,8 @@ describe("Aero v2 pools (factories + GaugeManager)", () => {
     closed.positionROI = BigDecimal.fromString("4")
     closed.investmentUSD = BigDecimal.fromString("999")
     closed.swapSlippageUSD = BigDecimal.fromString("3")
+    closed.grossGainUSD = BigDecimal.fromString("117")
+    closed.netGainUSD = BigDecimal.fromString("14")
     closed.save()
     // The re-entry is its own tx, in a later block
     const reentryTx = Bytes.fromHexString("0x2222222222222222222222222222222222222222222222222222222222222222")
@@ -2099,7 +2101,9 @@ describe("Aero v2 pools (factories + GaugeManager)", () => {
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "swapSlippageUSD", "0")
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "entryTxHash", reentryTx.toHexString())
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "entryTimestamp", reentryBlock.timestamp.toString())
-    assert.assertTrue(reentered.investmentUSD.notEqual(BigDecimal.fromString("999")))
+    assert.stringEquals(reentered.investmentUSD.toString(), "1.3")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "grossGainUSD", "0")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "netGainUSD", "0")
   })
 
   test("a top-up after a partial Burn keeps the open position's income", () => {
