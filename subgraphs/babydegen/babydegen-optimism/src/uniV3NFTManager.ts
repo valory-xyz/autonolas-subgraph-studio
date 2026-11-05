@@ -14,7 +14,8 @@ import {
 } from "./uniV3Shared"
 import { getServiceByAgent } from "./config"
 import { ProtocolPosition } from "../generated/schema"
-import { log, Bytes } from "@graphprotocol/graph-ts"
+import { log, Bytes, Address } from "@graphprotocol/graph-ts"
+import { calculatePortfolioMetrics } from "./helpers"
 import { PROTOCOL_UNISWAP_V3 } from "./constants"
 import { loadMappedPosition, recordReleasedPrincipal, recordCollectedFees } from "./positionIncome"
 
@@ -52,6 +53,10 @@ export function handleUniV3Collect(event: Collect): void {
   let position = loadMappedPosition(PROTOCOL_UNISWAP_V3, event.params.tokenId)
   if (position != null) {
     recordCollectedFees(position, PROTOCOL_UNISWAP_V3, event.params.recipient, event.params.amount0, event.params.amount1, event.block.timestamp)
+    // refreshUniV3Position skips a closed position, so its closing fees reach the portfolio here
+    if (!position.isActive) {
+      calculatePortfolioMetrics(Address.fromBytes(position.agent), event.block)
+    }
   }
   refreshUniV3Position(event.params.tokenId, event.block, event.transaction.hash)
 }

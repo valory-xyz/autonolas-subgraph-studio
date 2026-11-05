@@ -5,14 +5,15 @@ import { ClaimableRewardBeforeBlock, ProtocolPosition } from "../generated/schem
 import { Collect, DecreaseLiquidity } from "../generated/VeloNFTManager/VelodromePositionNFTManager"
 import {
   Collect as UniV3Collect,
-  DecreaseLiquidity as UniV3DecreaseLiquidity
+  DecreaseLiquidity as UniV3DecreaseLiquidity,
+  IncreaseLiquidity as UniV3IncreaseLiquidity
 } from "../generated/UniV3NFTManager/UniswapV3PositionNFTManager"
 import { handleCollect, handleDecreaseLiquidity } from "../src/veloNFTManager"
-import { handleUniV3Collect, handleUniV3DecreaseLiquidity } from "../src/uniV3NFTManager"
+import { handleUniV3Collect, handleUniV3DecreaseLiquidity, handleUniV3IncreaseLiquidity } from "../src/uniV3NFTManager"
 import { processERC20Transfer } from "../src/tokenBalances"
 import { attributeRewardTransfer, recordClaimableRewardBeforeBlock } from "../src/positionIncome"
 import { calculateActualROI } from "../src/roiCalculation"
-import { USDC_NATIVE, DAI, VELO, VELO_MANAGER, UNI_V3_MANAGER, PROTOCOL_VELODROME_V3, PROTOCOL_VELODROME_V2, PROTOCOL_UNISWAP_V3, PROTOCOL_AERO_CL, AERO_NFT_MANAGER } from "../src/constants"
+import { USDC_NATIVE, DAI, VELO, VELO_MANAGER, UNI_V3_MANAGER, PROTOCOL_VELODROME_V3, PROTOCOL_VELODROME_V2, PROTOCOL_UNISWAP_V3, PROTOCOL_AERO_CL, AERO_NFT_MANAGER, UNI_V3_FACTORY } from "../src/constants"
 import { newLog, newReceipt, newTransfer, mockEthUsd, seedService, seedAddressType, seedTokenPrice, seedPosition, seededAddressType } from "./fixtures"
 import { OPERATOR_SAFE, AGENT_INSTANCE, SERVICE_SAFE, BLOCK_NUMBER, BLOCK_TIMESTAMP } from "./test-helpers"
 
@@ -135,6 +136,67 @@ describe("collected fees", () => {
 
     positionField(aero, "collectedFeesUSD", "1.5")
     positionField(velo, "collectedFeesUSD", "2")
+  })
+
+  test("Uniswap V3: a position opened by IncreaseLiquidity is found by its DecreaseLiquidity and Collect", () => {
+    const tokenId = BigInt.fromI32(77)
+    const pool = Address.fromString("0x00000000000000000000000000000000000000d7")
+    createMockedFunction(UNI_V3_MANAGER, "ownerOf", "ownerOf(uint256):(address)")
+      .withArgs([ethereum.Value.fromUnsignedBigInt(tokenId)])
+      .returns([ethereum.Value.fromAddress(SERVICE_SAFE)])
+    createMockedFunction(UNI_V3_MANAGER, "positions", "positions(uint256):(uint96,address,address,address,uint24,int24,int24,uint128,uint256,uint256,uint128,uint128)")
+      .withArgs([ethereum.Value.fromUnsignedBigInt(tokenId)])
+      .returns([
+        ethereum.Value.fromUnsignedBigInt(BigInt.zero()),
+        ethereum.Value.fromAddress(Address.zero()),
+        ethereum.Value.fromAddress(USDC_NATIVE),
+        ethereum.Value.fromAddress(DAI),
+        ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(100)),
+        ethereum.Value.fromI32(-10),
+        ethereum.Value.fromI32(10),
+        ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1000)),
+        ethereum.Value.fromUnsignedBigInt(BigInt.zero()),
+        ethereum.Value.fromUnsignedBigInt(BigInt.zero()),
+        ethereum.Value.fromUnsignedBigInt(BigInt.zero()),
+        ethereum.Value.fromUnsignedBigInt(BigInt.zero())
+      ])
+    createMockedFunction(UNI_V3_FACTORY, "getPool", "getPool(address,address,uint24):(address)")
+      .withArgs([ethereum.Value.fromAddress(USDC_NATIVE), ethereum.Value.fromAddress(DAI), ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(100))])
+      .returns([ethereum.Value.fromAddress(pool)])
+    // The current-value refresh stops at slot0; the position and its mapping are already written
+    createMockedFunction(pool, "slot0", "slot0():(uint160,int24,uint16,uint16,uint16,uint8,bool)").withArgs([]).reverts()
+
+    let increase = changetype<UniV3IncreaseLiquidity>(newMockEvent())
+    increase.address = UNI_V3_MANAGER
+    increase.parameters = new Array()
+    increase.parameters.push(new ethereum.EventParam("tokenId", ethereum.Value.fromUnsignedBigInt(tokenId)))
+    increase.parameters.push(new ethereum.EventParam("liquidity", ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1000))))
+    increase.parameters.push(new ethereum.EventParam("amount0", ethereum.Value.fromUnsignedBigInt(USDC_50)))
+    increase.parameters.push(new ethereum.EventParam("amount1", ethereum.Value.fromUnsignedBigInt(DAI_50)))
+    increase.block.number = BLOCK_NUMBER
+    increase.block.timestamp = BLOCK_TIMESTAMP
+    handleUniV3IncreaseLiquidity(increase)
+
+    let decrease = changetype<UniV3DecreaseLiquidity>(newDecrease(tokenId, USDC_50, DAI_50, UNI_V3_MANAGER))
+    handleUniV3DecreaseLiquidity(decrease)
+    handleUniV3Collect(changetype<UniV3Collect>(newCollect(tokenId, SERVICE_SAFE, BigInt.fromI64(53000000), DAI_50, UNI_V3_MANAGER)))
+
+    let id = Bytes.fromUTF8(SERVICE_SAFE.toHexString() + "-uniswap-v3-77")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "collectedFeesUSD", "3")
+  })
+
+  test("Uniswap V3: a Collect on a closed position recalculates the portfolio", () => {
+    let p = seedPosition(SERVICE_SAFE, PROTOCOL_UNISWAP_V3, BigInt.fromI32(9), USDC_NATIVE, DAI, null, BigInt.zero(), "0")
+    closeAt(p, "100")
+    createMockedFunction(UNI_V3_MANAGER, "ownerOf", "ownerOf(uint256):(address)")
+      .withArgs([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(9))])
+      .reverts()
+    assert.entityCount("AgentPortfolio", 0)
+
+    handleUniV3Collect(changetype<UniV3Collect>(newCollect(BigInt.fromI32(9), SERVICE_SAFE, BigInt.fromI64(2000000), BigInt.zero(), UNI_V3_MANAGER)))
+
+    positionField(p, "collectedFeesUSD", "2")
+    assert.entityCount("AgentPortfolio", 1)
   })
 
   test("Uniswap V3: DecreaseLiquidity principal is subtracted from the next Collect", () => {
