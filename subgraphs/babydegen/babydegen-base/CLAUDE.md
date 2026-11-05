@@ -153,12 +153,48 @@ babydegen-optimism (network-agnostic). The website KPIs map to existing entities
 - "APR relative to ETH – MA7D" → `DailyPopulationMetric.sma7dEthAdjustedAPR` (deprecated: equals `sma7dAPR`)
 - per-day ROI (explorer heatmap) → `AgentPortfolioSnapshot.roi`
 
-Funding and withdrawals (every tracked token and ETH, receipt-based for contract recipients),
-pricing (no $1 fallback: last valid price marked `priceStale`, `depegged` below $0.98), the
-deprecated `ethAdjusted*` fields, collected fees and claimed rewards (`positionIncome.ts`) all
-work as described in the optimism `CLAUDE.md`. Aero CL rewards come from the gauge's
-`EmissionsClaimed`, credited only from Transfers of `rewardTokenFor(PROTOCOL_AERO_CL)`, Aero's AERO `0x3f5b…a4ee`
-(`AERO_PROTOCOL_AERO`, not the `AERO` `0x940181a9…` above), which the Aero CL gauge mints to the claimer rather than sending it.
+The `ethAdjusted*` fields are deprecated and equal their unadjusted counterparts.
+
+### Funding and withdrawals (`common.ts`, `tokenBalances.ts`, `safe.ts`)
+- Every token in `WHITELISTED_TOKENS` and ETH moves `FundingBalance`, in and out, valued at the
+  transfer. The user side (`isUserSide`) is the operator Safe, any Safe (`getThreshold()` answers,
+  cached as `AddressType.isSafe`), the tx sender (an EIP-7702 wallet included), or an EOA that is
+  not one of `Service.agentInstances`. The Safe itself, its agent EOAs and the zero address never are.
+- An outflow to any other contract is a withdrawal only when the receipt shows nothing coming
+  back to the Safe: no ERC-20/ERC-721 `Transfer` to it and no `SafeReceived` it emitted
+  (`isWithdrawalRecipient`). With no receipt it is not counted. Token and Safe handlers set `receipt: true`.
+- ETH in comes from `SafeReceived`. ETH out is decoded from the Safe's `execTransaction` calldata
+  (`ethSentBySafe`): its Call's value, or each Call of a `multiSend` it delegatecalls. ETH to an
+  agent EOA lowers value as a cost. Module executions are not decodable and are skipped.
+- Withdrawals go to `totalWithdrawnUsd`; they never reduce `netUsd`. A transfer of an unpriced
+  token is valued at $0 and logged (`FUNDING:`).
+
+### Pricing (`priceDiscovery.ts`, `priceAdapters.ts`, `tokenConfig.ts`)
+- No $1 fallback. With no valid price a token keeps its last valid price with `priceStale = true`
+  (logged once, `PRICING:`); a token never priced is 0. Stablecoins have no lower bound, and a
+  `STABLECOINS` member priced below $0.98 has `depegged = true`.
+- `getTokenPriceUSD` reads sources by priority; a higher-numbered one only when every better
+  source failed. Chainlink answers up to 90000s old are accepted (24h heartbeat + grace).
+- A pool's pair leg is priced from its own Chainlink feed (USDC, USDT, DAI, USDe, USDS, WETH),
+  never taken as $1; any other pair leg gives no pool price. A v2 pool whose `stable()` is true is
+  priced from its `getAmountOut` quote for one token, not its reserve ratio.
+
+### Position income (`positionIncome.ts`)
+- `ProtocolPosition.collectedFees0/1` and `collectedFeesUSD`: every `Collect` first pays out the
+  principal `DecreaseLiquidity` released since the last one (`UncollectedPrincipal`, keyed
+  `<protocol>-<tokenId>`), wherever it is sent; only the rest, and only to the Safe, is a fee.
+- `claimedRewards` / `claimedRewardsUSD`: a reward Transfer from a position's gauge
+  (`rewardsContract`) goes to the tokenId of the first `Withdraw(user = Safe, …)` that gauge emits
+  after it. With none, a CL claim is split by each active position's `claimableReward` as it stood
+  before the block (`ClaimableRewardBeforeBlock`), by liquidity when all are 0; a v2 position takes it all.
+- Aero CL (`aero-cl`): from the gauge's `EmissionsClaimed(_account, _tokenId, _recipient,
+  _rewardAmount)` with `_recipient` = Safe and a tokenId the Safe owns. A Transfer of
+  `rewardTokenFor(PROTOCOL_AERO_CL)` — Aero's AERO `0x3f5b…a4ee` (`AERO_PROTOCOL_AERO`, not the
+  `AERO` `0x940181a9…` above), which the gauge mints to the claimer — pays the not-yet-credited
+  claims it covers, in log order, each once (`CreditedRewardClaim`). Skipped claims are logged.
+- `aero-v2` rewards are not attributed to a position yet; a reward Transfer to a Safe holding
+  `aero-v2` positions logs a `REWARDS:` warning.
+- `grossGainUSD = exitAmountUSD + collectedFeesUSD + claimedRewardsUSD`.
 
 Snapshots fire from the `PortfolioScheduler` block handler at UTC-midnight crossings.
 Block-handler interval is `every: 1800` (~1h on Base) — confirmed: a finer interval can't

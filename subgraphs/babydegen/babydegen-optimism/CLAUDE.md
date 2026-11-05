@@ -26,7 +26,7 @@ subgraphs/babydegen/babydegen-optimism/
 ├── src/
 │   ├── serviceRegistry.ts        # Agent registration & service creation
 │   ├── safe.ts                   # ETH balance tracking via Safe events
-│   ├── funding.ts                # USDC funding redirect
+│   ├── funding.ts                # USDC Transfers → handleERC20Transfer
 │   ├── tokenBalances.ts          # ERC20 balance & funding flow tracking
 │   ├── helpers.ts                # Portfolio metric calculations (ROI, APR, values)
 │   ├── roiCalculation.ts         # Position-based ROI from closed positions
@@ -209,7 +209,7 @@ Daily population-level stats at UTC midnight (id: `<dayTimestamp>`).
 - `handleRegisterInstance`: Records registration, filters by `OPTIMUS_AGENT_ID = 40`, excludes test service IDs [29, 37, 56, 58]
 - `handleCreateMultisigWithAgents`: Creates Service entity, registers for snapshots, creates Safe template instances for service safe and operator safe
 
-### 2. Token Transfers (USDC + 13 tracked tokens)
+### 2. Token Transfers (every whitelisted token)
 **Files**: `src/funding.ts`, `src/tokenBalances.ts`
 - `handleUSDC` → redirects to `handleERC20Transfer`
 - `handleERC20Transfer`: Central handler for all token transfers. Updates TokenBalance with USD values, attributes gauge rewards to positions, and updates FundingBalance
@@ -277,7 +277,7 @@ Daily population-level stats at UTC midnight (id: `<dayTimestamp>`).
 - **AeroV2Pool**: same handlers as VeloV2Pool except `handleAeroV2Mint` — Aero pools emit
   `Mint(indexed sender, indexed to, amount0, amount1)` and have no `stable()`. Positions are
   labelled `aero-v2` via `v2ProtocolFor(pool)` (`V2PoolVenue`); rewards are xAERO (unpriced).
-- **Safe**: SafeReceived, ExecutionSuccess, ExecutionFromModuleSuccess for ETH tracking
+- **Safe**: `SafeReceived` for ETH in. ETH out is read from the Safe's own `execTransaction` calldata when the tx calls the Safe (`ethSentBySafe`, `safe.ts`): its Call's value, or each Call of a `multiSend` it delegatecalls. The outer tx's `value` is the executor's, not the Safe's. Each recipient goes through `isWithdrawalRecipient`; ETH to an agent EOA lowers value as a cost. A module execution's calldata belongs to the module, so its ETH is not seen
 
 ---
 
@@ -293,7 +293,7 @@ handleBlock (every 1800 blocks)
       → calculateUninvestedValue() (sum whitelisted token balances)
       → calculateActualROI() (from closed positions only)
       → getTokenPriceUSD() (cached, multi-source)
-      → Calculate ETH-adjusted metrics (ROI - ETHDelta)
+      → Set the deprecated ethAdjusted* fields equal to their unadjusted values
     → Create AgentPortfolioSnapshot (immutable)
   → calculateGlobalMetrics()
     → Collect all agent snapshots for the day
@@ -315,7 +315,8 @@ handleBlock (every 1800 blocks)
 ### Claimed rewards (`src/positionIncome.ts`)
 A reward Transfer into the Safe is credited to positions, never to funding:
 - From a gauge (`ProtocolPosition.rewardsContract`): to the tokenId of the first `Withdraw(user = Safe, tokenId, …)` that gauge emits after it in the receipt. With no such Withdraw, a CL `getReward(tokenId)` claim is split across the Safe's active CL positions on that gauge by `claimableReward` as it stood before the block (`ClaimableRewardBeforeBlock` — a refresh in the claim's block writes it to 0), by liquidity when all are 0. A v2 gauge holds one LP position per pool.
-- Aero CL (`aero-cl`): from the gauge's `EmissionsClaimed(_account, _tokenId, _recipient, _rewardAmount)` with `_recipient` = Safe: each event credits its `_tokenId` its own `_rewardAmount`. A Transfer of the Aero CL reward token (`rewardTokenFor(PROTOCOL_AERO_CL)`: xAERO here, Aero's AERO on Base) pays the not-yet-credited events, in log order, whose amounts it covers; each is credited once (`CreditedRewardClaim`).
+- Aero CL (`aero-cl`): from the gauge's `EmissionsClaimed(_account, _tokenId, _recipient, _rewardAmount)` with `_recipient` = Safe: each event credits its `_tokenId` its own `_rewardAmount`. A Transfer of the Aero CL reward token (`rewardTokenFor(PROTOCOL_AERO_CL)`: xAERO here, Aero's AERO on Base) pays the not-yet-credited events, in log order, whose amounts it covers; each is credited once (`CreditedRewardClaim`). A claim not covered by the Transfer, or for a tokenId the Safe doesn't own, is skipped and logged.
+- `aero-v2`: not attributed to a position yet; a reward Transfer to a Safe holding `aero-v2` positions logs a `REWARDS:` warning.
 Fees and rewards already sit in the Safe, so portfolio `finalValue` is unchanged by them.
 
 ### ETH-Adjusted Metrics
@@ -338,10 +339,11 @@ Deprecated: every `ethAdjusted*` field equals its unadjusted counterpart. Subtra
 **File**: `src/priceDiscovery.ts`, `src/tokenConfig.ts`
 
 ### Resolution Order
-1. **Chainlink feeds** (primary for ETH, USDC, DAI, USDT)
+1. **Chainlink feeds** (primary for ETH, USDC, DAI, USDT, WBTC, sUSD)
 2. **DEX pools** (Velodrome CL/SlipStream, Velodrome V2, Uniswap V3) — DOLA included. A Velodrome v2 *stable* pool is priced from its `getAmountOut` quote for one token, not its reserve ratio (wrong on a stable curve)
 3. **No valid price**: the last valid price, with `priceStale = true`; a token never priced is 0. There is no $1 fallback
 - Stablecoins have no lower price bound, so a depeg is recorded: `depegged` below $0.98
+- A pool's pair leg is priced from its own Chainlink feed (USDC, USDT, DAI, WETH), never taken as $1. LUSD has no feed and is priced from its own USDC pool; any other pair leg gives no pool price (`getPairTokenPrice`)
 
 ### Caching
 - 5-minute cache for token prices
@@ -349,7 +351,7 @@ Deprecated: every `ethAdjusted*` field equals its unadjusted counterpart. Subtra
 - EOA detection cached in AddressType entity
 
 ### Tracked Tokens
-WETH, DAI, USDT, DOLA, BOLD (legacy `0x087c…`), LUSD, FRAX, sDAI, USDC (Native + Bridged), USDT0, oUSDT, USDGLO, VELO,
+WETH, WBTC, DAI, USDT, DOLA, BOLD (legacy `0x087c…`), LUSD, FRAX, sDAI, sUSD, USDC (Native + Bridged), USDT0, oUSDT, USDGLO, VELO,
 plus the agent's BOLD `0x0356…` (Velodrome v2 stable BOLD/USDC `0x8828…`, quoted with
 `getAmountOut` by the `velodrome_v2` adapter, as for every pool whose `stable()` is true, since a stable pool's
 reserve ratio is not its price), USDS and xAERO. USDS and xAERO have no price source yet: tracked for balances,

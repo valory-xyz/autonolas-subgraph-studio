@@ -6,12 +6,12 @@ This subgraph tracks agent portfolio performance and population-level metrics fo
 
 The BabyDegen subgraph provides real-time indexing of autonomous agent activities, tracking:
 
-- **Portfolio Performance**: Real-time unrealised PnL calculations with ETH-adjusted metrics
+- **Portfolio Performance**: Real-time unrealised PnL calculations (the `ethAdjusted*` fields are deprecated and equal the unadjusted values)
 - **DeFi Positions**: Multi-protocol position tracking across Velodrome CL, Velodrome V2, Aero CL, Aero v2, Uniswap V3, and Balancer V2
 - **Token Management**: Balance tracking and uninvested fund monitoring
 - **Population Analytics**: Daily median metrics with lifetime active agent segmentation
 - **Daily Snapshots**: UTC midnight portfolio snapshots for historical analysis
-- **Funding Tracking**: USDC and ETH funding balance monitoring with withdrawal tracking
+- **Funding Tracking**: Funding and withdrawals in every tracked token and ETH
 
 ## Data Sources
 
@@ -45,7 +45,7 @@ The subgraph monitors specific events from each protocol to track agent activiti
 
 ### Funding and Token Balance Events
 **USDC Native** (`0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85`)
-- `Transfer(indexed address,indexed address,uint256)` - USDC funding flows
+- `Transfer(indexed address,indexed address,uint256)` - funding flows (every tracked token)
 
 **Token Contracts** (WETH, DAI, USDT, DOLA, BOLD, LUSD, FRAX, sDAI, USDC.e, USDT0, oUSDT, USDGLO)
 - `Transfer(indexed address,indexed address,uint256)` - Token balance tracking
@@ -118,9 +118,9 @@ Cached address type checking (EOA vs Contract) for performance optimization.
 
 #### `FundingBalance`
 Tracks funding flows for each service:
-- **totalInUsd**: Total USDC funding received
-- **totalOutUsd**: Total USDC funding sent out
-- **totalWithdrawnUsd**: Total USDC withdrawn to EOAs (separate tracking)
+- **totalInUsd**: Total funding received from the user side (the operator Safe, any Safe, the tx sender, or an EOA that is not an agent EOA), in every tracked token and ETH, valued at the transfer
+- **totalOutUsd**: Total funding sent out
+- **totalWithdrawnUsd**: Total withdrawn to the user side, or to a contract that sent nothing back to the Safe in the same tx (separate tracking)
 - **netUsd**: Net funding balance (totalIn - totalOut)
 - **firstInTimestamp**: First funding timestamp
 
@@ -140,11 +140,11 @@ Tracks an agent's overall portfolio performance with enhanced metrics:
 - **initialValue**: Initial investment from FundingBalance
 - **positionsValue**: Current value of all active positions
 - **uninvestedValue**: Token balances in safe
-- **totalWithdrawnUsd**: Total amount withdrawn to EOAs
+- **totalWithdrawnUsd**: Total amount withdrawn (see `FundingBalance`)
 - **unrealisedPnL**: Current portfolio-based unrealised PnL
 - **projectedUnrealisedPnL**: APR calculated from unrealised PnL
-- **ethAdjustedUnrealisedPnL**: ETH-adjusted unrealised PnL
-- **ethAdjustedProjectedUnrealisedPnL**: ETH-adjusted projected unrealised PnL
+- **ethAdjustedUnrealisedPnL**: Deprecated: equals `unrealisedPnL`
+- **ethAdjustedProjectedUnrealisedPnL**: Deprecated: equals `projectedUnrealisedPnL`
 - **firstFundingEthPrice**: ETH price at first funding
 - **currentEthPrice**: Current ETH price
 - **firstTradingTimestamp**: When agent started trading
@@ -152,11 +152,11 @@ Tracks an agent's overall portfolio performance with enhanced metrics:
 - **totalClosedPositions**: Count of closed positions
 
 #### `AgentPortfolioSnapshot`
-Daily immutable snapshots with ETH-adjusted metrics:
+Daily immutable snapshots:
 - **timestamp**: UTC midnight snapshot time
 - **finalValue/initialValue**: Portfolio values at snapshot
 - **unrealisedPnL/projectedUnrealisedPnL**: Unrealized performance metrics
-- **ethAdjustedUnrealisedPnL/ethAdjustedProjectedUnrealisedPnL**: ETH-adjusted unrealized metrics
+- **ethAdjustedUnrealisedPnL/ethAdjustedProjectedUnrealisedPnL**: Deprecated: equal the unadjusted values
 - **totalPositions/totalClosedPositions**: Position counts
 - **positionIds**: Active position identifiers at snapshot
 
@@ -255,12 +255,12 @@ Comprehensive daily population-level metrics calculated at UTC midnight:
 
 ### Portfolio Analytics
 - Real-time unrealised PnL calculations with time-based annualization
-- ETH-adjusted metrics to account for ETH price movements
+- `ethAdjusted*` fields are deprecated and equal the unadjusted values
 - Comprehensive position value tracking across multiple protocols
 
 ### Advanced Population Insights
 - Daily calculation of population-wide metrics
-- ETH-adjusted population metrics
+- ETH-adjusted population metrics (deprecated: equal the unadjusted ones)
 - 7-day moving averages for trend analysis across all metric categories
 - AUM tracking for staking APR calculations
 
@@ -447,7 +447,7 @@ The subgraph uses AssemblyScript for mapping logic with the following key module
 **Core Event Handlers:**
 - `src/serviceRegistry.ts`: Service registration and multisig creation
 - `src/safe.ts`: ETH transfer tracking for funding
-- `src/funding.ts`: USDC funding balance tracking
+- `src/funding.ts`: routes USDC Transfers to the shared token handler
 - `src/tokenBalances.ts`: Token balance management
 
 **DeFi Protocol Handlers:**
