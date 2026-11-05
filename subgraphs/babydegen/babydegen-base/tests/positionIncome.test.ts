@@ -61,7 +61,7 @@ describe("collected fees", () => {
     clearStore()
   })
 
-  test("Collect finds the Aerodrome CL position and records only the fee part", () => {
+  test("Collect finds the legacy Slipstream (aerodrome-cl) position and records only the fee part", () => {
     let p = seedPosition(SERVICE_SAFE, PROTOCOL_VELODROME_V3, BigInt.fromI32(7), USDC_NATIVE, BOLD, null, BigInt.zero(), "0")
     closeAt(p, "100")
     // positions() reverting stops the refresh after the principal is recorded

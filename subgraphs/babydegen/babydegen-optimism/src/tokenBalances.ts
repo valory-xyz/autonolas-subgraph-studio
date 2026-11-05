@@ -5,6 +5,7 @@ import { TOKENS } from "./tokenConfig"
 import { getServiceByAgent } from "./config"
 import { isUserSide, isWithdrawalRecipient, getAddressType, AddressTypeReader, getEthUsd } from "./common"
 import { getTokenPriceUSD } from "./priceDiscovery"
+import { convertTokenAmount } from "./tokenUtils"
 import { WETH, WHITELISTED_TOKENS } from "./constants"
 import { ensureAgentPortfolio, calculatePortfolioMetrics } from "./helpers"
 import { attributeRewardTransfer } from "./positionIncome"
@@ -195,7 +196,7 @@ export function processERC20Transfer(event: TransferEvent, readAddressType: Addr
     calculatePortfolioMetrics(to, event.block)
     
     if (isUserSide(from, to, event, readAddressType)) {
-      let usdValue = transferUsdValue(value, tokenAddress, tokenConfig.decimals, to, event)
+      let usdValue = transferUsdValue(value, tokenAddress, to, event)
       updateFundingBalance(to, usdValue, event.block.timestamp, txHash)
     }
   }
@@ -207,21 +208,20 @@ export function processERC20Transfer(event: TransferEvent, readAddressType: Addr
     
     // Withdrawals are tracked separately so the initial value is preserved
     if (isWithdrawalRecipient(to, from, event, readAddressType)) {
-      let usdValue = transferUsdValue(value, tokenAddress, tokenConfig.decimals, from, event)
+      let usdValue = transferUsdValue(value, tokenAddress, from, event)
       updateWithdrawalBalance(from, usdValue, event.block.timestamp)
     }
   }
 }
 
-function transferUsdValue(value: BigInt, tokenAddress: Address, decimals: i32, safe: Address, event: ethereum.Event): BigDecimal {
-  let divisor = BigDecimal.fromString("1" + "0".repeat(decimals))
+function transferUsdValue(value: BigInt, tokenAddress: Address, safe: Address, event: ethereum.Event): BigDecimal {
   let tokenPrice = getTokenPriceUSD(tokenAddress, event.block.timestamp, false)
   if (tokenPrice.equals(BigDecimal.zero())) {
     log.warning("FUNDING: token {} has no price — its transfer for safe {} in tx {} is valued at $0", [
       tokenAddress.toHexString(), safe.toHexString(), event.transaction.hash.toHexString()
     ])
   }
-  return value.toBigDecimal().div(divisor).times(tokenPrice)
+  return convertTokenAmount(value, tokenAddress).times(tokenPrice)
 }
 
 // The single source of truth for funding in. Outflows go to updateWithdrawalBalance, so

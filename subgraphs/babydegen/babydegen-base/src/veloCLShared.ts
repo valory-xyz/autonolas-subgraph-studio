@@ -21,7 +21,7 @@ import {
 } from "./constants"
 import { isServiceAgent, getServiceByAgent } from "./config"
 import { parseTotalSlippageFromBucket, associateSwapsWithPosition } from "./helpers"
-import { getTokenDecimals, getTokenSymbol, convertTokenAmount } from "./tokenUtils"
+import { getTokenSymbol, convertTokenAmount } from "./tokenUtils"
 import { initializePositionCosts, calculatePositionROI, initializePositionIncome } from "./roiCalculation"
 import { recordClaimableRewardBeforeBlock, nftPositionMappingId } from "./positionIncome"
 
@@ -433,8 +433,7 @@ function refreshOrCreateCLPosition(
       : VeloCLGauge.bind(gaugeAddress).try_earned(nftOwner, tokenId)
   
     if (!earnedResult.reverted) {
-      rewardAmount = earnedResult.value.toBigDecimal().div(BigDecimal.fromString("1e18"))
-      // Both reward tokens are 18-dec (rewardTokenFor).
+      rewardAmount = convertTokenAmount(earnedResult.value, venue.rewardToken)
       const rewardPrice = getTokenPriceUSD(venue.rewardToken, block.timestamp, false)
       rewardUSD = rewardAmount.times(rewardPrice)
     } else {
