@@ -458,3 +458,46 @@ describe("pair-leg hops", () => {
     assert.stringEquals(getVelodromeV2Price(DOLA, HOP_T_P_POOL, HOP_P, BLOCK_TIMESTAMP).toString(), "0")
   })
 })
+
+const PRIO_TOKEN = Address.fromString("0x00000000000000000000000000000000000000a9")
+const PRIO_FEED_A = Address.fromString("0x00000000000000000000000000000000000000f7")
+const PRIO_FEED_B = Address.fromString("0x00000000000000000000000000000000000000f8")
+
+function mockPrioFeed(feed: Address, answer: i64): void {
+  createMockedFunction(feed, "latestRoundData", "latestRoundData():(uint80,int256,uint256,uint256,uint80)")
+    .withArgs([])
+    .returns([
+      ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1)),
+      ethereum.Value.fromSignedBigInt(BigInt.fromI64(answer)),
+      ethereum.Value.fromUnsignedBigInt(BLOCK_TIMESTAMP),
+      ethereum.Value.fromUnsignedBigInt(BLOCK_TIMESTAMP),
+      ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1))
+    ])
+}
+
+describe("source priority", () => {
+  afterEach(() => {
+    clearStore()
+    TOKENS.delete(PRIO_TOKEN.toHexString().toLowerCase())
+  })
+
+  test("a priority-1 source listed after a priority-2 one replaces its price", () => {
+    TOKENS.set(PRIO_TOKEN.toHexString().toLowerCase(), new TokenConfig(PRIO_TOKEN, "PRIO", 18, [
+      new PriceSourceConfig(PRIO_FEED_B, "chainlink", 2, 95),
+      new PriceSourceConfig(PRIO_FEED_A, "chainlink", 1, 95)
+    ]))
+    mockPrioFeed(PRIO_FEED_B, 200000000) // $2
+    mockPrioFeed(PRIO_FEED_A, 300000000) // $3
+    assert.stringEquals(getTokenPriceUSD(PRIO_TOKEN, BLOCK_TIMESTAMP).toString(), "3")
+  })
+
+  test("sources sharing the best priority are averaged", () => {
+    TOKENS.set(PRIO_TOKEN.toHexString().toLowerCase(), new TokenConfig(PRIO_TOKEN, "PRIO", 18, [
+      new PriceSourceConfig(PRIO_FEED_A, "chainlink", 1, 95),
+      new PriceSourceConfig(PRIO_FEED_B, "chainlink", 1, 95)
+    ]))
+    mockPrioFeed(PRIO_FEED_A, 200000000) // $2
+    mockPrioFeed(PRIO_FEED_B, 300000000) // $3
+    assert.stringEquals(getTokenPriceUSD(PRIO_TOKEN, BLOCK_TIMESTAMP).toString(), "2.5")
+  })
+})

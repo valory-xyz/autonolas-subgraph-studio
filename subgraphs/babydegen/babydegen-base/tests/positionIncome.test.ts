@@ -65,8 +65,8 @@ describe("collected fees", () => {
 
   test("Collect finds the legacy Slipstream (aerodrome-cl) position and records only the fee part", () => {
     let p = seedPosition(SERVICE_SAFE, PROTOCOL_VELODROME_V3, BigInt.fromI32(7), USDC_NATIVE, BOLD, null, BigInt.zero(), "0")
-    closeAt(p, "100")
-    // positions() reverting stops the refresh after the principal is recorded
+    closeAt(p, "120")
+    // positions() reverts: the NFT is burned in this block, so this decrease is the exit ($50 + $50)
     createMockedFunction(VELO_MANAGER, "positions", "positions(uint256):(uint96,address,address,address,int24,int24,int24,uint128,uint256,uint256,uint128,uint128)")
       .withArgs([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(7))])
       .reverts()
