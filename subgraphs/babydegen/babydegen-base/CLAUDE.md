@@ -186,7 +186,8 @@ The `ethAdjusted*` fields are deprecated and equal their unadjusted counterparts
 ### v2 position cycles (`veloV2Pool.ts`)
 - A v2 position is one row per pool, reused across cycles. LP minted into a closed row (seen by
   the LP mint Transfer, before its refresh marks the row active) restarts it: income, exit, costs,
-  ROI and entry tracking reset as for a new row, and the Mint records the new entry. A partial
+  ROI and entry tracking reset as for a new row, and the Mint records the new entry and sets
+  `investmentUSD` to it plus the linked swap costs (as it does for a first cycle). A partial
   Burn records an exit but leaves the row active, so a later top-up keeps its income. `isActive`
   comes from end-of-block `balanceOf`, so a full exit and re-entry in one block keeps the old cycle
   (accepted).
@@ -196,8 +197,8 @@ The `ethAdjusted*` fields are deprecated and equal their unadjusted counterparts
   burned later in the same block (`eth_call` reads end-of-block state), closes the position: the
   exit is valued from the event amounts and the stored tokens, decreases in the burn block add up,
   and a `CL exit:` warning is logged. A refresh later in the exit block (e.g. an IncreaseLiquidity
-  reading end-of-block zero liquidity) keeps that exit, and a decrease on a row closed with no exit
-  recorded (NFT transferred or burned away) is skipped.
+  reading end-of-block zero liquidity) keeps that exit, and any other decrease on a closed row (the
+  NFT transferred away, or the exit already booked in an earlier block) is skipped and logged.
 
 ### Position income (`positionIncome.ts`)
 - `ProtocolPosition.collectedFees0/1` and `collectedFeesUSD`: every `Collect` first pays out the

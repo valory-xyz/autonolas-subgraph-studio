@@ -154,7 +154,7 @@ Individual LP positions across protocols (id: `<agent>-<protocol>-<tokenId>` for
 | swapSlippageUSD | `BigDecimal!` | Associated swap slippage costs |
 
 #### NFTPositionMapping
-NFT to position (id: `<protocol>-<tokenId>`), so a CL or Uniswap V3 event finds its position without `ownerOf`. It points at the row last written for the NFT, so an NFT moved to another service Safe maps to that Safe's row.
+NFT to position (id: `<protocol>-<tokenId>`), so a CL or Uniswap V3 event finds its position without `ownerOf`. CL mappings are written at the mint. A Uniswap V3 mapping follows the NFT: `handleUniV3Transfer` points it at the receiving service Safe's row, or drops it when that Safe has no row yet (the refresh maps the row it creates).
 
 #### UncollectedPrincipal
 Principal a `DecreaseLiquidity` released and no `Collect` has paid out yet (id: `<protocol>-<tokenId>`, as `NFTPositionMapping`). Each `Collect` pays it first; only the rest counts as fees.
@@ -246,7 +246,7 @@ Daily population-level stats at UTC midnight (id: `<dayTimestamp>`).
 **File**: `src/veloNFTManager.ts`
 - `handleNFTTransfer`: FROM zero = position created; TO zero = position closed
 - `handleIncreaseLiquidity`: Updates position with new liquidity
-- `handleDecreaseLiquidity`: Records the released principal, then refreshes the position. A decrease leaving zero liquidity, or whose `positions()` reverts because the NFT is burned later in the same block (`eth_call` reads end-of-block state), closes it: the exit is valued from the event amounts and the stored tokens, decreases in the burn block add up, and a `CL exit:` warning is logged. A refresh later in the exit block (e.g. an IncreaseLiquidity reading end-of-block zero liquidity) keeps that exit, and a decrease on a row closed with no exit recorded (NFT transferred or burned away) is skipped
+- `handleDecreaseLiquidity`: Records the released principal, then refreshes the position. A decrease leaving zero liquidity, or whose `positions()` reverts because the NFT is burned later in the same block (`eth_call` reads end-of-block state), closes it: the exit is valued from the event amounts and the stored tokens, decreases in the burn block add up, and a `CL exit:` warning is logged. A refresh later in the exit block (e.g. an IncreaseLiquidity reading end-of-block zero liquidity) keeps that exit, and any other decrease on a closed row (the NFT transferred away, or the exit already booked in an earlier block) is skipped and logged
 - `handleCollect`: Records the fee part of a `Collect` paid to the Safe — the amount minus principal that `DecreaseLiquidity` released since the last collect (`UncollectedPrincipal`). Looks the position up by `<protocol>-<tokenId>` like the other handlers; a closed position is not refreshed, so its exit amounts stay
 - All call `refreshVeloCLPosition()` to load current on-chain state
 
@@ -265,7 +265,7 @@ Daily population-level stats at UTC midnight (id: `<dayTimestamp>`).
 ### 4. UniV3NFTManager (Uniswap V3)
 **File**: `src/uniV3NFTManager.ts`
 - Same event pattern as VeloNFTManager, with the same fee accounting (`NFTPositionMapping` `uniswap-v3-<tokenId>`)
-- `handleUniV3DecreaseLiquidity` finds the position through its mapping, not `ownerOf`, and closes it on a full exit with the same rules as CL (`recordFullExit`, `positionIncome.ts`): a `positions()` revert is the NFT burned later in the block, decreases in the burn block add up, and an `UNISWAP V3 exit:` warning is logged. A decrease is skipped (and logged) when a Transfer out closed the row with no exit; not by `ownerOf`, which reads end-of-block state and would name the new owner for the Safe's own exit followed by a transfer out in the same block. `handleUniV3Transfer` closes the row on a transfer out (and recalculates the portfolio, as nothing values the NFT after it leaves), and on a transfer in points the mapping at the receiving Safe's row and reopens it when it was closed with no exit
+- `handleUniV3DecreaseLiquidity` finds the position through its mapping, not `ownerOf`, and closes it on a full exit with the same rules as CL (`recordFullExit`, `positionIncome.ts`): a `positions()` revert is the NFT burned later in the block, decreases in the burn block add up, and an `UNISWAP V3 exit:` warning is logged. A decrease on a closed row is skipped (and logged) unless that row's exit was recorded in this block, so neither a new owner's decrease after a transfer out nor one on an already exited NFT replaces the agent's exit; not by `ownerOf`, which reads end-of-block state and would name the new owner for the Safe's own exit followed by a transfer out in the same block. `handleUniV3Transfer` closes the row on a transfer out (and recalculates the portfolio, as nothing values the NFT after it leaves), and on a transfer in points the mapping at the receiving Safe's row (reopening it when it was closed with no exit), or drops the mapping and logs `UNISWAP V3:` when that Safe ends the block with no row
 - Calls `refreshUniV3Position()` for on-chain state
 
 ### 5. VeloV2Sugar (Bootstrap)
@@ -366,7 +366,7 @@ Deprecated: every `ethAdjusted*` field equals its unadjusted counterpart. Subtra
 ---
 
 ### v2 position cycles
-- A v2 position is one row per pool, reused across cycles: LP minted into a closed row (the LP mint Transfer, before its refresh) restarts it — income, exit, costs, ROI and entry tracking reset as for a new row, and the Mint records the new entry. A partial Burn records an exit but leaves the row active, so a later top-up keeps its income. `isActive` comes from end-of-block `balanceOf`, so a full exit and re-entry in one block keeps the old cycle (accepted)
+- A v2 position is one row per pool, reused across cycles: LP minted into a closed row (the LP mint Transfer, before its refresh) restarts it — income, exit, costs, ROI and entry tracking reset as for a new row, and the Mint records the new entry and sets `investmentUSD` to it plus the linked swap costs (as it does for a first cycle). A partial Burn records an exit but leaves the row active, so a later top-up keeps its income. `isActive` comes from end-of-block `balanceOf`, so a full exit and re-entry in one block keeps the old cycle (accepted)
 
 ## Price Discovery
 
