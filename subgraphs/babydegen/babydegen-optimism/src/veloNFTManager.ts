@@ -11,7 +11,7 @@ import { refreshVeloCLPosition, refreshVeloCLPositionWithEventAmounts, refreshVe
 import { Address, BigInt, ethereum, log } from "@graphprotocol/graph-ts"
 import { ProtocolPosition, NFTPositionMapping } from "../generated/schema"
 import { calculatePortfolioMetrics } from "./helpers"
-import { mapNFTPosition, recordReleasedPrincipal, recordCollectedFees } from "./positionIncome"
+import { mapNFTPosition, loadMappedPosition, recordReleasedPrincipal, recordCollectedFees } from "./positionIncome"
 
 const ZERO_ADDRESS = Address.fromString("0x0000000000000000000000000000000000000000")
 
@@ -127,19 +127,10 @@ export function handleDecreaseLiquidity(event: DecreaseLiquidity): void {
 export function handleCollect(event: Collect): void {
   const tokenId = event.params.tokenId
   
-  // Look up position using mapping
   const protocol = clVenueForManager(event.address).protocol
-  const mappingId = getCLMappingId(protocol, tokenId)
-  const mapping = NFTPositionMapping.load(mappingId)
-  
-  if (mapping == null) {
-    // Position not tracked (not owned by a service)
-    return
-  }
-  
-  // Load position to get owner for portfolio update
-  let position = ProtocolPosition.load(mapping.positionId)
+  const position = loadMappedPosition(protocol, tokenId)
   if (position == null) {
+    // Position not tracked (not owned by a service)
     return
   }
   
@@ -148,7 +139,7 @@ export function handleCollect(event: Collect): void {
   // Refresh position (fees collected don't change liquidity amounts). A closed position keeps
   // the exit amounts its DecreaseLiquidity recorded.
   if (position.isActive) {
-    refreshVeloCLPosition(mapping.positionId, tokenId, event.block, event.transaction.hash, false)
+    refreshVeloCLPosition(position.id, tokenId, event.block, event.transaction.hash, false)
   }
   
   // Trigger portfolio recalculation
