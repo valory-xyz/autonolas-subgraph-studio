@@ -246,7 +246,7 @@ Daily population-level stats at UTC midnight (id: `<dayTimestamp>`).
 **File**: `src/veloNFTManager.ts`
 - `handleNFTTransfer`: FROM zero = position created; TO zero = position closed
 - `handleIncreaseLiquidity`: Updates position with new liquidity
-- `handleDecreaseLiquidity`: Records the released principal, then refreshes the position. A decrease leaving zero liquidity, or whose `positions()` reverts because the NFT is burned later in the same block (`eth_call` reads end-of-block state), closes it: the exit is valued from the event amounts and the stored tokens, decreases in the burn block add up, and a `CL exit:` warning is logged A refresh later in the exit block (e.g. an IncreaseLiquidity reading end-of-block zero liquidity) keeps that exit, and a decrease on a row closed with no exit recorded (NFT transferred or burned away) is skipped
+- `handleDecreaseLiquidity`: Records the released principal, then refreshes the position. A decrease leaving zero liquidity, or whose `positions()` reverts because the NFT is burned later in the same block (`eth_call` reads end-of-block state), closes it: the exit is valued from the event amounts and the stored tokens, decreases in the burn block add up, and a `CL exit:` warning is logged. A refresh later in the exit block (e.g. an IncreaseLiquidity reading end-of-block zero liquidity) keeps that exit, and a decrease on a row closed with no exit recorded (NFT transferred or burned away) is skipped
 - `handleCollect`: Records the fee part of a `Collect` paid to the Safe — the amount minus principal that `DecreaseLiquidity` released since the last collect (`UncollectedPrincipal`). Looks the position up by `<protocol>-<tokenId>` like the other handlers; a closed position is not refreshed, so its exit amounts stay
 - All call `refreshVeloCLPosition()` to load current on-chain state
 
@@ -265,7 +265,7 @@ Daily population-level stats at UTC midnight (id: `<dayTimestamp>`).
 ### 4. UniV3NFTManager (Uniswap V3)
 **File**: `src/uniV3NFTManager.ts`
 - Same event pattern as VeloNFTManager, with the same fee accounting (`NFTPositionMapping` `uniswap-v3-<tokenId>`)
-- `handleUniV3DecreaseLiquidity` finds the position through its mapping, not `ownerOf`, and closes it on a full exit with the same rules as CL (`recordFullExit`, `positionIncome.ts`): a `positions()` revert is the NFT burned later in the block, decreases in the burn block add up, and an `UNISWAP V3 exit:` warning is logged. A row a Transfer already closed with no exit recorded (the NFT went to another owner) is skipped
+- `handleUniV3DecreaseLiquidity` finds the position through its mapping, not `ownerOf`, and closes it on a full exit with the same rules as CL (`recordFullExit`, `positionIncome.ts`): a `positions()` revert is the NFT burned later in the block, decreases in the burn block add up, and an `UNISWAP V3 exit:` warning is logged. A decrease is skipped (and logged) when `ownerOf` names another address or a Transfer out closed the row with no exit; `handleUniV3Transfer` closes the row on a transfer out and reopens it when the NFT comes back to the Safe
 - Calls `refreshUniV3Position()` for on-chain state
 
 ### 5. VeloV2Sugar (Bootstrap)
@@ -310,9 +310,8 @@ Daily population-level stats at UTC midnight (id: `<dayTimestamp>`).
 ## Core Logic
 
 ### Funding and withdrawals
-The rules are under *2. Token Transfers* (ERC-20) and apply to ETH too (`safe.ts`): ETH in from
-`SafeReceived`, ETH out from the Safe's `execTransaction` calldata (`SAFE_ETH:` when it can't be
-read), each valued as WETH, and portfolio metrics recalculated after every funding or withdrawal update.
+The rules are under *2. Token Transfers*; ETH follows them too (see the *Safe* template under *10.
+Dynamic Templates*), valued as WETH, with portfolio metrics recalculated after every funding or withdrawal update.
 
 ### Portfolio Calculation Flow
 ```
@@ -375,7 +374,7 @@ Deprecated: every `ethAdjusted*` field equals its unadjusted counterpart. Subtra
 
 ### Resolution Order
 1. **Chainlink feeds** (primary for ETH, USDC, DAI, USDT, WBTC, sUSD)
-2. **DEX pools** (Velodrome CL/SlipStream, Velodrome V2, Uniswap V3) — DOLA included. A Velodrome v2 *stable* pool is priced from its `getAmountOut` quote for one token, not its reserve ratio (wrong on a stable curve)
+2. **DEX pools** (Velodrome CL/SlipStream, Velodrome V2, Uniswap V3) — DOLA included. A v2 *stable* pool is priced from its `getAmountOut` quote for one token, not its reserve ratio (wrong on a stable curve); whether a pool is stable comes from its `V2PoolVenue` row first (Aero v2 pools have no `stable()`), else `stable()` (`v2PoolKind`)
 3. **No valid price**: the last valid price, with `priceStale = true`; a token never priced is 0. There is no $1 fallback
 - A pool's pair leg is priced from its own token config, never taken as $1: its Chainlink source, else its `velodrome_v2` pool when that pool's pair leg has a feed (LUSD); otherwise the pool gives no price (`getPairTokenPrice`). Feed staleness is judged against the event's block, within `STALE_PRICE_THRESHOLD`
 - `STABLECOINS` tokens have no lower price bound ($0–1.50; USDC $0–1.05), so a depeg is recorded: `depegged` below `DEPEG_THRESHOLD`

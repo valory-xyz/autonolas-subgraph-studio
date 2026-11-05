@@ -179,8 +179,9 @@ The `ethAdjusted*` fields are deprecated and equal their unadjusted counterparts
   price. Feed staleness is judged against the event's block.
 - `STABLECOINS` tokens have no lower price bound ($0–1.50; USDC $0–1.05), so a depeg is recorded:
   `depegged` below `DEPEG_THRESHOLD`.
-- A stable pool's `getAmountOut` quote is net of the pool's swap fee (about 0.9995 × at the default 5 bps stable fee). The bias is accepted: it is far inside the `DEPEG_THRESHOLD` depeg line. A v2 pool whose `stable()` is true is
-  priced from its `getAmountOut` quote for one token, not its reserve ratio.
+- A stable pool's `getAmountOut` quote is net of the pool's swap fee (about 0.9995 × at the default 5 bps stable fee). The bias is accepted: it is far inside the `DEPEG_THRESHOLD` depeg line. A v2 pool is quoted as stable when
+  its `V2PoolVenue` row says so, else when its `stable()` is true (`v2PoolKind`); it is priced from its
+  `getAmountOut` quote for one token, not its reserve ratio.
 
 ### v2 position cycles (`veloV2Pool.ts`)
 - A v2 position is one row per pool, reused across cycles. LP minted into a closed row (seen by
