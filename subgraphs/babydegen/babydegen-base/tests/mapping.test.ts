@@ -1455,6 +1455,34 @@ describe("Aero CL positions (AeroNFTManager)", () => {
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "exitAmount1", "3")
   })
 
+  test("a Collect on an active position books its fee and refreshes the position", () => {
+    createService(SERVICE_SAFE)
+    mockChainlinkEthUsd()
+    mockAeroCLPosition()
+    mockAeroCLStaked(false)
+    const id = openAeroCLPosition()
+    // Only the refresh writes liquidity back from positions()
+    const open = ProtocolPosition.load(id)!
+    open.liquidity = BigInt.zero()
+    open.save()
+
+    const collect = changetype<Collect>(newMockEvent())
+    collect.address = AERO_NFT_MANAGER
+    collect.parameters = new Array()
+    collect.parameters.push(new ethereum.EventParam("tokenId", ethereum.Value.fromUnsignedBigInt(AERO_TOKEN_ID)))
+    collect.parameters.push(new ethereum.EventParam("recipient", ethereum.Value.fromAddress(SERVICE_SAFE)))
+    collect.parameters.push(new ethereum.EventParam("amount0", ethereum.Value.fromUnsignedBigInt(BigInt.fromString("1000000000000000000"))))
+    collect.parameters.push(new ethereum.EventParam("amount1", ethereum.Value.fromUnsignedBigInt(BigInt.fromString("2000000000000000000"))))
+    collect.block = aeroBlock()
+    collect.transaction.hash = TX_HASH
+    handleCollect(collect)
+
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "isActive", "true")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "collectedFees0", "1")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "collectedFees1", "2")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "liquidity", "1000000000000000000")
+  })
+
   test("a burn from the Aero NFPM closes the aero-cl position", () => {
     createService(SERVICE_SAFE)
     mockChainlinkEthUsd()

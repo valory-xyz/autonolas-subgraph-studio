@@ -466,6 +466,48 @@ describe("claimed rewards", () => {
     positionField(older, "claimedRewards", "0")
   })
 
+  test("a closed position on the gauge takes no share of a split claim", () => {
+    seedService(SERVICE_SAFE, OPERATOR_SAFE, AGENT_INSTANCE)
+    seedAddressType(GAUGE_D12, true, false)
+    let active = seedPosition(SERVICE_SAFE, PROTOCOL_VELODROME_V3, BigInt.fromI32(1), USDC_NATIVE, DAI, GAUGE_D12, BigInt.fromI32(1), "1")
+    // A stale claimableReward left on the closed position must not weigh in
+    let closed = seedPosition(SERVICE_SAFE, PROTOCOL_VELODROME_V3, BigInt.fromI32(2), USDC_NATIVE, DAI, GAUGE_D12, BigInt.fromI32(1), "3")
+    closeAt(closed, "100")
+    processERC20Transfer(newTransfer(VELO, GAUGE_D12, SERVICE_SAFE, BigInt.fromString("2000000000000000000"), 1, newReceipt([])), seededAddressType)
+
+    positionField(active, "claimedRewards", "2")
+    positionField(closed, "claimedRewards", "0")
+  })
+
+  test("a claim with no Withdraw and only closed CL positions on the gauge credits none of them", () => {
+    seedService(SAFE_D12, OPERATOR_SAFE, AGENT_INSTANCE)
+    seedAddressType(GAUGE_D12, true, false)
+    let p = seedPosition(SAFE_D12, PROTOCOL_VELODROME_V3, BigInt.fromI32(1001), USDC_NATIVE, DAI, GAUGE_D12, BigInt.fromI32(1), "0")
+    closeAt(p, "100")
+    p.exitTimestamp = BLOCK_TIMESTAMP
+    p.save()
+    processERC20Transfer(newTransfer(VELO, GAUGE_D12, SAFE_D12, BigInt.fromString("20000000000000000000"), 1, newReceipt([])), seededAddressType)
+
+    positionField(p, "claimedRewards", "0")
+  })
+
+  test("a v2 reward after the exit goes to the latest exit, whichever position was opened first", () => {
+    seedService(SAFE_D12, OPERATOR_SAFE, AGENT_INSTANCE)
+    seedAddressType(GAUGE_D12, true, false)
+    let newer = seedPosition(SAFE_D12, PROTOCOL_VELODROME_V2, BigInt.fromI32(1), USDC_NATIVE, DAI, GAUGE_D12, BigInt.fromI32(1), "0")
+    closeAt(newer, "100")
+    newer.exitTimestamp = BLOCK_TIMESTAMP
+    newer.save()
+    let older = seedPosition(SAFE_D12, PROTOCOL_VELODROME_V2, BigInt.zero(), USDC_NATIVE, DAI, GAUGE_D12, BigInt.fromI32(1), "0")
+    closeAt(older, "100")
+    older.exitTimestamp = BLOCK_TIMESTAMP.minus(BigInt.fromI32(1000))
+    older.save()
+    processERC20Transfer(newTransfer(VELO, GAUGE_D12, SAFE_D12, BigInt.fromString("20000000000000000000"), 1, newReceipt([])), seededAddressType)
+
+    positionField(newer, "claimedRewards", "20")
+    positionField(older, "claimedRewards", "0")
+  })
+
   test("with no earned reward and no liquidity on record a CL claim is split equally", () => {
     seedService(SERVICE_SAFE, OPERATOR_SAFE, AGENT_INSTANCE)
     seedAddressType(GAUGE_D12, true, false)
