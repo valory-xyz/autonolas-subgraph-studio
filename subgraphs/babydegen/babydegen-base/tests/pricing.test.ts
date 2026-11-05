@@ -110,18 +110,18 @@ describe("stablecoin pricing", () => {
 
   test("a stable pool prices from its quote, not its reserve ratio", () => {
     mockImbalancedStablePool(STABLE_POOL, BOLD, USDC_NATIVE, BigInt.fromString("1000000000000000000"), 994053)
-    assert.stringEquals(getVelodromeV2Price(BOLD, STABLE_POOL, USDC_NATIVE).toString(), "0.994053")
+    assert.stringEquals(getVelodromeV2Price(BOLD, STABLE_POOL, USDC_NATIVE, BLOCK_TIMESTAMP).toString(), "0.994053")
   })
 
   test("a pool's USDC leg is priced from the USDC feed, not $1", () => {
     mockImbalancedStablePool(STABLE_POOL, BOLD, USDC_NATIVE, BigInt.fromString("1000000000000000000"), 994053)
     mockUsdcFeed(90000000)
-    assert.stringEquals(getVelodromeV2Price(BOLD, STABLE_POOL, USDC_NATIVE).toString(), "0.8946477")
+    assert.stringEquals(getVelodromeV2Price(BOLD, STABLE_POOL, USDC_NATIVE, BLOCK_TIMESTAMP).toString(), "0.8946477")
   })
 
   test("a pair token with no feed gives no pool price", () => {
     mockImbalancedStablePool(STABLE_POOL, AERO, BOLD, BigInt.fromString("1000000000000000000"), 994053000000000000)
-    assert.stringEquals(getVelodromeV2Price(AERO, STABLE_POOL, BOLD).toString(), "0")
+    assert.stringEquals(getVelodromeV2Price(AERO, STABLE_POOL, BOLD, BLOCK_TIMESTAMP).toString(), "0")
   })
 
   test("a CL pool of 6- and 18-decimal tokens is priced with the decimals the right way round", () => {
@@ -140,7 +140,7 @@ describe("stablecoin pricing", () => {
       ])
     createMockedFunction(pool, "token0", "token0():(address)").withArgs([]).returns([ethereum.Value.fromAddress(USDC_NATIVE)])
     createMockedFunction(pool, "token1", "token1():(address)").withArgs([]).returns([ethereum.Value.fromAddress(DAI)])
-    assert.stringEquals(getVelodromePrice(DAI, pool, USDC_NATIVE).toString(), "1.5625")
+    assert.stringEquals(getVelodromePrice(DAI, pool, USDC_NATIVE, BLOCK_TIMESTAMP).toString(), "1.5625")
   })
 
   test("a token that is not a stablecoin is never marked depegged", () => {
@@ -227,7 +227,7 @@ describe("pair-leg pricing", () => {
     createMockedFunction(STABLE_POOL, "getAmountOut", "getAmountOut(uint256,address):(uint256)")
       .withArgs([ethereum.Value.fromUnsignedBigInt(BigInt.fromString("1000000000000000000")), ethereum.Value.fromAddress(BOLD)])
       .reverts()
-    assert.stringEquals(getVelodromeV2Price(BOLD, STABLE_POOL, USDC_NATIVE).toString(), "0")
+    assert.stringEquals(getVelodromeV2Price(BOLD, STABLE_POOL, USDC_NATIVE, BLOCK_TIMESTAMP).toString(), "0")
   })
 
   test("a pair-leg feed is judged stale against the block", () => {

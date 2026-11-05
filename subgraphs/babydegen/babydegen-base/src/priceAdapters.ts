@@ -50,7 +50,7 @@ export function getUniswapV3Price(
   poolAddress: Address,
   pairToken: Address,
   fee: number,
-  blockTimestamp: BigInt = BigInt.zero()
+  blockTimestamp: BigInt
 ): BigDecimal {
   
   let pool = VelodromeCLPool.bind(poolAddress) // Same interface
@@ -86,10 +86,6 @@ export function getUniswapV3Price(
   let token0Decimals: number
   let token1Decimals: number
 
-
-  // Get current block timestamp from slot0 if available
-  // Convert to BigInt as observationCardinality is a number
-  
   if (token.equals(token0)) {
     token0Decimals = targetTokenConfig.decimals
     token1Decimals = pairTokenConfig.decimals
@@ -116,7 +112,7 @@ export function getVelodromePrice(
   token: Address,
   poolAddress: Address,
   pairToken: Address,
-  blockTimestamp: BigInt = BigInt.zero()
+  blockTimestamp: BigInt
 ): BigDecimal {
   // Use same logic as Uniswap V3 since Velodrome CL uses similar interface
   return getUniswapV3Price(token, poolAddress, pairToken, 0, blockTimestamp)
@@ -128,7 +124,7 @@ export function getVelodromeV2Price(
   token: Address,
   poolAddress: Address,
   pairToken: Address,
-  blockTimestamp: BigInt = BigInt.zero()
+  blockTimestamp: BigInt
 ): BigDecimal {
   
   let pool = VelodromeV2Pool.bind(poolAddress)

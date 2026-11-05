@@ -125,7 +125,7 @@ describe("stablecoin pricing", () => {
 
   test("a stable pool prices from its quote, not its reserve ratio", () => {
     mockImbalancedStablePool(DOLA_USDC_POOL, DOLA, USDC_NATIVE, BigInt.fromString("1000000000000000000"), 994053)
-    assert.stringEquals(getVelodromeV2Price(DOLA, DOLA_USDC_POOL, USDC_NATIVE).toString(), "0.994053")
+    assert.stringEquals(getVelodromeV2Price(DOLA, DOLA_USDC_POOL, USDC_NATIVE, BLOCK_TIMESTAMP).toString(), "0.994053")
   })
 
   test("DOLA is unpriced when its pool cannot be read", () => {
@@ -165,13 +165,13 @@ describe("pool pair legs", () => {
   test("a pool's USDC leg is priced from the USDC feed, not $1", () => {
     mockImbalancedStablePool(DOLA_USDC_POOL, DOLA, USDC_NATIVE, ONE_18, 994053)
     mockUsdcFeedAt(90000000)
-    assert.stringEquals(getVelodromeV2Price(DOLA, DOLA_USDC_POOL, USDC_NATIVE).toString(), "0.8946477")
+    assert.stringEquals(getVelodromeV2Price(DOLA, DOLA_USDC_POOL, USDC_NATIVE, BLOCK_TIMESTAMP).toString(), "0.8946477")
   })
 
   test("LUSD as a pair leg is priced from its own USDC pool", () => {
     mockImbalancedStablePool(LUSD_USDC_POOL, LUSD, USDC_NATIVE, ONE_18, 900000)
     mockImbalancedStablePool(BOLD_LUSD_POOL, BOLD, LUSD, ONE_18, 1000000000000000000)
-    assert.stringEquals(getVelodromeV2Price(BOLD, BOLD_LUSD_POOL, LUSD).toString(), "0.9")
+    assert.stringEquals(getVelodromeV2Price(BOLD, BOLD_LUSD_POOL, LUSD, BLOCK_TIMESTAMP).toString(), "0.9")
   })
 
   test("a priority-2 pool is not averaged in while the priority-1 pool prices", () => {
@@ -195,7 +195,7 @@ describe("pool pair legs", () => {
   test("a pair token with no feed gives no pool price", () => {
     // USDS has no feed and no pool of its own
     mockImbalancedStablePool(OTHER_POOL, DOLA, USDS, ONE_18, 994053000000000000)
-    assert.stringEquals(getVelodromeV2Price(DOLA, OTHER_POOL, USDS).toString(), "0")
+    assert.stringEquals(getVelodromeV2Price(DOLA, OTHER_POOL, USDS, BLOCK_TIMESTAMP).toString(), "0")
   })
 
   test("sDAI is priced through its USDC/sDAI Slipstream pool (6- vs 18-decimal tokens)", () => {
@@ -335,7 +335,7 @@ describe("pair-leg pricing", () => {
     createMockedFunction(DOLA_USDC_POOL, "getAmountOut", "getAmountOut(uint256,address):(uint256)")
       .withArgs([ethereum.Value.fromUnsignedBigInt(ONE_18), ethereum.Value.fromAddress(DOLA)])
       .reverts()
-    assert.stringEquals(getVelodromeV2Price(DOLA, DOLA_USDC_POOL, USDC_NATIVE).toString(), "0")
+    assert.stringEquals(getVelodromeV2Price(DOLA, DOLA_USDC_POOL, USDC_NATIVE, BLOCK_TIMESTAMP).toString(), "0")
   })
 
   test("a pair-leg feed is judged stale against the block, with the 90000s limit", () => {

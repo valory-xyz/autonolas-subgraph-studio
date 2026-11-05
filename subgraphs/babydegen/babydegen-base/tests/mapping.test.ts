@@ -509,7 +509,7 @@ describe("getVelodromeV2Price — AERO/USDC volatile pool", () => {
         ethereum.Value.fromUnsignedBigInt(BigInt.zero())
       ])
 
-    const price = getVelodromeV2Price(AERO, POOL, USDC_NATIVE)
+    const price = getVelodromeV2Price(AERO, POOL, USDC_NATIVE, BLOCK_TIMESTAMP)
     assert.assertTrue(price.gt(BigDecimal.fromString("1.29")))
     assert.assertTrue(price.lt(BigDecimal.fromString("1.31")))
   })
@@ -519,7 +519,7 @@ describe("getVelodromeV2Price — AERO/USDC volatile pool", () => {
     // token0() reverts → try_token0().reverted → adapter returns 0, no crash.
     createMockedFunction(POOL, "token0", "token0():(address)").withArgs([]).reverts()
     createMockedFunction(POOL, "token1", "token1():(address)").withArgs([]).reverts()
-    const price = getVelodromeV2Price(AERO, POOL, USDC_NATIVE)
+    const price = getVelodromeV2Price(AERO, POOL, USDC_NATIVE, BLOCK_TIMESTAMP)
     assert.stringEquals("0", price.toString())
   })
 })
