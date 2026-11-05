@@ -120,9 +120,8 @@ function usdcReferencedStable(address: Address, symbol: string, decimals: i32): 
   ])
 }
 
-// A stablecoin priced off its own Chainlink feed, with an Aero USDC pool as the
-// priority-2 fallback when the feed gives no valid price (stale, out of range). Neither
-// source assumes $1, so a depeg shows. No pool → feed only.
+// A stablecoin priced off its own Chainlink feed, with an Aero USDC pool as the priority-2
+// fallback when the feed gives no valid price. Only USDT has one; DAI, USDe and USDS are feed-only.
 function chainlinkStable(
   address: Address,
   symbol: string,
@@ -215,8 +214,6 @@ function initializeTokens(): void {
     ]
   ))
 
-  // Chainlink-priced stablecoins. USDT falls back to the Aero CL tickSpacing-1 USDC/USDT pool.
-  // DAI, USDe and USDS are feed-only.
   TOKENS.set(USDT.toHexString().toLowerCase(), chainlinkStable(USDT, "USDT", 6, "USDT_USD",
     Address.fromString("0xD448990883e3Bf9cDD8ebCA368A3ECF9D629aAf7"))) // Aero USDC/USDT CL
   TOKENS.set(DAI.toHexString().toLowerCase(), chainlinkStable(DAI, "DAI", 18, "DAI_USD", null))

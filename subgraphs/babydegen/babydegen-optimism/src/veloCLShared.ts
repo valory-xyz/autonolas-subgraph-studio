@@ -63,8 +63,6 @@ export function clVenueForManager(manager: Address): CLVenue {
   return clVenueFor(PROTOCOL_VELODROME_V3)
 }
 
-// What createVeloCLPosition needs to create a position: the NFT's owner and the venue of the
-// NFPM that minted it.
 export class CLPositionCreate {
   owner: Address
   venue: CLVenue
@@ -79,7 +77,6 @@ export class CLPositionCreate {
   }
 }
 
-// NFTPositionMapping key of a CL NFT
 export function getCLMappingId(protocol: string, tokenId: BigInt): Bytes {
   return nftPositionMappingId(protocol, tokenId)
 }

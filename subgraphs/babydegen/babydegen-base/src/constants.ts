@@ -30,7 +30,7 @@ export const FRXUSD = Address.fromString("0xe5020A6D073a794B6e7F05678707dE47986F
 export const EUSD = Address.fromString("0xCfA3Ef56d303AE4fAabA0592388F19d7C3399FB4") // eUSD
 export const AXLUSDC = Address.fromString("0xEB466342C4d449BC9f53A865D5Cb90586f405215") // axlUSDC
 
-// Chainlink-priced stablecoins — their own feed, never $1; only USDT has a pool fallback (tokenConfig.ts)
+// Chainlink-priced stablecoins
 export const USDT = Address.fromString("0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2") // USDT
 export const DAI = Address.fromString("0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb") // DAI
 export const USDE = Address.fromString("0x5d3a1Ff2b6BAb83b63cd9AD0787074081a52ef34") // USDe

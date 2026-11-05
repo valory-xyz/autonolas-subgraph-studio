@@ -28,7 +28,6 @@ export function calculateActualROI(agent: Address): BigDecimal {
       totalInvestments = totalInvestments.plus(position.entryAmountUSD)  // Ii
       totalCosts = totalCosts.plus(position.totalCostsUSD)              // Ci
       
-      // Gross gains = exit amount + fees collected + rewards claimed
       totalGrossGains = totalGrossGains.plus(positionGrossGain(position))  // Gi
     }
   }
@@ -74,7 +73,6 @@ export function calculatePositionROI(position: ProtocolPosition): BigDecimal {
   if (investment.gt(BigDecimal.zero())) {
     let grossGainUSD = positionGrossGain(position)
     
-    // netGainUSD = grossGain - investmentUSD (gain after all costs including slippage)
     let netGainUSD = grossGainUSD.minus(investment)
     
     // Position ROI = netGainUSD / investmentUSD * 100
@@ -130,7 +128,6 @@ export function updatePositionCosts(position: ProtocolPosition, additionalCosts:
   saveWithROI(position)
 }
 
-// Saves the position, recalculating its ROI first when it is closed
 export function saveWithROI(position: ProtocolPosition): void {
   if (!position.isActive && position.exitAmountUSD) {
     calculatePositionROI(position)
@@ -151,9 +148,6 @@ export function initializePositionCosts(position: ProtocolPosition): void {
   position.save()
 }
 
-/**
- * Zero the fee and reward income of a new position
- */
 export function initializePositionIncome(position: ProtocolPosition): void {
   position.collectedFees0 = BigDecimal.zero()
   position.collectedFees1 = BigDecimal.zero()

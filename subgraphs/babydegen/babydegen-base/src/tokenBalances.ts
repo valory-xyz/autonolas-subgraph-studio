@@ -205,7 +205,6 @@ export function processERC20Transfer(event: TransferEvent, readAddressType: Addr
   if (fromService != null) {
     updateTokenBalance(from, tokenAddress, value, false, event.block)
     
-    // Withdrawals are tracked separately so the initial value is preserved
     if (isWithdrawalRecipient(to, from, event, readAddressType)) {
       let usdValue = transferUsdValue(value, tokenAddress, from, event)
       updateWithdrawalBalance(from, usdValue, event.block.timestamp)
@@ -256,14 +255,10 @@ export function updateFundingBalance(
     fb.fundingInTxs = fundingInTxs
   }
   
-  //  Set firstTradingTimestamp and capture ETH price on first funding
   if (oldTotalIn.equals(BigDecimal.zero())) {
-    // This is the first funding - update portfolio
     let portfolio = ensureAgentPortfolio(serviceSafe, ts)
     if (portfolio.firstTradingTimestamp.equals(BigInt.zero())) {
       portfolio.firstTradingTimestamp = ts
-      
-      // Capture ETH price at first funding
       let block = createBlockFromTimestamp(ts)
       portfolio.firstFundingEthPrice = getEthUsd(block)
       portfolio.save()
@@ -274,12 +269,10 @@ export function updateFundingBalance(
   fb.lastChangeTs = ts
   fb.save()
   
-  // Ensure AgentPortfolio exists when funding balance is updated
   ensureAgentPortfolio(serviceSafe, ts)
 }
 
-// Withdrawal tracking, kept apart from funding: every outflow to the user side, or to a contract
-// isWithdrawalRecipient accepts
+// Withdrawals are kept apart from funding, so they never reduce netUsd
 export function updateWithdrawalBalance(
   serviceSafe: Address,
   usd: BigDecimal,

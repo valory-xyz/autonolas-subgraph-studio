@@ -339,7 +339,6 @@ export function attributeRewardTransfer(event: ethereum.Event, from: Address, sa
     }
   }
   if (active.length == 0) {
-    // A v2 gauge holds one LP position per pool and pays its reward on a later getReward, after the exit
     let closedV2 = lastClosedV2Position(onGauge)
     if (closedV2 !== null) {
       creditReward(closedV2!, rewardAmount, priceUSD)

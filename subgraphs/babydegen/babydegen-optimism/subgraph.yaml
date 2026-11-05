@@ -608,7 +608,7 @@ dataSources:
     name: xAERO
     network: optimism
     source:
-      address: "0xbdEaeA5205d16f34Cb40038052d91235D87B4C54" # Aero gauge reward token; unpriced
+      address: "0xbdEaeA5205d16f34Cb40038052d91235D87B4C54" # xAERO, the Aero gauge reward token
       abi: ERC20
       startBlock: 136563000
     mapping:
@@ -673,7 +673,7 @@ dataSources:
         - event: Transfer(indexed address,indexed address,indexed uint256)
           handler: handleNFTTransfer
       file: ./src/veloNFTManager.ts
-  # Aero CL positions: Velodrome handlers, except handleAeroIncreaseLiquidity (veloNFTManager.ts).
+  # Aero CL positions
   - kind: ethereum
     name: AeroNFTManager
     network: optimism

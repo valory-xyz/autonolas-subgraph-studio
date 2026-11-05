@@ -56,8 +56,9 @@ function setV2PoolFee(pp: ProtocolPosition, poolContract: VelodromeV2Pool): void
 
 // Resolve a v2 pool's gauge. Returns Address.zero() when the pool has no gauge.
 // - aero-v2: Aero v2 pools have no gauge() and the Aero Voter has no gauges(pool), so read the AeroGauge row
-//   built from GaugeManager GaugeCreated (aeroGaugeManager.ts), re-read on every refresh rather
-//   than cached (see AeroGauge in schema.graphql); no row means no gauge yet.
+//   built from GaugeManager GaugeCreated (aeroGaugeManager.ts), re-read on every refresh and written
+//   to rewardsContract (which positionIncome matches rewards on) but never read back from it; no
+//   row means no gauge yet.
 // - legacy: the Velodrome Voter's gauges(pool), cached on the position's rewardsContract. A Voter
 //   revert (transient) is logged and not cached, so the next refresh retries; a zero gauge
 //   (legitimate) is silent and not cached, so a later-gauged pool is picked up.

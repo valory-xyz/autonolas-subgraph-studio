@@ -41,6 +41,8 @@ dataSources:
       file: ./src/serviceRegistry.ts
 
   # ---- Tracked token Transfer sources --------------------------------------
+  # handleERC20Transfer prices the token via getTokenPriceUSD → priceAdapters, which binds
+  # the Chainlink feed and the Aerodrome CL/V2 pools, so every token source declares their ABIs.
   - kind: ethereum
     name: USDC_Native
     network: base
@@ -60,9 +62,6 @@ dataSources:
           file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
-        # handleERC20Transfer prices the token via getTokenPriceUSD →
-        # priceAdapters, which binds the Chainlink feed and the Aerodrome
-        # CL/V2 pools. These must be declared on every token data source.
         - name: AggregatorV3Interface
           file: ../../../abis/oracles/AggregatorV3Interface.json
         - name: VelodromeCLPool
@@ -93,9 +92,6 @@ dataSources:
           file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
-        # handleERC20Transfer prices the token via getTokenPriceUSD →
-        # priceAdapters, which binds the Chainlink feed and the Aerodrome
-        # CL/V2 pools. These must be declared on every token data source.
         - name: AggregatorV3Interface
           file: ../../../abis/oracles/AggregatorV3Interface.json
         - name: VelodromeCLPool
@@ -126,9 +122,6 @@ dataSources:
           file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
-        # handleERC20Transfer prices the token via getTokenPriceUSD →
-        # priceAdapters, which binds the Chainlink feed and the Aerodrome
-        # CL/V2 pools. These must be declared on every token data source.
         - name: AggregatorV3Interface
           file: ../../../abis/oracles/AggregatorV3Interface.json
         - name: VelodromeCLPool
@@ -159,9 +152,6 @@ dataSources:
           file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
-        # handleERC20Transfer prices the token via getTokenPriceUSD →
-        # priceAdapters, which binds the Chainlink feed and the Aerodrome
-        # CL/V2 pools. These must be declared on every token data source.
         - name: AggregatorV3Interface
           file: ../../../abis/oracles/AggregatorV3Interface.json
         - name: VelodromeCLPool
@@ -192,9 +182,6 @@ dataSources:
           file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
-        # handleERC20Transfer prices the token via getTokenPriceUSD →
-        # priceAdapters, which binds the Chainlink feed and the Aerodrome
-        # CL/V2 pools. These must be declared on every token data source.
         - name: AggregatorV3Interface
           file: ../../../abis/oracles/AggregatorV3Interface.json
         - name: VelodromeCLPool
@@ -225,9 +212,6 @@ dataSources:
           file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
-        # handleERC20Transfer prices the token via getTokenPriceUSD →
-        # priceAdapters, which binds the Chainlink feed and the Aerodrome
-        # CL/V2 pools. These must be declared on every token data source.
         - name: AggregatorV3Interface
           file: ../../../abis/oracles/AggregatorV3Interface.json
         - name: VelodromeCLPool
@@ -258,9 +242,6 @@ dataSources:
           file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
-        # handleERC20Transfer prices the token via getTokenPriceUSD →
-        # priceAdapters, which binds the Chainlink feed and the Aerodrome
-        # CL/V2 pools. These must be declared on every token data source.
         - name: AggregatorV3Interface
           file: ../../../abis/oracles/AggregatorV3Interface.json
         - name: VelodromeCLPool
@@ -291,9 +272,6 @@ dataSources:
           file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
-        # handleERC20Transfer prices the token via getTokenPriceUSD →
-        # priceAdapters, which binds the Chainlink feed and the Aerodrome
-        # CL/V2 pools. These must be declared on every token data source.
         - name: AggregatorV3Interface
           file: ../../../abis/oracles/AggregatorV3Interface.json
         - name: VelodromeCLPool
@@ -324,9 +302,6 @@ dataSources:
           file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
-        # handleERC20Transfer prices the token via getTokenPriceUSD →
-        # priceAdapters, which binds the Chainlink feed and the Aerodrome
-        # CL/V2 pools. These must be declared on every token data source.
         - name: AggregatorV3Interface
           file: ../../../abis/oracles/AggregatorV3Interface.json
         - name: VelodromeCLPool
@@ -357,9 +332,6 @@ dataSources:
           file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
-        # handleERC20Transfer prices the token via getTokenPriceUSD →
-        # priceAdapters, which binds the Chainlink feed and the Aerodrome
-        # CL/V2 pools. These must be declared on every token data source.
         - name: AggregatorV3Interface
           file: ../../../abis/oracles/AggregatorV3Interface.json
         - name: VelodromeCLPool
@@ -390,9 +362,6 @@ dataSources:
           file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
-        # handleERC20Transfer prices the token via getTokenPriceUSD →
-        # priceAdapters, which binds the Chainlink feed and the Aerodrome
-        # CL/V2 pools. These must be declared on every token data source.
         - name: AggregatorV3Interface
           file: ../../../abis/oracles/AggregatorV3Interface.json
         - name: VelodromeCLPool
@@ -423,9 +392,6 @@ dataSources:
           file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
-        # handleERC20Transfer prices the token via getTokenPriceUSD →
-        # priceAdapters, which binds the Chainlink feed and the Aerodrome
-        # CL/V2 pools. These must be declared on every token data source.
         - name: AggregatorV3Interface
           file: ../../../abis/oracles/AggregatorV3Interface.json
         - name: VelodromeCLPool
@@ -456,9 +422,6 @@ dataSources:
           file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
-        # handleERC20Transfer prices the token via getTokenPriceUSD →
-        # priceAdapters, which binds the Chainlink feed and the Aerodrome
-        # CL/V2 pools. These must be declared on every token data source.
         - name: AggregatorV3Interface
           file: ../../../abis/oracles/AggregatorV3Interface.json
         - name: VelodromeCLPool
@@ -512,7 +475,6 @@ dataSources:
       file: ./src/veloNFTManager.ts
 
   # ---- Aero CL positions ----------------------------------------------------
-  # Slipstream handlers, except handleAeroIncreaseLiquidity (veloNFTManager.ts).
   - kind: ethereum
     name: AeroNFTManager
     network: base
