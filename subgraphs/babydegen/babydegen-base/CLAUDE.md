@@ -152,8 +152,8 @@ babydegen-optimism (network-agnostic). The website KPIs map to existing entities
 The `ethAdjusted*` fields are deprecated and equal their unadjusted counterparts.
 
 ### Funding and withdrawals (`common.ts`, `tokenBalances.ts`, `safe.ts`)
-- Every token in `WHITELISTED_TOKENS` and ETH moves `FundingBalance`, in and out, valued at the
-  transfer. The user side (`isUserSide`) is the operator Safe, any Safe (`getThreshold()` answers,
+- Every token in `WHITELISTED_TOKENS` and ETH moves `FundingBalance` (funding in, `totalWithdrawnUsd`
+  out), valued at the transfer. The user side (`isUserSide`) is the operator Safe, any Safe (`getThreshold()` answers,
   cached as `AddressType.isSafe`), the tx sender (an EIP-7702 wallet included), or an EOA that is
   not one of `Service.agentInstances`. The Safe itself, its agent EOAs and the zero address never are.
 - An outflow to any other contract is a withdrawal only when the receipt shows nothing coming
@@ -164,7 +164,8 @@ The `ethAdjusted*` fields are deprecated and equal their unadjusted counterparts
   agent EOA lowers value as a cost. A module execution or a relayed execTransaction is not
   readable; its ETH is not counted and a `SAFE_ETH:` warning is logged. A send to the operator
   Safe is counted once (its `SafeReceived` skips a send the decoder read from the same tx).
-- Withdrawals go to `totalWithdrawnUsd`; they never reduce `netUsd`. A transfer of an unpriced
+- Withdrawals go to `totalWithdrawnUsd`; they never reduce `netUsd`, which equals `totalInUsd`.
+  `totalOutUsd` and `fundingOutTxs` are deprecated: no longer written, they stay 0 / empty. A transfer of an unpriced
   token is valued at $0 and logged (`FUNDING:`).
 
 ### Pricing (`priceDiscovery.ts`, `priceAdapters.ts`, `tokenConfig.ts`)

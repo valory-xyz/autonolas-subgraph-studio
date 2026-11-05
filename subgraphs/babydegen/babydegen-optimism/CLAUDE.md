@@ -171,11 +171,12 @@ Price source details and immutable price update history.
 ### Funding
 
 #### FundingBalance
-Tracks funding flows in/out (id: service safe address).
+Tracks funding in and withdrawals (id: service safe address).
 | Field | Type | Notes |
 |-------|------|-------|
 | totalInUsd | `BigDecimal!` | Total funded amount |
-| totalOutUsd | `BigDecimal!` | Total outflows |
+| totalOutUsd | `BigDecimal!` | Deprecated: no longer written, stays 0 (as `fundingOutTxs` stays empty); outflows are only in `totalWithdrawnUsd` |
+| netUsd | `BigDecimal!` | Equals `totalInUsd` |
 | totalWithdrawnUsd | `BigDecimal!` | Total withdrawn |
 | firstInTimestamp | `BigInt` | When first funded |
 
@@ -216,7 +217,7 @@ Daily population-level stats at UTC midnight (id: `<dayTimestamp>`).
 **Files**: `src/funding.ts`, `src/tokenBalances.ts`
 - `handleUSDC` → redirects to `handleERC20Transfer`
 - `handleERC20Transfer`: Central handler for all token transfers. Updates TokenBalance with USD values, attributes gauge rewards to positions, and updates FundingBalance
-- **Every tracked token and ETH counts as funding, in and out, valued at its price at the transfer.** The user side (`isUserSide`, `common.ts`) is the operator Safe, any Safe, the tx sender, or an EOA that is not one of the service's agent EOAs; the zero address (mints) and the agent EOAs never are. The tx-sender rule covers EIP-7702 wallets, which have code and are no Safe. An outflow to any other contract is a withdrawal only when the tx receipt shows nothing coming back to the Safe — no ERC-20/ERC-721 `Transfer` to it and no `SafeReceived` (`isWithdrawalRecipient`). This catches EIP-7702 wallets (they have code) and keeps swaps and LP entries out. Every Transfer and Safe handler sets `receipt: true`
+- **Every tracked token and ETH counts as funding in, or as a withdrawal out, valued at its price at the transfer.** The user side (`isUserSide`, `common.ts`) is the operator Safe, any Safe, the tx sender, or an EOA that is not one of the service's agent EOAs; the zero address (mints) and the agent EOAs never are. The tx-sender rule covers EIP-7702 wallets, which have code and are no Safe. An outflow to any other contract is a withdrawal only when the tx receipt shows nothing coming back to the Safe — no ERC-20/ERC-721 `Transfer` to it and no `SafeReceived` (`isWithdrawalRecipient`). This catches EIP-7702 wallets (they have code) and keeps swaps and LP entries out. Every Transfer and Safe handler sets `receipt: true`
 - Withdrawals go to `totalWithdrawnUsd` (added back into `finalValue`); they never reduce `netUsd`
 - Matchstick has no `ethereum.hasCode`, so `processERC20Transfer` / `processSafeReceived` take the address-type reader; handlers pass `getAddressType`, tests pass a reader over seeded `AddressType` rows
 
@@ -486,7 +487,7 @@ yarn test                           # Run Matchstick tests
 4. **ROI from closed positions only**: `calculateActualROI()` uses only closed positions. Active positions contribute to `positionsValue` and `unrealisedPnL` but not ROI.
 5. **Multi-protocol support**: Velodrome CL, Velodrome V2, Aero CL, Aero v2, Uniswap V3, Balancer — each with separate handler files but unified portfolio calculation.
 6. **Price discovery is multi-source**: Chainlink primary, DEX fallback, then the last valid price marked stale. No $1 fallback. 5-minute cache. Confidence scoring.
-7. **Funding tracking**: Every tracked token and ETH moves `FundingBalance`, in and out, through `isUserSide` / `isWithdrawalRecipient` (receipt-based for contract recipients). Agent EOAs are never the user side.
+7. **Funding tracking**: Every tracked token and ETH moves `FundingBalance` (funding in, `totalWithdrawnUsd` out) through `isUserSide` / `isWithdrawalRecipient` (receipt-based for contract recipients). Agent EOAs are never the user side.
 8. **ETH-adjusted metrics**: Deprecated; equal to the unadjusted values.
 9. **Swap slippage**: LiFi swaps associated with position entries within 20-min window. Time-bucket system for efficiency.
 10. **Population metrics**: Daily median ROI/APR across all agents, 7-day SMA, separates "lifetime active" (>2 positions) vs stagnant agents.

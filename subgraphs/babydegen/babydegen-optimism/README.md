@@ -119,9 +119,9 @@ Cached address type checking (EOA vs Contract) for performance optimization.
 #### `FundingBalance`
 Tracks funding flows for each service:
 - **totalInUsd**: Total funding received from the user side (the operator Safe, any Safe, the tx sender, or an EOA that is not an agent EOA), in every tracked token and ETH, valued at the transfer
-- **totalOutUsd**: Total funding sent out
+- **totalOutUsd**: Deprecated; no longer written and stays 0 (outflows are recorded only in `totalWithdrawnUsd`). `fundingOutTxs` likewise stays empty
 - **totalWithdrawnUsd**: Total withdrawn to the user side, or to a contract that sent nothing back to the Safe in the same tx (separate tracking)
-- **netUsd**: Net funding balance (totalIn - totalOut)
+- **netUsd**: Equals `totalInUsd`; withdrawals never reduce it
 - **firstInTimestamp**: First funding timestamp
 
 #### `TokenBalance`

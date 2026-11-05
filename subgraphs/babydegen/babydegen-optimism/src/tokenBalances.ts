@@ -196,7 +196,7 @@ export function processERC20Transfer(event: TransferEvent, readAddressType: Addr
     
     if (isUserSide(from, to, event, readAddressType)) {
       let usdValue = transferUsdValue(value, tokenAddress, tokenConfig.decimals, to, event)
-      updateFundingBalance(to, usdValue, true, event.block.timestamp, txHash)
+      updateFundingBalance(to, usdValue, event.block.timestamp, txHash)
     }
   }
   
@@ -224,12 +224,11 @@ function transferUsdValue(value: BigInt, tokenAddress: Address, decimals: i32, s
   return value.toBigDecimal().div(divisor).times(tokenPrice)
 }
 
-// Helper function to update funding balance without circular dependency
-// Exported to be the single source of truth for funding balance updates
+// The single source of truth for funding in. Outflows go to updateWithdrawalBalance, so
+// totalOutUsd stays 0 and netUsd equals totalInUsd.
 export function updateFundingBalance(
   serviceSafe: Address,
   usd: BigDecimal,
-  deposit: boolean,
   ts: BigInt,
   txHash: string = ""
 ): void {
@@ -249,41 +248,30 @@ export function updateFundingBalance(
   }
   
   let oldTotalIn = fb.totalInUsd
-  let oldTotalOut = fb.totalOutUsd
   
-  if (deposit) {
-    fb.totalInUsd = fb.totalInUsd.plus(usd)
-    
-    if (txHash != "") {
-      let fundingInTxs = fb.fundingInTxs
-      fundingInTxs.push(txHash)
-      fb.fundingInTxs = fundingInTxs
-    }
-    
-    //  Set firstTradingTimestamp and capture ETH price on first funding
-    if (oldTotalIn.equals(BigDecimal.zero())) {
-      // This is the first funding - update portfolio
-      let portfolio = ensureAgentPortfolio(serviceSafe, ts)
-      if (portfolio.firstTradingTimestamp.equals(BigInt.zero())) {
-        portfolio.firstTradingTimestamp = ts
-        
-        // Capture ETH price at first funding
-        let block = createBlockFromTimestamp(ts)
-        portfolio.firstFundingEthPrice = getEthUsd(block)
-        portfolio.save()
-      }
-    }
-  } else {
-    fb.totalOutUsd = fb.totalOutUsd.plus(usd)
-    
-    if (txHash != "") {
-      let fundingOutTxs = fb.fundingOutTxs
-      fundingOutTxs.push(txHash)
-      fb.fundingOutTxs = fundingOutTxs
+  fb.totalInUsd = fb.totalInUsd.plus(usd)
+  
+  if (txHash != "") {
+    let fundingInTxs = fb.fundingInTxs
+    fundingInTxs.push(txHash)
+    fb.fundingInTxs = fundingInTxs
+  }
+  
+  //  Set firstTradingTimestamp and capture ETH price on first funding
+  if (oldTotalIn.equals(BigDecimal.zero())) {
+    // This is the first funding - update portfolio
+    let portfolio = ensureAgentPortfolio(serviceSafe, ts)
+    if (portfolio.firstTradingTimestamp.equals(BigInt.zero())) {
+      portfolio.firstTradingTimestamp = ts
+      
+      // Capture ETH price at first funding
+      let block = createBlockFromTimestamp(ts)
+      portfolio.firstFundingEthPrice = getEthUsd(block)
+      portfolio.save()
     }
   }
   
-  fb.netUsd = fb.totalInUsd.minus(fb.totalOutUsd)
+  fb.netUsd = fb.totalInUsd
   fb.lastChangeTs = ts
   fb.save()
   
@@ -291,7 +279,8 @@ export function updateFundingBalance(
   ensureAgentPortfolio(serviceSafe, ts)
 }
 
-// Withdrawal tracking, kept apart from funding: every outflow isWithdrawalRecipient accepts
+// Withdrawal tracking, kept apart from funding: every outflow to the user side, or to a contract
+// isWithdrawalRecipient accepts
 export function updateWithdrawalBalance(
   serviceSafe: Address,
   usd: BigDecimal,

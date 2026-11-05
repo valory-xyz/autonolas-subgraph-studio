@@ -59,7 +59,7 @@ export function processSafeReceived(event: SafeReceivedEvent, readAddressType: A
         .div(BigDecimal.fromString("1e18")) // ETH has 18 decimals
       
       // Update funding balance
-      updateFundingBalance(to, usd, true, event.block.timestamp, txHash)
+      updateFundingBalance(to, usd, event.block.timestamp, txHash)
       
       // Also update ETH balance in TokenBalance
       updateETHBalance(to, value, true, event.block)

@@ -54,13 +54,13 @@ type FundingBalance @entity(immutable: false) {
   id: Bytes!
   service: Service              # Link to service
   totalInUsd: BigDecimal!
-  totalOutUsd: BigDecimal!
+  totalOutUsd: BigDecimal!       # Deprecated: no longer written, stays 0; outflows are in totalWithdrawnUsd
   totalWithdrawnUsd: BigDecimal!  # Tracked tokens and ETH withdrawn to the user side, or to a contract when nothing came back to the Safe in the same tx; never reduces netUsd
-  netUsd: BigDecimal!
+  netUsd: BigDecimal!            # Equals totalInUsd
   firstInTimestamp: BigInt!
   lastChangeTs: BigInt!
   fundingInTxs: [String!]!      # Array of funding in transaction hashes
-  fundingOutTxs: [String!]!     # Array of funding out transaction hashes
+  fundingOutTxs: [String!]!     # Deprecated: no longer written, stays empty
 }
 
 type ProtocolPosition @entity(immutable: false) {

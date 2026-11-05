@@ -8,7 +8,7 @@ import {
   AgentSwapBuffer,
   SwapTransaction
 } from "../generated/schema"
-import { calculateUninvestedValue, updateFundingBalance } from "./tokenBalances"
+import { calculateUninvestedValue } from "./tokenBalances"
 import { getServiceByAgent } from "./config"
 import { calculateActualROI, aggregateClosedPositionMetrics } from "./roiCalculation"
 import { getEthUsd } from "./common"
@@ -39,42 +39,6 @@ function createBlockFromTimestamp(timestamp: BigInt): ethereum.Block {
     BigInt.zero(),
     BigInt.zero()
   )
-}
-
-// Use the single source of truth for funding balance updates
-export function updateFunding(
-  serviceSafe: Address,
-  usd: BigDecimal,
-  deposit: boolean,
-  ts: BigInt
-): void {
-  // Update funding balance using the shared function
-  updateFundingBalance(serviceSafe, usd, deposit, ts)
-  
-  log.info("FUNDING: {} {} USD", [
-    deposit ? "IN" : "OUT",
-    usd.toString()
-  ])
-  
-  // Update portfolio after funding change
-  let block = new ethereum.Block(
-    Bytes.empty(),
-    Bytes.empty(),
-    Bytes.empty(),
-    Address.zero(),
-    Bytes.empty(),
-    Bytes.empty(),
-    Bytes.empty(),
-    BigInt.zero(),
-    BigInt.zero(),
-    BigInt.zero(),
-    ts,
-    BigInt.zero(),
-    BigInt.zero(),
-    BigInt.zero(),
-    BigInt.zero()
-  )
-  calculatePortfolioMetrics(serviceSafe, block)
 }
 
 // Refresh all TokenBalance USD values for a service using current prices (with 5-minute caching)
