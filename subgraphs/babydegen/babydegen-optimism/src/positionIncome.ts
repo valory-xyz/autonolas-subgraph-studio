@@ -10,6 +10,7 @@ import {
 import { PROTOCOL_VELODROME_V3, PROTOCOL_AERO_CL, PROTOCOL_AERO_V2, rewardTokenFor } from "./constants"
 import { getTokenPriceUSD } from "./priceDiscovery"
 import { getTokenDecimals } from "./tokenUtils"
+import { uintAt, addressAt } from "./common"
 import { calculatePositionROI } from "./roiCalculation"
 
 // Withdraw(address indexed user, uint256 indexed tokenId, uint128 indexed liquidityToStake) — Velodrome CL gauge
@@ -39,14 +40,6 @@ export function loadMappedPosition(protocol: string, tokenId: BigInt): ProtocolP
 
 function toHuman(amount: BigInt, token: Address): BigDecimal {
   return amount.toBigDecimal().div(BigDecimal.fromString("1e" + getTokenDecimals(token).toString()))
-}
-
-function wordToBigInt(word: Bytes): BigInt {
-  return BigInt.fromUnsignedBytes(changetype<Bytes>(word.slice(0, 32).reverse()))
-}
-
-function wordToAddress(word: Bytes): Address {
-  return Address.fromBytes(changetype<Bytes>(word.subarray(12, 32)))
 }
 
 function minBigInt(a: BigInt, b: BigInt): BigInt {
@@ -194,15 +187,15 @@ function attributeEmissionsClaims(
   let logs = receipt.logs
   for (let i = 0; i < logs.length; i++) {
     let topics = logs[i].topics
-    if (topics.length < 4 || !topics[0].equals(EMISSIONS_CLAIMED_TOPIC) || !wordToAddress(topics[3]).equals(safe)) {
+    if (topics.length < 4 || !topics[0].equals(EMISSIONS_CLAIMED_TOPIC) || !addressAt(topics[3], 0).equals(safe)) {
       continue
     }
-    let claimAmount = wordToBigInt(logs[i].data)
+    let claimAmount = uintAt(logs[i].data, 0)
     let claimId = event.transaction.hash.concatI32(logs[i].logIndex.toI32())
     if (CreditedRewardClaim.load(claimId) != null) {
       continue
     }
-    let tokenId = wordToBigInt(topics[2])
+    let tokenId = uintAt(topics[2], 0)
     if (paid.plus(claimAmount).gt(amount)) {
       log.warning("REWARDS: tx {} — EmissionsClaimed for tokenId {} ({}) is not covered by the Transfer of {} to safe {}", [
         event.transaction.hash.toHexString(), tokenId.toString(), claimAmount.toString(), amount.toString(), safe.toHexString()
@@ -262,10 +255,10 @@ function nextGaugeWithdrawTokenId(
   for (let i = 0; i < logs.length; i++) {
     let topics = logs[i].topics
     if (logs[i].logIndex.le(event.logIndex) || !logs[i].address.equals(gauge) ||
-        topics.length < 3 || !topics[0].equals(CL_GAUGE_WITHDRAW_TOPIC) || !wordToAddress(topics[1]).equals(safe)) {
+        topics.length < 3 || !topics[0].equals(CL_GAUGE_WITHDRAW_TOPIC) || !addressAt(topics[1], 0).equals(safe)) {
       continue
     }
-    return wordToBigInt(topics[2])
+    return uintAt(topics[2], 0)
   }
   return null
 }

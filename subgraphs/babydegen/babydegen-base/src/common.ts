@@ -1,4 +1,4 @@
-import { Address, BigDecimal, Bytes, ethereum, log } from "@graphprotocol/graph-ts"
+import { Address, BigDecimal, BigInt, Bytes, ethereum, log } from "@graphprotocol/graph-ts"
 import { AggregatorV3Interface } from "../generated/templates/Safe/AggregatorV3Interface"
 import { GnosisSafe } from "../generated/templates/Safe/GnosisSafe"
 import { AddressType, Service } from "../generated/schema"
@@ -81,6 +81,18 @@ export function isUserSide(
   return !addressType.isContract || addressType.isSafe
 }
 
+export const ABI_WORD = 32
+
+// The uint256 in the ABI word at `offset`
+export function uintAt(bytes: Uint8Array, offset: i32): BigInt {
+  return BigInt.fromUnsignedBytes(changetype<Bytes>(bytes.slice(offset, offset + ABI_WORD).reverse()))
+}
+
+// The address in the ABI word at `offset` (its last 20 bytes)
+export function addressAt(bytes: Uint8Array, offset: i32): Address {
+  return Address.fromBytes(Bytes.fromUint8Array(bytes.subarray(offset + 12, offset + ABI_WORD)))
+}
+
 // True when the receipt shows anything coming back to the Safe: an ERC-20 / ERC-721 Transfer
 // to it, or its own SafeReceived. Outflows in such a tx are swaps or LP entries.
 function receiptHasInflowTo(safe: Address, receipt: ethereum.TransactionReceipt): boolean {
@@ -88,7 +100,7 @@ function receiptHasInflowTo(safe: Address, receipt: ethereum.TransactionReceipt)
   for (let i = 0; i < logs.length; i++) {
     let topics = logs[i].topics
     if (topics.length >= 3 && topics[0].equals(TRANSFER_TOPIC) &&
-        Address.fromBytes(changetype<Bytes>(topics[2].subarray(12))).equals(safe)) {
+        addressAt(topics[2], 0).equals(safe)) {
       return true
     }
     if (topics.length >= 1 && topics[0].equals(SAFE_RECEIVED_TOPIC) && logs[i].address.equals(safe)) {
