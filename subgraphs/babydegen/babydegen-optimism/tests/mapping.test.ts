@@ -1530,12 +1530,18 @@ describe("Aero v2 pools (factories + GaugeManager)", () => {
     closed.claimedRewardsUSD = BigDecimal.fromString("5")
     closed.totalCostsUSD = BigDecimal.fromString("3")
     closed.positionROI = BigDecimal.fromString("4")
+    closed.investmentUSD = BigDecimal.fromString("999")
+    closed.swapSlippageUSD = BigDecimal.fromString("3")
     closed.save()
+    // The re-entry is its own tx, in a later block
+    const reentryTx = Bytes.fromHexString("0x2222222222222222222222222222222222222222222222222222222222222222")
+    const reentryBlock = v2Block()
+    reentryBlock.timestamp = BLOCK_TIMESTAMP.plus(BigInt.fromI32(1000))
 
     // Re-entry: the same pool, a new LP mint and Mint
     const transfer2 = createV2TransferEvent(AERO_V2_POOL, Address.zero(), SERVICE_SAFE, BigInt.fromI32(500))
-    transfer2.block = v2Block()
-    transfer2.transaction.hash = TX_HASH
+    transfer2.block = reentryBlock
+    transfer2.transaction.hash = reentryTx
     handleVeloV2Transfer(transfer2)
 
     const mint2 = createAeroV2MintEvent(
@@ -1545,8 +1551,8 @@ describe("Aero v2 pools (factories + GaugeManager)", () => {
       BigInt.fromString("2000000000000000000"),
       BigInt.fromString("6000000000000000000")
     )
-    mint2.block = v2Block()
-    mint2.transaction.hash = TX_HASH
+    mint2.block = reentryBlock
+    mint2.transaction.hash = reentryTx
     handleAeroV2Mint(mint2)
 
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "isActive", "true")
@@ -1560,6 +1566,10 @@ describe("Aero v2 pools (factories + GaugeManager)", () => {
     assert.assertTrue(reentered.exitAmountUSD === null)
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "totalCostsUSD", "0")
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "positionROI", "0")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "swapSlippageUSD", "0")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "entryTxHash", reentryTx.toHexString())
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "entryTimestamp", reentryBlock.timestamp.toString())
+    assert.assertTrue(reentered.investmentUSD.notEqual(BigDecimal.fromString("999")))
   })
 
   test("a top-up after a partial Burn keeps the open position's income", () => {

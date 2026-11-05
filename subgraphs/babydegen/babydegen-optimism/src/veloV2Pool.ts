@@ -16,7 +16,7 @@ import { getServiceByAgent } from "./config"
 import { PendingMintPosition, ProtocolPosition } from "../generated/schema"
 import { getTokenPriceUSD } from "./priceDiscovery"
 import { convertTokenAmount } from "./tokenUtils"
-import { initializePositionIncome } from "./roiCalculation"
+import { initializePositionIncome, initializePositionCosts } from "./roiCalculation"
 import { Address, BigDecimal, ethereum } from "@graphprotocol/graph-ts"
 
 
@@ -43,8 +43,7 @@ function getPendingPosition(txHash: Bytes, poolAddress: Bytes): PendingMintPosit
   return pending
 }
 
-// A v2 position is one row per pool, reused across entry/exit cycles: clear the last cycle's exit,
-// income, costs and ROI, and restart entry tracking as for a new row (the Mint sets the entry)
+// Restarts a reused v2 row as a new one (CLAUDE.md: v2 position cycles)
 function startNewCycle(pp: ProtocolPosition, event: ethereum.Event): void {
   initializePositionIncome(pp)
   pp.exitTxHash = null
@@ -61,13 +60,7 @@ function startNewCycle(pp: ProtocolPosition, event: ethereum.Event): void {
   pp.entryAmount1 = BigDecimal.zero()
   pp.entryAmount1USD = BigDecimal.zero()
   pp.entryAmountUSD = BigDecimal.zero()
-  pp.totalCostsUSD = BigDecimal.zero()
-  pp.swapSlippageUSD = BigDecimal.zero()
-  pp.investmentUSD = BigDecimal.zero()
-  pp.grossGainUSD = BigDecimal.zero()
-  pp.netGainUSD = BigDecimal.zero()
-  pp.positionROI = BigDecimal.zero()
-  pp.save()
+  initializePositionCosts(pp)
 }
 
 // Handle VelodromeV2 Pool Transfer events (LP token transfers) - THIS COMES FIRST
@@ -84,8 +77,8 @@ export function handleVeloV2Transfer(event: Transfer): void {
     const service = getServiceByAgent(to)
     
     if (service != null) {
-      // Checked before the refresh below marks the row active again: LP minted into a closed row
-      // starts a new cycle (a partial Burn leaves the row active, so a top-up keeps its cycle)
+      // Read before the refresh below marks the row active again. isActive comes from end-of-block
+      // balanceOf, so a full exit and re-entry in one block keeps the old cycle (accepted)
       const closed = ProtocolPosition.load(getVeloV2PositionId(to, event.address))
       if (closed != null && !closed.isActive) {
         startNewCycle(closed, event)
