@@ -112,6 +112,19 @@ describe("collected fees", () => {
     positionField(p, "exitAmountUSD", "100")
   })
 
+  test("a decrease after the NFT was burned or transferred away is not this position's exit", () => {
+    let p = seedPosition(SERVICE_SAFE, PROTOCOL_VELODROME_V3, BigInt.fromI32(7), USDC_NATIVE, BOLD, null, BigInt.zero(), "0")
+    // The NFT Transfer closed it with no exit amounts, in this block
+    p.isActive = false
+    p.exitTimestamp = newDecrease(BigInt.fromI32(7), USDC_50, BOLD_50).block.timestamp
+    p.save()
+    createMockedFunction(VELO_MANAGER, "positions", "positions(uint256):(uint96,address,address,address,int24,int24,int24,uint128,uint256,uint256,uint128,uint128)")
+      .withArgs([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(7))])
+      .reverts()
+    handleDecreaseLiquidity(newDecrease(BigInt.fromI32(7), USDC_50, BOLD_50))
+    assert.assertTrue(ProtocolPosition.load(p.id)!.exitAmountUSD === null)
+  })
+
   test("a fee on a closed position with no recorded investment is still saved", () => {
     let p = seedPosition(SERVICE_SAFE, PROTOCOL_VELODROME_V3, BigInt.fromI32(8), USDC_NATIVE, BOLD, null, BigInt.zero(), "0")
     p.entryAmountUSD = BigDecimal.zero()

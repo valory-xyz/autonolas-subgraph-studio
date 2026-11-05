@@ -141,6 +141,19 @@ describe("collected fees", () => {
     positionField(p, "exitAmountUSD", "200")
   })
 
+  test("a decrease after the NFT was burned or transferred away is not this position's exit", () => {
+    let p = seedPosition(SERVICE_SAFE, PROTOCOL_VELODROME_V3, BigInt.fromI32(7), USDC_NATIVE, DAI, null, BigInt.zero(), "0")
+    // The NFT Transfer closed it with no exit amounts, in this block
+    p.isActive = false
+    p.exitTimestamp = newDecrease(BigInt.fromI32(7), USDC_50, DAI_50).block.timestamp
+    p.save()
+    createMockedFunction(VELO_MANAGER, "positions", "positions(uint256):(uint96,address,address,address,int24,int24,int24,uint128,uint256,uint256,uint128,uint128)")
+      .withArgs([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(7))])
+      .reverts()
+    handleDecreaseLiquidity(newDecrease(BigInt.fromI32(7), USDC_50, DAI_50))
+    assert.assertTrue(ProtocolPosition.load(p.id)!.exitAmountUSD === null)
+  })
+
   test("a fee on a closed position with no recorded investment is still saved", () => {
     let p = seedPosition(SERVICE_SAFE, PROTOCOL_VELODROME_V3, BigInt.fromI32(8), USDC_NATIVE, DAI, null, BigInt.zero(), "0")
     p.entryAmountUSD = BigDecimal.zero()
@@ -301,6 +314,9 @@ describe("collected fees", () => {
 
     let id = Bytes.fromUTF8(SERVICE_SAFE.toHexString() + "-uniswap-v3-77")
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "collectedFeesUSD", "3")
+    // positions() still answers with liquidity, so the decrease was partial
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "isActive", "true")
+    assert.assertTrue(ProtocolPosition.load(id)!.exitTimestamp === null)
   })
 
   test("Uniswap V3: a position opened by its mint Transfer is found by its DecreaseLiquidity and Collect", () => {
@@ -363,6 +379,31 @@ describe("collected fees", () => {
       .reverts()
     handleUniV3DecreaseLiquidity(changetype<UniV3DecreaseLiquidity>(newDecrease(BigInt.fromI32(99), USDC_50, DAI_50, UNI_V3_MANAGER)))
     assert.entityCount("UncollectedPrincipal", 0)
+  })
+
+  test("Uniswap V3: a full-exit decrease on a row closed in an earlier block replaces its exit", () => {
+    let p = seedPosition(SERVICE_SAFE, PROTOCOL_UNISWAP_V3, BigInt.fromI32(9), USDC_NATIVE, DAI, null, BigInt.zero(), "0")
+    closeAt(p, "120")
+    p.exitTimestamp = BLOCK_TIMESTAMP.minus(BigInt.fromI32(100))
+    p.exitAmount0 = BigDecimal.fromString("60")
+    p.exitAmount0USD = BigDecimal.fromString("60")
+    p.exitAmount1 = BigDecimal.fromString("60")
+    p.exitAmount1USD = BigDecimal.fromString("60")
+    p.save()
+    revertUniV3Positions(9)
+    handleUniV3DecreaseLiquidity(changetype<UniV3DecreaseLiquidity>(newDecrease(BigInt.fromI32(9), USDC_50, DAI_50, UNI_V3_MANAGER)))
+    positionField(p, "exitAmountUSD", "100")
+  })
+
+  test("Uniswap V3: a decrease after the NFT was transferred away is not this position's exit", () => {
+    let p = seedPosition(SERVICE_SAFE, PROTOCOL_UNISWAP_V3, BigInt.fromI32(9), USDC_NATIVE, DAI, null, BigInt.zero(), "0")
+    // handleUniV3Transfer closed it with no exit amounts, in this block
+    p.isActive = false
+    p.exitTimestamp = newDecrease(BigInt.fromI32(9), USDC_50, DAI_50, UNI_V3_MANAGER).block.timestamp
+    p.save()
+    revertUniV3Positions(9)
+    handleUniV3DecreaseLiquidity(changetype<UniV3DecreaseLiquidity>(newDecrease(BigInt.fromI32(9), USDC_50, DAI_50, UNI_V3_MANAGER)))
+    assert.assertTrue(ProtocolPosition.load(p.id)!.exitAmountUSD === null)
   })
 
   test("Uniswap V3: a Collect on a closed position recalculates the portfolio", () => {

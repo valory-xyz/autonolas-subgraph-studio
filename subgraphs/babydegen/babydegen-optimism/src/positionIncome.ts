@@ -11,7 +11,7 @@ import { PROTOCOL_VELODROME_V3, PROTOCOL_AERO_CL, PROTOCOL_AERO_V2, rewardTokenF
 import { getTokenPriceUSD } from "./priceDiscovery"
 import { convertTokenAmount } from "./tokenUtils"
 import { uintAt, addressAt } from "./common"
-import { saveWithROI } from "./roiCalculation"
+import { saveWithROI, calculatePositionROI } from "./roiCalculation"
 
 // Withdraw(address indexed user, uint256 indexed tokenId, uint128 indexed liquidityToStake) — Velodrome CL gauge
 const CL_GAUGE_WITHDRAW_TOPIC = Bytes.fromHexString("0x8903a5b5d08a841e7f68438387f1da20c84dea756379ed37e633ff3854b99b84")
@@ -375,4 +375,62 @@ export function attributeRewardTransfer(event: ethereum.Event, from: Address, sa
   let weights = hasCL && sum(earnedBefore).gt(BigDecimal.zero()) ? earnedBefore : liquidityWeights(active)
   splitReward(active, weights, rewardAmount, priceUSD)
   return true
+}
+
+// ---------------------------------------------------------------------------
+// NFT position exits (CL and Uniswap V3)
+// ---------------------------------------------------------------------------
+
+// Closed by an NFT Transfer or burn with no exit recorded: a later DecreaseLiquidity on the NFT is
+// its new owner's, not this position's
+export function closedWithoutExit(pp: ProtocolPosition): boolean {
+  return !pp.isActive && pp.exitAmountUSD === null
+}
+
+// A DecreaseLiquidity already recorded this position's exit in this block. positions() reads
+// end-of-block state, so later events in the block see the final, zero liquidity
+export function exitClosedInBlock(pp: ProtocolPosition, block: ethereum.Block): boolean {
+  let prev = pp.exitTimestamp
+  return !pp.isActive && prev !== null && prev.equals(block.timestamp) && pp.exitAmountUSD !== null
+}
+
+// Closes the position on a full-exit DecreaseLiquidity, valued from the event amounts and the
+// stored tokens; a second one in the same block adds to the exit
+export function recordFullExit(
+  pp: ProtocolPosition,
+  token0: Address,
+  token1: Address,
+  amount0: BigInt,
+  amount1: BigInt,
+  block: ethereum.Block,
+  txHash: Bytes
+): void {
+  let exitAmount0 = convertTokenAmount(amount0, token0)
+  let exitAmount1 = convertTokenAmount(amount1, token1)
+  let exitUsd0 = exitAmount0.times(getTokenPriceUSD(token0, block.timestamp, false))
+  let exitUsd1 = exitAmount1.times(getTokenPriceUSD(token1, block.timestamp, false))
+  if (exitClosedInBlock(pp, block)) {
+    pp.exitAmount0 = pp.exitAmount0!.plus(exitAmount0)
+    pp.exitAmount0USD = pp.exitAmount0USD!.plus(exitUsd0)
+    pp.exitAmount1 = pp.exitAmount1!.plus(exitAmount1)
+    pp.exitAmount1USD = pp.exitAmount1USD!.plus(exitUsd1)
+    pp.exitAmountUSD = pp.exitAmountUSD!.plus(exitUsd0.plus(exitUsd1))
+  } else {
+    pp.exitAmount0 = exitAmount0
+    pp.exitAmount0USD = exitUsd0
+    pp.exitAmount1 = exitAmount1
+    pp.exitAmount1USD = exitUsd1
+    pp.exitAmountUSD = exitUsd0.plus(exitUsd1)
+  }
+  pp.isActive = false
+  pp.exitTxHash = txHash
+  pp.exitTimestamp = block.timestamp
+  pp.amount0 = BigDecimal.zero()
+  pp.amount1 = BigDecimal.zero()
+  pp.amount0USD = BigDecimal.zero()
+  pp.amount1USD = BigDecimal.zero()
+  pp.usdCurrent = BigDecimal.zero()
+  pp.usdCurrentWithRewards = BigDecimal.zero()
+  pp.liquidity = BigInt.zero()
+  calculatePositionROI(pp)
 }
