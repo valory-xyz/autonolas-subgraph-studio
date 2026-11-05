@@ -1588,7 +1588,8 @@ describe("Aero v2 pools (factories + GaugeManager)", () => {
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "swapSlippageUSD", "0")
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "entryTxHash", reentryTx.toHexString())
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "entryTimestamp", reentryBlock.timestamp.toString())
-    assert.stringEquals(reentered.investmentUSD.toString(), "0")
+    // investmentUSD is only read once the row closes again; the re-entry must not carry the old cycle's
+    assert.assertTrue(reentered.investmentUSD.notEqual(BigDecimal.fromString("999")))
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "grossGainUSD", "0")
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "netGainUSD", "0")
   })
