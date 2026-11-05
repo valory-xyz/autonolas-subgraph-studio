@@ -16,6 +16,7 @@ import { getServiceByAgent } from "./config"
 import { PendingMintPosition, ProtocolPosition } from "../generated/schema"
 import { getTokenPriceUSD } from "./priceDiscovery"
 import { convertTokenAmount } from "./tokenUtils"
+import { initializePositionIncome } from "./roiCalculation"
 import { Address, ethereum } from "@graphprotocol/graph-ts"
 
 
@@ -123,6 +124,19 @@ function recordMintEntryAmounts(event: ethereum.Event, amount0: BigInt, amount1:
       const amount1USD = token1Price.times(amount1Human)
       const totalUSD = amount0USD.plus(amount1USD)
       
+      // A Mint on a row that still carries an exit starts a new cycle in the reused row: the last
+      // cycle's exit and income are not this cycle's gain
+      if (position.exitTimestamp !== null) {
+        initializePositionIncome(position)
+        position.exitTxHash = null
+        position.exitTimestamp = null
+        position.exitAmount0 = null
+        position.exitAmount0USD = null
+        position.exitAmount1 = null
+        position.exitAmount1USD = null
+        position.exitAmountUSD = null
+      }
+
       // Update entry amounts
       position.entryAmount0 = amount0Human
       position.entryAmount0USD = amount0USD

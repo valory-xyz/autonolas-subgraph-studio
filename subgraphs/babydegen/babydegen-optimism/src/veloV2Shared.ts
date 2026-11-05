@@ -473,10 +473,6 @@ export function refreshVeloV2Position(
     pp.usdCurrentWithRewards = pp.usdCurrent.plus(rewardUSD)
     pp.liquidity = userBalance // Store LP token balance (in-wallet + gauge-staked) as liquidity
     
-    // A re-entered pool reuses its row; the last cycle's income is not this cycle's gain
-    if (!pp.isActive) {
-      initializePositionIncome(pp)
-    }
     pp.isActive = true
     
     // If this is a new position (entry amounts not set), use current amounts as entry
