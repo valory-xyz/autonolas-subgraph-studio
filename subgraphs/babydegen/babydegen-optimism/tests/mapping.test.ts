@@ -1646,10 +1646,12 @@ describe("Aero v2 pools (factories + GaugeManager)", () => {
     closed.claimedRewardsUSD = BigDecimal.fromString("5")
     closed.save()
 
-    // Top-up: a new LP mint and Mint into the open row
+    const firstEntry = ProtocolPosition.load(id)!.entryAmountUSD
+    // Top-up in its own tx: a new LP mint and Mint into the open row
+    const topUpTx = Bytes.fromHexString("0x00000000000000000000000000000000000000000000000000000000000070b0")
     const transfer2 = createV2TransferEvent(AERO_V2_POOL, Address.zero(), SERVICE_SAFE, BigInt.fromI32(500))
     transfer2.block = v2Block()
-    transfer2.transaction.hash = TX_HASH
+    transfer2.transaction.hash = changetype<Bytes>(topUpTx)
     handleVeloV2Transfer(transfer2)
 
     const mint2 = createAeroV2MintEvent(
@@ -1660,10 +1662,14 @@ describe("Aero v2 pools (factories + GaugeManager)", () => {
       BigInt.fromString("6000000000000000000")
     )
     mint2.block = v2Block()
-    mint2.transaction.hash = TX_HASH
+    mint2.transaction.hash = changetype<Bytes>(topUpTx)
     handleAeroV2Mint(mint2)
 
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "isActive", "true")
+    // The top-up adds to the cycle's entry, and the investment follows it
+    const toppedUp = ProtocolPosition.load(id)!
+    assert.assertTrue(toppedUp.entryAmountUSD.gt(firstEntry))
+    assert.stringEquals(toppedUp.investmentUSD.toString(), toppedUp.entryAmountUSD.plus(toppedUp.totalCostsUSD).toString())
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "collectedFeesUSD", "2")
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimedRewardsUSD", "5")
   })

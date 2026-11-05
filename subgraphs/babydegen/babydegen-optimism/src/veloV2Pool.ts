@@ -149,15 +149,23 @@ function recordMintEntryAmounts(event: ethereum.Event, amount0: BigInt, amount1:
       const amount1USD = token1Price.times(amount1Human)
       const totalUSD = amount0USD.plus(amount1USD)
       
-      // Update entry amounts
-      position.entryAmount0 = amount0Human
-      position.entryAmount0USD = amount0USD
-      position.entryAmount1 = amount1Human
-      position.entryAmount1USD = amount1USD
-      position.entryAmountUSD = totalUSD
-      // The Mint is the entry, so the investment the next close's ROI divides by is this cycle's
-      // entry plus the swap costs already linked to it
-      position.investmentUSD = totalUSD.plus(position.swapSlippageUSD)
+      // The LP mint Transfer of a new row or a new cycle sets entryTxHash to this tx, and its refresh may
+      // already have filled the entry from current amounts: that Mint replaces the entry. A top-up adds to it
+      if (position.entryTxHash.equals(event.transaction.hash)) {
+        position.entryAmount0 = amount0Human
+        position.entryAmount0USD = amount0USD
+        position.entryAmount1 = amount1Human
+        position.entryAmount1USD = amount1USD
+        position.entryAmountUSD = totalUSD
+      } else {
+        position.entryAmount0 = position.entryAmount0.plus(amount0Human)
+        position.entryAmount0USD = position.entryAmount0USD.plus(amount0USD)
+        position.entryAmount1 = position.entryAmount1.plus(amount1Human)
+        position.entryAmount1USD = position.entryAmount1USD.plus(amount1USD)
+        position.entryAmountUSD = position.entryAmountUSD.plus(totalUSD)
+      }
+      // What calculatePositionROI divides by: the cycle's entry plus its costs
+      position.investmentUSD = position.entryAmountUSD.plus(position.totalCostsUSD)
       
       position.save()
       
