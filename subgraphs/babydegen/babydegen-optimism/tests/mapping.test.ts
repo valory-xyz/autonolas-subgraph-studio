@@ -219,6 +219,38 @@ describe("handleCreateMultisigWithAgents", () => {
     clearStore()
   })
 
+  test("a later RegisterInstance adds its agent EOA to the existing Service", () => {
+    mockChainlinkEthUsd()
+    registerService()
+    let multisig = createCreateMultisigWithAgentsEvent(SERVICE_ID, SERVICE_SAFE)
+    multisig.block.number = BLOCK_NUMBER
+    multisig.block.timestamp = BLOCK_TIMESTAMP
+    handleCreateMultisigWithAgents(multisig)
+    let second = Address.fromString("0x00000000000000000000000000000000000000a2")
+    let reRegistration = createRegisterInstanceEvent(OPERATOR_SAFE, SERVICE_ID, second, OPTIMUS_AGENT_ID)
+    reRegistration.block.number = BLOCK_NUMBER
+    reRegistration.block.timestamp = BLOCK_TIMESTAMP
+    handleRegisterInstance(reRegistration)
+
+    assert.fieldEquals("Service", SERVICE_SAFE.toHexString(), "agentInstances",
+      "[" + AGENT_INSTANCE.toHexString() + ", " + second.toHexString() + "]")
+  })
+
+  test("a multisig re-created for an existing Service takes the registration's agent EOAs", () => {
+    mockChainlinkEthUsd()
+    registerService()
+    createService(SERVICE_SAFE)
+    let existing = Service.load(SERVICE_SAFE)!
+    existing.agentInstances = []
+    existing.save()
+    let multisig = createCreateMultisigWithAgentsEvent(SERVICE_ID, SERVICE_SAFE)
+    multisig.block.number = BLOCK_NUMBER
+    multisig.block.timestamp = BLOCK_TIMESTAMP
+    handleCreateMultisigWithAgents(multisig)
+
+    assert.fieldEquals("Service", SERVICE_SAFE.toHexString(), "agentInstances", "[" + AGENT_INSTANCE.toHexString() + "]")
+  })
+
   test("does nothing when no prior ServiceRegistration exists", () => {
     // Fire CreateMultisigWithAgents without a preceding RegisterInstance
     mockChainlinkEthUsd()

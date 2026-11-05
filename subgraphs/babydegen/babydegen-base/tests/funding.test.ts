@@ -7,7 +7,7 @@ import { SafeReceived, ExecutionSuccess, ExecutionFromModuleSuccess } from "../g
 import { handleRegisterInstance } from "../src/serviceRegistry"
 import { USDC_NATIVE, BOLD, WETH } from "../src/constants"
 import { createRegisterInstanceEvent } from "./mapping-utils"
-import { newLog, newReceipt, newTransfer, mockEthUsd, seedService, seedAddressType, seedTokenPrice, seededAddressType } from "./fixtures"
+import { TRANSFER_TOPIC, newLog, newReceipt, newTransfer, mockEthUsd, seedService, seedAddressType, seedTokenPrice, seededAddressType } from "./fixtures"
 import { OPERATOR_SAFE, AGENT_INSTANCE, SERVICE_ID, BASIUS_AGENT_ID, BLOCK_NUMBER, BLOCK_TIMESTAMP } from "./test-helpers"
 
 const USER_EOA = Address.fromString("0x00000000000000000000000000000000000000e0")
@@ -21,6 +21,11 @@ const WALLET_7702 = Address.fromString("0x8ce734aabe677aed77b69f1d391cdb610a21d6
 // Optimism tx 0x6d10752f…: Safe 0xd32613 enters Velodrome CL pool 0x1737…; only the position NFTs come back
 const SAFE_CL = Address.fromString("0xd32613ed605be41d9c7fbc85f2ccb4fba59778ac")
 const CL_POOL = Address.fromString("0x1737275d53a5ca5dac582a493aa32c85ba2cfad3")
+
+// An address as an indexed event topic
+function addressTopic(addr: Address): string {
+  return "0x000000000000000000000000" + addr.toHexString().slice(2)
+}
 
 function fundingField(safe: Address, field: string, value: string): void {
   assert.fieldEquals("FundingBalance", safe.toHexString(), field, value)
@@ -48,6 +53,16 @@ describe("funding: every tracked token counts", () => {
     seedAddressType(USER_EOA, false, false)
     processERC20Transfer(newTransfer(BOLD, SAFE_CL, USER_EOA, BigInt.fromString("250000000000000000000"), 1, newReceipt([])), seededAddressType)
     fundingField(SAFE_CL, "totalWithdrawnUsd", "250")
+  })
+
+  test("WETH in and out is valued at its own price, not $1", () => {
+    seedTokenPrice(WETH, "WETH", 18, "2000")
+    seedService(SAFE_CL, OPERATOR_SAFE, AGENT_INSTANCE)
+    seedAddressType(USER_EOA, false, false)
+    processERC20Transfer(newTransfer(WETH, USER_EOA, SAFE_CL, BigInt.fromString("500000000000000000"), 1, newReceipt([])), seededAddressType)
+    processERC20Transfer(newTransfer(WETH, SAFE_CL, USER_EOA, BigInt.fromString("250000000000000000"), 2, newReceipt([])), seededAddressType)
+    fundingField(SAFE_CL, "totalInUsd", "1000")
+    fundingField(SAFE_CL, "totalWithdrawnUsd", "500")
   })
 
   test("a deposit from another Safe is funding", () => {
@@ -123,6 +138,17 @@ describe("withdrawals to contracts are decided by the receipt", () => {
     seedAddressType(SOME_CONTRACT, true, false)
     let receipt = newReceipt([safeReceivedLog(OTHER_SAFE, 3)])
     processERC20Transfer(newTransfer(USDC_NATIVE, SAFE_CL, SOME_CONTRACT, BigInt.fromI64(5000000), 2, receipt), seededAddressType)
+    fundingField(SAFE_CL, "totalWithdrawnUsd", "5")
+  })
+
+  test("an outflow to the user's EOA is a withdrawal even when the tx also returns tokens to the Safe", () => {
+    seedService(SAFE_CL, OPERATOR_SAFE, AGENT_INSTANCE)
+    seedAddressType(USER_EOA, false, false)
+    // The same tx exits a position: USDC comes back to the Safe from the pool before it pays the user
+    let receipt = newReceipt([
+      newLog(USDC_NATIVE.toHexString(), [TRANSFER_TOPIC, addressTopic(CL_POOL), addressTopic(SAFE_CL)], "0x00000000000000000000000000000000000000000000000000000000004c4b40", 1)
+    ])
+    processERC20Transfer(newTransfer(USDC_NATIVE, SAFE_CL, USER_EOA, BigInt.fromI64(5000000), 2, receipt), seededAddressType)
     fundingField(SAFE_CL, "totalWithdrawnUsd", "5")
   })
 
@@ -266,6 +292,16 @@ describe("ETH funding uses the same user-side rule", () => {
     seedAddressType(USER_EOA, false, false)
     processSafeReceived(newSafeReceived(SAFE_CL, USER_EOA, BigInt.fromString("500000000000000000")), seededAddressType)
     fundingField(SAFE_CL, "totalInUsd", "1000")
+  })
+
+  test("ETH from a non-Safe contract or the agent EOA is not funding but still raises the ETH balance", () => {
+    seedService(SAFE_CL, OPERATOR_SAFE, AGENT_INSTANCE)
+    seedAddressType(SOME_CONTRACT, true, false)
+    seedAddressType(AGENT_INSTANCE, false, false)
+    processSafeReceived(newSafeReceived(SAFE_CL, SOME_CONTRACT, BigInt.fromString("500000000000000000")), seededAddressType)
+    processSafeReceived(newSafeReceived(SAFE_CL, AGENT_INSTANCE, BigInt.fromString("500000000000000000")), seededAddressType)
+    assert.notInStore("FundingBalance", SAFE_CL.toHexString())
+    ethBalance(SAFE_CL, "1")
   })
 
   test("ETH the Safe sends to the user's EOA in execTransaction is a withdrawal", () => {
