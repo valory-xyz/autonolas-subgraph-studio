@@ -157,7 +157,7 @@ type Token @entity(immutable: false) {
   lastPriceUpdate: BigInt!
   priceConfidence: BigDecimal!  # Current price confidence level
   priceStale: Boolean!          # derivedUSD is the last valid price, not a fresh one
-  depegged: Boolean!            # a stablecoin last priced below $0.98
+  depegged: Boolean!            # a stablecoin last priced below DEPEG_THRESHOLD
 }
 
 type PriceUpdate @entity(immutable: true) {

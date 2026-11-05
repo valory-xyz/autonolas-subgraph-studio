@@ -270,7 +270,6 @@ export function updateFundingBalance(
   ensureAgentPortfolio(serviceSafe, ts)
 }
 
-// Withdrawals are kept apart from funding, so they never reduce netUsd
 export function updateWithdrawalBalance(
   serviceSafe: Address,
   usd: BigDecimal,

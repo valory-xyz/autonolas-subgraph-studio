@@ -121,7 +121,7 @@ function usdcReferencedStable(address: Address, symbol: string, decimals: i32): 
 }
 
 // A stablecoin priced off its own Chainlink feed, with an Aero USDC pool as the priority-2
-// fallback when the feed gives no valid price. Only USDT has one; DAI, USDe and USDS are feed-only.
+// fallback when the feed gives no valid price.
 function chainlinkStable(
   address: Address,
   symbol: string,

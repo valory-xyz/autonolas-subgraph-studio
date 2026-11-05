@@ -359,8 +359,7 @@ export function calculatePortfolioMetrics(
   
   portfolio.lastUpdated = block.timestamp
   
-  // Deprecated: the ethAdjusted* fields equal the unadjusted values. Subtracting ETH's whole price
-  // move misstated every Safe that did not hold ETH; the fields stay for existing queries.
+  // Deprecated: the ethAdjusted* fields equal the unadjusted values (see CLAUDE.md)
   portfolio.ethAdjustedRoi = actualROI
   portfolio.ethAdjustedApr = actualAPR
   portfolio.ethAdjustedUnrealisedPnL = roi

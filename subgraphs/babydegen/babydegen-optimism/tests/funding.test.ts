@@ -22,9 +22,9 @@ const WALLET_7702 = Address.fromString("0x8ce734aabe677aed77b69f1d391cdb610a21d6
 const SAFE_CL = Address.fromString("0xd32613ed605be41d9c7fbc85f2ccb4fba59778ac")
 const CL_POOL = Address.fromString("0x1737275d53a5ca5dac582a493aa32c85ba2cfad3")
 
-// An address as an indexed event topic
 const WETH_DEPOSIT_TOPIC = "0xe1fffcc4923d04b559f4d29a8bfc6cda04eb5b0d3c460751c2402c5c5cc9109c"
 
+// An address as an indexed event topic
 function addressTopic(addr: Address): string {
   return "0x000000000000000000000000" + addr.toHexString().slice(2)
 }

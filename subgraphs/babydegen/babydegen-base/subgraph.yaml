@@ -4,9 +4,8 @@ schema:
 # BabyDegen Base (Basius) — Aerodrome / Aero port of babydegen-optimism.
 # Indexing filters by Olas agentId 115 and tracks every Basius service
 # (currently 607/610/611/612 on Base); see src/serviceRegistry.ts.
-# NOTE: every tracked token and ETH counts as funding in, or as a withdrawal out (see isUserSide /
-# isWithdrawalRecipient in src/common.ts). Handlers that decide a withdrawal from the receipt (token
-# Transfers and the Safe's ExecutionSuccess) need `receipt: true`.
+# NOTE: token Transfer handlers and the Safe's ExecutionSuccess read the receipt (`receipt: true`);
+# the funding and withdrawal rules are in CLAUDE.md.
 #
 # startBlock 47163056 = earliest agentId-115 (Basius) service registration
 # (service 607, 2026-06-10); nothing relevant exists on Base before it.

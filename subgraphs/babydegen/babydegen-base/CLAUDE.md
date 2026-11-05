@@ -146,7 +146,7 @@ Schema and the entire portfolio/ROI/APR/snapshot/population pipeline are **ident
 babydegen-optimism (network-agnostic). The website KPIs map to existing entities:
 
 - "APR relative to USDC – MA7D" → `DailyPopulationMetric.sma7dAPR`
-- "APR relative to ETH – MA7D" → `DailyPopulationMetric.sma7dEthAdjustedAPR` (deprecated: equals `sma7dAPR`)
+- "APR relative to ETH – MA7D" → `DailyPopulationMetric.sma7dEthAdjustedAPR`
 - per-day ROI (explorer heatmap) → `AgentPortfolioSnapshot.roi`
 
 The `ethAdjusted*` fields are deprecated and equal their unadjusted counterparts.
@@ -158,7 +158,8 @@ The `ethAdjusted*` fields are deprecated and equal their unadjusted counterparts
   not one of `Service.agentInstances`. The Safe itself, its agent EOAs and the zero address never are.
 - An outflow to any other contract is a withdrawal only when the receipt shows nothing coming
   back to the Safe: no ERC-20/ERC-721 `Transfer` to it, no WETH `Deposit` for it (wrapping) and no `SafeReceived` it emitted
-  (`isWithdrawalRecipient`). With no receipt it is not counted. Token and Safe handlers set `receipt: true`.
+  (`isWithdrawalRecipient`). With no receipt it is not counted. Token Transfer handlers and the Safe's `ExecutionSuccess` set `receipt: true`;
+  the other Safe handlers never read it.
 - ETH in comes from `SafeReceived`. ETH out is decoded from the Safe's `execTransaction` calldata
   (`ethSentBySafe`): its Call's value, or each Call of a `multiSend` it delegatecalls. ETH to an
   agent EOA lowers value as a cost. A module execution or a relayed execTransaction is not
