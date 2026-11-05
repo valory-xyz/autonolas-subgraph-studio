@@ -349,7 +349,7 @@ Deprecated: every `ethAdjusted*` field equals its unadjusted counterpart. Subtra
 - Stablecoins have no lower price bound, so a depeg is recorded: `depegged` below $0.98
 - A pool's pair leg is priced from its own token config, never taken as $1: its Chainlink source, else its `velodrome_v2` pool when that pool's pair leg has a feed (LUSD); otherwise the pool gives no price (`getPairTokenPrice`). Feed staleness is judged against the event's block, with a 90000s limit (24h heartbeat + grace)
 - The no-floor stablecoin band ($0–1.50; USDC $0–1.05) applies to every `STABLECOINS` token
-- A stable pool's `getAmountOut` quote is net of the pool's swap fee (5 bps on the stable pools in use), so its price reads about 0.9995 × the fee-free price
+- A stable pool's `getAmountOut` quote is net of the pool's swap fee, so its price reads below the fee-free price by that fee (about 0.9995 × at Velodrome's default 5 bps stable fee)
 
 ### Caching
 - 5-minute cache for token prices

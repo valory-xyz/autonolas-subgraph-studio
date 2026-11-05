@@ -176,7 +176,7 @@ The `ethAdjusted*` fields are deprecated and equal their unadjusted counterparts
 - A pool's pair leg is priced from its own token config (its Chainlink source), never taken as $1;
   a pair leg with none gives no pool price. Feed staleness is judged against the event's block.
 - Every `STABLECOINS` token gets the no-floor band ($0–1.50; USDC $0–1.05).
-- A stable pool's `getAmountOut` quote is net of the pool's swap fee (about 0.9995 × on a 5 bps pool). A v2 pool whose `stable()` is true is
+- A stable pool's `getAmountOut` quote is net of the pool's swap fee (about 0.9995 × at the default 5 bps stable fee). A v2 pool whose `stable()` is true is
   priced from its `getAmountOut` quote for one token, not its reserve ratio.
 
 ### Position income (`positionIncome.ts`)
