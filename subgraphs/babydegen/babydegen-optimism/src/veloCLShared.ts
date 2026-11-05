@@ -246,14 +246,25 @@ export function refreshVeloCLPositionWithExitAmounts(
     const exitUsd1 = exitAmount1Human.times(token1Price)
     const exitUsd = exitUsd0.plus(exitUsd1)
     
+    // positions() reads end-of-block state, so every decrease in the burn block lands here: one
+    // already closed in this block adds to its exit
+    const prevExit = pp.exitTimestamp
+    if (!pp.isActive && prevExit !== null && prevExit.equals(block.timestamp)) {
+      pp.exitAmount0 = pp.exitAmount0!.plus(exitAmount0Human)
+      pp.exitAmount0USD = pp.exitAmount0USD!.plus(exitUsd0)
+      pp.exitAmount1 = pp.exitAmount1!.plus(exitAmount1Human)
+      pp.exitAmount1USD = pp.exitAmount1USD!.plus(exitUsd1)
+      pp.exitAmountUSD = pp.exitAmountUSD!.plus(exitUsd)
+    } else {
+      pp.exitAmount0 = exitAmount0Human
+      pp.exitAmount0USD = exitUsd0
+      pp.exitAmount1 = exitAmount1Human
+      pp.exitAmount1USD = exitUsd1
+      pp.exitAmountUSD = exitUsd
+    }
     pp.isActive = false
     pp.exitTxHash = txHash
     pp.exitTimestamp = block.timestamp
-    pp.exitAmount0 = exitAmount0Human
-    pp.exitAmount0USD = exitUsd0
-    pp.exitAmount1 = exitAmount1Human
-    pp.exitAmount1USD = exitUsd1
-    pp.exitAmountUSD = exitUsd
     
     pp.amount0 = BigDecimal.zero()
     pp.amount1 = BigDecimal.zero()
