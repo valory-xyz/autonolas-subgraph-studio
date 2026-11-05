@@ -192,7 +192,7 @@ function initializeTokens(): void {
     ]
   ))
 
-  // BOLD - Maintain both sources as we should monitor BOLD/LUSD
+  // BOLD - BOLD/LUSD is read only when the BOLD/USDC pool gives no price
   TOKENS.set("0x087c440f251ff6cfe62b86dde1be558b95b4bb9b", new TokenConfig(
     Address.fromString("0x087c440f251ff6cfe62b86dde1be558b95b4bb9b"),
     "BOLD",

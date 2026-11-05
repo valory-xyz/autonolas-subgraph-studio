@@ -15,6 +15,7 @@ const DOLA_USDC_POOL = Address.fromString("0x6c5019d345ec05004a7e7b0623a91a0d9b8
 const SDAI_USDC_CL_POOL = Address.fromString("0x131525f3fa23d65dc2b1eb8b6483a28c43b06916")
 const LUSD_USDC_POOL = Address.fromString("0x4f3da11c5cadf644ae023dbad01008a934c993e2")
 const BOLD_LUSD_POOL = Address.fromString("0xfe09d5156c4d4ac3b57b192608a8423401bac186")
+const BOLD_USDC_POOL = Address.fromString("0xf5ce76b51a4d7f0242bb02b830a73abfa9792157")
 const VELO_USDC_POOL = Address.fromString("0xa0A215dE234276CAc1b844fD58901351a50fec8A")
 const OTHER_POOL = Address.fromString("0x00000000000000000000000000000000000000c1")
 const ONE_18 = BigInt.fromString("1000000000000000000")
@@ -171,6 +172,24 @@ describe("pool pair legs", () => {
     mockImbalancedStablePool(LUSD_USDC_POOL, LUSD, USDC_NATIVE, ONE_18, 900000)
     mockImbalancedStablePool(BOLD_LUSD_POOL, BOLD, LUSD, ONE_18, 1000000000000000000)
     assert.stringEquals(getVelodromeV2Price(BOLD, BOLD_LUSD_POOL, LUSD).toString(), "0.9")
+  })
+
+  test("a priority-2 pool is not averaged in while the priority-1 pool prices", () => {
+    // BOLD/USDC (priority 1) at $1; BOLD/LUSD (priority 2) at $0.90 because LUSD trades at $0.90
+    mockImbalancedStablePool(BOLD_USDC_POOL, BOLD, USDC_NATIVE, ONE_18, 1000000)
+    mockImbalancedStablePool(LUSD_USDC_POOL, LUSD, USDC_NATIVE, ONE_18, 900000)
+    mockImbalancedStablePool(BOLD_LUSD_POOL, BOLD, LUSD, ONE_18, 1000000000000000000)
+    assert.stringEquals(getTokenPriceUSD(BOLD, BLOCK_TIMESTAMP).toString(), "1")
+    assert.fieldEquals("Token", BOLD.toHexString(), "depegged", "false")
+  })
+
+  test("the priority-2 pool prices when the priority-1 pool gives no price", () => {
+    createMockedFunction(BOLD_USDC_POOL, "token0", "token0():(address)").withArgs([]).reverts()
+    createMockedFunction(BOLD_USDC_POOL, "token1", "token1():(address)").withArgs([]).reverts()
+    createMockedFunction(BOLD_USDC_POOL, "getReserves", "getReserves():(uint256,uint256,uint256)").withArgs([]).reverts()
+    mockImbalancedStablePool(LUSD_USDC_POOL, LUSD, USDC_NATIVE, ONE_18, 900000)
+    mockImbalancedStablePool(BOLD_LUSD_POOL, BOLD, LUSD, ONE_18, 1000000000000000000)
+    assert.stringEquals(getTokenPriceUSD(BOLD, BLOCK_TIMESTAMP).toString(), "0.9")
   })
 
   test("a pair token with no feed gives no pool price", () => {
