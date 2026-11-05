@@ -333,6 +333,15 @@ describe("ETH funding uses the same user-side rule", () => {
     ethBalance(SAFE_CL, "1")
   })
 
+  test("ETH funding is valued at WETH's price, as its token balance is", () => {
+    // The ETH/USD feed answers $2000; WETH's own price is $2500
+    seedTokenPrice(WETH, "WETH", 18, "2500")
+    seedService(SAFE_CL, OPERATOR_SAFE, AGENT_INSTANCE)
+    seedAddressType(USER_EOA, false, false)
+    processSafeReceived(newSafeReceived(SAFE_CL, USER_EOA, ONE_ETH), seededAddressType)
+    fundingField(SAFE_CL, "totalInUsd", "2500")
+  })
+
   test("ETH the Safe sends to the user's EOA in execTransaction is a withdrawal", () => {
     fundOneEth(SAFE_CL)
     processSafeEthTransfer(SAFE_CL, newExecution(SAFE_CL, EXEC_ETH_TO_USER, BigInt.zero(), null), seededAddressType)
