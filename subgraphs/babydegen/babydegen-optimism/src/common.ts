@@ -82,8 +82,8 @@ function isUserSideOther(addr: Address, service: Service, event: ethereum.Event,
   return !addressType.isContract || addressType.isSafe
 }
 
-// The user's side of a funding flow: the operator Safe, any other Safe, or an EOA that is not
-// one of the service's agent EOAs (gas sent to those is a cost, not a withdrawal)
+// Rules out the service's own addresses (its Safe, agent EOAs, the zero address) before the
+// user-side rule; gas sent to an agent EOA is a cost, not a withdrawal
 export function isUserSide(
   addr: Address,
   serviceSafe: Address,
@@ -104,9 +104,12 @@ export function uintAt(bytes: Uint8Array, offset: i32): BigInt {
   return BigInt.fromUnsignedBytes(changetype<Bytes>(bytes.slice(offset, offset + ABI_WORD).reverse()))
 }
 
-// The address in the ABI word at `offset` (its last 20 bytes)
+// An address fills the last 20 bytes of its ABI word
+const ADDRESS_PADDING = 12
+
+// The address in the ABI word at `offset`
 export function addressAt(bytes: Uint8Array, offset: i32): Address {
-  return Address.fromBytes(Bytes.fromUint8Array(bytes.subarray(offset + 12, offset + ABI_WORD)))
+  return Address.fromBytes(Bytes.fromUint8Array(bytes.subarray(offset + ADDRESS_PADDING, offset + ABI_WORD)))
 }
 
 // True when the receipt shows anything coming back to the Safe: an ERC-20 / ERC-721 Transfer
@@ -148,8 +151,10 @@ export function isWithdrawalRecipient(
   }
   let receipt = event.receipt
   if (receipt == null) {
-    log.warning("[WITHDRAWAL] No receipt for tx {} — outflow to contract {} not counted", [
+    // Every handler that reaches this sets `receipt: true`, so a missing receipt is a manifest bug
+    log.error("[WITHDRAWAL] No receipt for tx {} — outflow from safe {} to contract {} not counted", [
       event.transaction.hash.toHexString(),
+      serviceSafe.toHexString(),
       addr.toHexString()
     ])
     return false

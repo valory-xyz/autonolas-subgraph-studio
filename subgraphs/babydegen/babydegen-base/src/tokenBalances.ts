@@ -210,7 +210,7 @@ export function processERC20Transfer(event: TransferEvent, readAddressType: Addr
   }
 }
 
-function transferUsdValue(value: BigInt, tokenAddress: Address, safe: Address, event: ethereum.Event): BigDecimal {
+export function transferUsdValue(value: BigInt, tokenAddress: Address, safe: Address, event: ethereum.Event): BigDecimal {
   let tokenPrice = getTokenPriceUSD(tokenAddress, event.block.timestamp, false)
   if (tokenPrice.equals(BigDecimal.zero())) {
     log.warning("FUNDING: token {} has no price — its transfer for safe {} in tx {} is valued at $0", [

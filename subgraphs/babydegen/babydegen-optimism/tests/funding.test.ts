@@ -74,7 +74,8 @@ describe("funding: every tracked token counts", () => {
     processERC20Transfer(newTransfer(USDC_NATIVE, USER_EOA, SAFE_CL, BigInt.fromI64(1000000000), 2, newReceipt([])), seededAddressType)
     // $2000 held against $2000 funded: no profit
     assert.fieldEquals("AgentPortfolio", SAFE_CL.toHexString(), "initialValue", "2000")
-    assert.fieldEquals("AgentPortfolio", SAFE_CL.toHexString(), "roi", "0")
+    assert.fieldEquals("AgentPortfolio", SAFE_CL.toHexString(), "finalValue", "2000")
+    assert.fieldEquals("AgentPortfolio", SAFE_CL.toHexString(), "unrealisedPnL", "0")
   })
 
   test("a withdrawal is in the portfolio's value when its metrics are recalculated", () => {
@@ -85,7 +86,8 @@ describe("funding: every tracked token counts", () => {
     // $600 held plus $400 withdrawn against $1000 funded
     assert.fieldEquals("AgentPortfolio", SAFE_CL.toHexString(), "uninvestedValue", "600")
     assert.fieldEquals("AgentPortfolio", SAFE_CL.toHexString(), "totalWithdrawnUsd", "400")
-    assert.fieldEquals("AgentPortfolio", SAFE_CL.toHexString(), "roi", "0")
+    assert.fieldEquals("AgentPortfolio", SAFE_CL.toHexString(), "finalValue", "1000")
+    assert.fieldEquals("AgentPortfolio", SAFE_CL.toHexString(), "unrealisedPnL", "0")
   })
 
   test("a deposit from another Safe is funding", () => {
@@ -329,6 +331,28 @@ describe("ETH funding uses the same user-side rule", () => {
     processSafeReceived(newSafeReceived(SAFE_CL, AGENT_INSTANCE, BigInt.fromString("500000000000000000")), seededAddressType)
     assert.notInStore("FundingBalance", SAFE_CL.toHexString())
     ethBalance(SAFE_CL, "1")
+  })
+
+  test("ETH funding is in the portfolio's initial value when its metrics are recalculated", () => {
+    fundOneEth(SAFE_CL)
+    assert.fieldEquals("AgentPortfolio", SAFE_CL.toHexString(), "initialValue", "2000")
+    assert.fieldEquals("AgentPortfolio", SAFE_CL.toHexString(), "finalValue", "2000")
+    assert.fieldEquals("AgentPortfolio", SAFE_CL.toHexString(), "unrealisedPnL", "0")
+  })
+
+  test("an ETH withdrawal is in the portfolio's value when its metrics are recalculated", () => {
+    fundOneEth(SAFE_CL)
+    // 0.5 ETH to the operator Safe, read from its SafeReceived
+    processSafeReceived(newSafeReceived(OPERATOR_SAFE, SAFE_CL, BigInt.fromString("500000000000000000")), seededAddressType)
+    assert.fieldEquals("AgentPortfolio", SAFE_CL.toHexString(), "totalWithdrawnUsd", "1000")
+    assert.fieldEquals("AgentPortfolio", SAFE_CL.toHexString(), "finalValue", "2000")
+  })
+
+  test("an ETH send read from the calldata is in the portfolio's value when its metrics are recalculated", () => {
+    fundOneEth(SAFE_CL)
+    processSafeEthTransfer(SAFE_CL, newExecution(SAFE_CL, EXEC_ETH_TO_USER, BigInt.zero(), null), seededAddressType)
+    assert.fieldEquals("AgentPortfolio", SAFE_CL.toHexString(), "totalWithdrawnUsd", "1000")
+    assert.fieldEquals("AgentPortfolio", SAFE_CL.toHexString(), "uninvestedValue", "1000")
   })
 
   test("ETH funding is valued at WETH's price, as its token balance is", () => {

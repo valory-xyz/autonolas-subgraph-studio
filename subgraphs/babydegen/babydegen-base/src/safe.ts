@@ -7,21 +7,33 @@ import {
 } from "../generated/templates/Safe/Safe"
 import { isUserSide, isWithdrawalRecipient, getAddressType, AddressTypeReader, uintAt, addressAt, ABI_WORD } from "./common"
 import { getServiceByAgent } from "./config"
-import { updateFundingBalance, updateWithdrawalBalance, updateETHBalance } from "./tokenBalances"
-import { getTokenPriceUSD } from "./priceDiscovery"
-import { convertTokenAmount } from "./tokenUtils"
+import { updateFundingBalance, updateWithdrawalBalance, updateETHBalance, transferUsdValue } from "./tokenBalances"
+import { calculatePortfolioMetrics } from "./helpers"
 import { WETH } from "./constants"
 
-// ETH funding and withdrawals use the same user-side rule as ERC-20 ones (isUserSide, common.ts).
+// ETH funding and withdrawals use the ERC-20 rules (common.ts): isUserSide for funding in and for
+// a send into another indexed Safe, isWithdrawalRecipient for a send read from the calldata.
 // ETH in comes from SafeReceived; ETH out from the execTransaction calldata, and from the
-// SafeReceived of another Safe we index when that calldata could not be read.
+// SafeReceived of another Safe we index when that calldata could not be read. ETH is valued as WETH.
 
 const EXEC_TRANSACTION_SELECTOR = "0x6a761202" // execTransaction(address,uint256,bytes,uint8,uint256,uint256,uint256,address,address,bytes)
 const MULTI_SEND_SELECTOR = "0x8d80ff0a"       // multiSend(bytes)
 const OPERATION_CALL = 0
 const OPERATION_DELEGATECALL = 1
+const SELECTOR_LENGTH = 4
 // MultiSend packs each call as operation (1 byte) | to (20) | value (32) | data length (32) | data
+const PACKED_TO = 1
+const PACKED_VALUE = 21
+const PACKED_DATA_LENGTH = 53
 const PACKED_CALL_HEADER = 85
+
+// Why the last ethSentBySafe call returned null, for the SAFE_ETH: warning
+let unreadableReason = ""
+
+function unreadable(reason: string): EthSend[] | null {
+  unreadableReason = reason
+  return null
+}
 
 export function handleSafeReceived(event: SafeReceivedEvent): void {
   processSafeReceived(event, getAddressType)
@@ -48,9 +60,10 @@ export function processSafeReceived(event: SafeReceivedEvent, readAddressType: A
   let toService = getServiceByAgent(to)
   if (toService !== null) {
     if (isUserSide(from, to, event, readAddressType)) {
-      updateFundingBalance(to, ethUsdValue(value, event.block), event.block.timestamp, txHash)
+      updateFundingBalance(to, transferUsdValue(value, WETH, to, event), event.block.timestamp, txHash)
     }
     updateETHBalance(to, value, true, event.block)
+    calculatePortfolioMetrics(to, event.block)
     return
   }
 
@@ -62,14 +75,10 @@ export function processSafeReceived(event: SafeReceivedEvent, readAddressType: A
   }
   // Only Safes we index emit SafeReceived; the operator Safe and any other Safe are the user side
   if (isUserSide(to, from, event, readAddressType)) {
-    updateWithdrawalBalance(from, ethUsdValue(value, event.block), event.block.timestamp)
+    updateWithdrawalBalance(from, transferUsdValue(value, WETH, from, event), event.block.timestamp)
   }
   updateETHBalance(from, value, false, event.block)
-}
-
-// ETH is priced as WETH, as its TokenBalance is
-function ethUsdValue(wei: BigInt, block: ethereum.Block): BigDecimal {
-  return convertTokenAmount(wei, WETH).times(getTokenPriceUSD(WETH, block.timestamp, false))
+  calculatePortfolioMetrics(from, event.block)
 }
 
 // ETH the Safe sends to one address in one call of an execTransaction
@@ -93,7 +102,7 @@ function sizeAt(bytes: Uint8Array, offset: i32): i32 {
 }
 
 function hasSelector(bytes: Uint8Array, selector: string): boolean {
-  return bytes.length >= 4 && Bytes.fromUint8Array(bytes.subarray(0, 4)).toHexString() == selector
+  return bytes.length >= SELECTOR_LENGTH && Bytes.fromUint8Array(bytes.subarray(0, SELECTOR_LENGTH)).toHexString() == selector
 }
 
 // The `bytes` argument whose offset is in the head word at `head`, or null when it runs past `args`
@@ -110,21 +119,21 @@ function bytesArgAt(args: Uint8Array, head: i32): Uint8Array | null {
 // null when the packed calls cannot be read
 function multiSendEthSends(data: Uint8Array): EthSend[] | null {
   let sends: EthSend[] = []
-  let packed = bytesArgAt(data.subarray(4), 0)
+  let packed = bytesArgAt(data.subarray(SELECTOR_LENGTH), 0)
   if (packed === null) {
-    return null
+    return unreadable("multiSend bytes argument runs past the calldata")
   }
   let i = 0
   while (i < packed.length) {
     if (i + PACKED_CALL_HEADER > packed.length) {
-      return null
+      return unreadable("multiSend packed call truncated")
     }
     let operation = packed[i] as i32
-    let to = Address.fromBytes(Bytes.fromUint8Array(packed.subarray(i + 1, i + 21)))
-    let value = uintAt(packed, i + 21)
-    let dataLength = sizeAt(packed, i + 53)
+    let to = Address.fromBytes(Bytes.fromUint8Array(packed.subarray(i + PACKED_TO, i + PACKED_VALUE)))
+    let value = uintAt(packed, i + PACKED_VALUE)
+    let dataLength = sizeAt(packed, i + PACKED_DATA_LENGTH)
     if (dataLength < 0) {
-      return null
+      return unreadable("multiSend packed call data length runs past the calldata")
     }
     // A packed DELEGATECALL runs code in the Safe; its `value` field moves no ETH
     if (operation == OPERATION_CALL && value.gt(BigInt.zero())) {
@@ -140,12 +149,15 @@ function multiSendEthSends(data: Uint8Array): EthSend[] | null {
 // execTransaction relayed through another contract is not readable here.
 function ethSentBySafe(safe: Address, tx: ethereum.Transaction): EthSend[] | null {
   let txTo = tx.to
-  if (txTo === null || !txTo.equals(safe) || !hasSelector(tx.input, EXEC_TRANSACTION_SELECTOR)) {
-    return null
+  if (txTo === null || !txTo.equals(safe)) {
+    return unreadable("the tx is not sent to the Safe (relayed or module execution)")
   }
-  let args = tx.input.subarray(4)
+  if (!hasSelector(tx.input, EXEC_TRANSACTION_SELECTOR)) {
+    return unreadable("the tx is not an execTransaction")
+  }
+  let args = tx.input.subarray(SELECTOR_LENGTH)
   if (args.length < 4 * ABI_WORD) {
-    return null
+    return unreadable("execTransaction calldata too short")
   }
   let to = addressAt(args, 0)
   let value = uintAt(args, ABI_WORD)
@@ -154,13 +166,16 @@ function ethSentBySafe(safe: Address, tx: ethereum.Transaction): EthSend[] | nul
     return value.gt(BigInt.zero()) ? [new EthSend(to, value)] : []
   }
   if (!operation.equals(BigInt.fromI32(OPERATION_DELEGATECALL))) {
-    return null
+    return unreadable("unsupported operation " + operation.toString())
   }
   let data = bytesArgAt(args, 2 * ABI_WORD)
   if (data === null) {
-    return null
+    return unreadable("execTransaction data argument runs past the calldata")
   }
-  return hasSelector(data!, MULTI_SEND_SELECTOR) ? multiSendEthSends(data!) : null
+  if (!hasSelector(data, MULTI_SEND_SELECTOR)) {
+    return unreadable("delegatecall to " + to.toHexString() + " is not a multiSend")
+  }
+  return multiSendEthSends(data)
 }
 
 // True when `safe`'s own calldata in this tx shows it sending `value` ETH to `to`
@@ -177,12 +192,7 @@ function decodedSendOf(safe: Address, tx: ethereum.Transaction, to: Address, val
   return false
 }
 
-/**
- * ETH the service Safe sends out in an execTransaction (its ExecutionSuccess)
- * @param serviceSafe The safe address that executed the transaction
- * @param event The Safe event, whose transaction and receipt are read
- * @param readAddressType Address-type reader, getAddressType outside tests
- */
+// ETH the service Safe sends out in an execTransaction; reads the receipt (needs `receipt: true`)
 export function processSafeEthTransfer(
   serviceSafe: Address,
   event: ethereum.Event,
@@ -194,9 +204,10 @@ export function processSafeEthTransfer(
   let block = event.block
   let sends = ethSentBySafe(serviceSafe, event.transaction)
   if (sends === null) {
-    log.warning("SAFE_ETH: tx {} — ETH safe {} sends is not readable from the tx calldata (relayed or malformed execTransaction); any ETH it sent is not counted", [
+    log.warning("SAFE_ETH: tx {} — ETH safe {} sends is not read ({}); any ETH it sent is not counted", [
       event.transaction.hash.toHexString(),
-      serviceSafe.toHexString()
+      serviceSafe.toHexString(),
+      unreadableReason
     ])
     return
   }
@@ -204,8 +215,11 @@ export function processSafeEthTransfer(
     let send = sends[i]
     updateETHBalance(serviceSafe, send.value, false, block)
     if (isWithdrawalRecipient(send.to, serviceSafe, event, readAddressType)) {
-      updateWithdrawalBalance(serviceSafe, ethUsdValue(send.value, block), block.timestamp)
+      updateWithdrawalBalance(serviceSafe, transferUsdValue(send.value, WETH, serviceSafe, event), block.timestamp)
     }
+  }
+  if (sends.length > 0) {
+    calculatePortfolioMetrics(serviceSafe, block)
   }
 }
 
