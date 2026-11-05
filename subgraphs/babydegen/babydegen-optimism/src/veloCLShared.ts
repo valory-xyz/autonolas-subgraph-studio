@@ -68,8 +68,8 @@ export function clVenueForManager(manager: Address): CLVenue {
   return clVenueFor(PROTOCOL_VELODROME_V3)
 }
 
-// What refreshVeloCLPosition needs to create a position it hasn't seen: the NFT's owner and
-// the venue of the NFPM that minted it.
+// What createVeloCLPosition needs to create a position: the NFT's owner and the venue of the
+// NFPM that minted it.
 export class CLPositionCreate {
   owner: Address
   venue: CLVenue
@@ -442,9 +442,9 @@ function refreshOrCreateCLPosition(
       // VELO and xAERO are both 18-dec.
       const rewardPrice = getTokenPriceUSD(venue.rewardToken, block.timestamp, false)
       rewardUSD = rewardAmount.times(rewardPrice)
-    } else if (venue.protocol == PROTOCOL_AERO_CL) {
+    } else {
       log.warning(
-        "xAERO rewards: gauge.earned() reverted for active CL position {} (gauge {}, account {}, tokenId {}) — recording 0 reward.",
+        "CL rewards: gauge.earned() reverted for active CL position {} (gauge {}, account {}, tokenId {}) — recording 0 reward.",
         [positionId.toString(), gaugeAddress.toHexString(), nftOwner.toHexString(), tokenId.toString()]
       )
     }

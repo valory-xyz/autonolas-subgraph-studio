@@ -195,7 +195,7 @@ export function processERC20Transfer(event: TransferEvent, readAddressType: Addr
     calculatePortfolioMetrics(to, event.block)
     
     if (isUserSide(from, to, event, readAddressType)) {
-      let usdValue = transferUsdValue(value, tokenAddress, tokenConfig.decimals, event.block.timestamp)
+      let usdValue = transferUsdValue(value, tokenAddress, tokenConfig.decimals, to, event)
       updateFundingBalance(to, usdValue, true, event.block.timestamp, txHash)
     }
   }
@@ -207,15 +207,20 @@ export function processERC20Transfer(event: TransferEvent, readAddressType: Addr
     
     // Withdrawals are tracked separately so the initial value is preserved
     if (isWithdrawalRecipient(to, from, event, readAddressType)) {
-      let usdValue = transferUsdValue(value, tokenAddress, tokenConfig.decimals, event.block.timestamp)
+      let usdValue = transferUsdValue(value, tokenAddress, tokenConfig.decimals, from, event)
       updateWithdrawalBalance(from, usdValue, event.block.timestamp)
     }
   }
 }
 
-function transferUsdValue(value: BigInt, tokenAddress: Address, decimals: i32, timestamp: BigInt): BigDecimal {
+function transferUsdValue(value: BigInt, tokenAddress: Address, decimals: i32, safe: Address, event: ethereum.Event): BigDecimal {
   let divisor = BigDecimal.fromString("1" + "0".repeat(decimals))
-  let tokenPrice = getTokenPriceUSD(tokenAddress, timestamp, false)
+  let tokenPrice = getTokenPriceUSD(tokenAddress, event.block.timestamp, false)
+  if (tokenPrice.equals(BigDecimal.zero())) {
+    log.warning("FUNDING: token {} has no price — its transfer for safe {} in tx {} is valued at $0", [
+      tokenAddress.toHexString(), safe.toHexString(), event.transaction.hash.toHexString()
+    ])
+  }
   return value.toBigDecimal().div(divisor).times(tokenPrice)
 }
 

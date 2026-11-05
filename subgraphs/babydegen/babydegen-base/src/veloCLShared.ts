@@ -68,8 +68,8 @@ export function clVenueForManager(manager: Address): CLVenue {
   return clVenueFor(PROTOCOL_VELODROME_V3)
 }
 
-// What refreshVeloCLPosition needs to create a position it hasn't seen: the NFT's owner and
-// the venue of the NFPM that minted it.
+// What createVeloCLPosition needs to create a position: the NFT's owner and the venue of the
+// NFPM that minted it.
 export class CLPositionCreate {
   owner: Address
   venue: CLVenue

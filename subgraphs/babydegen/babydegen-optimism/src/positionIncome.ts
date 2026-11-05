@@ -7,7 +7,7 @@ import {
   CreditedRewardClaim,
   Service
 } from "../generated/schema"
-import { PROTOCOL_VELODROME_V3, PROTOCOL_AERO_CL, rewardTokenFor } from "./constants"
+import { PROTOCOL_VELODROME_V3, PROTOCOL_AERO_CL, PROTOCOL_AERO_V2, rewardTokenFor } from "./constants"
 import { getTokenPriceUSD } from "./priceDiscovery"
 import { getTokenDecimals } from "./tokenUtils"
 import { calculatePositionROI } from "./roiCalculation"
@@ -154,10 +154,7 @@ function creditReward(position: ProtocolPosition, amount: BigDecimal, priceUSD: 
 }
 
 function splitReward(positions: ProtocolPosition[], weights: BigDecimal[], amount: BigDecimal, priceUSD: BigDecimal): void {
-  let total = BigDecimal.zero()
-  for (let i = 0; i < weights.length; i++) {
-    total = total.plus(weights[i])
-  }
+  let total = sum(weights)
   for (let i = 0; i < positions.length; i++) {
     creditReward(positions[i], amount.times(weights[i]).div(total), priceUSD)
   }
@@ -202,11 +199,21 @@ function attributeEmissionsClaims(
     }
     let claimAmount = wordToBigInt(logs[i].data)
     let claimId = event.transaction.hash.concatI32(logs[i].logIndex.toI32())
-    if (paid.plus(claimAmount).gt(amount) || CreditedRewardClaim.load(claimId) != null) {
+    if (CreditedRewardClaim.load(claimId) != null) {
       continue
     }
-    let position = loadMappedPosition(PROTOCOL_AERO_CL, wordToBigInt(topics[2]))
+    let tokenId = wordToBigInt(topics[2])
+    if (paid.plus(claimAmount).gt(amount)) {
+      log.warning("REWARDS: tx {} — EmissionsClaimed for tokenId {} ({}) is not covered by the Transfer of {} to safe {}", [
+        event.transaction.hash.toHexString(), tokenId.toString(), claimAmount.toString(), amount.toString(), safe.toHexString()
+      ])
+      continue
+    }
+    let position = loadMappedPosition(PROTOCOL_AERO_CL, tokenId)
     if (position == null || !Address.fromBytes(position.agent).equals(safe)) {
+      log.warning("REWARDS: tx {} — EmissionsClaimed to safe {} names tokenId {}, which is not one of its aero-cl positions", [
+        event.transaction.hash.toHexString(), safe.toHexString(), tokenId.toString()
+      ])
       continue
     }
     new CreditedRewardClaim(claimId).save()
@@ -223,6 +230,25 @@ function attributeEmissionsClaims(
     ])
   }
   return credited
+}
+
+// Aero v2 gauges pay through LeafEmissionsHandler (Optimism) or by mint (Base), not from the gauge,
+// and their claims are not attributed to a position yet: say so rather than drop the reward silently
+function warnIfAeroV2Reward(event: ethereum.Event, safe: Address, service: Service): void {
+  if (!event.address.equals(rewardTokenFor(PROTOCOL_AERO_V2))) {
+    return
+  }
+  let positionIds = service.positionIds
+  for (let i = 0; i < positionIds.length; i++) {
+    let position = ProtocolPosition.load(positionIds[i])
+    if (position != null && position.isActive && position.protocol == PROTOCOL_AERO_V2) {
+      log.warning("REWARDS: tx {} — Aero reward Transfer to safe {}, which holds aero-v2 positions, is not attributed to a position", [
+        event.transaction.hash.toHexString(),
+        safe.toHexString()
+      ])
+      return
+    }
+  }
 }
 
 // The tokenId of the first Withdraw(user = Safe, tokenId, …) the gauge emits after the reward Transfer
@@ -245,7 +271,7 @@ function nextGaugeWithdrawTokenId(
 }
 
 // Credits a reward token Transfer into a Safe to the position(s) that earned it. Returns false
-// when the Transfer is not a reward claim. Needs the event's receipt (`receipt: true`).
+// when the Transfer is not a reward claim, or when the event has no receipt (`receipt: true`).
 export function attributeRewardTransfer(event: ethereum.Event, from: Address, safe: Address, amount: BigInt): boolean {
   let receipt = event.receipt
   if (receipt == null) {
@@ -276,6 +302,7 @@ export function attributeRewardTransfer(event: ethereum.Event, from: Address, sa
     }
   }
   if (onGauge.length == 0) {
+    warnIfAeroV2Reward(event, safe, service)
     return false
   }
 
@@ -292,7 +319,7 @@ export function attributeRewardTransfer(event: ethereum.Event, from: Address, sa
     }
   }
 
-  // No tokenId in the receipt: a CL getReward(tokenId) claim splits by what each position had
+  // No Withdraw names a tracked position: a CL getReward(tokenId) claim splits by what each position had
   // earned before the claim, a v2 gauge (one LP position per pool) by liquidity
   let active: ProtocolPosition[] = []
   let earnedBefore: BigDecimal[] = []

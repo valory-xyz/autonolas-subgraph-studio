@@ -66,6 +66,9 @@ export function getTokenPriceUSD(
   // No valid price: keep the last valid one, marked stale; a token never priced stays unpriced
   if (token.derivedUSD.gt(BigDecimal.zero())) {
     if (!token.priceStale) {
+      log.warning("PRICING: no valid price for {} ({}) — keeping its last price {}, marked stale", [
+        token.symbol, tokenAddress.toHexString(), token.derivedUSD.toString()
+      ])
       token.priceStale = true
       token.save()
     }

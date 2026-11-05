@@ -11,7 +11,7 @@ import { refreshVeloCLPosition, refreshVeloCLPositionWithEventAmounts, refreshVe
 import { Address, BigInt, ethereum, log } from "@graphprotocol/graph-ts"
 import { ProtocolPosition, NFTPositionMapping } from "../generated/schema"
 import { calculatePortfolioMetrics } from "./helpers"
-import { recordReleasedPrincipal, recordCollectedFees } from "./positionIncome"
+import { mapNFTPosition, recordReleasedPrincipal, recordCollectedFees } from "./positionIncome"
 
 const ZERO_ADDRESS = Address.fromString("0x0000000000000000000000000000000000000000")
 
@@ -31,18 +31,9 @@ export function handleNFTTransfer(event: Transfer): void {
     const toService = getServiceByAgent(to)
     
     if (toService != null) {
-      // Create mapping entity for this NFT
-      const mappingId = getCLMappingId(protocol, tokenId)
-      let mapping = NFTPositionMapping.load(mappingId)
-      
       const create = new CLPositionCreate(to, venue)
       const positionId = create.positionId(tokenId)
-      if (mapping == null) {
-        mapping = new NFTPositionMapping(mappingId)
-        mapping.protocol = protocol
-        mapping.positionId = positionId
-        mapping.save()
-      }
+      mapNFTPosition(protocol, tokenId, positionId)
       
       if (ProtocolPosition.load(positionId) == null) {
         // Create placeholder position - amounts will be set by IncreaseLiquidity

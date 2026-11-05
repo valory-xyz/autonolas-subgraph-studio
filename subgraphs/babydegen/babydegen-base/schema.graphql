@@ -94,7 +94,7 @@ type ProtocolPosition @entity(immutable: false) {
   collectedFees0: BigDecimal!        # Fee part of Collect in token0, principal excluded
   collectedFees1: BigDecimal!        # Fee part of Collect in token1, principal excluded
   collectedFeesUSD: BigDecimal!      # Valued at each Collect
-  claimedRewards: BigDecimal!        # Reward token units (VELO / AERO / xAERO)
+  claimedRewards: BigDecimal!        # Reward token units: legacy AERO or Aero's AERO (rewardTokenFor)
   claimedRewardsUSD: BigDecimal!     # Valued at each claim
   
   # Protocol-specific
