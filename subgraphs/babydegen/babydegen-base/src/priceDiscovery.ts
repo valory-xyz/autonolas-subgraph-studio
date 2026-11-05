@@ -267,8 +267,7 @@ function getPriceFromSource(
       timestamp
     )
     if (price.gt(BigDecimal.fromString("0")) && isValidPriceResult(price, token)) {
-      // Label with the configured sourceType so createPriceUpdate attributes it to this source
-      return new PriceResult(price, baseConfidence, sourceType)
+      return new PriceResult(price, baseConfidence, "velodrome_slipstream")
     }
   }
   

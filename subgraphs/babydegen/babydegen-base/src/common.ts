@@ -162,7 +162,7 @@ export function isWithdrawalRecipient(
 }
 
 // One of our service Safes (not "any Safe", which is AddressType.isSafe / isSafeContract)
-export function isServiceSafe(addr: Address, txHash: string = ""): boolean {
+export function isServiceSafe(addr: Address): boolean {
   return getServiceByAgent(addr) !== null
 }
 

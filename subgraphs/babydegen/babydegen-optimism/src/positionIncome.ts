@@ -147,18 +147,29 @@ function creditReward(position: ProtocolPosition, amount: BigDecimal, priceUSD: 
   saveWithROI(position)
 }
 
-// Split by weight; equally when every weight is 0
-function splitReward(positions: ProtocolPosition[], weights: BigDecimal[], amount: BigDecimal, priceUSD: BigDecimal): void {
-  let total = sum(weights)
-  if (total.equals(BigDecimal.zero())) {
-    weights = []
-    for (let i = 0; i < positions.length; i++) {
-      weights.push(BigDecimal.fromString("1"))
-    }
-    total = BigDecimal.fromString(positions.length.toString())
+class WeightedPosition {
+  position: ProtocolPosition
+  weight: BigDecimal
+
+  constructor(position: ProtocolPosition, weight: BigDecimal) {
+    this.position = position
+    this.weight = weight
   }
-  for (let i = 0; i < positions.length; i++) {
-    creditReward(positions[i], amount.times(weights[i]).div(total), priceUSD)
+}
+
+// Split by weight; equally when every weight is 0
+function splitReward(shares: WeightedPosition[], amount: BigDecimal, priceUSD: BigDecimal): void {
+  let total = BigDecimal.zero()
+  for (let i = 0; i < shares.length; i++) {
+    total = total.plus(shares[i].weight)
+  }
+  let equal = total.equals(BigDecimal.zero())
+  if (equal) {
+    total = BigDecimal.fromString(shares.length.toString())
+  }
+  for (let i = 0; i < shares.length; i++) {
+    let weight = equal ? BigDecimal.fromString("1") : shares[i].weight
+    creditReward(shares[i].position, amount.times(weight).div(total), priceUSD)
   }
 }
 
@@ -373,7 +384,11 @@ export function attributeRewardTransfer(event: ethereum.Event, from: Address, sa
     return true
   }
   let weights = hasCL && sum(earnedBefore).gt(BigDecimal.zero()) ? earnedBefore : liquidityWeights(active)
-  splitReward(active, weights, rewardAmount, priceUSD)
+  let shares: WeightedPosition[] = []
+  for (let i = 0; i < active.length; i++) {
+    shares.push(new WeightedPosition(active[i], weights[i]))
+  }
+  splitReward(shares, rewardAmount, priceUSD)
   return true
 }
 
