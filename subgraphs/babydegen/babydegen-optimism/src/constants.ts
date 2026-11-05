@@ -122,7 +122,7 @@ export const WHITELISTED_TOKENS: string[] = [
   XAERO.toHexString()
 ]
 
-// USD stablecoins (a price below $0.98 marks the token depegged)
+// USD stablecoins: no lower price bound, and depegged below DEPEG_THRESHOLD (priceDiscovery.ts)
 export const STABLECOINS: string[] = [
   USDC_NATIVE.toHexString(),
   USDC_BRIDGED.toHexString(),

@@ -434,7 +434,7 @@ function refreshOrCreateCLPosition(
   
     if (!earnedResult.reverted) {
       rewardAmount = earnedResult.value.toBigDecimal().div(BigDecimal.fromString("1e18"))
-      // VELO and xAERO are both 18-dec.
+      // Both reward tokens are 18-dec (rewardTokenFor).
       const rewardPrice = getTokenPriceUSD(venue.rewardToken, block.timestamp, false)
       rewardUSD = rewardAmount.times(rewardPrice)
     } else {

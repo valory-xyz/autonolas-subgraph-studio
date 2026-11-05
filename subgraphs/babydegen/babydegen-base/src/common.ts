@@ -110,8 +110,8 @@ function receiptHasInflowTo(safe: Address, receipt: ethereum.TransactionReceipt)
   return false
 }
 
-// An outflow to `addr` is a withdrawal when `addr` is the user side, or a contract that sent
-// nothing back to the Safe in the same tx (e.g. an EIP-7702 wallet). Needs `receipt: true`.
+// An outflow to `addr` is a withdrawal when `addr` is the user side, or a contract when nothing
+// came back to the Safe in the same tx, from anyone (e.g. an EIP-7702 wallet). Needs `receipt: true`.
 export function isWithdrawalRecipient(
   addr: Address,
   serviceSafe: Address,

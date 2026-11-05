@@ -40,12 +40,15 @@ subgraphs/babydegen/babydegen-optimism/
 │   ├── uniV3Shared.ts            # Uniswap V3 position state refresh
 │   ├── veloV2Shared.ts           # Velodrome V2 AMM position handling
 │   ├── veloV2Bootstrap.ts        # V2 pool discovery & bootstrap
+│   ├── veloV2Factory.ts          # Aero v2 PoolFactory → V2PoolVenue
+│   ├── aeroGaugeManager.ts       # Aero GaugeCreated → AeroGauge
+│   ├── positionIncome.ts         # Collected fees and claimed rewards per position
 │   ├── balancerVault.ts          # Balancer V2 pool join/exit events
 │   ├── balancerShared.ts         # Balancer position value calculation
 │   ├── lifiDiamond.ts            # LiFi swap tracking & slippage
 │   ├── swapTracking.ts           # Swap-to-position association & cost tracking
 │   ├── constants.ts              # Addresses, IDs, whitelists
-│   ├── common.ts                 # EOA detection, ETH price helpers
+│   ├── common.ts                 # User side / withdrawal rules, address types, ABI-word readers, ETH price
 │   ├── config.ts                 # Service lookup helpers
 │   └── libs/
 │       ├── TickMath.ts           # Uniswap V3 tick-to-price math
@@ -72,7 +75,7 @@ subgraphs/babydegen/babydegen-optimism/
 | AeroGaugeManager | `0xbF234b32c5e58868243A4a14831626f3EdE7b183` | `GaugeCreated` → Aero v2 pool→gauge map |
 
 ### Chainlink Price Feeds
-- ETH/USD, USDC/USD, USDT/USD, DAI/USD (addresses in `constants.ts`)
+- The `*_USD_FEED` constants in `constants.ts`, wired to tokens in `tokenConfig.ts`
 
 ---
 
@@ -277,7 +280,7 @@ Daily population-level stats at UTC midnight (id: `<dayTimestamp>`).
 - **AeroV2Pool**: same handlers as VeloV2Pool except `handleAeroV2Mint` — Aero pools emit
   `Mint(indexed sender, indexed to, amount0, amount1)` and have no `stable()`. Positions are
   labelled `aero-v2` via `v2ProtocolFor(pool)` (`V2PoolVenue`); rewards are xAERO (unpriced).
-- **Safe**: `SafeReceived` for ETH in. ETH out is read from the Safe's own `execTransaction` calldata when the tx calls the Safe (`ethSentBySafe`, `safe.ts`): its Call's value, or each Call of a `multiSend` it delegatecalls. The outer tx's `value` is the executor's, not the Safe's. Each recipient goes through `isWithdrawalRecipient`; ETH to an agent EOA lowers value as a cost. A module execution's calldata belongs to the module, so its ETH is not seen
+- **Safe**: `SafeReceived` for ETH in. ETH out is read from the Safe's own `execTransaction` calldata when the tx calls the Safe (`ethSentBySafe`, `safe.ts`): its Call's value, or each Call of a `multiSend` it delegatecalls. The outer tx's `value` is the executor's, not the Safe's. Each recipient goes through `isWithdrawalRecipient`; ETH to an agent EOA lowers value as a cost. A module execution's calldata, or an execTransaction relayed through another contract, is not readable here: its ETH is not counted and a `SAFE_ETH:` warning is logged. A send to an indexed Safe (the operator Safe) is counted once: its own `SafeReceived` skips a send the decoder already read from the same tx, and still records one sent through a relayed execution
 
 ---
 
@@ -316,6 +319,7 @@ handleBlock (every 1800 blocks)
 A reward Transfer into the Safe is credited to positions, never to funding:
 - From a gauge (`ProtocolPosition.rewardsContract`): to the tokenId of the first `Withdraw(user = Safe, tokenId, …)` that gauge emits after it in the receipt. With no such Withdraw, a CL `getReward(tokenId)` claim is split across the Safe's active CL positions on that gauge by `claimableReward` as it stood before the block (`ClaimableRewardBeforeBlock` — a refresh in the claim's block writes it to 0), by liquidity when all are 0. A v2 gauge holds one LP position per pool.
 - Aero CL (`aero-cl`): from the gauge's `EmissionsClaimed(_account, _tokenId, _recipient, _rewardAmount)` with `_recipient` = Safe: each event credits its `_tokenId` its own `_rewardAmount`. A Transfer of the Aero CL reward token (`rewardTokenFor(PROTOCOL_AERO_CL)`: xAERO here, Aero's AERO on Base) pays the not-yet-credited events, in log order, whose amounts it covers; each is credited once (`CreditedRewardClaim`). A claim not covered by the Transfer, or for a tokenId the Safe doesn't own, is skipped and logged.
+- A Withdraw that names a tokenId the Safe does not track is logged and not split across its other positions. A v2 gauge reward that arrives after the position closed (a `getReward` after the exit) goes to the most recently closed v2 position on that gauge. An `EmissionsClaimed` counts only when the position's own gauge (`rewardsContract`) emitted it.
 - `aero-v2`: not attributed to a position yet; a reward Transfer to a Safe holding `aero-v2` positions logs a `REWARDS:` warning.
 Fees and rewards already sit in the Safe, so portfolio `finalValue` is unchanged by them.
 
@@ -343,7 +347,9 @@ Deprecated: every `ethAdjusted*` field equals its unadjusted counterpart. Subtra
 2. **DEX pools** (Velodrome CL/SlipStream, Velodrome V2, Uniswap V3) — DOLA included. A Velodrome v2 *stable* pool is priced from its `getAmountOut` quote for one token, not its reserve ratio (wrong on a stable curve)
 3. **No valid price**: the last valid price, with `priceStale = true`; a token never priced is 0. There is no $1 fallback
 - Stablecoins have no lower price bound, so a depeg is recorded: `depegged` below $0.98
-- A pool's pair leg is priced from its own Chainlink feed (USDC, USDT, DAI, WETH), never taken as $1. LUSD has no feed and is priced from its own USDC pool; any other pair leg gives no pool price (`getPairTokenPrice`)
+- A pool's pair leg is priced from its own token config, never taken as $1: its Chainlink source, else its `velodrome_v2` pool when that pool's pair leg has a feed (LUSD); otherwise the pool gives no price (`getPairTokenPrice`). Feed staleness is judged against the event's block, with a 90000s limit (24h heartbeat + grace)
+- The no-floor stablecoin band ($0–1.50; USDC $0–1.05) applies to every `STABLECOINS` token
+- A stable pool's `getAmountOut` quote is net of the pool's swap fee (5 bps on the stable pools in use), so its price reads about 0.9995 × the fee-free price
 
 ### Caching
 - 5-minute cache for token prices

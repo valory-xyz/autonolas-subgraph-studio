@@ -31,7 +31,7 @@ The subgraph monitors contracts on **Optimism Mainnet**:
 - **Balancer V2 Vault**: `0xBA12222222228d8Ba445958a75a0704d566BF2C8`
 
 ### Price Oracle Contracts
-- **Chainlink Price Feeds**: ETH/USD, USDC/USD, USDT/USD, DAI/USD
+- **Chainlink Price Feeds**: ETH, USDC, USDT, DAI, WBTC and sUSD to USD (`*_USD_FEED` in `src/constants.ts`)
 - **DEX Pools**: Velodrome V2, Velodrome CL, and Balancer V2 pools for price discovery
 
 ## Events Tracking
@@ -47,7 +47,7 @@ The subgraph monitors specific events from each protocol to track agent activiti
 **USDC Native** (`0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85`)
 - `Transfer(indexed address,indexed address,uint256)` - funding flows (every tracked token)
 
-**Token Contracts** (WETH, DAI, USDT, DOLA, BOLD, LUSD, FRAX, sDAI, USDC.e, USDT0, oUSDT, USDGLO)
+**Token Contracts** (WETH, WBTC, DAI, USDT, DOLA, BOLD (legacy and `0x0356…`), LUSD, FRAX, sDAI, sUSD, USDS, USDC.e, USDT0, oUSDT, USDGLO, VELO, xAERO)
 - `Transfer(indexed address,indexed address,uint256)` - Token balance tracking
 
 ### DeFi Protocol Events

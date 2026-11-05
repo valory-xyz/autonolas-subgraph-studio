@@ -421,7 +421,7 @@ export function refreshVeloV2Position(
     }
     const earnedRes = gauge.try_earned(userAddress)
     if (!earnedRes.reverted) {
-      // VELO and xAERO are both 18-dec.
+      // Both reward tokens are 18-dec (rewardTokenFor).
       rewardAmount = earnedRes.value.toBigDecimal().div(BigDecimal.fromString("1e18"))
       rewardUSD = rewardAmount.times(getTokenPriceUSD(rewardTokenFor(pp.protocol), block.timestamp, false))
     } else {

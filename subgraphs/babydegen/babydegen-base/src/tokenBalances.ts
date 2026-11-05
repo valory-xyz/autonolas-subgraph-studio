@@ -291,7 +291,7 @@ export function updateFundingBalance(
   ensureAgentPortfolio(serviceSafe, ts)
 }
 
-//  Helper function to update withdrawal tracking separately (for EOA withdrawals)
+// Withdrawal tracking, kept apart from funding: every outflow isWithdrawalRecipient accepts
 export function updateWithdrawalBalance(
   serviceSafe: Address,
   usd: BigDecimal,

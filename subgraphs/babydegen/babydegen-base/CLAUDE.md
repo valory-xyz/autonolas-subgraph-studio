@@ -89,8 +89,7 @@ Optimism values): StakingToken `0x2585e63df7BD9De8e058884D496658a030b5c6ce`, Act
 ## Tracked tokens
 
 USDC (native), WETH, AERO (legacy + Aero's), the whitelisted stablecoins BOLD / msUSD / frxUSD /
-eUSD / axlUSDC, and USDT / DAI / USDe / USDS (Chainlink-priced, see Aero below). USDC+WETH price off Chainlink; stables resolve to ~$1 (referenced to the USDC feed
-— confirmed fine by Divya); **AERO** `0x940181a9…` (the Aerodrome CL-gauge reward token; Aero CL gauges pay Aero's AERO `0x3f5b…a4ee` instead) prices off the Aerodrome
+eUSD / axlUSDC, and USDT / DAI / USDe / USDS (Chainlink-priced, see Aero below). USDC+WETH price off Chainlink; the whitelisted stables are referenced to the USDC feed; **AERO** `0x940181a9…` (the Aerodrome CL-gauge reward token; Aero CL gauges pay Aero's AERO `0x3f5b…a4ee` instead) prices off the Aerodrome
 AERO/USDC volatile pool `0x6cdcb1c4…` via the `velodrome_v2` adapter (`tokenConfig.ts`).
 **OLAS is not tracked** — Basius holds none and it isn't a trading asset for this agent.
 
@@ -138,11 +137,8 @@ v0.13.10. Aero positions are labelled **`aero-cl` / `aero-v2`**; legacy labels a
 - **Pricing** — Aero's AERO prices off the Aero v2 AERO/USDC volatile pool `0xF634058d…` (`tokenConfig.ts`).
   USDT / DAI / USDe / USDS price off their own Chainlink feeds (priority 1) with
   the Aero CL tickSpacing-1 USDC/USDT pool as USDT's priority-2 fallback. DAI / USDe / USDS are
-  feed-only (no pool fallback is configured for them). They are
-  **not** on `usdcReferencedStable`, and they are in `STABLECOINS`, so `depegged` is set below $0.98.
-  `getPriceFromSources` reads a higher-numbered priority only when every better source failed. They
-  validate against the 0–1.5 band (no lower bound, so a depeg their feed reports is kept), and
-  Chainlink answers up to 90000s old are accepted (24h heartbeat + grace).
+  feed-only (no pool fallback is configured for them), are not on `usdcReferencedStable`, and are in
+  `STABLECOINS`. Bands, priorities, staleness and the depeg flag: see *Pricing* below.
 
 ## Schema, core logic, KPIs
 
@@ -165,7 +161,9 @@ The `ethAdjusted*` fields are deprecated and equal their unadjusted counterparts
   (`isWithdrawalRecipient`). With no receipt it is not counted. Token and Safe handlers set `receipt: true`.
 - ETH in comes from `SafeReceived`. ETH out is decoded from the Safe's `execTransaction` calldata
   (`ethSentBySafe`): its Call's value, or each Call of a `multiSend` it delegatecalls. ETH to an
-  agent EOA lowers value as a cost. Module executions are not decodable and are skipped.
+  agent EOA lowers value as a cost. A module execution or a relayed execTransaction is not
+  readable; its ETH is not counted and a `SAFE_ETH:` warning is logged. A send to the operator
+  Safe is counted once (its `SafeReceived` skips a send the decoder read from the same tx).
 - Withdrawals go to `totalWithdrawnUsd`; they never reduce `netUsd`. A transfer of an unpriced
   token is valued at $0 and logged (`FUNDING:`).
 
@@ -175,8 +173,10 @@ The `ethAdjusted*` fields are deprecated and equal their unadjusted counterparts
   `STABLECOINS` member priced below $0.98 has `depegged = true`.
 - `getTokenPriceUSD` reads sources by priority; a higher-numbered one only when every better
   source failed. Chainlink answers up to 90000s old are accepted (24h heartbeat + grace).
-- A pool's pair leg is priced from its own Chainlink feed (USDC, USDT, DAI, USDe, USDS, WETH),
-  never taken as $1; any other pair leg gives no pool price. A v2 pool whose `stable()` is true is
+- A pool's pair leg is priced from its own token config (its Chainlink source), never taken as $1;
+  a pair leg with none gives no pool price. Feed staleness is judged against the event's block.
+- Every `STABLECOINS` token gets the no-floor band ($0–1.50; USDC $0–1.05).
+- A stable pool's `getAmountOut` quote is net of the pool's swap fee (about 0.9995 × on a 5 bps pool). A v2 pool whose `stable()` is true is
   priced from its `getAmountOut` quote for one token, not its reserve ratio.
 
 ### Position income (`positionIncome.ts`)
@@ -192,6 +192,9 @@ The `ethAdjusted*` fields are deprecated and equal their unadjusted counterparts
   `rewardTokenFor(PROTOCOL_AERO_CL)` — Aero's AERO `0x3f5b…a4ee` (`AERO_PROTOCOL_AERO`, not the
   `AERO` `0x940181a9…` above), which the gauge mints to the claimer — pays the not-yet-credited
   claims it covers, in log order, each once (`CreditedRewardClaim`). Skipped claims are logged.
+- A Withdraw naming a tokenId the Safe does not track is logged, not split. A v2 reward after the
+  exit goes to the most recently closed v2 position on that gauge. An `EmissionsClaimed` counts
+  only when the position's own gauge emitted it.
 - `aero-v2` rewards are not attributed to a position yet; a reward Transfer to a Safe holding
   `aero-v2` positions logs a `REWARDS:` warning.
 - `grossGainUSD = exitAmountUSD + collectedFeesUSD + claimedRewardsUSD`.

@@ -55,7 +55,7 @@ type FundingBalance @entity(immutable: false) {
   service: Service              # Link to service
   totalInUsd: BigDecimal!
   totalOutUsd: BigDecimal!
-  totalWithdrawnUsd: BigDecimal!  # Tracked tokens and ETH withdrawn to the user side, or to a contract that sent nothing back in the same tx; never reduces netUsd
+  totalWithdrawnUsd: BigDecimal!  # Tracked tokens and ETH withdrawn to the user side, or to a contract when nothing came back to the Safe in the same tx; never reduces netUsd
   netUsd: BigDecimal!
   firstInTimestamp: BigInt!
   lastChangeTs: BigInt!
@@ -157,7 +157,7 @@ type Token @entity(immutable: false) {
   lastPriceUpdate: BigInt!
   priceConfidence: BigDecimal!  # Current price confidence level
   priceStale: Boolean!          # derivedUSD is the last valid price, not a fresh one
-  depegged: Boolean!            # stablecoin priced below $0.98
+  depegged: Boolean!            # a STABLECOINS token priced below DEPEG_THRESHOLD (priceDiscovery.ts)
 }
 
 type PriceUpdate @entity(immutable: true) {
