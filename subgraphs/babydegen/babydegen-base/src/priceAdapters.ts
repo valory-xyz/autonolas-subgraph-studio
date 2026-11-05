@@ -5,7 +5,7 @@ import { AggregatorV3Interface } from "../generated/templates/Safe/AggregatorV3I
 import { getTokenConfig, TokenConfig, PriceSourceConfig } from "./tokenConfig"
 import { convertTokenAmount } from "./tokenUtils"
 import { V2PoolVenue } from "../generated/schema"
-import { Q96 } from "./constants"
+import { Q96, V2PoolKind } from "./constants"
 
 // Chainlink price adapter with validation
 export function getChainlinkPrice(feedAddress: Address, blockTimestamp: BigInt = BigInt.fromI32(0)): BigDecimal {
@@ -171,7 +171,7 @@ export function getVelodromeV2Price(
   let reserve1 = reserves.value1
   
   // On a stable (curve) pool the reserve ratio is not the price: quote one token instead
-  if (v2PoolStable(pool) == V2_POOL_STABLE) {
+  if (v2PoolKind(pool) == V2PoolKind.Stable) {
     let oneToken = BigInt.fromI32(10).pow(targetTokenConfig.decimals as u8)
     let quote = pool.try_getAmountOut(oneToken, token)
     if (quote.reverted) {
@@ -287,22 +287,18 @@ function getPairTokenPrice(pairToken: Address, blockTimestamp: BigInt): BigDecim
   return BigDecimal.zero()
 }
 
-export const V2_POOL_VOLATILE = 0
-export const V2_POOL_STABLE = 1
-export const V2_POOL_UNKNOWN = -1
-
-// Whether a v2 pool is stable: the V2PoolVenue row its factory wrote first (Aero v2 pools have no
-// stable()), else the pool's stable()
-export function v2PoolStable(pool: VelodromeV2Pool): i32 {
+// A v2 pool's kind: the V2PoolVenue row its factory wrote first (Aero v2 pools have no stable()),
+// else the pool's stable()
+export function v2PoolKind(pool: VelodromeV2Pool): V2PoolKind {
   let venue = V2PoolVenue.load(pool._address)
   if (venue != null) {
-    return venue.stable ? V2_POOL_STABLE : V2_POOL_VOLATILE
+    return venue.stable ? V2PoolKind.Stable : V2PoolKind.Volatile
   }
   let stableResult = pool.try_stable()
   if (stableResult.reverted) {
-    return V2_POOL_UNKNOWN
+    return V2PoolKind.Unknown
   }
-  return stableResult.value ? V2_POOL_STABLE : V2_POOL_VOLATILE
+  return stableResult.value ? V2PoolKind.Stable : V2PoolKind.Volatile
 }
 
 function poolPairs(pool: Address, token0: Address, token1: Address, token: Address, pairToken: Address): boolean {

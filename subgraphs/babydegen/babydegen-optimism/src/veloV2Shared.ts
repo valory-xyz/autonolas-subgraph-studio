@@ -13,12 +13,12 @@ import { VeloVoter } from "../generated/templates/VeloV2Pool/VeloVoter"
 import { VeloV2Gauge } from "../generated/templates/VeloV2Pool/VeloV2Gauge"
 import { VeloV2Pool as VeloV2PoolTemplate } from "../generated/templates"
 import { getTokenPriceUSD } from "./priceDiscovery"
-import { v2PoolStable, V2_POOL_STABLE, V2_POOL_UNKNOWN } from "./priceAdapters"
+import { v2PoolKind } from "./priceAdapters"
 import { getServiceByAgent } from "./config"
 import { parseTotalSlippageFromBucket, associateSwapsWithPosition, calculatePortfolioMetrics } from "./helpers"
 import { getTokenSymbol, convertTokenAmount } from "./tokenUtils"
 import { calculatePositionROI, initializePositionIncome } from "./roiCalculation"
-import { PROTOCOL_VELODROME_V2, VELO_VOTER, PROTOCOL_AERO_V2, rewardTokenFor, WHITELISTED_TOKENS, V2_STABLE_FEE_BPS, V2_VOLATILE_FEE_BPS } from "./constants"
+import { PROTOCOL_VELODROME_V2, VELO_VOTER, PROTOCOL_AERO_V2, rewardTokenFor, WHITELISTED_TOKENS, V2_STABLE_FEE_BPS, V2_VOLATILE_FEE_BPS, V2PoolKind } from "./constants"
 
 // A pool's venue is recorded by the factory handler that created it; pools with no
 // V2PoolVenue row came from the legacy factory.
@@ -41,11 +41,11 @@ export function isPoolRelevant(token0: Address, token1: Address): boolean {
   return isTokenWhitelisted(token0) && isTokenWhitelisted(token1)
 }
 
-// Fee tier of a v2 pool by kind (v2PoolStable)
+// Fee tier of a v2 pool by kind (v2PoolKind)
 function setV2PoolFee(pp: ProtocolPosition, poolContract: VelodromeV2Pool): void {
-  const stable = v2PoolStable(poolContract)
-  if (stable != V2_POOL_UNKNOWN) {
-    pp.fee = stable == V2_POOL_STABLE ? V2_STABLE_FEE_BPS : V2_VOLATILE_FEE_BPS
+  const kind = v2PoolKind(poolContract)
+  if (kind != V2PoolKind.Unknown) {
+    pp.fee = kind == V2PoolKind.Stable ? V2_STABLE_FEE_BPS : V2_VOLATILE_FEE_BPS
   }
 }
 

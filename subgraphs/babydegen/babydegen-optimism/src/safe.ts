@@ -25,7 +25,7 @@ const PACKED_DATA_LENGTH = 53
 const PACKED_CALL_HEADER = 85
 
 // The ETH sends a Safe's calldata shows, or null with the reason it could not be read
-// Built only through readSends / unreadable, so sends is null exactly when reason says why
+// Build it with readSends / unreadable, which keep sends null exactly when reason says why
 class DecodedSends {
   sends: EthSend[] | null = null
   reason: string = ""

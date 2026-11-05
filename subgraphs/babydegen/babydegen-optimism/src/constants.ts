@@ -138,6 +138,13 @@ export const STABLECOINS: string[] = [
   USDS.toHexString()
 ]
 
+// Whether a v2 pool is stable, as v2PoolKind reads it
+export enum V2PoolKind {
+  Volatile,
+  Stable,
+  Unknown
+}
+
 // Default v2 pool swap fees, in basis points
 export const V2_STABLE_FEE_BPS = 5
 export const V2_VOLATILE_FEE_BPS = 30
