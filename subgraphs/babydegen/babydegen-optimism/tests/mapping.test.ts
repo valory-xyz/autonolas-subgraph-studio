@@ -1264,6 +1264,8 @@ describe("Aero v2 pools (factories + GaugeManager)", () => {
 
   test("GaugeCreated feeds the aero-v2 gauge lookup; staked LP and xAERO rewards are counted", () => {
     createService(SERVICE_SAFE)
+    // VELO is priced, so the reward reads $0 only because it is priced as xAERO
+    mockVeloUsdcPool()
     saveAeroV2Venue(false)
     handleAeroGaugeCreated(createGaugeCreatedEvent(AERO_V2_POOL, AERO_V2_GAUGE))
     mockAeroV2PoolState(AERO_V2_POOL, AERO_V2_GAUGE)

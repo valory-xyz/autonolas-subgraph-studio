@@ -6,13 +6,15 @@ import { Collect, DecreaseLiquidity } from "../generated/VeloNFTManager/Velodrom
 import {
   Collect as UniV3Collect,
   DecreaseLiquidity as UniV3DecreaseLiquidity,
-  IncreaseLiquidity as UniV3IncreaseLiquidity
+  IncreaseLiquidity as UniV3IncreaseLiquidity,
+  Transfer as UniV3Transfer
 } from "../generated/UniV3NFTManager/UniswapV3PositionNFTManager"
 import { handleCollect, handleDecreaseLiquidity } from "../src/veloNFTManager"
-import { handleUniV3Collect, handleUniV3DecreaseLiquidity, handleUniV3IncreaseLiquidity } from "../src/uniV3NFTManager"
+import { handleUniV3Collect, handleUniV3DecreaseLiquidity, handleUniV3IncreaseLiquidity, handleUniV3Transfer } from "../src/uniV3NFTManager"
 import { processERC20Transfer } from "../src/tokenBalances"
 import { attributeRewardTransfer, recordClaimableRewardBeforeBlock } from "../src/positionIncome"
 import { calculateActualROI } from "../src/roiCalculation"
+import { calculatePortfolioMetrics } from "../src/helpers"
 import { USDC_NATIVE, DAI, VELO, VELO_MANAGER, UNI_V3_MANAGER, PROTOCOL_VELODROME_V3, PROTOCOL_VELODROME_V2, PROTOCOL_UNISWAP_V3, PROTOCOL_AERO_CL, AERO_NFT_MANAGER, UNI_V3_FACTORY } from "../src/constants"
 import { newLog, newReceipt, newTransfer, mockEthUsd, seedService, seedAddressType, seedTokenPrice, seedPosition, seededAddressType } from "./fixtures"
 import { OPERATOR_SAFE, AGENT_INSTANCE, SERVICE_SAFE, BLOCK_NUMBER, BLOCK_TIMESTAMP } from "./test-helpers"
@@ -96,6 +98,35 @@ describe("collected fees", () => {
     handleCollect(newCollect(BigInt.fromI32(8), SERVICE_SAFE, BigInt.fromI64(2000000), BigInt.zero()))
 
     positionField(p, "collectedFeesUSD", "2")
+  })
+
+  test("a Collect smaller than the owed principal books no fee and leaves the rest owed", () => {
+    let p = seedPosition(SERVICE_SAFE, PROTOCOL_VELODROME_V3, BigInt.fromI32(7), USDC_NATIVE, DAI, null, BigInt.zero(), "0")
+    closeAt(p, "100")
+    createMockedFunction(VELO_MANAGER, "positions", "positions(uint256):(uint96,address,address,address,int24,int24,int24,uint128,uint256,uint256,uint128,uint128)")
+      .withArgs([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(7))])
+      .reverts()
+    handleDecreaseLiquidity(newDecrease(BigInt.fromI32(7), USDC_50, BigInt.zero()))
+
+    handleCollect(newCollect(BigInt.fromI32(7), SERVICE_SAFE, BigInt.fromI64(20000000), BigInt.zero()))
+    positionField(p, "collectedFees0", "0")
+
+    // 30 of principal is still owed, so 31 is 1 of fee
+    handleCollect(newCollect(BigInt.fromI32(7), SERVICE_SAFE, BigInt.fromI64(31000000), BigInt.zero()))
+    positionField(p, "collectedFees0", "1")
+    positionField(p, "collectedFeesUSD", "1")
+  })
+
+  test("the portfolio's gross gain adds closed positions' fees and rewards to their exit", () => {
+    let p = seedPosition(SERVICE_SAFE, PROTOCOL_VELODROME_V3, BigInt.fromI32(7), USDC_NATIVE, DAI, null, BigInt.zero(), "0")
+    closeAt(p, "100")
+    p.collectedFeesUSD = BigDecimal.fromString("2")
+    p.claimedRewardsUSD = BigDecimal.fromString("3")
+    p.save()
+
+    calculatePortfolioMetrics(SERVICE_SAFE, newCollect(BigInt.fromI32(7), SERVICE_SAFE, BigInt.zero(), BigInt.zero()).block)
+
+    assert.fieldEquals("AgentPortfolio", SERVICE_SAFE.toHexString(), "totalGrossGains", "105")
   })
 
   test("a Collect paid to another address is not the Safe's fee", () => {
@@ -182,6 +213,60 @@ describe("collected fees", () => {
     handleUniV3Collect(changetype<UniV3Collect>(newCollect(tokenId, SERVICE_SAFE, BigInt.fromI64(53000000), DAI_50, UNI_V3_MANAGER)))
 
     let id = Bytes.fromUTF8(SERVICE_SAFE.toHexString() + "-uniswap-v3-77")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "collectedFeesUSD", "3")
+  })
+
+  test("Uniswap V3: a position opened by its mint Transfer is found by its DecreaseLiquidity and Collect", () => {
+    const tokenId = BigInt.fromI32(78)
+    const pool = Address.fromString("0x00000000000000000000000000000000000000d7")
+    createMockedFunction(UNI_V3_MANAGER, "ownerOf", "ownerOf(uint256):(address)")
+      .withArgs([ethereum.Value.fromUnsignedBigInt(tokenId)])
+      .returns([ethereum.Value.fromAddress(SERVICE_SAFE)])
+    createMockedFunction(UNI_V3_MANAGER, "positions", "positions(uint256):(uint96,address,address,address,uint24,int24,int24,uint128,uint256,uint256,uint128,uint128)")
+      .withArgs([ethereum.Value.fromUnsignedBigInt(tokenId)])
+      .returns([
+        ethereum.Value.fromUnsignedBigInt(BigInt.zero()),
+        ethereum.Value.fromAddress(Address.zero()),
+        ethereum.Value.fromAddress(USDC_NATIVE),
+        ethereum.Value.fromAddress(DAI),
+        ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(100)),
+        ethereum.Value.fromI32(-10),
+        ethereum.Value.fromI32(10),
+        ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1000)),
+        ethereum.Value.fromUnsignedBigInt(BigInt.zero()),
+        ethereum.Value.fromUnsignedBigInt(BigInt.zero()),
+        ethereum.Value.fromUnsignedBigInt(BigInt.zero()),
+        ethereum.Value.fromUnsignedBigInt(BigInt.zero())
+      ])
+    createMockedFunction(UNI_V3_FACTORY, "getPool", "getPool(address,address,uint24):(address)")
+      .withArgs([ethereum.Value.fromAddress(USDC_NATIVE), ethereum.Value.fromAddress(DAI), ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(100))])
+      .returns([ethereum.Value.fromAddress(pool)])
+    // At tick 0, inside the position's range; the mint Transfer's refresh creates the position
+    createMockedFunction(pool, "slot0", "slot0():(uint160,int24,uint16,uint16,uint16,uint8,bool)").withArgs([]).returns([
+      ethereum.Value.fromUnsignedBigInt(BigInt.fromString("79228162514264337593543950336")),
+      ethereum.Value.fromI32(0),
+      ethereum.Value.fromI32(0),
+      ethereum.Value.fromI32(0),
+      ethereum.Value.fromI32(0),
+      ethereum.Value.fromI32(0),
+      ethereum.Value.fromBoolean(true)
+    ])
+
+    let mint = changetype<UniV3Transfer>(newMockEvent())
+    mint.address = UNI_V3_MANAGER
+    mint.parameters = new Array()
+    mint.parameters.push(new ethereum.EventParam("from", ethereum.Value.fromAddress(Address.zero())))
+    mint.parameters.push(new ethereum.EventParam("to", ethereum.Value.fromAddress(SERVICE_SAFE)))
+    mint.parameters.push(new ethereum.EventParam("tokenId", ethereum.Value.fromUnsignedBigInt(tokenId)))
+    mint.block.number = BLOCK_NUMBER
+    mint.block.timestamp = BLOCK_TIMESTAMP
+    handleUniV3Transfer(mint)
+
+    let decrease = changetype<UniV3DecreaseLiquidity>(newDecrease(tokenId, USDC_50, DAI_50, UNI_V3_MANAGER))
+    handleUniV3DecreaseLiquidity(decrease)
+    handleUniV3Collect(changetype<UniV3Collect>(newCollect(tokenId, SERVICE_SAFE, BigInt.fromI64(53000000), DAI_50, UNI_V3_MANAGER)))
+
+    let id = Bytes.fromUTF8(SERVICE_SAFE.toHexString() + "-uniswap-v3-78")
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "collectedFeesUSD", "3")
   })
 

@@ -7,6 +7,7 @@ import { handleCollect, handleDecreaseLiquidity } from "../src/veloNFTManager"
 import { processERC20Transfer } from "../src/tokenBalances"
 import { attributeRewardTransfer, recordClaimableRewardBeforeBlock } from "../src/positionIncome"
 import { calculateActualROI } from "../src/roiCalculation"
+import { calculatePortfolioMetrics } from "../src/helpers"
 import { USDC_NATIVE, BOLD, AERO, AERO_PROTOCOL_AERO, VELO_MANAGER, PROTOCOL_VELODROME_V3, PROTOCOL_VELODROME_V2, PROTOCOL_AERO_CL, AERO_NFT_MANAGER } from "../src/constants"
 import { newLog, newReceipt, newTransfer, mockEthUsd, seedService, seedAddressType, seedTokenPrice, seedPosition, seededAddressType } from "./fixtures"
 import { OPERATOR_SAFE, AGENT_INSTANCE, SERVICE_SAFE, BLOCK_NUMBER, BLOCK_TIMESTAMP } from "./test-helpers"
@@ -90,6 +91,35 @@ describe("collected fees", () => {
     handleCollect(newCollect(BigInt.fromI32(8), SERVICE_SAFE, BigInt.fromI64(2000000), BigInt.zero()))
 
     positionField(p, "collectedFeesUSD", "2")
+  })
+
+  test("a Collect smaller than the owed principal books no fee and leaves the rest owed", () => {
+    let p = seedPosition(SERVICE_SAFE, PROTOCOL_VELODROME_V3, BigInt.fromI32(7), USDC_NATIVE, BOLD, null, BigInt.zero(), "0")
+    closeAt(p, "100")
+    createMockedFunction(VELO_MANAGER, "positions", "positions(uint256):(uint96,address,address,address,int24,int24,int24,uint128,uint256,uint256,uint128,uint128)")
+      .withArgs([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(7))])
+      .reverts()
+    handleDecreaseLiquidity(newDecrease(BigInt.fromI32(7), USDC_50, BigInt.zero()))
+
+    handleCollect(newCollect(BigInt.fromI32(7), SERVICE_SAFE, BigInt.fromI64(20000000), BigInt.zero()))
+    positionField(p, "collectedFees0", "0")
+
+    // 30 of principal is still owed, so 31 is 1 of fee
+    handleCollect(newCollect(BigInt.fromI32(7), SERVICE_SAFE, BigInt.fromI64(31000000), BigInt.zero()))
+    positionField(p, "collectedFees0", "1")
+    positionField(p, "collectedFeesUSD", "1")
+  })
+
+  test("the portfolio's gross gain adds closed positions' fees and rewards to their exit", () => {
+    let p = seedPosition(SERVICE_SAFE, PROTOCOL_VELODROME_V3, BigInt.fromI32(7), USDC_NATIVE, BOLD, null, BigInt.zero(), "0")
+    closeAt(p, "100")
+    p.collectedFeesUSD = BigDecimal.fromString("2")
+    p.claimedRewardsUSD = BigDecimal.fromString("3")
+    p.save()
+
+    calculatePortfolioMetrics(SERVICE_SAFE, newCollect(BigInt.fromI32(7), SERVICE_SAFE, BigInt.zero(), BigInt.zero()).block)
+
+    assert.fieldEquals("AgentPortfolio", SERVICE_SAFE.toHexString(), "totalGrossGains", "105")
   })
 
   test("a Collect paid to another address is not the Safe's fee", () => {
