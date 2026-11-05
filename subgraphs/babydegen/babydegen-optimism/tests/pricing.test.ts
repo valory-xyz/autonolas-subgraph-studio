@@ -2,7 +2,7 @@ import { assert, describe, test, clearStore, afterEach, createMockedFunction } f
 import { Address, BigDecimal, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts"
 import { FundingBalance, TokenBalance, AgentPortfolio } from "../generated/schema"
 import { getTokenPriceUSD } from "../src/priceDiscovery"
-import { getVelodromeV2Price } from "../src/priceAdapters"
+import { getVelodromePrice, getVelodromeV2Price } from "../src/priceAdapters"
 import { calculatePortfolioMetrics, ensureAgentPortfolio } from "../src/helpers"
 import { calculateUninvestedValue } from "../src/tokenBalances"
 import { USDT, DOLA, SDAI, BOLD, BOLD_V2, FRAX, LUSD, VELO, WBTC, SUSD, USDS, OUSDT, USDC_NATIVE, USDC_USD_FEED, USDT_USD_FEED, DAI_USD_FEED, WBTC_USD_FEED, SUSD_USD_FEED } from "../src/constants"
@@ -20,8 +20,8 @@ const VELO_USDC_POOL = Address.fromString("0xa0A215dE234276CAc1b844fD58901351a50
 const OTHER_POOL = Address.fromString("0x00000000000000000000000000000000000000c1")
 const ONE_18 = BigInt.fromString("1000000000000000000")
 
-function mockUsdcFeedAt(answer: i64): void {
-  mockFeedAt(USDC_USD_FEED, answer)
+function mockUsdcFeedAt(answer: i64, updatedAt: BigInt = BLOCK_TIMESTAMP): void {
+  mockFeedAt(USDC_USD_FEED, answer, updatedAt)
 }
 
 function mockFeedAt(feed: Address, answer: i64, updatedAt: BigInt = BLOCK_TIMESTAMP): void {
@@ -157,6 +157,23 @@ describe("stablecoin pricing", () => {
   })
 })
 
+// USDC token0 (6 dec), sDAI token1 (18 dec) Slipstream pool
+function mockSdaiUsdcClPool(): void {
+  // sqrtPrice 800,000 → 0.64 sDAI per USDC → $1.5625
+  createMockedFunction(SDAI_USDC_CL_POOL, "slot0", "slot0():(uint160,int24,uint16,uint16,uint16,bool)")
+    .withArgs([])
+    .returns([
+      ethereum.Value.fromUnsignedBigInt(BigInt.fromString("63382530011411470074835160268800000")),
+      ethereum.Value.fromI32(0),
+      ethereum.Value.fromI32(0),
+      ethereum.Value.fromI32(0),
+      ethereum.Value.fromI32(0),
+      ethereum.Value.fromBoolean(true)
+    ])
+  createMockedFunction(SDAI_USDC_CL_POOL, "token0", "token0():(address)").withArgs([]).returns([ethereum.Value.fromAddress(USDC_NATIVE)])
+  createMockedFunction(SDAI_USDC_CL_POOL, "token1", "token1():(address)").withArgs([]).returns([ethereum.Value.fromAddress(SDAI)])
+}
+
 describe("pool pair legs", () => {
   afterEach(() => {
     clearStore()
@@ -199,21 +216,15 @@ describe("pool pair legs", () => {
   })
 
   test("sDAI is priced through its USDC/sDAI Slipstream pool (6- vs 18-decimal tokens)", () => {
+    mockSdaiUsdcClPool()
     mockUsdcUsd()
-    // USDC token0 (6 dec), sDAI token1 (18 dec); sqrtPrice 800,000 → 0.64 sDAI per USDC → $1.5625
-    createMockedFunction(SDAI_USDC_CL_POOL, "slot0", "slot0():(uint160,int24,uint16,uint16,uint16,bool)")
-      .withArgs([])
-      .returns([
-        ethereum.Value.fromUnsignedBigInt(BigInt.fromString("63382530011411470074835160268800000")),
-        ethereum.Value.fromI32(0),
-        ethereum.Value.fromI32(0),
-        ethereum.Value.fromI32(0),
-        ethereum.Value.fromI32(0),
-        ethereum.Value.fromBoolean(true)
-      ])
-    createMockedFunction(SDAI_USDC_CL_POOL, "token0", "token0():(address)").withArgs([]).returns([ethereum.Value.fromAddress(USDC_NATIVE)])
-    createMockedFunction(SDAI_USDC_CL_POOL, "token1", "token1():(address)").withArgs([]).returns([ethereum.Value.fromAddress(SDAI)])
     assert.stringEquals(getTokenPriceUSD(SDAI, BLOCK_TIMESTAMP).toString(), "1.5625")
+  })
+
+  test("a CL pool's pair-leg feed is judged stale against the block", () => {
+    mockSdaiUsdcClPool()
+    mockUsdcFeedAt(100000000, BLOCK_TIMESTAMP.minus(BigInt.fromI32(90001)))
+    assert.stringEquals(getVelodromePrice(SDAI, SDAI_USDC_CL_POOL, USDC_NATIVE, BLOCK_TIMESTAMP).toString(), "0")
   })
 })
 
@@ -346,6 +357,28 @@ describe("pair-leg pricing", () => {
     clearStore()
     mockFeedAt(USDC_USD_FEED, 100000000, BLOCK_TIMESTAMP.minus(BigInt.fromI32(90001)))
     assert.stringEquals(getTokenPriceUSD(DOLA, BLOCK_TIMESTAMP, true).toString(), "0")
+  })
+
+  test("USDC has no floor: $0.90 is kept and marked depegged", () => {
+    mockUsdcFeedAt(90000000)
+    assert.stringEquals(getTokenPriceUSD(USDC_NATIVE, BLOCK_TIMESTAMP).toString(), "0.9")
+    assert.fieldEquals("Token", USDC_NATIVE.toHexString(), "depegged", "true")
+  })
+
+  test("USDC at $1.05 is rejected", () => {
+    mockUsdcFeedAt(105000000)
+    assert.stringEquals(getTokenPriceUSD(USDC_NATIVE, BLOCK_TIMESTAMP).toString(), "0")
+  })
+
+  test("BOLD (0x0356…) is priced from its BOLD/USDC stable pool's quote", () => {
+    mockImbalancedStablePool(Address.fromString("0x8828B7792499A7d86E931DF56E3D37C428d12d2b"), BOLD_V2, USDC_NATIVE, ONE_18, 999000)
+    assert.stringEquals(getTokenPriceUSD(BOLD_V2, BLOCK_TIMESTAMP).toString(), "0.999")
+  })
+
+  test("a pair-leg feed exactly 90000s old is still accepted", () => {
+    mockImbalancedStablePool(DOLA_USDC_POOL, DOLA, USDC_NATIVE, ONE_18, 994053)
+    mockUsdcFeedAt(100000000, BLOCK_TIMESTAMP.minus(BigInt.fromI32(90000)))
+    assert.stringEquals(getTokenPriceUSD(DOLA, BLOCK_TIMESTAMP, true).toString(), "0.994053")
   })
 
   test("a stablecoin above $1.50 is rejected, whatever its symbol", () => {

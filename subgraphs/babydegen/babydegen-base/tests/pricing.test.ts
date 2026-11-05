@@ -47,6 +47,25 @@ function mockImbalancedStablePool(pool: Address, token: Address, pairToken: Addr
     .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromI64(quote))])
 }
 
+// USDC token0 (6 dec), DAI token1 (18 dec) CL pool
+const DAI_USDC_CL_POOL = Address.fromString("0x00000000000000000000000000000000000000c2")
+
+function mockDaiUsdcClPool(): void {
+  // sqrtPrice 800,000 → 0.64 DAI per USDC → $1.5625
+  createMockedFunction(DAI_USDC_CL_POOL, "slot0", "slot0():(uint160,int24,uint16,uint16,uint16,bool)")
+    .withArgs([])
+    .returns([
+      ethereum.Value.fromUnsignedBigInt(BigInt.fromString("63382530011411470074835160268800000")),
+      ethereum.Value.fromI32(0),
+      ethereum.Value.fromI32(0),
+      ethereum.Value.fromI32(0),
+      ethereum.Value.fromI32(0),
+      ethereum.Value.fromBoolean(true)
+    ])
+  createMockedFunction(DAI_USDC_CL_POOL, "token0", "token0():(address)").withArgs([]).returns([ethereum.Value.fromAddress(USDC_NATIVE)])
+  createMockedFunction(DAI_USDC_CL_POOL, "token1", "token1():(address)").withArgs([]).returns([ethereum.Value.fromAddress(DAI)])
+}
+
 describe("stablecoin pricing", () => {
   afterEach(() => {
     clearStore()
@@ -126,21 +145,14 @@ describe("stablecoin pricing", () => {
 
   test("a CL pool of 6- and 18-decimal tokens is priced with the decimals the right way round", () => {
     mockUsdcUsd()
-    const pool = Address.fromString("0x00000000000000000000000000000000000000c2")
-    // USDC token0 (6 dec), DAI token1 (18 dec); sqrtPrice 800,000 → 0.64 DAI per USDC → $1.5625
-    createMockedFunction(pool, "slot0", "slot0():(uint160,int24,uint16,uint16,uint16,bool)")
-      .withArgs([])
-      .returns([
-        ethereum.Value.fromUnsignedBigInt(BigInt.fromString("63382530011411470074835160268800000")),
-        ethereum.Value.fromI32(0),
-        ethereum.Value.fromI32(0),
-        ethereum.Value.fromI32(0),
-        ethereum.Value.fromI32(0),
-        ethereum.Value.fromBoolean(true)
-      ])
-    createMockedFunction(pool, "token0", "token0():(address)").withArgs([]).returns([ethereum.Value.fromAddress(USDC_NATIVE)])
-    createMockedFunction(pool, "token1", "token1():(address)").withArgs([]).returns([ethereum.Value.fromAddress(DAI)])
-    assert.stringEquals(getVelodromePrice(DAI, pool, USDC_NATIVE, BLOCK_TIMESTAMP).toString(), "1.5625")
+    mockDaiUsdcClPool()
+    assert.stringEquals(getVelodromePrice(DAI, DAI_USDC_CL_POOL, USDC_NATIVE, BLOCK_TIMESTAMP).toString(), "1.5625")
+  })
+
+  test("a CL pool's pair-leg feed is judged stale against the block", () => {
+    mockUsdcFeed(100000000, BLOCK_TIMESTAMP.minus(BigInt.fromI32(90001)))
+    mockDaiUsdcClPool()
+    assert.stringEquals(getVelodromePrice(DAI, DAI_USDC_CL_POOL, USDC_NATIVE, BLOCK_TIMESTAMP).toString(), "0")
   })
 
   test("a token that is not a stablecoin is never marked depegged", () => {
