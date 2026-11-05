@@ -15,10 +15,10 @@ import {
 } from "./uniV3Shared"
 import { getServiceByAgent } from "./config"
 import { ProtocolPosition } from "../generated/schema"
-import { Address } from "@graphprotocol/graph-ts"
+import { Address, log } from "@graphprotocol/graph-ts"
 import { calculatePortfolioMetrics } from "./helpers"
 import { PROTOCOL_UNISWAP_V3 } from "./constants"
-import { loadMappedPosition, mapNFTPosition, recordReleasedPrincipal, recordCollectedFees, reopenClosedWithoutExit } from "./positionIncome"
+import { loadMappedPosition, mapNFTPosition, unmapNFTPosition, recordReleasedPrincipal, recordCollectedFees, reopenClosedWithoutExit } from "./positionIncome"
 
 export function handleUniV3IncreaseLiquidity(event: IncreaseLiquidity): void {
   ensureUniV3PoolTemplate(event.params.tokenId)
@@ -72,12 +72,15 @@ export function handleUniV3Transfer(event: Transfer): void {
 
   if (toService) {
     ensureUniV3PoolTemplate(event.params.tokenId)
-    // A Safe getting back an NFT it held before: its row is the position again (a new row maps itself on creation)
-    let returnedId = getUniV3PositionId(event.params.to, event.params.tokenId)
-    let returned = ProtocolPosition.load(returnedId)
-    if (returned != null) {
-      mapNFTPosition(PROTOCOL_UNISWAP_V3, event.params.tokenId, returnedId)
-      reopenClosedWithoutExit(returned)
+    // A Safe getting back an NFT it held before: its row is the position again. With no row yet, the
+    // mapping is dropped so the sender's row does not take this Safe's events; the refresh below maps the row it creates
+    let receivedId = getUniV3PositionId(event.params.to, event.params.tokenId)
+    let received = ProtocolPosition.load(receivedId)
+    if (received != null) {
+      mapNFTPosition(PROTOCOL_UNISWAP_V3, event.params.tokenId, receivedId)
+      reopenClosedWithoutExit(received)
+    } else {
+      unmapNFTPosition(PROTOCOL_UNISWAP_V3, event.params.tokenId)
     }
   }
   
@@ -92,7 +95,7 @@ export function handleUniV3Transfer(event: Transfer): void {
       position.exitTimestamp = event.block.timestamp
       
       position.save()
-      // The later refresh skips an NFT no service holds, so the position's value leaves the portfolio here
+      // The refresh below revalues only the NFT's new owner, so the position's value leaves this Safe's portfolio here
       calculatePortfolioMetrics(event.params.from, event.block)
     }
   }
@@ -102,4 +105,10 @@ export function handleUniV3Transfer(event: Transfer): void {
   
   // Call refresh
   refreshUniV3Position(event.params.tokenId, event.block, event.transaction.hash)
+
+  if (toService && ProtocolPosition.load(getUniV3PositionId(event.params.to, event.params.tokenId)) == null) {
+    log.warning("UNISWAP V3: tokenId {} sent from {} to service safe {} has no position (ownerOf() or positions() failed at end of block); its events are not tracked", [
+      event.params.tokenId.toString(), event.params.from.toHexString(), event.params.to.toHexString()
+    ])
+  }
 }

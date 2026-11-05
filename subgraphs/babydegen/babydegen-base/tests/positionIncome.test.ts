@@ -65,7 +65,6 @@ describe("collected fees", () => {
 
   test("Collect finds the legacy Slipstream (aerodrome-cl) position and records only the fee part", () => {
     let p = seedPosition(SERVICE_SAFE, PROTOCOL_VELODROME_V3, BigInt.fromI32(7), USDC_NATIVE, BOLD, null, BigInt.zero(), "0")
-    closeAt(p, "120")
     // positions() reverts: the NFT is burned in this block, so this decrease is the exit ($50 + $50)
     createMockedFunction(VELO_MANAGER, "positions", "positions(uint256):(uint96,address,address,address,int24,int24,int24,uint128,uint256,uint256,uint128,uint128)")
       .withArgs([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(7))])
@@ -98,7 +97,7 @@ describe("collected fees", () => {
     positionField(p, "exitAmountUSD", "200")
   })
 
-  test("a full-exit decrease on a row closed in an earlier block replaces its exit", () => {
+  test("a decrease on a row whose exit was recorded in an earlier block keeps that exit", () => {
     let p = seedPosition(SERVICE_SAFE, PROTOCOL_VELODROME_V3, BigInt.fromI32(7), USDC_NATIVE, BOLD, null, BigInt.zero(), "0")
     closeAt(p, "120")
     p.exitTimestamp = BLOCK_TIMESTAMP.minus(BigInt.fromI32(100))
@@ -112,7 +111,7 @@ describe("collected fees", () => {
       .reverts()
     handleDecreaseLiquidity(newDecrease(BigInt.fromI32(7), USDC_50, BOLD_50))
 
-    positionField(p, "exitAmountUSD", "100")
+    positionField(p, "exitAmountUSD", "120")
   })
 
   test("a decrease after the NFT was burned or transferred away is not this position's exit", () => {

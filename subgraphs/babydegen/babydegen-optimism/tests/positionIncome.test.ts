@@ -1,7 +1,7 @@
 import { assert, describe, test, clearStore, afterEach, beforeEach, createMockedFunction } from "matchstick-as/assembly/index"
 import { Address, BigDecimal, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts"
 import { newMockEvent } from "matchstick-as/assembly/index"
-import { AgentSwapBuffer, ClaimableRewardBeforeBlock, ProtocolPosition } from "../generated/schema"
+import { AgentSwapBuffer, ClaimableRewardBeforeBlock, ProtocolPosition, Service } from "../generated/schema"
 import { Collect, DecreaseLiquidity } from "../generated/VeloNFTManager/VelodromePositionNFTManager"
 import {
   Collect as UniV3Collect,
@@ -97,7 +97,6 @@ describe("collected fees", () => {
 
   test("Collect finds the Velodrome CL position and records only the fee part", () => {
     let p = seedPosition(SERVICE_SAFE, PROTOCOL_VELODROME_V3, BigInt.fromI32(7), USDC_NATIVE, DAI, null, BigInt.zero(), "0")
-    closeAt(p, "120")
     // positions() reverts: the NFT is burned in this block, so this decrease is the exit ($50 + $50)
     createMockedFunction(VELO_MANAGER, "positions", "positions(uint256):(uint96,address,address,address,int24,int24,int24,uint128,uint256,uint256,uint128,uint128)")
       .withArgs([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(7))])
@@ -130,7 +129,7 @@ describe("collected fees", () => {
     positionField(p, "exitAmountUSD", "200")
   })
 
-  test("a full-exit decrease on a row closed in an earlier block replaces its exit", () => {
+  test("a decrease on a row whose exit was recorded in an earlier block keeps that exit", () => {
     let p = seedPosition(SERVICE_SAFE, PROTOCOL_VELODROME_V3, BigInt.fromI32(7), USDC_NATIVE, DAI, null, BigInt.zero(), "0")
     closeAt(p, "120")
     p.exitTimestamp = BLOCK_TIMESTAMP.minus(BigInt.fromI32(100))
@@ -144,7 +143,7 @@ describe("collected fees", () => {
       .reverts()
     handleDecreaseLiquidity(newDecrease(BigInt.fromI32(7), USDC_50, DAI_50))
 
-    positionField(p, "exitAmountUSD", "100")
+    positionField(p, "exitAmountUSD", "120")
   })
 
   test("Uniswap V3: an exit whose NFT is burned in the same block is taken from the decrease amounts, and decreases add up", () => {
@@ -402,7 +401,7 @@ describe("collected fees", () => {
     assert.entityCount("UncollectedPrincipal", 0)
   })
 
-  test("Uniswap V3: a full-exit decrease on a row closed in an earlier block replaces its exit", () => {
+  test("Uniswap V3: an exited NFT sent out keeps its exit when the new owner exits in a later block", () => {
     let p = seedPosition(SERVICE_SAFE, PROTOCOL_UNISWAP_V3, BigInt.fromI32(9), USDC_NATIVE, DAI, null, BigInt.zero(), "0")
     closeAt(p, "120")
     p.exitTimestamp = BLOCK_TIMESTAMP.minus(BigInt.fromI32(100))
@@ -412,8 +411,11 @@ describe("collected fees", () => {
     p.exitAmount1USD = BigDecimal.fromString("60")
     p.save()
     revertUniV3Positions(9)
+    mockUniV3Owner(9, OTHER)
+    handleUniV3Transfer(newUniV3Transfer(SERVICE_SAFE, OTHER, 9))
     handleUniV3DecreaseLiquidity(changetype<UniV3DecreaseLiquidity>(newDecrease(BigInt.fromI32(9), USDC_50, DAI_50, UNI_V3_MANAGER)))
-    positionField(p, "exitAmountUSD", "100")
+    positionField(p, "exitAmountUSD", "120")
+    positionField(p, "exitTimestamp", BLOCK_TIMESTAMP.minus(BigInt.fromI32(100)).toString())
   })
 
   test("Uniswap V3: a decrease after the NFT was transferred away is not this position's exit", () => {
@@ -423,10 +425,18 @@ describe("collected fees", () => {
     createMockedFunction(UNI_V3_MANAGER, "ownerOf", "ownerOf(uint256):(address)")
       .withArgs([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(9))])
       .reverts()
-    assert.entityCount("AgentPortfolio", 0)
+    p.usdCurrent = BigDecimal.fromString("100")
+    p.usdCurrentWithRewards = BigDecimal.fromString("100")
+    p.save()
+    let service = Service.load(SERVICE_SAFE)!
+    service.positionIds = [p.id]
+    service.save()
+    calculatePortfolioMetrics(SERVICE_SAFE, newUniV3Transfer(SERVICE_SAFE, OTHER, 9).block)
+    assert.fieldEquals("AgentPortfolio", SERVICE_SAFE.toHexString(), "positionsValue", "100")
     handleUniV3Transfer(newUniV3Transfer(SERVICE_SAFE, OTHER, 9))
     positionField(p, "isActive", "false")
-    assert.entityCount("AgentPortfolio", 1)
+    assert.fieldEquals("AgentPortfolio", SERVICE_SAFE.toHexString(), "positionsValue", "0")
+    assert.fieldEquals("AgentPortfolio", SERVICE_SAFE.toHexString(), "totalPositions", "0")
 
     handleUniV3DecreaseLiquidity(changetype<UniV3DecreaseLiquidity>(newDecrease(BigInt.fromI32(9), USDC_50, DAI_50, UNI_V3_MANAGER)))
     assert.assertTrue(ProtocolPosition.load(p.id)!.exitAmountUSD === null)
@@ -463,6 +473,20 @@ describe("collected fees", () => {
     assert.assertTrue(ProtocolPosition.load(a.id)!.exitAmountUSD === null)
   })
 
+  test("Uniswap V3: an NFT sent to a service Safe with no row is not left mapped to the sender's row", () => {
+    const SAFE_B = Address.fromString("0x00000000000000000000000000000000000000b2")
+    seedService(SAFE_B, OPERATOR_SAFE, AGENT_INSTANCE)
+    let a = seedPosition(SERVICE_SAFE, PROTOCOL_UNISWAP_V3, BigInt.fromI32(9), USDC_NATIVE, DAI, null, BigInt.zero(), "0")
+    revertUniV3Positions(9)
+    // The receiving Safe decreases and burns in this block, so the refresh cannot create its row
+    createMockedFunction(UNI_V3_MANAGER, "ownerOf", "ownerOf(uint256):(address)")
+      .withArgs([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(9))])
+      .reverts()
+    handleUniV3Transfer(newUniV3Transfer(SERVICE_SAFE, SAFE_B, 9))
+    positionField(a, "isActive", "false")
+    assert.notInStore("NFTPositionMapping", nftPositionMappingId(PROTOCOL_UNISWAP_V3, BigInt.fromI32(9)).toHexString())
+  })
+
   test("an NFT mapping follows the position it was last written for", () => {
     let a = Bytes.fromUTF8("a")
     let b = Bytes.fromUTF8("b")
@@ -474,6 +498,7 @@ describe("collected fees", () => {
   test("Uniswap V3: an NFT returned to a row that recorded its exit leaves it closed", () => {
     let p = seedPosition(SERVICE_SAFE, PROTOCOL_UNISWAP_V3, BigInt.fromI32(9), USDC_NATIVE, DAI, null, BigInt.zero(), "0")
     closeAt(p, "100")
+    revertUniV3Positions(9)
     mockUniV3Owner(9, SERVICE_SAFE)
     handleUniV3Transfer(newUniV3Transfer(OTHER, SERVICE_SAFE, 9))
     positionField(p, "isActive", "false")

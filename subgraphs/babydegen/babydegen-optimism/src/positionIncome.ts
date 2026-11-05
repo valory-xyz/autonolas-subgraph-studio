@@ -1,4 +1,4 @@
-import { Address, BigDecimal, BigInt, Bytes, ethereum, log } from "@graphprotocol/graph-ts"
+import { Address, BigDecimal, BigInt, Bytes, ethereum, log, store } from "@graphprotocol/graph-ts"
 import {
   ProtocolPosition,
   NFTPositionMapping,
@@ -22,7 +22,8 @@ export function nftPositionMappingId(protocol: string, tokenId: BigInt): Bytes {
   return Bytes.fromUTF8(protocol + "-" + tokenId.toString())
 }
 
-// The position id includes the owning Safe, so an NFT moved to another service Safe maps to that Safe's row
+// The position id includes the owning Safe, so the Uniswap V3 Transfer handler re-points the mapping at the
+// receiving Safe's row. CL mappings are written only at the mint
 export function mapNFTPosition(protocol: string, tokenId: BigInt, positionId: Bytes): void {
   let id = nftPositionMappingId(protocol, tokenId)
   let mapping = NFTPositionMapping.load(id)
@@ -34,6 +35,14 @@ export function mapNFTPosition(protocol: string, tokenId: BigInt, positionId: By
   }
   mapping.positionId = positionId
   mapping.save()
+}
+
+// An NFT no tracked row holds yet: its events resolve to nothing until a refresh creates and maps that row
+export function unmapNFTPosition(protocol: string, tokenId: BigInt): void {
+  let id = nftPositionMappingId(protocol, tokenId)
+  if (NFTPositionMapping.load(id) != null) {
+    store.remove("NFTPositionMapping", id.toHexString())
+  }
 }
 
 // The tracked position an NFT event refers to, or null when no service owns it
@@ -400,8 +409,7 @@ export function attributeRewardTransfer(event: ethereum.Event, from: Address, sa
 // NFT position exits (CL and Uniswap V3)
 // ---------------------------------------------------------------------------
 
-// Closed by an NFT Transfer or burn with no exit recorded: a later DecreaseLiquidity on the NFT is
-// its new owner's, not this position's
+// Closed by an NFT Transfer out with no exit recorded
 export function closedWithoutExit(pp: ProtocolPosition): boolean {
   return !pp.isActive && pp.exitAmountUSD === null
 }
@@ -416,6 +424,13 @@ export function reopenClosedWithoutExit(pp: ProtocolPosition): void {
   pp.exitTxHash = null
   pp.exitTimestamp = null
   pp.save()
+}
+
+// A decrease on a closed row is not this position's: the NFT left the Safe (a transfer out closed
+// the row with no exit) or its exit is already booked. The block that recorded the exit is the
+// exception, as decreases before a burn add up
+export function closedBeforeThisBlock(pp: ProtocolPosition, block: ethereum.Block): boolean {
+  return !pp.isActive && !exitClosedInBlock(pp, block)
 }
 
 // A DecreaseLiquidity already recorded this position's exit in this block. positions() reads

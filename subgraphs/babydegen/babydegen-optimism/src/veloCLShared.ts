@@ -23,7 +23,7 @@ import { isServiceAgent, getServiceByAgent } from "./config"
 import { parseTotalSlippageFromBucket, associateSwapsWithPosition } from "./helpers"
 import { getTokenSymbol, convertTokenAmount } from "./tokenUtils"
 import { initializePositionCosts, calculatePositionROI, initializePositionIncome } from "./roiCalculation"
-import { recordClaimableRewardBeforeBlock, nftPositionMappingId, closedWithoutExit, exitClosedInBlock, recordFullExit } from "./positionIncome"
+import { recordClaimableRewardBeforeBlock, nftPositionMappingId, closedBeforeThisBlock, exitClosedInBlock, recordFullExit } from "./positionIncome"
 
 
 // A CL position manager and what goes with it. The legacy Slipstream NFPM and Aero's share
@@ -217,8 +217,8 @@ export function refreshVeloCLPositionWithExitAmounts(
     return // Position should already exist
   }
   
-  if (closedWithoutExit(pp)) {
-    log.warning("CL exit: tx {} — DecreaseLiquidity for position {} (tokenId {}) skipped: closed with no exit recorded", [
+  if (closedBeforeThisBlock(pp, block)) {
+    log.warning("CL exit: tx {} — DecreaseLiquidity for position {} (tokenId {}) skipped: the position closed before this block", [
       txHash.toHexString(), positionId.toString(), tokenId.toString()
     ])
     return
