@@ -1965,7 +1965,7 @@ describe("Aero v2 pools (factories + GaugeManager)", () => {
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "rewardsContract", NEW_GAUGE.toHexString())
   })
 
-  test("a Mint on a row that still carries an exit starts a new cycle with no income", () => {
+  test("LP minted into a closed row starts a new cycle with no income, exit, costs or ROI", () => {
     createService(SERVICE_SAFE)
     mockChainlinkEthUsd()
     mockAeroUsdcPool()
@@ -2012,6 +2012,8 @@ describe("Aero v2 pools (factories + GaugeManager)", () => {
     closed.exitAmountUSD = BigDecimal.fromString("110")
     closed.collectedFeesUSD = BigDecimal.fromString("2")
     closed.claimedRewardsUSD = BigDecimal.fromString("5")
+    closed.totalCostsUSD = BigDecimal.fromString("3")
+    closed.positionROI = BigDecimal.fromString("4")
     closed.save()
 
     // Re-entry: the same pool, a new LP mint and Mint
@@ -2034,7 +2036,84 @@ describe("Aero v2 pools (factories + GaugeManager)", () => {
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "isActive", "true")
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "collectedFeesUSD", "0")
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimedRewardsUSD", "0")
-    assert.assertTrue(ProtocolPosition.load(id)!.exitTimestamp === null)
+    const reentered = ProtocolPosition.load(id)!
+    assert.assertTrue(reentered.exitTimestamp === null)
+    assert.assertTrue(reentered.exitTxHash === null)
+    assert.assertTrue(reentered.exitAmount0 === null && reentered.exitAmount1 === null)
+    assert.assertTrue(reentered.exitAmount0USD === null && reentered.exitAmount1USD === null)
+    assert.assertTrue(reentered.exitAmountUSD === null)
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "totalCostsUSD", "0")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "positionROI", "0")
+  })
+
+  test("a top-up after a partial Burn keeps the open position's income", () => {
+    createService(SERVICE_SAFE)
+    mockChainlinkEthUsd()
+    mockAeroUsdcPool()
+    saveAeroV2Venue(false)
+    // token0 = legacy AERO (priced ~$1.30) so entryAmountUSD is non-zero, as in the legacy Mint test
+    createMockedFunction(AERO_V2_POOL, "token0", "token0():(address)")
+      .withArgs([]).returns([ethereum.Value.fromAddress(AERO)])
+    createMockedFunction(AERO_V2_POOL, "token1", "token1():(address)")
+      .withArgs([]).returns([ethereum.Value.fromAddress(DUMMY1)])
+    createMockedFunction(AERO_V2_POOL, "stable", "stable():(bool)").withArgs([]).reverts()
+    createMockedFunction(AERO_V2_POOL, "balanceOf", "balanceOf(address):(uint256)")
+      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
+      .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(500))])
+    createMockedFunction(AERO_V2_POOL, "totalSupply", "totalSupply():(uint256)")
+      .withArgs([]).returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1000))])
+    createMockedFunction(AERO_V2_POOL, "getReserves", "getReserves():(uint256,uint256,uint256)")
+      .withArgs([]).returns([
+        ethereum.Value.fromUnsignedBigInt(BigInt.fromString("2000000000000000000")),
+        ethereum.Value.fromUnsignedBigInt(BigInt.fromString("4000000000000000000")),
+        ethereum.Value.fromUnsignedBigInt(BigInt.zero())
+      ])
+
+    const transfer = createV2TransferEvent(AERO_V2_POOL, Address.zero(), SERVICE_SAFE, BigInt.fromI32(500))
+    transfer.block = aeroBlock()
+    transfer.transaction.hash = TX_HASH
+    handleVeloV2Transfer(transfer)
+
+    const mint = createAeroV2MintEvent(
+      AERO_V2_POOL,
+      ROUTER,
+      SERVICE_SAFE,
+      BigInt.fromString("2000000000000000000"),
+      BigInt.fromString("6000000000000000000")
+    )
+    mint.block = aeroBlock()
+    mint.transaction.hash = TX_HASH
+    handleAeroV2Mint(mint)
+
+    // A partial Burn recorded an exit but left the row active; it has $2 of fees and $5 of rewards
+    const id = getVeloV2PositionId(SERVICE_SAFE, AERO_V2_POOL)
+    const closed = ProtocolPosition.load(id)!
+    closed.exitTimestamp = BLOCK_TIMESTAMP
+    closed.exitAmountUSD = BigDecimal.fromString("110")
+    closed.collectedFeesUSD = BigDecimal.fromString("2")
+    closed.claimedRewardsUSD = BigDecimal.fromString("5")
+    closed.save()
+
+    // Top-up: a new LP mint and Mint into the open row
+    const transfer2 = createV2TransferEvent(AERO_V2_POOL, Address.zero(), SERVICE_SAFE, BigInt.fromI32(500))
+    transfer2.block = aeroBlock()
+    transfer2.transaction.hash = TX_HASH
+    handleVeloV2Transfer(transfer2)
+
+    const mint2 = createAeroV2MintEvent(
+      AERO_V2_POOL,
+      ROUTER,
+      SERVICE_SAFE,
+      BigInt.fromString("2000000000000000000"),
+      BigInt.fromString("6000000000000000000")
+    )
+    mint2.block = aeroBlock()
+    mint2.transaction.hash = TX_HASH
+    handleAeroV2Mint(mint2)
+
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "isActive", "true")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "collectedFeesUSD", "2")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimedRewardsUSD", "5")
   })
 
   test("Aero's 4-arg Mint sets entry amounts", () => {

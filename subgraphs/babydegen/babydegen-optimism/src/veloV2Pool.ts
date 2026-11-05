@@ -17,7 +17,7 @@ import { PendingMintPosition, ProtocolPosition } from "../generated/schema"
 import { getTokenPriceUSD } from "./priceDiscovery"
 import { convertTokenAmount } from "./tokenUtils"
 import { initializePositionIncome } from "./roiCalculation"
-import { Address, ethereum } from "@graphprotocol/graph-ts"
+import { Address, BigDecimal, ethereum } from "@graphprotocol/graph-ts"
 
 
 // Store pending position that needs mint data
@@ -43,6 +43,33 @@ function getPendingPosition(txHash: Bytes, poolAddress: Bytes): PendingMintPosit
   return pending
 }
 
+// A v2 position is one row per pool, reused across entry/exit cycles: clear the last cycle's exit,
+// income, costs and ROI, and restart entry tracking as for a new row (the Mint sets the entry)
+function startNewCycle(pp: ProtocolPosition, event: ethereum.Event): void {
+  initializePositionIncome(pp)
+  pp.exitTxHash = null
+  pp.exitTimestamp = null
+  pp.exitAmount0 = null
+  pp.exitAmount0USD = null
+  pp.exitAmount1 = null
+  pp.exitAmount1USD = null
+  pp.exitAmountUSD = null
+  pp.entryTxHash = event.transaction.hash
+  pp.entryTimestamp = event.block.timestamp
+  pp.entryAmount0 = BigDecimal.zero()
+  pp.entryAmount0USD = BigDecimal.zero()
+  pp.entryAmount1 = BigDecimal.zero()
+  pp.entryAmount1USD = BigDecimal.zero()
+  pp.entryAmountUSD = BigDecimal.zero()
+  pp.totalCostsUSD = BigDecimal.zero()
+  pp.swapSlippageUSD = BigDecimal.zero()
+  pp.investmentUSD = BigDecimal.zero()
+  pp.grossGainUSD = BigDecimal.zero()
+  pp.netGainUSD = BigDecimal.zero()
+  pp.positionROI = BigDecimal.zero()
+  pp.save()
+}
+
 // Handle VelodromeV2 Pool Transfer events (LP token transfers) - THIS COMES FIRST
 export function handleVeloV2Transfer(event: Transfer): void {
   const from = event.params.from
@@ -57,7 +84,13 @@ export function handleVeloV2Transfer(event: Transfer): void {
     const service = getServiceByAgent(to)
     
     if (service != null) {
-      
+      // Checked before the refresh below marks the row active again: LP minted into a closed row
+      // starts a new cycle (a partial Burn leaves the row active, so a top-up keeps its cycle)
+      const closed = ProtocolPosition.load(getVeloV2PositionId(to, event.address))
+      if (closed != null && !closed.isActive) {
+        startNewCycle(closed, event)
+      }
+
       // Create the position with placeholder amounts (will be updated by Mint event)
       refreshVeloV2Position(to, event.address, event.block, event.transaction.hash)
       
@@ -124,19 +157,6 @@ function recordMintEntryAmounts(event: ethereum.Event, amount0: BigInt, amount1:
       const amount1USD = token1Price.times(amount1Human)
       const totalUSD = amount0USD.plus(amount1USD)
       
-      // A Mint on a row that still carries an exit starts a new cycle in the reused row: the last
-      // cycle's exit and income are not this cycle's gain
-      if (position.exitTimestamp !== null) {
-        initializePositionIncome(position)
-        position.exitTxHash = null
-        position.exitTimestamp = null
-        position.exitAmount0 = null
-        position.exitAmount0USD = null
-        position.exitAmount1 = null
-        position.exitAmount1USD = null
-        position.exitAmountUSD = null
-      }
-
       // Update entry amounts
       position.entryAmount0 = amount0Human
       position.entryAmount0USD = amount0USD
