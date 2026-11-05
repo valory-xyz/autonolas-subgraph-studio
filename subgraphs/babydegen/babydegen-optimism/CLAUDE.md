@@ -246,7 +246,7 @@ Daily population-level stats at UTC midnight (id: `<dayTimestamp>`).
 **File**: `src/veloNFTManager.ts`
 - `handleNFTTransfer`: FROM zero = position created; TO zero = position closed
 - `handleIncreaseLiquidity`: Updates position with new liquidity
-- `handleDecreaseLiquidity`: Records the released principal, then refreshes the position. A decrease leaving zero liquidity, or whose `positions()` reverts because the NFT is burned later in the same block (`eth_call` reads end-of-block state), closes it: the exit is valued from the event amounts and the stored tokens, decreases in the burn block add up, and a `CL exit:` warning is logged. A refresh later in the exit block (e.g. an IncreaseLiquidity reading end-of-block zero liquidity) keeps that exit, and any other decrease on a closed row (the NFT transferred away, or the exit already booked in an earlier block) is skipped and logged
+- `handleDecreaseLiquidity`: Records the released principal, then refreshes the position. A decrease leaving zero liquidity, or whose `positions()` reverts because the NFT is burned later in the same block (`eth_call` reads end-of-block state), closes it: the exit is valued from the event amounts and the stored tokens, decreases in the burn block add up, and a `CL exit:` warning is logged. A refresh later in the exit block (e.g. an IncreaseLiquidity reading end-of-block zero liquidity) keeps that exit, and any other decrease on a closed row (burned with no exit recorded, or the exit already booked in an earlier block) is skipped and logged. A CL transfer out does not close the row (a staked NFT leaves the Safe while still open), so a decrease by a wallet the NFT was sent to is still booked as the Safe's exit
 - `handleCollect`: Records the fee part of a `Collect` paid to the Safe — the amount minus principal that `DecreaseLiquidity` released since the last collect (`UncollectedPrincipal`). Looks the position up by `<protocol>-<tokenId>` like the other handlers; a closed position is not refreshed, so its exit amounts stay
 - All call `refreshVeloCLPosition()` to load current on-chain state
 
@@ -366,7 +366,7 @@ Deprecated: every `ethAdjusted*` field equals its unadjusted counterpart. Subtra
 ---
 
 ### v2 position cycles
-- A v2 position is one row per pool, reused across cycles: LP minted into a closed row (the LP mint Transfer, before its refresh) restarts it — income, exit, costs, ROI and entry tracking reset as for a new row, and the Mint records the new entry and sets `investmentUSD` to it plus the linked swap costs (as it does for a first cycle). A partial Burn records an exit but leaves the row active, so a later top-up keeps its income. `isActive` comes from end-of-block `balanceOf`, so a full exit and re-entry in one block keeps the old cycle (accepted)
+- A v2 position is one row per pool, reused across cycles: LP minted into a closed row (the LP mint Transfer, before its refresh) restarts it — income, exit, costs, ROI and entry tracking reset as for a new row, and the Mint records the new entry. The Mint in the tx that created or restarted the row (its `entryTxHash`) replaces the entry; a top-up Mint adds to it; either way `investmentUSD` = entry + `totalCostsUSD`. A partial Burn records an exit but leaves the row active, so a later top-up keeps its income. `isActive` comes from end-of-block `balanceOf`, so a full exit and re-entry in one block keeps the old cycle (accepted)
 
 ## Price Discovery
 

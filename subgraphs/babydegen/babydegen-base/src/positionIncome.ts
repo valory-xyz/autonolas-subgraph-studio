@@ -400,10 +400,10 @@ export function attributeRewardTransfer(event: ethereum.Event, from: Address, sa
 // NFT position exits (CL and Uniswap V3)
 // ---------------------------------------------------------------------------
 
-// A decrease on a closed row is not this position's: the NFT left the Safe (a transfer out closed
-// the row with no exit) or its exit is already booked. The block that recorded the exit is the
-// exception, as decreases before a burn add up
-export function closedBeforeThisBlock(pp: ProtocolPosition, block: ethereum.Block): boolean {
+// A decrease on a closed row is not this position's unless the row recorded its exit in this block
+// (decreases before a burn add up): otherwise its exit is already booked, or it was burned with no
+// exit recorded. A CL transfer out does not close the row
+export function closedWithNoExitThisBlock(pp: ProtocolPosition, block: ethereum.Block): boolean {
   return !pp.isActive && !exitClosedInBlock(pp, block)
 }
 

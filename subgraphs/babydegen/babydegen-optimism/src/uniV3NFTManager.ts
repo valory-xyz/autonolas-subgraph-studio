@@ -107,7 +107,7 @@ export function handleUniV3Transfer(event: Transfer): void {
   refreshUniV3Position(event.params.tokenId, event.block, event.transaction.hash)
 
   if (toService && ProtocolPosition.load(getUniV3PositionId(event.params.to, event.params.tokenId)) == null) {
-    log.warning("UNISWAP V3: tokenId {} sent from {} to service safe {} has no position (ownerOf() or positions() failed at end of block); its events are not tracked", [
+    log.warning("UNISWAP V3: tokenId {} sent from {} to service safe {} has no position after the refresh; its events are not tracked", [
       event.params.tokenId.toString(), event.params.from.toHexString(), event.params.to.toHexString()
     ])
   }

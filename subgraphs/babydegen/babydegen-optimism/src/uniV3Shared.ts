@@ -15,7 +15,7 @@ import { isServiceAgent, getServiceByAgent } from "./config"
 import { getTokenSymbol, convertTokenAmount } from "./tokenUtils"
 import { parseTotalSlippageFromBucket, associateSwapsWithPosition, ensureAgentPortfolio } from "./helpers"
 import { calculatePositionROI, initializePositionIncome } from "./roiCalculation"
-import { mapNFTPosition, loadMappedPosition, closedBeforeThisBlock, recordFullExit } from "./positionIncome"
+import { mapNFTPosition, loadMappedPosition, closedWithNoExitThisBlock, recordFullExit } from "./positionIncome"
 
 // Create or get Uniswap V3 position ID (consistent with Velodrome V2 pattern)
 export function getUniV3PositionId(userAddress: Address, tokenId: BigInt): Bytes {
@@ -265,11 +265,12 @@ export function refreshUniV3PositionWithExitAmounts(
     return
   }
   const positionSafe = Address.fromBytes(pp.agent)
-  // handleUniV3Transfer closes the row when the NFT leaves the Safe, before its new owner can decrease it.
-  // Not ownerOf(): it reads end-of-block state, so it would name the new owner for the Safe's own exit
-  // followed by a transfer out in the same block
-  if (closedBeforeThisBlock(pp, block)) {
-    log.warning("UNISWAP V3 exit: tx {} — DecreaseLiquidity for position {} (tokenId {}) of safe {} skipped: the position closed before this block", [
+  // A closed row takes a decrease only in the block that recorded its exit (decreases before a burn add up).
+  // Otherwise it is a new owner's (handleUniV3Transfer closes the row before they can decrease it) or one
+  // on an NFT whose exit is already booked. Not ownerOf(): it reads end-of-block state, so it would name
+  // the new owner for the Safe's own exit followed by a transfer out in the same block
+  if (closedWithNoExitThisBlock(pp, block)) {
+    log.warning("UNISWAP V3 exit: tx {} — DecreaseLiquidity for position {} (tokenId {}) of safe {} skipped: the position is closed and recorded no exit in this block", [
       txHash.toHexString(), pp.id.toString(), tokenId.toString(), positionSafe.toHexString()
     ])
     return
