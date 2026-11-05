@@ -12,9 +12,9 @@ import { calculatePortfolioMetrics } from "./helpers"
 import { WETH } from "./constants"
 
 // Transfer(address,address,uint256) — ERC-20 and ERC-721 share the topic; topics[2] is `to` in both
-export const TRANSFER_TOPIC = Bytes.fromHexString("0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef")
+const TRANSFER_TOPIC = Bytes.fromHexString("0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef")
 // SafeReceived(address,uint256)
-export const SAFE_RECEIVED_TOPIC = Bytes.fromHexString("0x3d0ce9bfc3ed7d6862dbb28b2dea94561fe714a1b4d019aa8af39730d1ad7c3d")
+const SAFE_RECEIVED_TOPIC = Bytes.fromHexString("0x3d0ce9bfc3ed7d6862dbb28b2dea94561fe714a1b4d019aa8af39730d1ad7c3d")
 // WETH9 Deposit(address indexed dst, uint256 wad): wrapping emits this, not a Transfer
 const WETH_DEPOSIT_TOPIC = Bytes.fromHexString("0xe1fffcc4923d04b559f4d29a8bfc6cda04eb5b0d3c460751c2402c5c5cc9109c")
 
@@ -46,7 +46,6 @@ export function getAddressType(addr: Address, block: ethereum.Block): AddressTyp
   return addressType
 }
 
-// A Safe is a contract that answers getThreshold()
 export function isSafeContract(addr: Address, isContract: boolean): boolean {
   return isContract && !GnosisSafe.bind(addr).try_getThreshold().reverted
 }
@@ -65,6 +64,24 @@ function isServiceOwnAddress(addr: Address, serviceSafe: Address, service: Servi
   return addr.equals(serviceSafe) || addr.equals(Address.zero()) || containsAddress(service.agentInstances, addr)
 }
 
+function loadFundingService(serviceSafe: Address): Service | null {
+  let service = getServiceByAgent(serviceSafe)
+  if (service == null) {
+    log.warning("[FUNDING_SOURCE] No service found for safe {}", [serviceSafe.toHexString()])
+  }
+  return service
+}
+
+// The user's side, once the service's own addresses are ruled out: the operator Safe, the tx
+// sender (always an EOA, though an EIP-7702 one has code and is no Safe), any other Safe, or an EOA
+function isUserSideOther(addr: Address, service: Service, event: ethereum.Event, readAddressType: AddressTypeReader): boolean {
+  if (addr.equals(Address.fromBytes(service.operatorSafe)) || addr.equals(event.transaction.from)) {
+    return true
+  }
+  let addressType = readAddressType(addr, event.block)
+  return !addressType.isContract || addressType.isSafe
+}
+
 // The user's side of a funding flow: the operator Safe, any other Safe, or an EOA that is not
 // one of the service's agent EOAs (gas sent to those is a cost, not a withdrawal)
 export function isUserSide(
@@ -73,20 +90,11 @@ export function isUserSide(
   event: ethereum.Event,
   readAddressType: AddressTypeReader
 ): boolean {
-  let service = getServiceByAgent(serviceSafe)
-  if (service == null) {
-    log.warning("[FUNDING_SOURCE] No service found for safe {}", [serviceSafe.toHexString()])
+  let service = loadFundingService(serviceSafe)
+  if (service == null || isServiceOwnAddress(addr, serviceSafe, service)) {
     return false
   }
-  if (isServiceOwnAddress(addr, serviceSafe, service)) {
-    return false
-  }
-  // The tx sender is always an EOA, though an EIP-7702 one has code and is no Safe
-  if (addr.equals(Address.fromBytes(service.operatorSafe)) || addr.equals(event.transaction.from)) {
-    return true
-  }
-  let addressType = readAddressType(addr, event.block)
-  return !addressType.isContract || addressType.isSafe
+  return isUserSideOther(addr, service, event, readAddressType)
 }
 
 export const ABI_WORD = 32
@@ -131,12 +139,12 @@ export function isWithdrawalRecipient(
   event: ethereum.Event,
   readAddressType: AddressTypeReader
 ): boolean {
-  if (isUserSide(addr, serviceSafe, event, readAddressType)) {
-    return true
-  }
-  let service = getServiceByAgent(serviceSafe)
+  let service = loadFundingService(serviceSafe)
   if (service == null || isServiceOwnAddress(addr, serviceSafe, service)) {
     return false
+  }
+  if (isUserSideOther(addr, service, event, readAddressType)) {
+    return true
   }
   let receipt = event.receipt
   if (receipt == null) {

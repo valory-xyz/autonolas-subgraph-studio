@@ -5,6 +5,7 @@ import { AggregatorV3Interface } from "../generated/templates/Safe/AggregatorV3I
 import { BalancerV2WeightedPool } from "../generated/BalancerVault/BalancerV2WeightedPool"
 import { BalancerV2Vault } from "../generated/BalancerVault/BalancerV2Vault"
 import { getTokenConfig, TokenConfig, PriceSourceConfig } from "./tokenConfig"
+import { convertTokenAmount } from "./tokenUtils"
 import { Q96, BALANCER_VAULT } from "./constants"
 
 // Chainlink price adapter with validation
@@ -75,6 +76,10 @@ export function getUniswapV3Price(
   
   let token0 = token0Result.value
   let token1 = token1Result.value
+  // The price is scaled by the other side's decimals and price, so it must be `pairToken`
+  if (!poolPairs(poolAddress, token0, token1, token, pairToken)) {
+    return BigDecimal.fromString("0")
+  }
   
   // Get actual token decimals from config instead of hardcoding
   let targetTokenConfig = getTokenConfig(token)
@@ -233,10 +238,7 @@ export function getVelodromeV2Price(
   }
   
   // Both the quote and the reserve ratio read the pool's other token as `pairToken`
-  if (!(token.equals(token0) && pairToken.equals(token1)) && !(token.equals(token1) && pairToken.equals(token0))) {
-    log.warning("PRICING: pool {} does not pair {} with {}; not used", [
-      poolAddress.toHexString(), token.toHexString(), pairToken.toHexString()
-    ])
+  if (!poolPairs(poolAddress, token0, token1, token, pairToken)) {
     return BigDecimal.fromString("0")
   }
 
@@ -260,8 +262,7 @@ export function getVelodromeV2Price(
       log.warning("PRICING: getAmountOut() reverted on stable pool {} pricing {}", [poolAddress.toHexString(), token.toHexString()])
       return BigDecimal.fromString("0")
     }
-    let pairUnit = BigInt.fromI32(10).pow(pairTokenConfig.decimals as u8).toBigDecimal()
-    return quote.value.toBigDecimal().div(pairUnit).times(getPairTokenPrice(pairToken, blockTimestamp))
+    return convertTokenAmount(quote.value, pairToken).times(getPairTokenPrice(pairToken, blockTimestamp))
   }
   
   // Get token decimals
@@ -367,6 +368,16 @@ function getPairTokenPrice(pairToken: Address, blockTimestamp: BigInt = BigInt.f
   }
   log.warning("PRICING: pair token {} has no valid feed price and no feed-paired pool — its pools give no price", [pairToken.toHexString()])
   return BigDecimal.zero()
+}
+
+function poolPairs(pool: Address, token0: Address, token1: Address, token: Address, pairToken: Address): boolean {
+  if ((token.equals(token0) && pairToken.equals(token1)) || (token.equals(token1) && pairToken.equals(token0))) {
+    return true
+  }
+  log.warning("PRICING: pool {} does not pair {} with {}; not used", [
+    pool.toHexString(), token.toHexString(), pairToken.toHexString()
+  ])
+  return false
 }
 
 function sourceOfType(config: TokenConfig, sourceType: string): PriceSourceConfig | null {

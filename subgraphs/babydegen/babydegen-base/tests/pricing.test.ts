@@ -4,7 +4,7 @@ import { FundingBalance, TokenBalance, AgentPortfolio } from "../generated/schem
 import { getTokenPriceUSD } from "../src/priceDiscovery"
 import { getVelodromePrice, getVelodromeV2Price } from "../src/priceAdapters"
 import { calculatePortfolioMetrics, ensureAgentPortfolio } from "../src/helpers"
-import { USDC_NATIVE, BOLD, AERO, DAI, USDC_USD_FEED } from "../src/constants"
+import { USDC_NATIVE, BOLD, AERO, DAI, USDC_USD_FEED, USDT, USDT_USD_FEED } from "../src/constants"
 import { mockUsdcUsd, mockEthUsd, seedService, seedTokenPrice, seedPosition } from "./fixtures"
 import { OPERATOR_SAFE, AGENT_INSTANCE, SERVICE_SAFE, BLOCK_NUMBER, BLOCK_TIMESTAMP } from "./test-helpers"
 import { createRegisterInstanceEvent } from "./mapping-utils"
@@ -165,6 +165,22 @@ describe("stablecoin pricing", () => {
     mockUsdcUsd()
     mockDaiUsdcClPool()
     assert.stringEquals(getVelodromePrice(DAI, DAI_USDC_CL_POOL, USDC_NATIVE, BLOCK_TIMESTAMP).toString(), "1.5625")
+  })
+
+  test("a CL pool that doesn't pair the token with its pair token is not used", () => {
+    // The USDC/DAI pool with USDT (6 decimals, like USDC) configured as the pair leg
+    mockUsdcUsd()
+    mockDaiUsdcClPool()
+    createMockedFunction(USDT_USD_FEED, "latestRoundData", "latestRoundData():(uint80,int256,uint256,uint256,uint80)")
+      .withArgs([])
+      .returns([
+        ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1)),
+        ethereum.Value.fromSignedBigInt(BigInt.fromI64(100000000)),
+        ethereum.Value.fromUnsignedBigInt(BLOCK_TIMESTAMP),
+        ethereum.Value.fromUnsignedBigInt(BLOCK_TIMESTAMP),
+        ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1))
+      ])
+    assert.stringEquals(getVelodromePrice(DAI, DAI_USDC_CL_POOL, USDT, BLOCK_TIMESTAMP).toString(), "0")
   })
 
   test("a CL pool's pair-leg feed is judged stale against the block", () => {

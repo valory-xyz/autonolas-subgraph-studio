@@ -228,6 +228,13 @@ describe("pool pair legs", () => {
     assert.stringEquals(getTokenPriceUSD(SDAI, BLOCK_TIMESTAMP).toString(), "1.5625")
   })
 
+  test("a CL pool that doesn't pair the token with its pair token is not used", () => {
+    // The USDC/sDAI pool with USDT (6 decimals, like USDC) configured as the pair leg
+    mockSdaiUsdcClPool()
+    mockUsdtFeed(100000000)
+    assert.stringEquals(getVelodromePrice(SDAI, SDAI_USDC_CL_POOL, USDT, BLOCK_TIMESTAMP).toString(), "0")
+  })
+
   test("a CL pool's pair-leg feed is judged stale against the block", () => {
     mockSdaiUsdcClPool()
     mockUsdcFeedAt(100000000, BLOCK_TIMESTAMP.minus(BigInt.fromI32(90001)))
