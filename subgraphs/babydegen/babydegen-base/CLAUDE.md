@@ -173,7 +173,7 @@ The `ethAdjusted*` fields are deprecated and equal their unadjusted counterparts
 - No $1 fallback. With no valid price a token keeps its last valid price with `priceStale = true`
   (logged once, `PRICING:`); a token never priced is 0.
 - `getTokenPriceUSD` reads sources by priority; a higher-numbered one only when every better
-  source failed. Chainlink answers within `STALE_PRICE_THRESHOLD` (24h heartbeat + 1h grace) are accepted.
+  source failed. Chainlink answers within `STALE_PRICE_THRESHOLD` are accepted.
 - A pool's pair leg is priced from its own token config, never taken as $1: its Chainlink source,
   else its `velodrome_v2` pool when that pool's pair leg has one; otherwise the pool gives no
   price. Feed staleness is judged against the event's block.
@@ -186,13 +186,17 @@ The `ethAdjusted*` fields are deprecated and equal their unadjusted counterparts
 - A v2 position is one row per pool, reused across cycles. LP minted into a closed row (seen by
   the LP mint Transfer, before its refresh marks the row active) restarts it: income, exit, costs,
   ROI and entry tracking reset as for a new row, and the Mint records the new entry. A partial
-  Burn records an exit but leaves the row active, so a later top-up keeps its income.
+  Burn records an exit but leaves the row active, so a later top-up keeps its income. `isActive`
+  comes from end-of-block `balanceOf`, so a full exit and re-entry in one block keeps the old cycle
+  (accepted).
 
 ### CL exits (`veloCLShared.ts`)
 - A `DecreaseLiquidity` leaving zero liquidity, or whose `positions()` reverts because the NFT is
   burned later in the same block (`eth_call` reads end-of-block state), closes the position: the
   exit is valued from the event amounts and the stored tokens, decreases in the burn block add up,
-  and a `CL exit:` warning is logged.
+  and a `CL exit:` warning is logged. A refresh later in the exit block (e.g. an IncreaseLiquidity
+  reading end-of-block zero liquidity) keeps that exit, and a decrease on a row closed with no exit
+  recorded (NFT transferred or burned away) is skipped.
 
 ### Position income (`positionIncome.ts`)
 - `ProtocolPosition.collectedFees0/1` and `collectedFeesUSD`: every `Collect` first pays out the

@@ -77,8 +77,7 @@ export function handleVeloV2Transfer(event: Transfer): void {
     const service = getServiceByAgent(to)
     
     if (service != null) {
-      // Read before the refresh below marks the row active again. isActive comes from end-of-block
-      // balanceOf, so a full exit and re-entry in one block keeps the old cycle (accepted)
+      // Read before the refresh below marks the row active again (CLAUDE.md: v2 position cycles)
       const closed = ProtocolPosition.load(getVeloV2PositionId(to, event.address))
       if (closed != null && !closed.isActive) {
         startNewCycle(closed, event)
