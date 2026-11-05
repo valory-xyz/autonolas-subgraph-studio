@@ -68,6 +68,27 @@ describe("funding: every tracked token counts", () => {
     fundingField(SAFE_CL, "totalWithdrawnUsd", "500")
   })
 
+  test("a deposit is in the portfolio's initial value when its metrics are recalculated", () => {
+    seedService(SAFE_CL, OPERATOR_SAFE, AGENT_INSTANCE)
+    seedAddressType(USER_EOA, false, false)
+    processERC20Transfer(newTransfer(USDC_NATIVE, USER_EOA, SAFE_CL, BigInt.fromI64(1000000000), 1, newReceipt([])), seededAddressType)
+    processERC20Transfer(newTransfer(USDC_NATIVE, USER_EOA, SAFE_CL, BigInt.fromI64(1000000000), 2, newReceipt([])), seededAddressType)
+    // $2000 held against $2000 funded: no profit
+    assert.fieldEquals("AgentPortfolio", SAFE_CL.toHexString(), "initialValue", "2000")
+    assert.fieldEquals("AgentPortfolio", SAFE_CL.toHexString(), "roi", "0")
+  })
+
+  test("a withdrawal is in the portfolio's value when its metrics are recalculated", () => {
+    seedService(SAFE_CL, OPERATOR_SAFE, AGENT_INSTANCE)
+    seedAddressType(USER_EOA, false, false)
+    processERC20Transfer(newTransfer(USDC_NATIVE, USER_EOA, SAFE_CL, BigInt.fromI64(1000000000), 1, newReceipt([])), seededAddressType)
+    processERC20Transfer(newTransfer(USDC_NATIVE, SAFE_CL, USER_EOA, BigInt.fromI64(400000000), 2, newReceipt([])), seededAddressType)
+    // $600 held plus $400 withdrawn against $1000 funded
+    assert.fieldEquals("AgentPortfolio", SAFE_CL.toHexString(), "uninvestedValue", "600")
+    assert.fieldEquals("AgentPortfolio", SAFE_CL.toHexString(), "totalWithdrawnUsd", "400")
+    assert.fieldEquals("AgentPortfolio", SAFE_CL.toHexString(), "roi", "0")
+  })
+
   test("a deposit from another Safe is funding", () => {
     seedService(SAFE_CL, OPERATOR_SAFE, AGENT_INSTANCE)
     seedAddressType(OTHER_SAFE, true, true)

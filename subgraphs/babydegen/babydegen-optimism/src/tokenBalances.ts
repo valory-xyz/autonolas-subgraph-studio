@@ -188,16 +188,13 @@ export function processERC20Transfer(event: TransferEvent, readAddressType: Addr
     attributeRewardTransfer(event, from, to, value)
     updateTokenBalance(to, tokenAddress, value, true, event.block)
     
-    // ALWAYS ensure portfolio exists and is updated for ANY token activity
     ensureAgentPortfolio(to, event.block.timestamp)
-    
-    // Trigger portfolio recalculation for any token balance change
-    calculatePortfolioMetrics(to, event.block)
-    
     if (isUserSide(from, to, event, readAddressType)) {
       let usdValue = transferUsdValue(value, tokenAddress, to, event)
       updateFundingBalance(to, usdValue, event.block.timestamp, txHash)
     }
+    // After the funding update, so a deposit is in initialValue as well as in the balances
+    calculatePortfolioMetrics(to, event.block)
   }
   
   // Handle transfers FROM service safes (withdrawals)
@@ -209,6 +206,7 @@ export function processERC20Transfer(event: TransferEvent, readAddressType: Addr
       let usdValue = transferUsdValue(value, tokenAddress, from, event)
       updateWithdrawalBalance(from, usdValue, event.block.timestamp)
     }
+    calculatePortfolioMetrics(from, event.block)
   }
 }
 
