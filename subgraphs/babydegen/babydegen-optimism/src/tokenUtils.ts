@@ -16,7 +16,9 @@ import {
   USDGLO,
   BOLD_V2,
   USDS,
-  XAERO
+  XAERO,
+  WBTC,
+  SUSD
 } from "./constants"
 
 // Centralized function to get token decimals
@@ -41,6 +43,8 @@ export function getTokenDecimals(tokenAddress: Address): i32 {
   if (tokenHex == BOLD_V2.toHexString().toLowerCase()) return 18      // BOLD (agent's)
   if (tokenHex == USDS.toHexString().toLowerCase()) return 18         // USDS
   if (tokenHex == XAERO.toHexString().toLowerCase()) return 18        // xAERO
+  if (tokenHex == WBTC.toHexString().toLowerCase()) return 8          // WBTC
+  if (tokenHex == SUSD.toHexString().toLowerCase()) return 18         // sUSD
   
   // Default to 18 decimals for unknown tokens
   log.warning("TOKEN_UTILS: Unknown token decimals for {}, defaulting to 18", [tokenHex])
@@ -69,6 +73,8 @@ export function getTokenSymbol(tokenAddress: Address): string {
   if (tokenHex == BOLD_V2.toHexString().toLowerCase()) return "BOLD"
   if (tokenHex == USDS.toHexString().toLowerCase()) return "USDS"
   if (tokenHex == XAERO.toHexString().toLowerCase()) return "xAERO"
+  if (tokenHex == WBTC.toHexString().toLowerCase()) return "WBTC"
+  if (tokenHex == SUSD.toHexString().toLowerCase()) return "sUSD"
   
   // Return the address as fallback for unknown tokens
   log.warning("TOKEN_UTILS: Unknown token symbol for {}, using address", [tokenHex])

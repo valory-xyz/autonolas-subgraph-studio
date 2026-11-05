@@ -37,6 +37,9 @@ export const ETH_USD_FEED = Address.fromString("0x13e3Ee699D1909E989722E753853AE
 export const USDC_USD_FEED = Address.fromString("0x16a9FA2FDa030272Ce99B29CF780dFA30361E0f3")
 export const USDT_USD_FEED = Address.fromString("0xECef79E109e997bCA29c1c0897ec9d7b03647F5E")
 export const DAI_USD_FEED = Address.fromString("0x8dBa75e83DA73cc766A7e5a0ee71F656BAb470d6")
+// Verified on-chain: live, 8 decimals, "WBTC / USD" / "SUSD / USD"
+export const WBTC_USD_FEED = Address.fromString("0x718A5788b89454aAE3A028AE9c111A29Be6c2a6F")
+export const SUSD_USD_FEED = Address.fromString("0x7f99817d87baD03ea21E05112Ca799d715730efe")
 
 // DeFi protocol addresses
 export const VELO_NFT_MANAGER = Address.fromString("0x416b433906b1B72FA758e166e239c43d68dC6F29")

@@ -5,8 +5,9 @@ import { getTokenPriceUSD } from "../src/priceDiscovery"
 import { getVelodromeV2Price } from "../src/priceAdapters"
 import { calculatePortfolioMetrics, ensureAgentPortfolio } from "../src/helpers"
 import { calculateUninvestedValue } from "../src/tokenBalances"
-import { USDT, DOLA, SDAI, BOLD, FRAX, LUSD, VELO, USDC_NATIVE, USDC_USD_FEED } from "../src/constants"
-import { mockUsdcUsd, mockEthUsd, seedService, seedTokenPrice } from "./fixtures"
+import { USDT, DOLA, SDAI, BOLD, FRAX, LUSD, VELO, WBTC, SUSD, USDC_NATIVE, USDC_USD_FEED, WBTC_USD_FEED, SUSD_USD_FEED } from "../src/constants"
+import { processERC20Transfer } from "../src/tokenBalances"
+import { mockUsdcUsd, mockEthUsd, seedService, seedTokenPrice, seedAddressType, seededAddressType, newTransfer, newReceipt } from "./fixtures"
 import { OPERATOR_SAFE, AGENT_INSTANCE, SERVICE_SAFE, BLOCK_NUMBER, BLOCK_TIMESTAMP } from "./test-helpers"
 import { createRegisterInstanceEvent } from "./mapping-utils"
 
@@ -20,7 +21,11 @@ const OTHER_POOL = Address.fromString("0x00000000000000000000000000000000000000c
 const ONE_18 = BigInt.fromString("1000000000000000000")
 
 function mockUsdcFeedAt(answer: i64): void {
-  createMockedFunction(USDC_USD_FEED, "latestRoundData", "latestRoundData():(uint80,int256,uint256,uint256,uint80)")
+  mockFeedAt(USDC_USD_FEED, answer)
+}
+
+function mockFeedAt(feed: Address, answer: i64): void {
+  createMockedFunction(feed, "latestRoundData", "latestRoundData():(uint80,int256,uint256,uint256,uint80)")
     .withArgs([])
     .returns([
       ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1)),
@@ -259,5 +264,32 @@ describe("portfolio value", () => {
     assert.stringEquals(p.ethAdjustedProjectedUnrealisedPnL.toString(), p.projectedUnrealisedPnL.toString())
     assert.stringEquals(p.ethAdjustedRoi.toString(), p.roi.toString())
     assert.stringEquals(p.ethAdjustedApr.toString(), p.apr.toString())
+  })
+})
+
+describe("WBTC and sUSD", () => {
+  afterEach(() => {
+    clearStore()
+  })
+
+  test("WBTC from the user's EOA is funding, valued at its feed", () => {
+    mockEthUsd()
+    seedService(SERVICE_SAFE, OPERATOR_SAFE, AGENT_INSTANCE)
+    const user = Address.fromString("0x00000000000000000000000000000000000000e0")
+    seedAddressType(user, false, false)
+    mockFeedAt(WBTC_USD_FEED, 8000000000000) // $80,000
+    processERC20Transfer(newTransfer(WBTC, user, SERVICE_SAFE, BigInt.fromI64(50000000), 1, newReceipt([])), seededAddressType)
+    assert.fieldEquals("FundingBalance", SERVICE_SAFE.toHexString(), "totalInUsd", "40000")
+  })
+
+  test("WBTC above the generic $100,000 cap is still priced", () => {
+    mockFeedAt(WBTC_USD_FEED, 15000000000000) // $150,000
+    assert.stringEquals(getTokenPriceUSD(WBTC, BLOCK_TIMESTAMP).toString(), "150000")
+  })
+
+  test("sUSD priced below $0.98 by its feed is marked depegged", () => {
+    mockFeedAt(SUSD_USD_FEED, 37625494) // its on-chain answer, $0.37625494
+    assert.stringEquals(getTokenPriceUSD(SUSD, BLOCK_TIMESTAMP).toString(), "0.37625494")
+    assert.fieldEquals("Token", SUSD.toHexString(), "depegged", "true")
   })
 })

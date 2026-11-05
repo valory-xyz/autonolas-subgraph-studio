@@ -331,9 +331,13 @@ function isValidPriceResult(price: BigDecimal, tokenSymbol: string): boolean {
     minPrice = BigDecimal.zero()
     maxPrice = BigDecimal.fromString("1.05")   // $1.05
   } else if (tokenSymbol == "LUSD" || tokenSymbol == "FRAX" || 
-      tokenSymbol == "DOLA") {
+      tokenSymbol == "DOLA" || tokenSymbol == "sUSD") {
     minPrice = BigDecimal.zero()
     maxPrice = BigDecimal.fromString("1.5")    // $1.50
+  } else if (tokenSymbol == "WBTC") {
+    // Above the generic $100,000 cap
+    minPrice = BigDecimal.fromString("1")
+    maxPrice = BigDecimal.fromString("10000000")
   } else {
     // Non-stablecoin tokens can have a wider range
     minPrice = BigDecimal.fromString("0.0001") // $0.0001
