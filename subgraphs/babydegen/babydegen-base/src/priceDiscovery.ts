@@ -1,7 +1,7 @@
 import { Address, BigDecimal, BigInt, Bytes, ethereum, log } from "@graphprotocol/graph-ts"
 import { Token, PriceSource, PriceUpdate } from "../generated/schema"
 import { getTokenConfig, TokenConfig, PriceSourceConfig } from "./tokenConfig"
-import { STABLECOINS } from "./constants"
+import { STABLECOINS, USDC_NATIVE } from "./constants"
 
 // Cache duration: 5 minutes
 const PRICE_CACHE_DURATION = BigInt.fromI32(300)
@@ -323,21 +323,27 @@ function createPriceUpdate(
 }
 
 function isValidPriceResult(price: BigDecimal, token: Token): boolean {
-  let symbol = token.symbol
+  let tokenAddress = Address.fromBytes(token.id)
   let minPrice: BigDecimal
   let maxPrice: BigDecimal
   // Stablecoins (STABLECOINS) have no lower bound, so a depeg is recorded rather than rejected
-  if (symbol == "USDC" || symbol == "USDC.e") {
+  if (tokenAddress.equals(USDC_NATIVE)) {
     minPrice = BigDecimal.zero()
     maxPrice = BigDecimal.fromString("1.05")
-  } else if (isStablecoin(Address.fromBytes(token.id))) {
+  } else if (isStablecoin(tokenAddress)) {
     minPrice = BigDecimal.zero()
     maxPrice = BigDecimal.fromString("1.5")
   } else {
     minPrice = BigDecimal.fromString("0.0001")
     maxPrice = BigDecimal.fromString("100000")
   }
-  return price.gt(minPrice) && price.lt(maxPrice)
+  let valid = price.gt(minPrice) && price.lt(maxPrice)
+  if (!valid) {
+    log.warning("PRICING: {} ({}) price {} is outside its band ({}, {}) — rejected", [
+      token.symbol, tokenAddress.toHexString(), price.toString(), minPrice.toString(), maxPrice.toString()
+    ])
+  }
+  return valid
 }
 
 // Import price adapter functions 

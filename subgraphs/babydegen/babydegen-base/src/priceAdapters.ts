@@ -265,7 +265,13 @@ function getPairTokenPrice(pairToken: Address, blockTimestamp: BigInt = BigInt.f
   if (config !== null) {
     let feed = sourceOfType(config!, "chainlink")
     if (feed !== null) {
-      return getChainlinkPrice(feed!.address, blockTimestamp)
+      let feedPrice = getChainlinkPrice(feed!.address, blockTimestamp)
+      if (feedPrice.gt(BigDecimal.zero())) {
+        return feedPrice
+      }
+      log.warning("PRICING: pair token {} feed {} gave no valid price at block time {} (reverted, stale or not positive)", [
+        pairToken.toHexString(), feed!.address.toHexString(), blockTimestamp.toString()
+      ])
     }
     let pool = sourceOfType(config!, "velodrome_v2")
     if (pool !== null && pool!.pairToken !== null) {
@@ -275,7 +281,7 @@ function getPairTokenPrice(pairToken: Address, blockTimestamp: BigInt = BigInt.f
       }
     }
   }
-  log.warning("PRICING: pair token {} has no feed or feed-paired pool — its pools give no price", [pairToken.toHexString()])
+  log.warning("PRICING: pair token {} has no valid feed price and no feed-paired pool — its pools give no price", [pairToken.toHexString()])
   return BigDecimal.zero()
 }
 

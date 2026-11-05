@@ -375,6 +375,28 @@ describe("pair-leg pricing", () => {
     assert.stringEquals(getTokenPriceUSD(BOLD_V2, BLOCK_TIMESTAMP).toString(), "0.999")
   })
 
+  test("a volatile pool's pair-leg feed is judged stale against the block, whichever side the token is", () => {
+    // 50,000 USDC vs 1,000,000 VELO; the pool's own last-trade time (0) is no clock
+    let usdc = ethereum.Value.fromUnsignedBigInt(BigInt.fromI64(50000000000))
+    let velo = ethereum.Value.fromUnsignedBigInt(BigInt.fromString("1000000000000000000000000"))
+    createMockedFunction(VELO_USDC_POOL, "stable", "stable():(bool)").withArgs([]).returns([ethereum.Value.fromBoolean(false)])
+    mockUsdcFeedAt(100000000, BLOCK_TIMESTAMP.minus(BigInt.fromI32(90001)))
+
+    // VELO as token1
+    createMockedFunction(VELO_USDC_POOL, "token0", "token0():(address)").withArgs([]).returns([ethereum.Value.fromAddress(USDC_NATIVE)])
+    createMockedFunction(VELO_USDC_POOL, "token1", "token1():(address)").withArgs([]).returns([ethereum.Value.fromAddress(VELO)])
+    createMockedFunction(VELO_USDC_POOL, "getReserves", "getReserves():(uint256,uint256,uint256)").withArgs([])
+      .returns([usdc, velo, ethereum.Value.fromUnsignedBigInt(BigInt.zero())])
+    assert.stringEquals(getVelodromeV2Price(VELO, VELO_USDC_POOL, USDC_NATIVE, BLOCK_TIMESTAMP).toString(), "0")
+
+    // VELO as token0
+    createMockedFunction(VELO_USDC_POOL, "token0", "token0():(address)").withArgs([]).returns([ethereum.Value.fromAddress(VELO)])
+    createMockedFunction(VELO_USDC_POOL, "token1", "token1():(address)").withArgs([]).returns([ethereum.Value.fromAddress(USDC_NATIVE)])
+    createMockedFunction(VELO_USDC_POOL, "getReserves", "getReserves():(uint256,uint256,uint256)").withArgs([])
+      .returns([velo, usdc, ethereum.Value.fromUnsignedBigInt(BigInt.zero())])
+    assert.stringEquals(getVelodromeV2Price(VELO, VELO_USDC_POOL, USDC_NATIVE, BLOCK_TIMESTAMP).toString(), "0")
+  })
+
   test("a pair-leg feed exactly 90000s old is still accepted", () => {
     mockImbalancedStablePool(DOLA_USDC_POOL, DOLA, USDC_NATIVE, ONE_18, 994053)
     mockUsdcFeedAt(100000000, BLOCK_TIMESTAMP.minus(BigInt.fromI32(90000)))
