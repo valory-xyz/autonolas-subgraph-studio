@@ -85,7 +85,6 @@ export function recordCollectedFees(
   let token0Bytes = position.token0
   let token1Bytes = position.token1
   if (!recipient.equals(Address.fromBytes(position.agent))) {
-    // Scoped rule: only a Collect to the Safe is the Safe's fee
     log.info("FEES: {} tokenId {} Collect to {}, not safe {} — no fee booked", [
       protocol, position.tokenId.toString(), recipient.toHexString(), Address.fromBytes(position.agent).toHexString()
     ])
@@ -125,8 +124,7 @@ export function recordClaimableRewardBeforeBlock(position: ProtocolPosition, blo
     before = new ClaimableRewardBeforeBlock(position.id)
   }
   before.block = block.number
-  let claimable = position.claimableReward
-  before.claimableReward = claimable ? claimable : BigDecimal.zero()
+  before.claimableReward = currentClaimableReward(position)
   before.save()
 }
 
@@ -135,6 +133,10 @@ function claimableRewardBeforeBlock(position: ProtocolPosition, block: ethereum.
   if (before != null && before.block.equals(block.number)) {
     return before.claimableReward
   }
+  return currentClaimableReward(position)
+}
+
+function currentClaimableReward(position: ProtocolPosition): BigDecimal {
   let claimable = position.claimableReward
   return claimable ? claimable : BigDecimal.zero()
 }
@@ -145,8 +147,16 @@ function creditReward(position: ProtocolPosition, amount: BigDecimal, priceUSD: 
   saveWithROI(position)
 }
 
+// Split by weight; equally when every weight is 0
 function splitReward(positions: ProtocolPosition[], weights: BigDecimal[], amount: BigDecimal, priceUSD: BigDecimal): void {
   let total = sum(weights)
+  if (total.equals(BigDecimal.zero())) {
+    weights = []
+    for (let i = 0; i < positions.length; i++) {
+      weights.push(BigDecimal.fromString("1"))
+    }
+    total = BigDecimal.fromString(positions.length.toString())
+  }
   for (let i = 0; i < positions.length; i++) {
     creditReward(positions[i], amount.times(weights[i]).div(total), priceUSD)
   }
@@ -288,7 +298,8 @@ function nextGaugeWithdrawTokenId(
 export function attributeRewardTransfer(event: ethereum.Event, from: Address, safe: Address, amount: BigInt): boolean {
   let receipt = event.receipt
   if (receipt == null) {
-    log.warning("REWARDS: no receipt for tx {} — Transfer to safe {} not checked for a reward claim", [
+    // Every Transfer source sets `receipt: true`, so a missing receipt is a manifest bug
+    log.error("REWARDS: no receipt for tx {} — Transfer to safe {} not checked for a reward claim", [
       event.transaction.hash.toHexString(),
       safe.toHexString()
     ])
@@ -362,12 +373,6 @@ export function attributeRewardTransfer(event: ethereum.Event, from: Address, sa
     return true
   }
   let weights = hasCL && sum(earnedBefore).gt(BigDecimal.zero()) ? earnedBefore : liquidityWeights(active)
-  if (sum(weights).equals(BigDecimal.zero())) {
-    weights = []
-    for (let i = 0; i < active.length; i++) {
-      weights.push(BigDecimal.fromString("1"))
-    }
-  }
   splitReward(active, weights, rewardAmount, priceUSD)
   return true
 }

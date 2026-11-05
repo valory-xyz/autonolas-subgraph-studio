@@ -82,8 +82,7 @@ function isUserSideOther(addr: Address, service: Service, event: ethereum.Event,
   return !addressType.isContract || addressType.isSafe
 }
 
-// Rules out the service's own addresses (its Safe, agent EOAs, the zero address) before the
-// user-side rule; gas sent to an agent EOA is a cost, not a withdrawal
+// Gas sent to an agent EOA is a cost, not a withdrawal
 export function isUserSide(
   addr: Address,
   serviceSafe: Address,
@@ -162,8 +161,8 @@ export function isWithdrawalRecipient(
   return !receiptHasInflowTo(serviceSafe, receipt)
 }
 
-// Legacy isSafe function - now checks if address is any service safe
-export function isSafe(addr: Address, txHash: string = ""): boolean {
+// One of our service Safes (not "any Safe", which is AddressType.isSafe / isSafeContract)
+export function isServiceSafe(addr: Address, txHash: string = ""): boolean {
   return getServiceByAgent(addr) !== null
 }
 

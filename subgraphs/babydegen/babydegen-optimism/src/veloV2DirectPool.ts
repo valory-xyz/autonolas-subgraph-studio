@@ -10,7 +10,7 @@ import {
 } from "./veloV2Shared"
 
 import { log } from "@graphprotocol/graph-ts"
-import { isSafe } from "./common"
+import { isServiceSafe } from "./common"
 
 // Handle direct VelodromeV2 Pool Mint events
 export function handleVeloV2DirectMint(event: Mint): void {
@@ -94,7 +94,7 @@ export function handleVeloV2DirectTransfer(event: Transfer): void {
   if (from.toHexString() == "0x0000000000000000000000000000000000000000") {
     log.warning("VELODROME V2 DIRECT: LP tokens minted to {}", [to.toHexString()])
     
-    if (isSafe(to)) {
+    if (isServiceSafe(to)) {
       log.warning("VELODROME V2 DIRECT: ✅ LP MINTED TO SAFE! Refreshing position", [])
       refreshVeloV2Position(to, event.address, event.block, event.transaction.hash)
     } else {
