@@ -12,7 +12,7 @@ import { handleUniV3Collect, handleUniV3DecreaseLiquidity } from "../src/uniV3NF
 import { processERC20Transfer } from "../src/tokenBalances"
 import { attributeRewardTransfer, recordClaimableRewardBeforeBlock } from "../src/positionIncome"
 import { calculateActualROI } from "../src/roiCalculation"
-import { USDC_NATIVE, DAI, VELO, VELO_MANAGER, UNI_V3_MANAGER, PROTOCOL_VELODROME_V3, PROTOCOL_VELODROME_V2, PROTOCOL_UNISWAP_V3, PROTOCOL_AERO_CL } from "../src/constants"
+import { USDC_NATIVE, DAI, VELO, VELO_MANAGER, UNI_V3_MANAGER, PROTOCOL_VELODROME_V3, PROTOCOL_VELODROME_V2, PROTOCOL_UNISWAP_V3, PROTOCOL_AERO_CL, AERO_NFT_MANAGER } from "../src/constants"
 import { newLog, newReceipt, newTransfer, mockEthUsd, seedService, seedAddressType, seedTokenPrice, seedPosition, seededAddressType } from "./fixtures"
 import { OPERATOR_SAFE, AGENT_INSTANCE, SERVICE_SAFE, BLOCK_NUMBER, BLOCK_TIMESTAMP } from "./test-helpers"
 
@@ -28,13 +28,14 @@ function closeAt(p: ProtocolPosition, exitUSD: string): void {
   p.save()
 }
 
-function newCollect(tokenId: BigInt, recipient: Address, amount0: BigInt, amount1: BigInt): Collect {
+function newCollect(tokenId: BigInt, recipient: Address, amount0: BigInt, amount1: BigInt, manager: Address = VELO_MANAGER): Collect {
   let event = changetype<Collect>(newMockEvent())
   event.parameters = new Array()
   event.parameters.push(new ethereum.EventParam("tokenId", ethereum.Value.fromUnsignedBigInt(tokenId)))
   event.parameters.push(new ethereum.EventParam("recipient", ethereum.Value.fromAddress(recipient)))
   event.parameters.push(new ethereum.EventParam("amount0", ethereum.Value.fromUnsignedBigInt(amount0)))
   event.parameters.push(new ethereum.EventParam("amount1", ethereum.Value.fromUnsignedBigInt(amount1)))
+  event.address = manager
   event.block.number = BLOCK_NUMBER
   event.block.timestamp = BLOCK_TIMESTAMP
   return event
@@ -43,8 +44,9 @@ function newCollect(tokenId: BigInt, recipient: Address, amount0: BigInt, amount
 const USDC_50 = BigInt.fromI64(50000000)
 const DAI_50 = BigInt.fromString("50000000000000000000")
 
-function newDecrease(tokenId: BigInt, amount0: BigInt, amount1: BigInt): DecreaseLiquidity {
+function newDecrease(tokenId: BigInt, amount0: BigInt, amount1: BigInt, manager: Address = VELO_MANAGER): DecreaseLiquidity {
   let event = changetype<DecreaseLiquidity>(newMockEvent())
+  event.address = manager
   event.parameters = new Array()
   event.parameters.push(new ethereum.EventParam("tokenId", ethereum.Value.fromUnsignedBigInt(tokenId)))
   event.parameters.push(new ethereum.EventParam("liquidity", ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1))))
@@ -115,6 +117,24 @@ describe("collected fees", () => {
 
     positionField(p, "collectedFees0", "5")
     positionField(p, "collectedFeesUSD", "5")
+  })
+
+  test("an Aero NFPM Collect books its fee on the aero-cl position, not a Velodrome one with the same tokenId", () => {
+    let velo = seedPosition(SERVICE_SAFE, PROTOCOL_VELODROME_V3, BigInt.fromI32(7), USDC_NATIVE, DAI, null, BigInt.zero(), "0")
+    closeAt(velo, "100")
+    let aero = seedPosition(SERVICE_SAFE, PROTOCOL_AERO_CL, BigInt.fromI32(7), USDC_NATIVE, DAI, null, BigInt.zero(), "0")
+    closeAt(aero, "100")
+    createMockedFunction(AERO_NFT_MANAGER, "positions", "positions(uint256):(uint96,address,address,address,int24,int24,int24,uint128,uint256,uint256,uint128,uint128)")
+      .withArgs([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(7))])
+      .reverts()
+    handleDecreaseLiquidity(newDecrease(BigInt.fromI32(7), USDC_50, DAI_50, AERO_NFT_MANAGER))
+
+    // The principal is owed under aero-cl, so a Velodrome Collect of the same tokenId is all fee
+    handleCollect(newCollect(BigInt.fromI32(7), SERVICE_SAFE, BigInt.fromI64(2000000), BigInt.zero()))
+    handleCollect(newCollect(BigInt.fromI32(7), SERVICE_SAFE, BigInt.fromI64(51000000), BigInt.fromString("50500000000000000000"), AERO_NFT_MANAGER))
+
+    positionField(aero, "collectedFeesUSD", "1.5")
+    positionField(velo, "collectedFeesUSD", "2")
   })
 
   test("Uniswap V3: DecreaseLiquidity principal is subtracted from the next Collect", () => {

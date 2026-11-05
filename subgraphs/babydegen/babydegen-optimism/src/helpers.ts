@@ -13,7 +13,7 @@ import { getServiceByAgent } from "./config"
 import { calculateActualROI, aggregateClosedPositionMetrics } from "./roiCalculation"
 import { getEthUsd } from "./common"
 import { getTokenPriceUSD } from "./priceDiscovery"
-import { WETH, WHITELISTED_TOKENS, PROTOCOL_VELODROME_V2, PROTOCOL_VELODROME_V3, PROTOCOL_UNISWAP_V3, PROTOCOL_BALANCER } from "./constants"
+import { WETH, WHITELISTED_TOKENS, PROTOCOL_VELODROME_V2, PROTOCOL_VELODROME_V3, PROTOCOL_AERO_CL, PROTOCOL_AERO_V2, PROTOCOL_UNISWAP_V3, PROTOCOL_BALANCER } from "./constants"
 import { TokenBalance } from "../generated/schema"
 import { refreshVeloV2Position } from "./veloV2Shared"
 import { refreshVeloCLPosition } from "./veloCLShared"
@@ -282,7 +282,7 @@ export function refreshAllActivePositions(
       let protocol = position.protocol
       
       // Call protocol-specific refresh function with updatePortfolio flag
-      if (protocol == PROTOCOL_VELODROME_V2) {
+      if (protocol == PROTOCOL_VELODROME_V2 || protocol == PROTOCOL_AERO_V2) {
         refreshVeloV2Position(
           Address.fromBytes(position.agent),
           Address.fromBytes(position.pool),
@@ -290,7 +290,7 @@ export function refreshAllActivePositions(
           Bytes.empty(),
           updatePortfolio
         )
-      } else if (protocol == PROTOCOL_VELODROME_V3) {
+      } else if (protocol == PROTOCOL_VELODROME_V3 || protocol == PROTOCOL_AERO_CL) {
         refreshVeloCLPosition(
           position.id,
           position.tokenId,

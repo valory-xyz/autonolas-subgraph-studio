@@ -64,10 +64,10 @@ type FundingBalance @entity(immutable: false) {
 }
 
 type ProtocolPosition @entity(immutable: false) {
-  id: Bytes!                # "<agent>-<tokenId>"
+  id: Bytes!                # CL: "<agent>-<protocol>-<tokenId>", v2: "<agent>-<protocol>-<pool>"
   agent: Bytes!             @index
   service: Service          # Link to service
-  protocol: String!         @index   # "velodrome-cl"
+  protocol: String!         @index   # e.g. "velodrome-v3", "velodrome-v2", "aero-cl", "aero-v2"
   pool: Bytes!
   
   # Position status
@@ -442,4 +442,19 @@ type ClaimableRewardBeforeBlock @entity(immutable: false) {
 # Reward claim logs already credited to a position (one claim, one credit)
 type CreditedRewardClaim @entity(immutable: true) {
   id: Bytes!                        # txHash + logIndex of the claim log
+}
+
+# Aero pool -> gauge, from GaugeManager GaugeCreated; read by resolveV2Gauge. CL pools get a row
+# too, unused: the CL path reads pool.gauge().
+type AeroGauge @entity(immutable: false) {
+  id: Bytes!                # pool (GaugeCreated._target)
+  gauge: Bytes!             # GaugeCreated._gauge; a later GaugeCreated for the same pool replaces it
+  createdAtBlock: BigInt!
+}
+
+# Venue of a v2 pool, written by the factory handler that created it. Pools with no row are legacy.
+type V2PoolVenue @entity(immutable: true) {
+  id: Bytes!                # pool address
+  protocol: String!         # "aero-v2"
+  stable: Boolean!          # created by the stable factory (Aero v2 pools have no stable())
 }

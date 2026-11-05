@@ -7,7 +7,7 @@ This subgraph tracks agent portfolio performance and population-level metrics fo
 The BabyDegen subgraph provides real-time indexing of autonomous agent activities, tracking:
 
 - **Portfolio Performance**: Real-time unrealised PnL calculations with ETH-adjusted metrics
-- **DeFi Positions**: Multi-protocol position tracking across Velodrome CL, Velodrome V2, Uniswap V3, and Balancer V2
+- **DeFi Positions**: Multi-protocol position tracking across Velodrome CL, Velodrome V2, Aero CL, Aero v2, Uniswap V3, and Balancer V2
 - **Token Management**: Balance tracking and uninvested fund monitoring
 - **Population Analytics**: Daily median metrics with lifetime active agent segmentation
 - **Daily Snapshots**: UTC midnight portfolio snapshots for historical analysis
@@ -164,7 +164,7 @@ Daily immutable snapshots with ETH-adjusted metrics:
 
 #### `ProtocolPosition`
 Individual DeFi positions across supported protocols:
-- **protocol**: "velodrome-cl", "velodrome-v2", "uniswap-v3", or "balancer"
+- **protocol**: "velodrome-v3", "velodrome-v2", "aero-cl", "aero-v2", "uniswap-v3", or "balancer"
 - **tokenId**: NFT token ID for LP positions (0 for Velodrome V2)
 - **isActive**: Position status (open/closed)
 - **usdCurrent**: Current USD value
@@ -265,7 +265,7 @@ Comprehensive daily population-level metrics calculated at UTC midnight:
 - AUM tracking for staking APR calculations
 
 ### Multi-Protocol Support
-- Unified tracking across Velodrome CL, Velodrome V2, Uniswap V3, and Balancer V2
+- Unified tracking across Velodrome CL, Velodrome V2, Aero CL, Aero v2, Uniswap V3, and Balancer V2
 - Protocol-specific position metadata (ticks, fees, etc.)
 - Consistent position lifecycle tracking across all protocols
 

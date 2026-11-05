@@ -16,7 +16,8 @@ concurrency:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Matchstick 0.6.0 has no binary for Ubuntu 26; move this with the matchstick-as pin
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:

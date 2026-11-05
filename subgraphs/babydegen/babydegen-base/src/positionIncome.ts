@@ -7,7 +7,7 @@ import {
   CreditedRewardClaim,
   Service
 } from "../generated/schema"
-import { PROTOCOL_VELODROME_V3, PROTOCOL_AERO_CL, AERO_CL_EMISSION_TOKEN } from "./constants"
+import { PROTOCOL_VELODROME_V3, PROTOCOL_AERO_CL, rewardTokenFor } from "./constants"
 import { getTokenPriceUSD } from "./priceDiscovery"
 import { getTokenDecimals } from "./tokenUtils"
 import { calculatePositionROI } from "./roiCalculation"
@@ -189,7 +189,7 @@ function attributeEmissionsClaims(
   amount: BigInt,
   receipt: ethereum.TransactionReceipt
 ): boolean {
-  if (!event.address.equals(AERO_CL_EMISSION_TOKEN)) {
+  if (!event.address.equals(rewardTokenFor(PROTOCOL_AERO_CL))) {
     return false
   }
   let paid = BigInt.zero()
