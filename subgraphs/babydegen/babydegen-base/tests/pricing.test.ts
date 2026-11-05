@@ -314,6 +314,14 @@ describe("pair-leg hops", () => {
     TOKENS.delete(HOP_Q.toHexString().toLowerCase())
   })
 
+  test("a pair leg with no feed is priced through its own pool to a feed-priced token", () => {
+    // P has no feed; its pool pairs it with USDC at $1
+    TOKENS.set(HOP_P.toHexString().toLowerCase(), new TokenConfig(HOP_P, "P", 18, [new PriceSourceConfig(HOP_P_Q_POOL, "velodrome_v2", 1, 80, USDC_NATIVE)]))
+    mockImbalancedStablePool(HOP_P_Q_POOL, HOP_P, USDC_NATIVE, BigInt.fromString("1000000000000000000"), 1000000)
+    mockImbalancedStablePool(HOP_T_P_POOL, BOLD, HOP_P, BigInt.fromString("1000000000000000000"), 1000000000000000000)
+    assert.stringEquals(getVelodromeV2Price(BOLD, HOP_T_P_POOL, HOP_P, BLOCK_TIMESTAMP).toString(), "1")
+  })
+
   test("a pair leg is priced through its own pool only when that pool's pair leg has a feed", () => {
     // P's only pool pairs it with Q, which has a pool to USDC but no feed: one hop is allowed, two are not
     TOKENS.set(HOP_P.toHexString().toLowerCase(), new TokenConfig(HOP_P, "P", 18, [new PriceSourceConfig(HOP_P_Q_POOL, "velodrome_v2", 1, 80, HOP_Q)]))

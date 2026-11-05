@@ -260,8 +260,9 @@ export function getVelodromeV2Price(
 }
 
 // A pool's pair leg is priced from its own token config, never assumed to be $1: its Chainlink
-// feed, else its velodrome_v2 pool when that pool's pair leg has a feed (one hop, so no deeper recursion)
-function getPairTokenPrice(pairToken: Address, blockTimestamp: BigInt = BigInt.fromI32(0)): BigDecimal {
+// feed, else its velodrome_v2 pool when that pool's pair leg has a Chainlink source configured. The
+// check limits which pools qualify, not depth: if that leg's feed then fails, its own pool is tried.
+function getPairTokenPrice(pairToken: Address, blockTimestamp: BigInt): BigDecimal {
   let config = getTokenConfig(pairToken)
   if (config !== null) {
     let feed = sourceOfType(config!, "chainlink")
