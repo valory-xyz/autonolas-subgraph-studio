@@ -173,7 +173,7 @@ The `ethAdjusted*` fields are deprecated and equal their unadjusted counterparts
 - No $1 fallback. With no valid price a token keeps its last valid price with `priceStale = true`
   (logged once, `PRICING:`); a token never priced is 0.
 - `getTokenPriceUSD` reads sources by priority; a higher-numbered one only when every better
-  source failed. Chainlink answers up to 90000s old are accepted (24h heartbeat + grace).
+  source failed. Chainlink answers within `STALE_PRICE_THRESHOLD` (24h heartbeat + 1h grace) are accepted.
 - A pool's pair leg is priced from its own token config, never taken as $1: its Chainlink source,
   else its `velodrome_v2` pool when that pool's pair leg has one; otherwise the pool gives no
   price. Feed staleness is judged against the event's block.
@@ -181,6 +181,12 @@ The `ethAdjusted*` fields are deprecated and equal their unadjusted counterparts
   `depegged` below `DEPEG_THRESHOLD`.
 - A stable pool's `getAmountOut` quote is net of the pool's swap fee (about 0.9995 × at the default 5 bps stable fee). The bias is accepted: it is far inside the `DEPEG_THRESHOLD` depeg line. A v2 pool whose `stable()` is true is
   priced from its `getAmountOut` quote for one token, not its reserve ratio.
+
+### v2 position cycles (`veloV2Pool.ts`)
+- A v2 position is one row per pool, reused across cycles. LP minted into a closed row (seen by
+  the LP mint Transfer, before its refresh marks the row active) restarts it: income, exit, costs,
+  ROI and entry tracking reset as for a new row, and the Mint records the new entry. A partial
+  Burn records an exit but leaves the row active, so a later top-up keeps its income.
 
 ### CL exits (`veloCLShared.ts`)
 - A `DecreaseLiquidity` leaving zero liquidity, or whose `positions()` reverts because the NFT is

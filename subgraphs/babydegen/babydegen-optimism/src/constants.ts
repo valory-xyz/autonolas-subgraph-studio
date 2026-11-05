@@ -121,7 +121,7 @@ export const WHITELISTED_TOKENS: string[] = [
   XAERO.toHexString()
 ]
 
-// USD stablecoins (price band and depeg flag: priceDiscovery.ts)
+// USD stablecoins
 export const STABLECOINS: string[] = [
   USDC_NATIVE.toHexString(),
   USDC_BRIDGED.toHexString(),

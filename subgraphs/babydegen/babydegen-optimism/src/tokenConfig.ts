@@ -192,7 +192,7 @@ function initializeTokens(): void {
     ]
   ))
 
-  // BOLD - BOLD/LUSD is read only when the BOLD/USDC pool gives no price
+  // BOLD (legacy)
   TOKENS.set("0x087c440f251ff6cfe62b86dde1be558b95b4bb9b", new TokenConfig(
     Address.fromString("0x087c440f251ff6cfe62b86dde1be558b95b4bb9b"),
     "BOLD",
@@ -353,8 +353,7 @@ function initializeTokens(): void {
     ]
   ))
 
-  // No feed and no pool with real liquidity yet: tracked for balances, valued at $0
-  // (getPriceFromSources logs it) until a source exists.
+  // No feed and no pool with real liquidity yet: tracked for balances
   TOKENS.set(USDS.toHexString().toLowerCase(), new TokenConfig(USDS, "USDS", 18, []))
   // xAERO - Aero gauge rewards. Its Optimism pools are too thin to price from, so it values at $0
   // (getPriceFromSources logs it).

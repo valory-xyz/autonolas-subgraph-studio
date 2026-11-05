@@ -238,7 +238,7 @@ Daily population-level stats at UTC midnight (id: `<dayTimestamp>`).
 **Files**: `src/funding.ts`, `src/tokenBalances.ts`
 - `handleUSDC` → redirects to `handleERC20Transfer`
 - `handleERC20Transfer`: Central handler for all token transfers. Updates TokenBalance with USD values, attributes gauge rewards to positions, and updates FundingBalance
-- **Every tracked token and ETH counts as funding in, or as a withdrawal out, valued at its price at the transfer.** The user side (`isUserSide`, `common.ts`) is the operator Safe, any Safe, the tx sender, or an EOA that is not one of the service's agent EOAs; the zero address (mints) and the agent EOAs never are. The tx-sender rule covers EIP-7702 wallets, which have code and are no Safe. An outflow to any other contract is a withdrawal only when the tx receipt shows nothing coming back to the Safe — no ERC-20/ERC-721 `Transfer` to it, no WETH `Deposit` for it (wrapping) and no `SafeReceived` (`isWithdrawalRecipient`). This catches EIP-7702 wallets (they have code) and keeps swaps and LP entries out. Token Transfer handlers and the Safe's `ExecutionSuccess` set `receipt: true` (the other Safe handlers never read it)
+- **Every tracked token and ETH counts as funding in, or as a withdrawal out, valued at its price at the transfer.** The user side (`isUserSide`, `common.ts`) is the operator Safe, any Safe, the tx sender, or an EOA that is not one of the service's agent EOAs; the zero address (mints) and the agent EOAs never are. An outflow to any other contract is a withdrawal only when the tx receipt shows nothing coming back to the Safe — no ERC-20/ERC-721 `Transfer` to it, no WETH `Deposit` for it (wrapping) and no `SafeReceived` (`isWithdrawalRecipient`). This catches EIP-7702 wallets (they have code) and keeps swaps and LP entries out. Token Transfer handlers and the Safe's `ExecutionSuccess` set `receipt: true` (the other Safe handlers never read it)
 - Withdrawals go to `totalWithdrawnUsd` (added back into `finalValue`); they never reduce `netUsd`
 - Matchstick has no `ethereum.hasCode`, so `processERC20Transfer` / `processSafeReceived` take the address-type reader; handlers pass `getAddressType`, tests pass a reader over seeded `AddressType` rows
 
@@ -355,7 +355,7 @@ Deprecated: every `ethAdjusted*` field equals its unadjusted counterpart. Subtra
 
 ### Position State Management
 - `isActive: true` → open position, current values updated on-chain
-- `isActive: false` → closed position, entry/exit amounts frozen
+- `isActive: false` → closed position. CL / Uni V3 rows keep their entry and exit amounts. A v2 position is one row per pool, reused across cycles: LP minted into a closed row (the LP mint Transfer, before its refresh) restarts it — income, exit, costs, ROI and entry tracking reset as for a new row, and the Mint records the new entry. A partial Burn records an exit but leaves the row active, so a later top-up keeps its income
 - Both active and closed positions used in portfolio calculations
 
 ---
@@ -368,7 +368,7 @@ Deprecated: every `ethAdjusted*` field equals its unadjusted counterpart. Subtra
 1. **Chainlink feeds** (primary for ETH, USDC, DAI, USDT, WBTC, sUSD)
 2. **DEX pools** (Velodrome CL/SlipStream, Velodrome V2, Uniswap V3) — DOLA included. A Velodrome v2 *stable* pool is priced from its `getAmountOut` quote for one token, not its reserve ratio (wrong on a stable curve)
 3. **No valid price**: the last valid price, with `priceStale = true`; a token never priced is 0. There is no $1 fallback
-- A pool's pair leg is priced from its own token config, never taken as $1: its Chainlink source, else its `velodrome_v2` pool when that pool's pair leg has a feed (LUSD); otherwise the pool gives no price (`getPairTokenPrice`). Feed staleness is judged against the event's block, with a 90000s limit (24h heartbeat + grace)
+- A pool's pair leg is priced from its own token config, never taken as $1: its Chainlink source, else its `velodrome_v2` pool when that pool's pair leg has a feed (LUSD); otherwise the pool gives no price (`getPairTokenPrice`). Feed staleness is judged against the event's block, within `STALE_PRICE_THRESHOLD` (24h heartbeat + 1h grace)
 - `STABLECOINS` tokens have no lower price bound ($0–1.50; USDC $0–1.05), so a depeg is recorded: `depegged` below `DEPEG_THRESHOLD`
 - Sources are read by priority: a priority-2 source (e.g. BOLD's BOLD/LUSD pool) counts only when every priority-1 source gives no price; sources sharing a priority are averaged by confidence. Base does the same
 - A stable pool's `getAmountOut` quote is net of the pool's swap fee, so its price reads below the fee-free price by that fee (about 0.9995 × at Velodrome's default 5 bps stable fee). This bias is accepted: it is far inside the `DEPEG_THRESHOLD` depeg line, and adding the fee back would need a factory `getFee` read per quote
