@@ -144,8 +144,7 @@ export function updateTokenBalance(
   }
   
   // Update balance
-  let divisor = BigDecimal.fromString("1" + "0".repeat(tokenConfig.decimals))
-  let amountDecimal = amount.toBigDecimal().div(divisor)
+  let amountDecimal = convertTokenAmount(amount, tokenAddress)
   
   if (isIncrease) {
     balance.balance = balance.balance.plus(amountDecimal)

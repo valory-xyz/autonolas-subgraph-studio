@@ -15,18 +15,9 @@ import { BigInt, Bytes, store } from "@graphprotocol/graph-ts"
 import { getServiceByAgent } from "./config"
 import { PendingMintPosition, ProtocolPosition } from "../generated/schema"
 import { getTokenPriceUSD } from "./priceDiscovery"
-import { getTokenDecimals } from "./tokenUtils"
+import { convertTokenAmount } from "./tokenUtils"
 import { Address, BigDecimal, ethereum } from "@graphprotocol/graph-ts"
 
-// Helper function to convert token amount to human readable format
-function toHumanAmount(amount: BigInt, decimals: i32): BigDecimal {
-  if (amount.equals(BigInt.zero())) {
-    return BigDecimal.zero()
-  }
-  
-  let divisor = BigInt.fromI32(10).pow(decimals as u8)
-  return amount.toBigDecimal().div(divisor.toBigDecimal())
-}
 
 // Store pending position that needs mint data
 function storePendingPosition(txHash: Bytes, poolAddress: Bytes, positionId: Bytes, recipient: Bytes): void {
@@ -121,12 +112,10 @@ function recordMintEntryAmounts(event: ethereum.Event, amount0: BigInt, amount1:
     
     if (position != null) {
       // Get token decimals for conversion
-      const token0Decimals = getTokenDecimals(Address.fromBytes(position.token0!))
-      const token1Decimals = getTokenDecimals(Address.fromBytes(position.token1!))
       
       // Convert to human amounts
-      const amount0Human = toHumanAmount(amount0, token0Decimals)
-      const amount1Human = toHumanAmount(amount1, token1Decimals)
+      const amount0Human = convertTokenAmount(amount0, Address.fromBytes(position.token0!))
+      const amount1Human = convertTokenAmount(amount1, Address.fromBytes(position.token1!))
       
       // Get USD values
       const token0Price = getTokenPriceUSD(Address.fromBytes(position.token0!), event.block.timestamp, false)

@@ -15,7 +15,7 @@ import { VeloV2Pool as VeloV2PoolTemplate } from "../generated/templates"
 import { getTokenPriceUSD } from "./priceDiscovery"
 import { getServiceByAgent } from "./config"
 import { parseTotalSlippageFromBucket, associateSwapsWithPosition, calculatePortfolioMetrics } from "./helpers"
-import { getTokenDecimals, getTokenSymbol } from "./tokenUtils"
+import { getTokenSymbol, convertTokenAmount } from "./tokenUtils"
 import { calculatePositionROI, initializePositionIncome } from "./roiCalculation"
 import { PROTOCOL_VELODROME_V2, VELO_VOTER, PROTOCOL_AERO_V2, rewardTokenFor, WHITELISTED_TOKENS } from "./constants"
 
@@ -97,15 +97,6 @@ const VELODROME_V2_ROUTER = Address.fromString("0xa062ae8a9c5e11aaa026fc2670b0d6
 // Cache for VelodromeV2 pools to avoid repeated RPC calls
 let poolCache = new Map<string, boolean>()
 
-// Helper function to convert token amount to human readable format
-function toHumanAmount(amount: BigInt, decimals: i32): BigDecimal {
-  if (amount.equals(BigInt.zero())) {
-    return BigDecimal.zero()
-  }
-  
-  let divisor = BigInt.fromI32(10).pow(decimals as u8)
-  return amount.toBigDecimal().div(divisor.toBigDecimal())
-}
 
 // Ensure pool template is created for tracking events
 export function ensureVeloV2PoolTemplate(poolAddress: Address): void {
@@ -232,11 +223,9 @@ export function refreshVeloV2PositionWithEventAmounts(
   }
   
   // Convert event amounts to human readable format
-  const token0Decimals = getTokenDecimals(Address.fromBytes(pp.token0!))
-  const token1Decimals = getTokenDecimals(Address.fromBytes(pp.token1!))
   
-  const eventAmount0Human = toHumanAmount(eventAmount0, token0Decimals)
-  const eventAmount1Human = toHumanAmount(eventAmount1, token1Decimals)
+  const eventAmount0Human = convertTokenAmount(eventAmount0, Address.fromBytes(pp.token0!))
+  const eventAmount1Human = convertTokenAmount(eventAmount1, Address.fromBytes(pp.token1!))
   
   // Get USD values
   let token0Price = getTokenPriceUSD(Address.fromBytes(pp.token0!), block.timestamp, false)
@@ -422,8 +411,7 @@ export function refreshVeloV2Position(
     }
     const earnedRes = gauge.try_earned(userAddress)
     if (!earnedRes.reverted) {
-      // Both reward tokens are 18-dec (rewardTokenFor).
-      rewardAmount = earnedRes.value.toBigDecimal().div(BigDecimal.fromString("1e18"))
+      rewardAmount = convertTokenAmount(earnedRes.value, rewardTokenFor(pp.protocol))
       rewardUSD = rewardAmount.times(getTokenPriceUSD(rewardTokenFor(pp.protocol), block.timestamp, false))
     } else {
       // Symmetric with the CL guard: earned(address) reverting on a staked position is the
@@ -464,11 +452,9 @@ export function refreshVeloV2Position(
     const userSharePercent = userShare.times(BigDecimal.fromString("100"))
     
     // Calculate current token amounts based on reserves and user's share
-    const token0Decimals = getTokenDecimals(Address.fromBytes(pp.token0!))
-    const token1Decimals = getTokenDecimals(Address.fromBytes(pp.token1!))
     
-    const reserve0Human = toHumanAmount(reserves.value0, token0Decimals)
-    const reserve1Human = toHumanAmount(reserves.value1, token1Decimals)
+    const reserve0Human = convertTokenAmount(reserves.value0, Address.fromBytes(pp.token0!))
+    const reserve1Human = convertTokenAmount(reserves.value1, Address.fromBytes(pp.token1!))
     
     pp.amount0 = reserve0Human.times(userShare)
     pp.amount1 = reserve1Human.times(userShare)
@@ -550,11 +536,9 @@ export function refreshVeloV2PositionWithBurnAmounts(
   }
   
   // Convert event amounts to human readable format
-  const token0Decimals = getTokenDecimals(Address.fromBytes(pp.token0!))
-  const token1Decimals = getTokenDecimals(Address.fromBytes(pp.token1!))
   
-  const eventAmount0Human = toHumanAmount(eventAmount0, token0Decimals)
-  const eventAmount1Human = toHumanAmount(eventAmount1, token1Decimals)
+  const eventAmount0Human = convertTokenAmount(eventAmount0, Address.fromBytes(pp.token0!))
+  const eventAmount1Human = convertTokenAmount(eventAmount1, Address.fromBytes(pp.token1!))
   
   // Get USD values for exit tracking
   let token0Price = getTokenPriceUSD(Address.fromBytes(pp.token0!), block.timestamp, false)
