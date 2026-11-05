@@ -16,7 +16,8 @@ concurrency:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Matchstick 0.6.0 requires a supported Linux binary; Ubuntu 26 is unsupported.
+    runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
       matrix:
