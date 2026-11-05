@@ -74,6 +74,9 @@ export function getTokenPriceUSD(
     }
     return token.derivedUSD
   }
+  log.warning("PRICING: no valid price for {} ({}) and no earlier price — valued at $0", [
+    token.symbol, tokenAddress.toHexString()
+  ])
   return BigDecimal.zero()
 }
 
