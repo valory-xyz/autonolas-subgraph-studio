@@ -1533,6 +1533,13 @@ describe("BOLD (0x0356…) stable-pool pricing", () => {
     assert.stringEquals("0.999289", getTokenPriceUSD(BOLD_V2, BLOCK_TIMESTAMP, true).toString())
   })
 
+  test("a pool that doesn't pair BOLD with USDC is not used", () => {
+    mockBoldStablePool(BOLD_V2, DUMMY1)
+    mockBoldStableAmountOut()
+
+    assert.stringEquals("0", getTokenPriceUSD(BOLD_V2, BLOCK_TIMESTAMP, true).toString())
+  })
+
   test("BOLD quoted below $0.98 is marked depegged", () => {
     mockBoldStablePool(BOLD_V2, USDC_OP)
     createMockedFunction(BOLD_STABLE_POOL, "getAmountOut", "getAmountOut(uint256,address):(uint256)")

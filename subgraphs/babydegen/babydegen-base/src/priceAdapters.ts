@@ -148,6 +148,14 @@ export function getVelodromeV2Price(
     return BigDecimal.fromString("0")
   }
   
+  // Both the quote and the reserve ratio read the pool's other token as `pairToken`
+  if (!(token.equals(token0) && pairToken.equals(token1)) && !(token.equals(token1) && pairToken.equals(token0))) {
+    log.warning("PRICING: pool {} does not pair {} with {}; not used", [
+      poolAddress.toHexString(), token.toHexString(), pairToken.toHexString()
+    ])
+    return BigDecimal.fromString("0")
+  }
+
   // Get reserves
   let reservesResult = pool.try_getReserves()
   

@@ -132,6 +132,12 @@ describe("stablecoin pricing", () => {
     assert.stringEquals(getVelodromeV2Price(BOLD, STABLE_POOL, USDC_NATIVE, BLOCK_TIMESTAMP).toString(), "0.994053")
   })
 
+  test("a pool that doesn't pair the token with its pair token is not used", () => {
+    // A BOLD/DAI pool behind a USDC pair leg: its DAI quote must not be priced as USDC
+    mockImbalancedStablePool(STABLE_POOL, BOLD, DAI, BigInt.fromString("1000000000000000000"), 994053000000000000)
+    assert.stringEquals(getVelodromeV2Price(BOLD, STABLE_POOL, USDC_NATIVE, BLOCK_TIMESTAMP).toString(), "0")
+  })
+
   test("a pool's USDC leg is priced from the USDC feed, not $1", () => {
     mockImbalancedStablePool(STABLE_POOL, BOLD, USDC_NATIVE, BigInt.fromString("1000000000000000000"), 994053)
     mockUsdcFeed(90000000)
