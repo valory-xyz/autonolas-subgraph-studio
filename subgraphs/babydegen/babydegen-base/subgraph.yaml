@@ -1,11 +1,12 @@
 specVersion: 0.0.8
 schema:
   file: ./schema.graphql
-# BabyDegen Base (Basius) — Aerodrome-only port of babydegen-optimism.
+# BabyDegen Base (Basius) — Aerodrome / Aero port of babydegen-optimism.
 # Indexing filters by Olas agentId 115 and tracks every Basius service
 # (currently 607/610/611/612 on Base); see src/serviceRegistry.ts.
-# NOTE: every tracked token and ETH counts as funding in and out (see isUserSide /
-# isWithdrawalRecipient in src/common.ts); Transfer and Safe handlers need `receipt: true`.
+# NOTE: every tracked token and ETH counts as funding in, or as a withdrawal out (see isUserSide /
+# isWithdrawalRecipient in src/common.ts). Handlers that decide a withdrawal from the receipt (token
+# Transfers and the Safe's ExecutionSuccess) need `receipt: true`.
 #
 # startBlock 47163056 = earliest agentId-115 (Basius) service registration
 # (service 607, 2026-06-10); nothing relevant exists on Base before it.
@@ -848,11 +849,9 @@ templates:
       eventHandlers:
         - event: SafeReceived(indexed address,uint256)
           handler: handleSafeReceived
-          receipt: true
         - event: ExecutionSuccess(bytes32,uint256)
           handler: handleExecutionSuccess
           receipt: true
         - event: ExecutionFromModuleSuccess(indexed address)
           handler: handleExecutionFromModuleSuccess
-          receipt: true
       file: ./src/safe.ts

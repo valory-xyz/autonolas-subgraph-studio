@@ -1,8 +1,9 @@
 specVersion: 0.0.8
 schema:
   file: ./schema.graphql
-# NOTE: Every tracked token and ETH counts as funding in and out (see isUserSide / isWithdrawalRecipient
-# in src/common.ts). Transfer and Safe handlers need `receipt: true` to tell withdrawals from swaps.
+# NOTE: Every tracked token and ETH counts as funding in, or as a withdrawal out (see isUserSide / isWithdrawalRecipient
+# in src/common.ts). Handlers that decide a withdrawal from the receipt (token Transfers and the Safe's
+# ExecutionSuccess) need `receipt: true` to tell withdrawals from swaps.
 dataSources:
   - kind: ethereum
     name: ServiceRegistryL2
@@ -1089,11 +1090,9 @@ templates:
       eventHandlers:
         - event: SafeReceived(indexed address,uint256)
           handler: handleSafeReceived
-          receipt: true
         - event: ExecutionSuccess(bytes32,uint256)
           handler: handleExecutionSuccess
           receipt: true
         - event: ExecutionFromModuleSuccess(indexed address)
           handler: handleExecutionFromModuleSuccess
-          receipt: true
       file: ./src/safe.ts
