@@ -86,12 +86,7 @@ export function recordCollectedFees(
   amount1: BigInt,
   timestamp: BigInt
 ): void {
-  let token0Bytes = position.token0
-  let token1Bytes = position.token1
-  if (!recipient.equals(Address.fromBytes(position.agent)) || !token0Bytes || !token1Bytes) {
-    return
-  }
-
+  // Every Collect pays out owed principal first, wherever it is sent, so a later Collect to the Safe is not read as principal
   let fee0 = amount0
   let fee1 = amount1
   let owed = UncollectedPrincipal.load(nftPositionMappingId(protocol, position.tokenId))
@@ -103,6 +98,12 @@ export function recordCollectedFees(
     owed.amount0 = owed.amount0.minus(principal0)
     owed.amount1 = owed.amount1.minus(principal1)
     owed.save()
+  }
+
+  let token0Bytes = position.token0
+  let token1Bytes = position.token1
+  if (!recipient.equals(Address.fromBytes(position.agent)) || !token0Bytes || !token1Bytes) {
+    return
   }
 
   let token0 = Address.fromBytes(token0Bytes!)

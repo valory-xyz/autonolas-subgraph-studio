@@ -43,6 +43,16 @@ function newCollect(tokenId: BigInt, recipient: Address, amount0: BigInt, amount
 const USDC_50 = BigInt.fromI64(50000000)
 const DAI_50 = BigInt.fromString("50000000000000000000")
 
+function newDecrease(tokenId: BigInt, amount0: BigInt, amount1: BigInt): DecreaseLiquidity {
+  let event = changetype<DecreaseLiquidity>(newMockEvent())
+  event.parameters = new Array()
+  event.parameters.push(new ethereum.EventParam("tokenId", ethereum.Value.fromUnsignedBigInt(tokenId)))
+  event.parameters.push(new ethereum.EventParam("liquidity", ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1))))
+  event.parameters.push(new ethereum.EventParam("amount0", ethereum.Value.fromUnsignedBigInt(amount0)))
+  event.parameters.push(new ethereum.EventParam("amount1", ethereum.Value.fromUnsignedBigInt(amount1)))
+  return event
+}
+
 describe("collected fees", () => {
   beforeEach(() => {
     mockEthUsd()
@@ -61,13 +71,7 @@ describe("collected fees", () => {
     createMockedFunction(VELO_MANAGER, "positions", "positions(uint256):(uint96,address,address,address,int24,int24,int24,uint128,uint256,uint256,uint128,uint128)")
       .withArgs([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(7))])
       .reverts()
-    let decrease = changetype<DecreaseLiquidity>(newMockEvent())
-    decrease.parameters = new Array()
-    decrease.parameters.push(new ethereum.EventParam("tokenId", ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(7))))
-    decrease.parameters.push(new ethereum.EventParam("liquidity", ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1))))
-    decrease.parameters.push(new ethereum.EventParam("amount0", ethereum.Value.fromUnsignedBigInt(USDC_50)))
-    decrease.parameters.push(new ethereum.EventParam("amount1", ethereum.Value.fromUnsignedBigInt(DAI_50)))
-    handleDecreaseLiquidity(decrease)
+    handleDecreaseLiquidity(newDecrease(BigInt.fromI32(7), USDC_50, DAI_50))
 
     handleCollect(newCollect(BigInt.fromI32(7), SERVICE_SAFE, BigInt.fromI64(51000000), BigInt.fromString("50500000000000000000")))
 
@@ -96,6 +100,21 @@ describe("collected fees", () => {
     closeAt(p, "100")
     handleCollect(newCollect(BigInt.fromI32(7), OTHER, BigInt.fromI64(1000000), BigInt.zero()))
     positionField(p, "collectedFeesUSD", "0")
+  })
+
+  test("principal collected to another address is not taken from a later fee Collect to the Safe", () => {
+    let p = seedPosition(SERVICE_SAFE, PROTOCOL_VELODROME_V3, BigInt.fromI32(7), USDC_NATIVE, DAI, null, BigInt.zero(), "0")
+    closeAt(p, "100")
+    createMockedFunction(VELO_MANAGER, "positions", "positions(uint256):(uint96,address,address,address,int24,int24,int24,uint128,uint256,uint256,uint128,uint128)")
+      .withArgs([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(7))])
+      .reverts()
+    handleDecreaseLiquidity(newDecrease(BigInt.fromI32(7), USDC_50, DAI_50))
+
+    handleCollect(newCollect(BigInt.fromI32(7), OTHER, USDC_50, DAI_50))
+    handleCollect(newCollect(BigInt.fromI32(7), SERVICE_SAFE, BigInt.fromI64(5000000), BigInt.zero()))
+
+    positionField(p, "collectedFees0", "5")
+    positionField(p, "collectedFeesUSD", "5")
   })
 
   test("Uniswap V3: DecreaseLiquidity principal is subtracted from the next Collect", () => {
