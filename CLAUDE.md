@@ -98,4 +98,4 @@ Each subgraph should have its own `CLAUDE.md` with subgraph-specific context (en
 2. If adding a new subgraph, create a CLAUDE.md for it following the pattern in existing subgraphs (see `subgraphs/babydegen/babydegen-optimism/CLAUDE.md` for examples)
 3. Keep CLAUDE.md concise but comprehensive — it serves as the primary AI context for future development
 
-Active trader sources: Polystrat/Polymarket uses `autonolas-subgraph/squids/predict-polymarket`; Omen uses `autonolas-subgraph/subgraphs/predict-omen` (self-hosted). Their Studio source implementations have been removed from this repository; deprecation of published deployments and consumer verification remain operational follow-up (see README.md).
+Active trader sources: Polystrat/Polymarket uses `autonolas-subgraph/squids/predict-polymarket`; Omen uses `autonolas-subgraph/subgraphs/predict-omen` (self-hosted). Their Studio source implementations have been removed from this repository; the published Studio deployments are deprecated, and the repository maintainer confirmed on 2026-11-05 that no consumers still use them (see README.md).

@@ -14,18 +14,13 @@ Current deployments, endpoints and consumer migrations are tracked in the intern
 
 Manifests and chain configuration describe what the code supports, not which deployment consumers use. A built image or deployed indexer does not mean consumers have switched to it. For Pearl's consumer configuration, see [olas-operate-app](https://github.com/valory-xyz/olas-operate-app); use the internal tracking document for the full inventory.
 
-### Published Studio retirement — pending confirmation
+### Published Studio retirement
 
-Removing source does not deprecate or stop a published Studio deployment. This PR
-makes no live deployment changes. Retirement of `predict-omen`, `predict-polymarket`
-and `olas-gnosis-registry` is not confirmed here. Before treating it as complete,
-the deployment owners must record in the internal tracker:
-
-- An inventory of consumers and confirmation that none still query the old endpoints.
-- The replacement endpoint and consumer migration verification for each deployment.
-- Studio deprecation status, owner and date, with a reference to the confirmation.
-
-These operational checks remain outstanding until that evidence is recorded.
+The published Studio deployments `predict-omen`, `predict-polymarket` and
+`olas-gnosis-registry` have been deprecated. The repository maintainer confirmed
+on 2026-11-05, while addressing [PR #176](https://github.com/valory-xyz/autonolas-subgraph-studio/pull/176),
+that no consumers still use these deployments. This PR removes their source and
+deployment configuration; it makes no live deployment changes.
 
 ## Getting Started
 
