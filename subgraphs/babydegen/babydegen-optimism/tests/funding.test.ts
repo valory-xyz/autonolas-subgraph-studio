@@ -2,7 +2,7 @@ import { assert, describe, test, clearStore, afterEach, beforeEach } from "match
 import { Address, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts"
 import { newMockEvent } from "matchstick-as/assembly/index"
 import { processERC20Transfer } from "../src/tokenBalances"
-import { processSafeReceived, processSafeEthTransfer } from "../src/safe"
+import { processSafeReceived, processSafeEthTransfer, handleExecutionFromModuleSuccess } from "../src/safe"
 import { SafeReceived, ExecutionSuccess, ExecutionFromModuleSuccess } from "../generated/templates/Safe/Safe"
 import { handleRegisterInstance } from "../src/serviceRegistry"
 import { USDC_NATIVE, USDC_BRIDGED, WETH } from "../src/constants"
@@ -228,6 +228,16 @@ function newExecution(safe: Address, input: string, txValue: BigInt, receipt: et
   return event
 }
 
+function newModuleExecution(safe: Address): ExecutionFromModuleSuccess {
+  let event = changetype<ExecutionFromModuleSuccess>(newMockEvent())
+  event.address = safe
+  event.parameters = new Array()
+  event.parameters.push(new ethereum.EventParam("module", ethereum.Value.fromAddress(SOME_CONTRACT)))
+  event.block.number = BLOCK_NUMBER
+  event.block.timestamp = BLOCK_TIMESTAMP
+  return event
+}
+
 function ethBalance(safe: Address, value: string): void {
   let id = Bytes.fromUTF8(safe.toHexString() + "-" + Address.zero().toHexString())
   assert.fieldEquals("TokenBalance", id.toHexString(), "balance", value)
@@ -293,13 +303,24 @@ describe("ETH funding uses the same user-side rule", () => {
 
   test("a module execution's ETH is not read from the outer tx", () => {
     fundOneEth(SAFE_CL)
-    let event = changetype<ExecutionFromModuleSuccess>(newMockEvent())
-    event.address = SAFE_CL
+    let event = newModuleExecution(SAFE_CL)
     event.transaction.to = USER_EOA
     event.transaction.value = BigInt.fromString("500000000000000000")
-    processSafeEthTransfer(SAFE_CL, event, seededAddressType)
+    handleExecutionFromModuleSuccess(event)
     ethBalance(SAFE_CL, "1")
     fundingField(SAFE_CL, "totalWithdrawnUsd", "0")
+  })
+
+  test("an execTransaction that also runs a module execution on the Safe is counted once", () => {
+    fundOneEth(SAFE_CL)
+    let execution = newExecution(SAFE_CL, EXEC_ETH_TO_USER, BigInt.zero(), null)
+    let moduleExecution = newModuleExecution(SAFE_CL)
+    moduleExecution.transaction.to = SAFE_CL
+    moduleExecution.transaction.input = execution.transaction.input
+    handleExecutionFromModuleSuccess(moduleExecution)
+    processSafeEthTransfer(SAFE_CL, execution, seededAddressType)
+    ethBalance(SAFE_CL, "0.5")
+    fundingField(SAFE_CL, "totalWithdrawnUsd", "1000")
   })
 
   test("ETH swapped through LiFi with USDT back to the Safe (0xe843e2fa): not a withdrawal", () => {

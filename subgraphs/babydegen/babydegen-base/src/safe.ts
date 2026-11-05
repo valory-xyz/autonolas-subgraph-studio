@@ -141,16 +141,23 @@ function hasSelector(bytes: Uint8Array, selector: string): boolean {
   return bytes.length >= 4 && Bytes.fromUint8Array(bytes.subarray(0, 4)).toHexString() == selector
 }
 
+// The `bytes` argument whose offset is in the head word at `head`, or null when it runs past `args`
+function bytesArgAt(args: Uint8Array, head: i32): Uint8Array | null {
+  let offset = sizeAt(args, head)
+  let length = offset < 0 ? -1 : sizeAt(args, offset)
+  if (length < 0 || offset + WORD + length > args.length) {
+    return null
+  }
+  return args.subarray(offset + WORD, offset + WORD + length)
+}
+
 // The calls with value packed in multiSend(bytes transactions) calldata
 function multiSendEthSends(data: Uint8Array): EthSends {
   let sends: EthSend[] = []
-  let args = data.subarray(4)
-  let offset = sizeAt(args, 0)
-  let length = offset < 0 ? -1 : sizeAt(args, offset)
-  if (length < 0 || offset + WORD + length > args.length) {
+  let packed = bytesArgAt(data.subarray(4), 0)
+  if (packed === null) {
     return unreadable()
   }
-  let packed = args.subarray(offset + WORD, offset + WORD + length)
   let i = 0
   while (i < packed.length) {
     if (i + PACKED_CALL_HEADER > packed.length) {
@@ -173,8 +180,8 @@ function multiSendEthSends(data: Uint8Array): EthSends {
 }
 
 // ETH the Safe itself sends when the tx calls its execTransaction: the Call's value, or each Call
-// of a MultiSend it delegatecalls. The outer tx's own value is the executor's, not the Safe's. A
-// module execution, or an execTransaction relayed through another contract, is not readable here.
+// of a MultiSend it delegatecalls. The outer tx's own value is the executor's, not the Safe's. An
+// execTransaction relayed through another contract is not readable here.
 function ethSentBySafe(safe: Address, tx: ethereum.Transaction): EthSends {
   let txTo = tx.to
   if (txTo === null || !txTo.equals(safe) || !hasSelector(tx.input, EXEC_TRANSACTION_SELECTOR)) {
@@ -190,13 +197,13 @@ function ethSentBySafe(safe: Address, tx: ethereum.Transaction): EthSends {
   if (operation.equals(BigInt.fromI32(OPERATION_CALL))) {
     return new EthSends(value.gt(BigInt.zero()) ? [new EthSend(to, value)] : [], true)
   }
-  let dataOffset = sizeAt(args, 2 * WORD)
-  let dataLength = dataOffset < 0 ? -1 : sizeAt(args, dataOffset)
-  if (!operation.equals(BigInt.fromI32(OPERATION_DELEGATECALL)) || dataLength < 0 ||
-      dataOffset + WORD + dataLength > args.length) {
+  if (!operation.equals(BigInt.fromI32(OPERATION_DELEGATECALL))) {
     return unreadable()
   }
-  let data = args.subarray(dataOffset + WORD, dataOffset + WORD + dataLength)
+  let data = bytesArgAt(args, 2 * WORD)
+  if (data === null) {
+    return unreadable()
+  }
   return hasSelector(data, MULTI_SEND_SELECTOR) ? multiSendEthSends(data) : unreadable()
 }
 
@@ -212,7 +219,7 @@ function decodedSendOf(safe: Address, tx: ethereum.Transaction, to: Address, val
 }
 
 /**
- * ETH the service Safe sends out in an ExecutionSuccess / ExecutionFromModuleSuccess transaction
+ * ETH the service Safe sends out in an execTransaction (its ExecutionSuccess)
  * @param serviceSafe The safe address that executed the transaction
  * @param event The Safe event, whose transaction and receipt are read
  * @param readAddressType Address-type reader, getAddressType outside tests
@@ -228,7 +235,7 @@ export function processSafeEthTransfer(
   let block = event.block
   let decoded = ethSentBySafe(serviceSafe, event.transaction)
   if (!decoded.readable) {
-    log.warning("SAFE_ETH: tx {} — ETH safe {} sends is not readable from the tx calldata (module, relayed or malformed execTransaction); any ETH it sent is not counted", [
+    log.warning("SAFE_ETH: tx {} — ETH safe {} sends is not readable from the tx calldata (relayed or malformed execTransaction); any ETH it sent is not counted", [
       event.transaction.hash.toHexString(),
       serviceSafe.toHexString()
     ])
@@ -251,6 +258,15 @@ export function handleExecutionSuccess(event: ExecutionSuccessEvent): void {
   processSafeEthTransfer(event.address, event, getAddressType)
 }
 
+// A module's ETH sends are in the module's calldata, not the Safe's; the tx calldata belongs to
+// whatever called the module, and an execTransaction in it is counted by its own ExecutionSuccess
 export function handleExecutionFromModuleSuccess(event: ExecutionFromModuleSuccessEvent): void {
-  processSafeEthTransfer(event.address, event, getAddressType)
+  if (getServiceByAgent(event.address) === null) {
+    return
+  }
+  log.warning("SAFE_ETH: tx {} — ETH safe {} sends through module {} is not read; any ETH it sent is not counted", [
+    event.transaction.hash.toHexString(),
+    event.address.toHexString(),
+    event.params.module.toHexString()
+  ])
 }
