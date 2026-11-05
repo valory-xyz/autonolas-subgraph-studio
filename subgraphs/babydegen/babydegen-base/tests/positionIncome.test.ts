@@ -240,6 +240,48 @@ describe("claimed rewards", () => {
     positionField(p, "positionROI", "1")
   })
 
+  test("a Withdraw naming an untracked tokenId credits no other position", () => {
+    seedService(SAFE_D12, OPERATOR_SAFE, AGENT_INSTANCE)
+    seedAddressType(GAUGE_D12, true, false)
+    let a = seedPosition(SAFE_D12, PROTOCOL_VELODROME_V3, BigInt.fromI32(1001), USDC_NATIVE, BOLD, GAUGE_D12, BigInt.fromI32(1), "1")
+    let b = seedPosition(SAFE_D12, PROTOCOL_VELODROME_V3, BigInt.fromI32(1002), USDC_NATIVE, BOLD, GAUGE_D12, BigInt.fromI32(1), "1")
+    let receipt = newReceipt([gaugeWithdraw(GAUGE_D12, SAFE_D12, 9999, 21)])
+    processERC20Transfer(newTransfer(AERO, GAUGE_D12, SAFE_D12, BigInt.fromString("1000000000000000000"), 20, receipt), seededAddressType)
+
+    positionField(a, "claimedRewards", "0")
+    positionField(b, "claimedRewards", "0")
+  })
+
+  test("a v2 gauge reward claimed after the exit goes to the last closed position on that gauge", () => {
+    seedService(SAFE_D12, OPERATOR_SAFE, AGENT_INSTANCE)
+    seedAddressType(GAUGE_D12, true, false)
+    let older = seedPosition(SAFE_D12, PROTOCOL_VELODROME_V2, BigInt.zero(), USDC_NATIVE, BOLD, GAUGE_D12, BigInt.fromI32(1), "0")
+    closeAt(older, "100")
+    older.exitTimestamp = BLOCK_TIMESTAMP.minus(BigInt.fromI32(1000))
+    older.save()
+    let p = seedPosition(SAFE_D12, PROTOCOL_VELODROME_V2, BigInt.fromI32(1), USDC_NATIVE, BOLD, GAUGE_D12, BigInt.fromI32(1), "0")
+    closeAt(p, "100")
+    p.exitTimestamp = BLOCK_TIMESTAMP
+    p.save()
+    // 20 reward tokens at $0.05, paid by getReward after the LP left the gauge
+    processERC20Transfer(newTransfer(AERO, GAUGE_D12, SAFE_D12, BigInt.fromString("20000000000000000000"), 1, newReceipt([])), seededAddressType)
+
+    positionField(p, "claimedRewards", "20")
+    positionField(p, "netGainUSD", "1")
+    positionField(older, "claimedRewards", "0")
+  })
+
+  test("with no earned reward and no liquidity on record a CL claim is split equally", () => {
+    seedService(SERVICE_SAFE, OPERATOR_SAFE, AGENT_INSTANCE)
+    seedAddressType(GAUGE_D12, true, false)
+    let a = seedPosition(SERVICE_SAFE, PROTOCOL_VELODROME_V3, BigInt.fromI32(1), USDC_NATIVE, BOLD, GAUGE_D12, BigInt.zero(), "0")
+    let b = seedPosition(SERVICE_SAFE, PROTOCOL_VELODROME_V3, BigInt.fromI32(2), USDC_NATIVE, BOLD, GAUGE_D12, BigInt.zero(), "0")
+    processERC20Transfer(newTransfer(AERO, GAUGE_D12, SERVICE_SAFE, BigInt.fromString("2000000000000000000"), 1, newReceipt([])), seededAddressType)
+
+    positionField(a, "claimedRewards", "1")
+    positionField(b, "claimedRewards", "1")
+  })
+
   test("the claimable reward a block started with survives later refreshes in that block", () => {
     seedService(SERVICE_SAFE, OPERATOR_SAFE, AGENT_INSTANCE)
     let p = seedPosition(SERVICE_SAFE, PROTOCOL_VELODROME_V3, BigInt.fromI32(1), USDC_NATIVE, BOLD, GAUGE_D12, BigInt.fromI32(1), "3")
@@ -320,8 +362,8 @@ const COVERS_FIRST_CLAIM_ONLY = BigInt.fromString("1600000000000000000")
 function seedTwoAeroPositions(): ProtocolPosition[] {
   seedService(ACCOUNT_D14, OPERATOR_SAFE, AGENT_INSTANCE)
   return [
-    seedPosition(ACCOUNT_D14, PROTOCOL_AERO_CL, BigInt.fromI32(1226169), USDC_NATIVE, BOLD, null, BigInt.fromI32(1), "0"),
-    seedPosition(ACCOUNT_D14, PROTOCOL_AERO_CL, BigInt.fromI32(1226170), USDC_NATIVE, BOLD, null, BigInt.fromI32(1), "0")
+    seedPosition(ACCOUNT_D14, PROTOCOL_AERO_CL, BigInt.fromI32(1226169), USDC_NATIVE, BOLD, AERO_CL_GAUGE, BigInt.fromI32(1), "0"),
+    seedPosition(ACCOUNT_D14, PROTOCOL_AERO_CL, BigInt.fromI32(1226170), USDC_NATIVE, BOLD, AERO_CL_GAUGE, BigInt.fromI32(1), "0")
   ]
 }
 
@@ -335,6 +377,7 @@ function twoAeroClaimsReceipt(): ethereum.TransactionReceipt {
 
 const EMISSIONS_CLAIMED_TOPIC = "0x7b6bd720815adbeaaaed4fc759e1a535705901f33709fbb33e62ee9a89427bb1"
 const AERO_CL_GAUGE_D14 = "0x46a9dca72d78366571be583aa69c1dc16e6889fb"
+const AERO_CL_GAUGE = Address.fromString(AERO_CL_GAUGE_D14)
 const ONE_REWARD = "0x0000000000000000000000000000000000000000000000000de0b6b3a7640000"
 const HALF_REWARD = "0x00000000000000000000000000000000000000000000000006f05b59d3b20000"
 const QUARTER_REWARD = "0x00000000000000000000000000000000000000000000000003782dace9d90000"
@@ -359,7 +402,7 @@ describe("Aero CL rewards from EmissionsClaimed", () => {
 
   test("EmissionsClaimed credits its tokenId once (0xcdd2ac26)", () => {
     seedService(ACCOUNT_D14, OPERATOR_SAFE, AGENT_INSTANCE)
-    let p = seedPosition(ACCOUNT_D14, PROTOCOL_AERO_CL, BigInt.fromI32(1226169), USDC_NATIVE, BOLD, null, BigInt.fromI32(1), "0")
+    let p = seedPosition(ACCOUNT_D14, PROTOCOL_AERO_CL, BigInt.fromI32(1226169), USDC_NATIVE, BOLD, AERO_CL_GAUGE, BigInt.fromI32(1), "0")
     let receipt = newReceipt([
       newLog("0x4a7af46bc8abc00048c6c7920a1488daf568366c", ["0x0c396cd989a39f4459b5fa1aed6a9a8dcdbc45908acfd67e028cd568da98982c", "0x00000000000000000000000046a9dca72d78366571be583aa69c1dc16e6889fb", "0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffcf612", "0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffcf644"], "0x000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000", 94),
       newLog("0x4a7af46bc8abc00048c6c7920a1488daf568366c", ["0x70935338e69775456a85ddef226c395fb668b63fa0115f5f20610b388e6ca9c0", "0x00000000000000000000000046a9dca72d78366571be583aa69c1dc16e6889fb", "0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffcf612", "0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffffffcf644"], "0x000000000000000000000000787fd1dc3b533171781e4ae1a563c1ac7b4435e400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000", 95),
@@ -412,8 +455,8 @@ describe("Aero CL rewards from EmissionsClaimed", () => {
   test("only claims paid to the Safe, for its own tokenIds, are credited", () => {
     seedService(ACCOUNT_D14, OPERATOR_SAFE, AGENT_INSTANCE)
     seedService(OTHER, OPERATOR_SAFE, AGENT_INSTANCE)
-    let mine = seedPosition(ACCOUNT_D14, PROTOCOL_AERO_CL, BigInt.fromI32(1226169), USDC_NATIVE, BOLD, null, BigInt.fromI32(1), "0")
-    let theirs = seedPosition(OTHER, PROTOCOL_AERO_CL, BigInt.fromI32(1226170), USDC_NATIVE, BOLD, null, BigInt.fromI32(1), "0")
+    let mine = seedPosition(ACCOUNT_D14, PROTOCOL_AERO_CL, BigInt.fromI32(1226169), USDC_NATIVE, BOLD, AERO_CL_GAUGE, BigInt.fromI32(1), "0")
+    let theirs = seedPosition(OTHER, PROTOCOL_AERO_CL, BigInt.fromI32(1226170), USDC_NATIVE, BOLD, AERO_CL_GAUGE, BigInt.fromI32(1), "0")
     // 1 to another recipient, 0.5 for another Safe's tokenId, 0.25 to the Safe for its own; one Transfer covers all
     let receipt = newReceipt([
       emissionsClaimed(1226169, OTHER, ONE_REWARD, 11),
@@ -428,6 +471,25 @@ describe("Aero CL rewards from EmissionsClaimed", () => {
     positionField(mine, "claimedRewards", "0.25")
     positionField(mine, "claimedRewardsUSD", "0.15")
     positionField(theirs, "claimedRewards", "0")
+  })
+
+  test("an EmissionsClaimed not emitted by the position's gauge is not credited", () => {
+    seedService(ACCOUNT_D14, OPERATOR_SAFE, AGENT_INSTANCE)
+    let mine = seedPosition(ACCOUNT_D14, PROTOCOL_AERO_CL, BigInt.fromI32(1226169), USDC_NATIVE, BOLD, AERO_CL_GAUGE, BigInt.fromI32(1), "0")
+    let receipt = newReceipt([
+      newLog(OTHER.toHexString(), [
+        EMISSIONS_CLAIMED_TOPIC,
+        word32(ACCOUNT_D14.toHexString()),
+        word32((1226169 as i32).toString(16)),
+        word32(ACCOUNT_D14.toHexString())
+      ], QUARTER_REWARD, 11)
+    ])
+    let paid = BigInt.fromString("250000000000000000")
+    let event = newTransfer(BASE_AERO, Address.zero(), ACCOUNT_D14, paid, 12, receipt)
+
+    attributeRewardTransfer(event, Address.zero(), ACCOUNT_D14, paid)
+
+    positionField(mine, "claimedRewards", "0")
   })
 
   test("a Transfer pays only the claims its amount covers, in log order", () => {

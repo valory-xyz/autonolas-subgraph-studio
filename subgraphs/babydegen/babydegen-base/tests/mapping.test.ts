@@ -6,6 +6,7 @@ import {
   afterEach,
   createMockedFunction
 } from "matchstick-as/assembly/index"
+import { newMockEvent } from "matchstick-as/assembly/index"
 import { Address, BigInt, BigDecimal, Bytes, ethereum } from "@graphprotocol/graph-ts"
 import {
   handleRegisterInstance,
@@ -20,7 +21,8 @@ import { AgentSwapBuffer, SwapTransaction } from "../generated/schema"
 import { handleVeloV2Bootstrap } from "../src/veloV2Bootstrap"
 import { handleVeloV2Transfer, handleVeloV2Burn, handleVeloV2Mint, handleAeroV2Mint } from "../src/veloV2Pool"
 import { ProtocolPosition, Service, V2PoolVenue } from "../generated/schema"
-import { handleNFTTransfer, handleAeroIncreaseLiquidity, handleDecreaseLiquidity, handleIncreaseLiquidity } from "../src/veloNFTManager"
+import { handleNFTTransfer, handleAeroIncreaseLiquidity, handleDecreaseLiquidity, handleIncreaseLiquidity, handleCollect } from "../src/veloNFTManager"
+import { Collect } from "../generated/VeloNFTManager/VelodromePositionNFTManager"
 import { refreshVeloCLPosition, clVenueForManager } from "../src/veloCLShared"
 import { handleAeroV2PoolCreated } from "../src/veloV2Factory"
 import { handleAeroGaugeCreated } from "../src/aeroGaugeManager"
@@ -1357,6 +1359,39 @@ describe("Aero CL positions (AeroNFTManager)", () => {
     handleDecreaseLiquidity(dec)
 
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "isActive", "false")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "exitAmount1", "3")
+  })
+
+  test("a Collect after the full exit leaves the exit amounts its DecreaseLiquidity recorded", () => {
+    createService(SERVICE_SAFE)
+    mockChainlinkEthUsd()
+    mockAeroCLPosition()
+    mockAeroCLStaked(false)
+    const id = openAeroCLPosition()
+    mockCLPositions(AERO_NFT_MANAGER, BigInt.zero())
+    const dec = createDecreaseLiquidityEvent(
+      AERO_NFT_MANAGER,
+      AERO_TOKEN_ID,
+      BigInt.fromString("1000000000000000000"),
+      BigInt.fromString("1000000000000000000"),
+      BigInt.fromString("3000000000000000000")
+    )
+    dec.block = aeroBlock()
+    dec.transaction.hash = TX_HASH
+    handleDecreaseLiquidity(dec)
+
+    // positions() still answers (liquidity 0), so a refresh here would overwrite the exit with 0
+    const collect = changetype<Collect>(newMockEvent())
+    collect.address = AERO_NFT_MANAGER
+    collect.parameters = new Array()
+    collect.parameters.push(new ethereum.EventParam("tokenId", ethereum.Value.fromUnsignedBigInt(AERO_TOKEN_ID)))
+    collect.parameters.push(new ethereum.EventParam("recipient", ethereum.Value.fromAddress(SERVICE_SAFE)))
+    collect.parameters.push(new ethereum.EventParam("amount0", ethereum.Value.fromUnsignedBigInt(BigInt.fromString("1000000000000000000"))))
+    collect.parameters.push(new ethereum.EventParam("amount1", ethereum.Value.fromUnsignedBigInt(BigInt.fromString("3000000000000000000"))))
+    collect.block = aeroBlock()
+    collect.transaction.hash = TX_HASH
+    handleCollect(collect)
+
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "exitAmount1", "3")
   })
 

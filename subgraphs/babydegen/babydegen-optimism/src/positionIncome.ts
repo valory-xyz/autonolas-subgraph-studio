@@ -153,6 +153,21 @@ function splitReward(positions: ProtocolPosition[], weights: BigDecimal[], amoun
   }
 }
 
+function lastClosedV2Position(positions: ProtocolPosition[]): ProtocolPosition | null {
+  let last: ProtocolPosition | null = null
+  for (let i = 0; i < positions.length; i++) {
+    let position = positions[i]
+    let exitTimestamp = position.exitTimestamp
+    if (position.isActive || position.protocol == PROTOCOL_VELODROME_V3 || exitTimestamp === null) {
+      continue
+    }
+    if (last === null || exitTimestamp!.gt(last!.exitTimestamp!)) {
+      last = position
+    }
+  }
+  return last
+}
+
 function liquidityWeights(positions: ProtocolPosition[]): BigDecimal[] {
   let weights: BigDecimal[] = []
   for (let i = 0; i < positions.length; i++) {
@@ -168,6 +183,11 @@ function sum(values: BigDecimal[]): BigDecimal {
     total = total.plus(values[i])
   }
   return total
+}
+
+function isEmittedByGauge(position: ProtocolPosition, emitter: Address): boolean {
+  let gauge = position.rewardsContract
+  return gauge !== null && Address.fromBytes(gauge!).equals(emitter)
 }
 
 // Aero CL: each EmissionsClaimed to the Safe names its tokenId and amount. One claimEmissions over
@@ -203,8 +223,8 @@ function attributeEmissionsClaims(
       continue
     }
     let position = loadMappedPosition(PROTOCOL_AERO_CL, tokenId)
-    if (position == null || !Address.fromBytes(position.agent).equals(safe)) {
-      log.warning("REWARDS: tx {} — EmissionsClaimed to safe {} names tokenId {}, which is not one of its aero-cl positions", [
+    if (position == null || !Address.fromBytes(position.agent).equals(safe) || !isEmittedByGauge(position, logs[i].address)) {
+      log.warning("REWARDS: tx {} — EmissionsClaimed to safe {} names tokenId {}, which is not one of its aero-cl positions on the emitting gauge", [
         event.transaction.hash.toHexString(), safe.toHexString(), tokenId.toString()
       ])
       continue
@@ -310,9 +330,17 @@ export function attributeRewardTransfer(event: ethereum.Event, from: Address, sa
         return true
       }
     }
+    // The reward belongs to that tokenId; splitting it would credit positions that did not earn it
+    log.warning("REWARDS: tx {} - gauge {} Withdraw names tokenId {}, not a tracked position of safe {}; reward not attributed", [
+      event.transaction.hash.toHexString(),
+      from.toHexString(),
+      tokenId!.toString(),
+      safe.toHexString()
+    ])
+    return true
   }
 
-  // No Withdraw names a tracked position: a CL getReward(tokenId) claim splits by what each position had
+  // No Withdraw after the reward: a CL getReward(tokenId) claim splits by what each position had
   // earned before the claim, a v2 gauge (one LP position per pool) by liquidity
   let active: ProtocolPosition[] = []
   let earnedBefore: BigDecimal[] = []
@@ -325,6 +353,12 @@ export function attributeRewardTransfer(event: ethereum.Event, from: Address, sa
     }
   }
   if (active.length == 0) {
+    // A v2 gauge holds one LP position per pool and pays its reward on a later getReward, after the exit
+    let closedV2 = lastClosedV2Position(onGauge)
+    if (closedV2 !== null) {
+      creditReward(closedV2!, rewardAmount, priceUSD)
+      return true
+    }
     log.warning("REWARDS: no active position on gauge {} for safe {} — reward in tx {} not attributed", [
       from.toHexString(),
       safe.toHexString(),
