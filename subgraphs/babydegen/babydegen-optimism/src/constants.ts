@@ -138,7 +138,6 @@ export const STABLECOINS: string[] = [
   USDS.toHexString()
 ]
 
-// Whether a v2 pool is stable, as v2PoolKind reads it
 export enum V2PoolKind {
   Volatile,
   Stable,

@@ -154,7 +154,7 @@ Individual LP positions across protocols (id: `<agent>-<protocol>-<tokenId>` for
 | swapSlippageUSD | `BigDecimal!` | Associated swap slippage costs |
 
 #### NFTPositionMapping
-NFT to position (id: `<protocol>-<tokenId>`), so a CL or Uniswap V3 event finds its position without `ownerOf`.
+NFT to position (id: `<protocol>-<tokenId>`), so a CL or Uniswap V3 event finds its position without `ownerOf`. It points at the row last written for the NFT, so an NFT moved to another service Safe maps to that Safe's row.
 
 #### UncollectedPrincipal
 Principal a `DecreaseLiquidity` released and no `Collect` has paid out yet (id: `<protocol>-<tokenId>`, as `NFTPositionMapping`). Each `Collect` pays it first; only the rest counts as fees.
@@ -265,7 +265,7 @@ Daily population-level stats at UTC midnight (id: `<dayTimestamp>`).
 ### 4. UniV3NFTManager (Uniswap V3)
 **File**: `src/uniV3NFTManager.ts`
 - Same event pattern as VeloNFTManager, with the same fee accounting (`NFTPositionMapping` `uniswap-v3-<tokenId>`)
-- `handleUniV3DecreaseLiquidity` finds the position through its mapping, not `ownerOf`, and closes it on a full exit with the same rules as CL (`recordFullExit`, `positionIncome.ts`): a `positions()` revert is the NFT burned later in the block, decreases in the burn block add up, and an `UNISWAP V3 exit:` warning is logged. A decrease is skipped (and logged) when `ownerOf` names another address or a Transfer out closed the row with no exit; `handleUniV3Transfer` closes the row on a transfer out and reopens it when the NFT comes back to the Safe
+- `handleUniV3DecreaseLiquidity` finds the position through its mapping, not `ownerOf`, and closes it on a full exit with the same rules as CL (`recordFullExit`, `positionIncome.ts`): a `positions()` revert is the NFT burned later in the block, decreases in the burn block add up, and an `UNISWAP V3 exit:` warning is logged. A decrease is skipped (and logged) when a Transfer out closed the row with no exit; not by `ownerOf`, which reads end-of-block state and would name the new owner for the Safe's own exit followed by a transfer out in the same block. `handleUniV3Transfer` closes the row on a transfer out (and recalculates the portfolio, as nothing values the NFT after it leaves), and on a transfer in points the mapping at the receiving Safe's row and reopens it when it was closed with no exit
 - Calls `refreshUniV3Position()` for on-chain state
 
 ### 5. VeloV2Sugar (Bootstrap)
