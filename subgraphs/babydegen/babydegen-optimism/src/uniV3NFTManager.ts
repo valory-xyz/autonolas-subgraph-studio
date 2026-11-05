@@ -15,10 +15,10 @@ import {
 } from "./uniV3Shared"
 import { getServiceByAgent } from "./config"
 import { ProtocolPosition } from "../generated/schema"
-import { log, Bytes, Address } from "@graphprotocol/graph-ts"
+import { Address } from "@graphprotocol/graph-ts"
 import { calculatePortfolioMetrics } from "./helpers"
 import { PROTOCOL_UNISWAP_V3 } from "./constants"
-import { loadMappedPosition, recordReleasedPrincipal, recordCollectedFees, closedWithoutExit } from "./positionIncome"
+import { loadMappedPosition, mapNFTPosition, recordReleasedPrincipal, recordCollectedFees, reopenClosedWithoutExit } from "./positionIncome"
 
 export function handleUniV3IncreaseLiquidity(event: IncreaseLiquidity): void {
   ensureUniV3PoolTemplate(event.params.tokenId)
@@ -72,13 +72,12 @@ export function handleUniV3Transfer(event: Transfer): void {
 
   if (toService) {
     ensureUniV3PoolTemplate(event.params.tokenId)
-    // An NFT coming back to the Safe that a Transfer out had closed (no exit recorded) is open again
-    let returned = ProtocolPosition.load(getUniV3PositionId(event.params.to, event.params.tokenId))
-    if (returned != null && closedWithoutExit(returned)) {
-      returned.isActive = true
-      returned.exitTxHash = null
-      returned.exitTimestamp = null
-      returned.save()
+    // A Safe getting back an NFT it held before: its row is the position again (a new row maps itself on creation)
+    let returnedId = getUniV3PositionId(event.params.to, event.params.tokenId)
+    let returned = ProtocolPosition.load(returnedId)
+    if (returned != null) {
+      mapNFTPosition(PROTOCOL_UNISWAP_V3, event.params.tokenId, returnedId)
+      reopenClosedWithoutExit(returned)
     }
   }
   
@@ -92,8 +91,9 @@ export function handleUniV3Transfer(event: Transfer): void {
       position.exitTxHash = event.transaction.hash
       position.exitTimestamp = event.block.timestamp
       
-      // Position closed by NFT transfer
       position.save()
+      // The later refresh skips an NFT no service holds, so the position's value leaves the portfolio here
+      calculatePortfolioMetrics(event.params.from, event.block)
     }
   }
   

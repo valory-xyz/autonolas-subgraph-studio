@@ -264,17 +264,18 @@ export function refreshUniV3PositionWithExitAmounts(
   if (pp == null) {
     return
   }
-  const nftOwner = Address.fromBytes(pp.agent)
-  const mgr = UniswapV3PositionNFTManager.bind(UNI_V3_MANAGER)
-  // A decrease on an NFT the Safe no longer holds is its new owner's, not this position's exit;
-  // an ownerOf() revert means the NFT is burned later in this block
-  const ownerResult = mgr.try_ownerOf(tokenId)
-  if (closedWithoutExit(pp) || (!ownerResult.reverted && !ownerResult.value.equals(nftOwner))) {
+  const positionSafe = Address.fromBytes(pp.agent)
+  // handleUniV3Transfer closes the row when the NFT leaves the Safe, before its new owner can decrease it.
+  // Not ownerOf(): it reads end-of-block state, so it would name the new owner for the Safe's own exit
+  // followed by a transfer out in the same block
+  if (closedWithoutExit(pp)) {
     log.warning("UNISWAP V3 exit: tx {} — DecreaseLiquidity for position {} (tokenId {}) skipped: the NFT left safe {}", [
-      txHash.toHexString(), pp.id.toString(), tokenId.toString(), nftOwner.toHexString()
+      txHash.toHexString(), pp.id.toString(), tokenId.toString(), positionSafe.toHexString()
     ])
     return
   }
+
+  const mgr = UniswapV3PositionNFTManager.bind(UNI_V3_MANAGER)
 
   // positions() reads end-of-block state, so it reverts when the NFT is burned later in the block
   const dataResult = mgr.try_positions(tokenId)
@@ -288,7 +289,7 @@ export function refreshUniV3PositionWithExitAmounts(
   if (isFullExit && recordFullExit(pp, eventAmount0, eventAmount1, block, txHash)) {
     removeAgentNFTFromPool(PROTOCOL_UNISWAP_V3, Address.fromBytes(pp.pool), tokenId)
     pp.save()
-    refreshPortfolio(nftOwner, block)
+    refreshPortfolio(positionSafe, block)
   } else {
     // Partial withdrawal - just update current amounts normally
     refreshUniV3Position(tokenId, block, txHash)

@@ -5,7 +5,7 @@ import { AgentSwapBuffer, ClaimableRewardBeforeBlock, ProtocolPosition } from ".
 import { Collect, DecreaseLiquidity } from "../generated/VeloNFTManager/VelodromePositionNFTManager"
 import { handleCollect, handleDecreaseLiquidity } from "../src/veloNFTManager"
 import { processERC20Transfer } from "../src/tokenBalances"
-import { attributeRewardTransfer, recordClaimableRewardBeforeBlock } from "../src/positionIncome"
+import { attributeRewardTransfer, recordClaimableRewardBeforeBlock, mapNFTPosition, nftPositionMappingId } from "../src/positionIncome"
 import { calculateActualROI } from "../src/roiCalculation"
 import { calculatePortfolioMetrics } from "../src/helpers"
 import { searchAndAssociateRecentSwaps } from "../src/swapTracking"
@@ -126,6 +126,14 @@ describe("collected fees", () => {
       .reverts()
     handleDecreaseLiquidity(newDecrease(BigInt.fromI32(7), USDC_50, BOLD_50))
     assert.assertTrue(ProtocolPosition.load(p.id)!.exitAmountUSD === null)
+  })
+
+  test("an NFT mapping follows the position it was last written for", () => {
+    let a = Bytes.fromUTF8("a")
+    let b = Bytes.fromUTF8("b")
+    mapNFTPosition(PROTOCOL_VELODROME_V3, BigInt.fromI32(77), a)
+    mapNFTPosition(PROTOCOL_VELODROME_V3, BigInt.fromI32(77), b)
+    assert.fieldEquals("NFTPositionMapping", nftPositionMappingId(PROTOCOL_VELODROME_V3, BigInt.fromI32(77)).toHexString(), "positionId", b.toHexString())
   })
 
   test("a fee on a closed position with no recorded investment is still saved", () => {

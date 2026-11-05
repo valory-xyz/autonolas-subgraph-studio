@@ -22,14 +22,18 @@ export function nftPositionMappingId(protocol: string, tokenId: BigInt): Bytes {
   return Bytes.fromUTF8(protocol + "-" + tokenId.toString())
 }
 
+// The position id includes the owning Safe, so an NFT moved to another service Safe maps to that Safe's row
 export function mapNFTPosition(protocol: string, tokenId: BigInt, positionId: Bytes): void {
   let id = nftPositionMappingId(protocol, tokenId)
-  if (NFTPositionMapping.load(id) == null) {
-    let mapping = new NFTPositionMapping(id)
+  let mapping = NFTPositionMapping.load(id)
+  if (mapping == null) {
+    mapping = new NFTPositionMapping(id)
     mapping.protocol = protocol
-    mapping.positionId = positionId
-    mapping.save()
+  } else if (mapping.positionId.equals(positionId)) {
+    return
   }
+  mapping.positionId = positionId
+  mapping.save()
 }
 
 // The tracked position an NFT event refers to, or null when no service owns it
