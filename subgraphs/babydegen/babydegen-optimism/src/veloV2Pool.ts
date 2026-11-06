@@ -79,10 +79,10 @@ export function handleVeloV2Transfer(event: Transfer): void {
     
     if (service != null) {
       // Read before the refresh below marks the row active again (CLAUDE.md: v2 position cycles)
-      const closed = ProtocolPosition.load(getVeloV2PositionId(to, event.address))
-      const startsEntry = closed == null || !closed.isActive
-      if (closed != null && !closed.isActive) {
-        startNewCycle(closed, event)
+      const existing = ProtocolPosition.load(getVeloV2PositionId(to, event.address))
+      const startsEntry = existing == null || !existing.isActive
+      if (existing != null && !existing.isActive) {
+        startNewCycle(existing, event)
       }
 
       // Create the position with placeholder amounts (will be updated by Mint event)
