@@ -2168,6 +2168,9 @@ describe("Aero v2 pools (factories + GaugeManager)", () => {
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "swapSlippageUSD", "0")
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "entryTxHash", reentryTx.toHexString())
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "entryTimestamp", reentryBlock.timestamp.toString())
+    // The re-entry Mint replaces the entry the refresh filled from current amounts, not adds to it
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "entryAmount0", "2")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "entryAmount1", "6")
     // The re-entry writes investmentUSD from this cycle's entry alone, so the old cycle's 999 is not carried
     assert.stringEquals(reentered.investmentUSD.toString(), reentered.entryAmountUSD.plus(reentered.swapSlippageUSD).toString())
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "grossGainUSD", "0")
