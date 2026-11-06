@@ -1647,6 +1647,12 @@ function mockAeroV2PoolState(pool: Address, gauge: Address): void {
     .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromString("500"))])
 }
 
+function mockAeroV2GaugeEarned(gauge: Address, amount: BigInt): void {
+  createMockedFunction(gauge, "earned", "earned(address):(uint256)")
+    .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
+    .returns([ethereum.Value.fromUnsignedBigInt(amount)])
+}
+
 function mockAeroV2GaugeEarnedReverts(gauge: Address): void {
   createMockedFunction(gauge, "earned", "earned(address):(uint256)")
     .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)]).reverts()
@@ -1696,9 +1702,7 @@ describe("Aero v2 pools (factories + GaugeManager)", () => {
     handleAeroGaugeCreated(createGaugeCreatedEvent(AERO_V2_POOL, AERO_V2_GAUGE))
     mockAeroV2PoolState(AERO_V2_POOL, AERO_V2_GAUGE)
     mockAeroProtocolAeroUsdcPool()
-    createMockedFunction(AERO_V2_GAUGE, "earned", "earned(address):(uint256)")
-      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
-      .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromString("2000000000000000000"))])
+    mockAeroV2GaugeEarned(AERO_V2_GAUGE, BigInt.fromString("2000000000000000000"))
 
     // VELO_VOTER.gauges is deliberately not mocked: the aero-v2 path must not call it.
     refreshVeloV2Position(SERVICE_SAFE, AERO_V2_POOL, v2Block(), TX_HASH, false)
@@ -1832,6 +1836,10 @@ describe("Aero v2 pools (factories + GaugeManager)", () => {
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "protocol", "aero-v2")
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "entryAmount0", "2")
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "entryAmount1", "6")
+    // 2 legacy AERO × ≈$1.30; DUMMY1 has no price
+    const pos = ProtocolPosition.load(id)!
+    assert.assertTrue(pos.entryAmountUSD.gt(BigDecimal.fromString("2.59")))
+    assert.assertTrue(pos.entryAmountUSD.lt(BigDecimal.fromString("2.61")))
     assert.entityCount("PendingMintPosition", 0)
     // Aero v2 pools have no stable() (mocked to revert); the fee comes from the venue row
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "fee", "30")
@@ -1912,7 +1920,7 @@ describe("Chainlink-priced stablecoins (feed first, pool fallback)", () => {
   })
 
   test("a reverting feed falls back to the Aero USDC/USDT pool", () => {
-    // USDC (0x8335…) is token0, USDT (0xfde4…) token1; sqrtPriceX96 = 2^96 → 1 USDT = 1 USDC
+    // sqrtPriceX96 = 2^96 → 1 USDT = 1 USDC
     mockUsdtFallbackPool("79228162514264337593543950336")
 
     const price = getTokenPriceUSD(USDT, BLOCK_TIMESTAMP, true)
@@ -2020,9 +2028,7 @@ describe("refreshAllActivePositions dispatch (snapshot refresh)", () => {
     // Both now have 2 AERO claimable; only the snapshot refresh can pick that up
     mockAeroCLStaked(true)
     mockAeroCLEarned(BigInt.fromString("2000000000000000000"))
-    createMockedFunction(AERO_V2_GAUGE, "earned", "earned(address):(uint256)")
-      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
-      .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromString("2000000000000000000"))])
+    mockAeroV2GaugeEarned(AERO_V2_GAUGE, BigInt.fromString("2000000000000000000"))
 
     refreshAllActivePositions(SERVICE_SAFE, v2Block(), false)
 

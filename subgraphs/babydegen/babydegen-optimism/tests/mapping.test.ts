@@ -1325,6 +1325,10 @@ describe("Aero v2 pools (factories + GaugeManager)", () => {
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "protocol", "aero-v2")
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "entryAmount0", "2")
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "entryAmount1", "6")
+    // 2 VELO × ≈$1.30; DUMMY1 has no price
+    const pos = ProtocolPosition.load(id)!
+    assert.assertTrue(pos.entryAmountUSD.gt(BigDecimal.fromString("2.59")))
+    assert.assertTrue(pos.entryAmountUSD.lt(BigDecimal.fromString("2.61")))
     assert.entityCount("PendingMintPosition", 0)
     // Aero v2 pools have no stable() (mocked to revert); the fee comes from the venue row
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "fee", "30")
