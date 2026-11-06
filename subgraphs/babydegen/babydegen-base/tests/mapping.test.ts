@@ -1905,6 +1905,30 @@ function saveAeroV2Venue(stable: boolean): void {
   venue.save()
 }
 
+function mockPricedAeroV2Pool(): void {
+  createService(SERVICE_SAFE)
+  mockChainlinkEthUsd()
+  mockAeroUsdcPool()
+  saveAeroV2Venue(false)
+  // token0 = legacy AERO (priced ~$1.30) so entryAmountUSD is non-zero, as in the legacy Mint test
+  createMockedFunction(AERO_V2_POOL, "token0", "token0():(address)")
+    .withArgs([]).returns([ethereum.Value.fromAddress(AERO)])
+  createMockedFunction(AERO_V2_POOL, "token1", "token1():(address)")
+    .withArgs([]).returns([ethereum.Value.fromAddress(DUMMY1)])
+  createMockedFunction(AERO_V2_POOL, "stable", "stable():(bool)").withArgs([]).reverts()
+  createMockedFunction(AERO_V2_POOL, "balanceOf", "balanceOf(address):(uint256)")
+    .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
+    .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(500))])
+  createMockedFunction(AERO_V2_POOL, "totalSupply", "totalSupply():(uint256)")
+    .withArgs([]).returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1000))])
+  createMockedFunction(AERO_V2_POOL, "getReserves", "getReserves():(uint256,uint256,uint256)")
+    .withArgs([]).returns([
+      ethereum.Value.fromUnsignedBigInt(BigInt.fromString("2000000000000000000")),
+      ethereum.Value.fromUnsignedBigInt(BigInt.fromString("4000000000000000000")),
+      ethereum.Value.fromUnsignedBigInt(BigInt.zero())
+    ])
+}
+
 function mockAeroV2PoolState(pool: Address, gauge: Address): void {
   createMockedFunction(pool, "balanceOf", "balanceOf(address):(uint256)")
     .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
@@ -2075,27 +2099,7 @@ describe("Aero v2 pools (factories + GaugeManager)", () => {
   })
 
   test("LP minted into a closed row starts a new cycle with no income, exit, costs or ROI", () => {
-    createService(SERVICE_SAFE)
-    mockChainlinkEthUsd()
-    mockAeroUsdcPool()
-    saveAeroV2Venue(false)
-    // token0 = legacy AERO (priced ~$1.30) so entryAmountUSD is non-zero, as in the legacy Mint test
-    createMockedFunction(AERO_V2_POOL, "token0", "token0():(address)")
-      .withArgs([]).returns([ethereum.Value.fromAddress(AERO)])
-    createMockedFunction(AERO_V2_POOL, "token1", "token1():(address)")
-      .withArgs([]).returns([ethereum.Value.fromAddress(DUMMY1)])
-    createMockedFunction(AERO_V2_POOL, "stable", "stable():(bool)").withArgs([]).reverts()
-    createMockedFunction(AERO_V2_POOL, "balanceOf", "balanceOf(address):(uint256)")
-      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
-      .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(500))])
-    createMockedFunction(AERO_V2_POOL, "totalSupply", "totalSupply():(uint256)")
-      .withArgs([]).returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1000))])
-    createMockedFunction(AERO_V2_POOL, "getReserves", "getReserves():(uint256,uint256,uint256)")
-      .withArgs([]).returns([
-        ethereum.Value.fromUnsignedBigInt(BigInt.fromString("2000000000000000000")),
-        ethereum.Value.fromUnsignedBigInt(BigInt.fromString("4000000000000000000")),
-        ethereum.Value.fromUnsignedBigInt(BigInt.zero())
-      ])
+    mockPricedAeroV2Pool()
 
     const transfer = createV2TransferEvent(AERO_V2_POOL, Address.zero(), SERVICE_SAFE, BigInt.fromI32(500))
     transfer.block = v2Block()
@@ -2178,28 +2182,7 @@ describe("Aero v2 pools (factories + GaugeManager)", () => {
   })
 
   test("two LP mints in the tx that creates the row add up to its entry", () => {
-
-    createService(SERVICE_SAFE)
-    mockChainlinkEthUsd()
-    mockAeroUsdcPool()
-    saveAeroV2Venue(false)
-    // token0 = legacy AERO (priced ~$1.30) so entryAmountUSD is non-zero, as in the legacy Mint test
-    createMockedFunction(AERO_V2_POOL, "token0", "token0():(address)")
-      .withArgs([]).returns([ethereum.Value.fromAddress(AERO)])
-    createMockedFunction(AERO_V2_POOL, "token1", "token1():(address)")
-      .withArgs([]).returns([ethereum.Value.fromAddress(DUMMY1)])
-    createMockedFunction(AERO_V2_POOL, "stable", "stable():(bool)").withArgs([]).reverts()
-    createMockedFunction(AERO_V2_POOL, "balanceOf", "balanceOf(address):(uint256)")
-      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
-      .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(500))])
-    createMockedFunction(AERO_V2_POOL, "totalSupply", "totalSupply():(uint256)")
-      .withArgs([]).returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1000))])
-    createMockedFunction(AERO_V2_POOL, "getReserves", "getReserves():(uint256,uint256,uint256)")
-      .withArgs([]).returns([
-        ethereum.Value.fromUnsignedBigInt(BigInt.fromString("2000000000000000000")),
-        ethereum.Value.fromUnsignedBigInt(BigInt.fromString("4000000000000000000")),
-        ethereum.Value.fromUnsignedBigInt(BigInt.zero())
-      ])
+    mockPricedAeroV2Pool()
 
     const id = getVeloV2PositionId(SERVICE_SAFE, AERO_V2_POOL)
     let firstEntry = BigDecimal.zero()
@@ -2231,27 +2214,7 @@ describe("Aero v2 pools (factories + GaugeManager)", () => {
   })
 
   test("a top-up after a partial Burn keeps the open position's income", () => {
-    createService(SERVICE_SAFE)
-    mockChainlinkEthUsd()
-    mockAeroUsdcPool()
-    saveAeroV2Venue(false)
-    // token0 = legacy AERO (priced ~$1.30) so entryAmountUSD is non-zero, as in the legacy Mint test
-    createMockedFunction(AERO_V2_POOL, "token0", "token0():(address)")
-      .withArgs([]).returns([ethereum.Value.fromAddress(AERO)])
-    createMockedFunction(AERO_V2_POOL, "token1", "token1():(address)")
-      .withArgs([]).returns([ethereum.Value.fromAddress(DUMMY1)])
-    createMockedFunction(AERO_V2_POOL, "stable", "stable():(bool)").withArgs([]).reverts()
-    createMockedFunction(AERO_V2_POOL, "balanceOf", "balanceOf(address):(uint256)")
-      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
-      .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(500))])
-    createMockedFunction(AERO_V2_POOL, "totalSupply", "totalSupply():(uint256)")
-      .withArgs([]).returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1000))])
-    createMockedFunction(AERO_V2_POOL, "getReserves", "getReserves():(uint256,uint256,uint256)")
-      .withArgs([]).returns([
-        ethereum.Value.fromUnsignedBigInt(BigInt.fromString("2000000000000000000")),
-        ethereum.Value.fromUnsignedBigInt(BigInt.fromString("4000000000000000000")),
-        ethereum.Value.fromUnsignedBigInt(BigInt.zero())
-      ])
+    mockPricedAeroV2Pool()
 
     const transfer = createV2TransferEvent(AERO_V2_POOL, Address.zero(), SERVICE_SAFE, BigInt.fromI32(500))
     transfer.block = v2Block()
@@ -2307,27 +2270,7 @@ describe("Aero v2 pools (factories + GaugeManager)", () => {
   })
 
   test("Aero's 4-arg Mint sets entry amounts", () => {
-    createService(SERVICE_SAFE)
-    mockChainlinkEthUsd()
-    mockAeroUsdcPool()
-    saveAeroV2Venue(false)
-    // token0 = legacy AERO (priced ~$1.30) so entryAmountUSD is non-zero, as in the legacy Mint test
-    createMockedFunction(AERO_V2_POOL, "token0", "token0():(address)")
-      .withArgs([]).returns([ethereum.Value.fromAddress(AERO)])
-    createMockedFunction(AERO_V2_POOL, "token1", "token1():(address)")
-      .withArgs([]).returns([ethereum.Value.fromAddress(DUMMY1)])
-    createMockedFunction(AERO_V2_POOL, "stable", "stable():(bool)").withArgs([]).reverts()
-    createMockedFunction(AERO_V2_POOL, "balanceOf", "balanceOf(address):(uint256)")
-      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
-      .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(500))])
-    createMockedFunction(AERO_V2_POOL, "totalSupply", "totalSupply():(uint256)")
-      .withArgs([]).returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1000))])
-    createMockedFunction(AERO_V2_POOL, "getReserves", "getReserves():(uint256,uint256,uint256)")
-      .withArgs([]).returns([
-        ethereum.Value.fromUnsignedBigInt(BigInt.fromString("2000000000000000000")),
-        ethereum.Value.fromUnsignedBigInt(BigInt.fromString("4000000000000000000")),
-        ethereum.Value.fromUnsignedBigInt(BigInt.zero())
-      ])
+    mockPricedAeroV2Pool()
 
     const transfer = createV2TransferEvent(AERO_V2_POOL, Address.zero(), SERVICE_SAFE, BigInt.fromI32(500))
     transfer.block = v2Block()
