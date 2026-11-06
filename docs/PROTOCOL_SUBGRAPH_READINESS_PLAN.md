@@ -1,6 +1,6 @@
 # Protocol changes — subgraph readiness plan
 
-Updated: 5 November 2026. Status: approval draft; implementation, owners and readiness dates are not yet signed off.
+Updated: 6 November 2026. Status: approval draft; implementation, owners and readiness dates are not yet signed off.
 
 ## Scope and deployment approaches
 
@@ -61,7 +61,9 @@ Chains below reflect confirmed hosting and planned migrations. Priority follows 
 
 - Continue monitoring existing instances alongside new v0.4 instances. Retain each version's decoder and implementation allowlist; add v0.4 factory/implementation discovery without replacing legacy coverage.
 - Test `ServicesRebaselined` with an empty `Checkpoint`, `ServiceBaselineMissing` and `ServiceBaselineRecovered`. A rebaseline or recovery establishes a baseline; it must not create a reward for the preceding interval. Do not classify every empty checkpoint as a rebaseline.
-- Test first-stake epoch numbering after refill, including the checkpoint's extra epoch increment. Verify reward recipients and amount arrays for claims and unstakes; prevent duplicate rewards when multiple events describe one payment.
+- Test first-stake epoch numbering after refill, including the checkpoint's extra epoch increment.
+- For Pearl v0.4 migration, test the existing one-argument `stake(serviceId)` call when the Master Safe is both service owner and operator: rewards can be paid directly to the Master Safe. Decode the actual reward-recipient and amount arrays; do not assume an Agent Safe destination or require an Agent-to-Master sweep.
+- Cover multiple reward recipients, claims and normal unstakes. Reconcile reward events with ERC20 transfers so each reward and each wallet balance change is counted once. Retain and test legacy-instance reward-destination behavior.
 - Run these acceptance checks on the primary staking indexer and the applicable Pearl history path. **Updating staking does not update Pearl transaction history.** Pearl/operate-app must also handle rebaseline/missing-baseline reward eligibility.
 - **Release:** Studio full reindex; squids update/migrate and resume. Both old and new instance fixtures must pass before activation. Primary staking coverage blocks new programmes; Pearl history coverage must be ready before Pearl uses v0.4 proxies.
 
@@ -70,6 +72,9 @@ Chains below reflect confirmed hosting and planned migrations. Priority follows 
 - Record the **new proxy address and deployment block**, then refresh the ABI and manifest. Both deployment values are still awaiting protocol handoff; an implementation address is not a substitute for the proxy source.
 - Verify `ImplementationUpdated` in the new ABI. The reviewed source removes `TokenomicsUpdated` and `StakingParamsUpdated`; keep their handlers on the old source where applicable and do not expect them from the new source.
 - Preserve old sources and history. Test claim-to-epoch attribution and entity uniqueness across old/new Dispensers, including multiple events in one transaction. Event identity must distinguish source and log position, with chain included wherever data is combined across chains.
+- Test single and batch claims where previously withheld OLAS covers some or all of the incentive. Record the covered amount as returned staking inflation rather than fresh inflation.
+- Test zero-total-weight epochs reached through claims and `retain()`, including claim-before-retain and retain-before-claim execution orders. Verify that each allocation is refunded exactly once.
+- Test a zero `stakingFraction` epoch with carried nonzero `stakingIncentive`; carried incentives must still be indexed. Reconcile indexed claim and return amounts, including epoch attribution, with the emitted claim, `Retained` and `StakingRefunded` events.
 - **Release:** Studio full reindex with both source eras. Validate historical continuity and new claims before switching consumers. Updating the indexer alone does not update Govern/Launch contract addresses or ABIs.
 
 **Liquidity — later workstream**
@@ -108,7 +113,7 @@ These are consumer tasks, not indexer implementation. Owner roles below are prop
 | **Govern and Launch** | Update Dispenser/VoteWeighting addresses and ABIs together. Validate claims, voting, nominations and nominee lists against the new stack, keeping any required old-history reads. | Govern/Launch frontend maintainers — names to confirm | Date not set; before new claims/voting/nominations are enabled. Needs both contracts' addresses, ABIs and activation order. |
 | **Marketplace service deployment** | Refresh the ServiceManager ABI. Verify direct registration and unbond calls; offer only Safe wrappers permitted on each chain. Test service creation, registration, deployment, termination and unbond with the selected wrappers. | Marketplace frontend maintainer — name to confirm | Date not set; before the upgraded ServiceManager/wrapper workflow is offered on each chain. |
 | **Marketplace Base/Polygon consumers** | Complete squid cutover and query-dialect/parity checks for each active consumer. Include website/KPI, Marketplace frontend, mech-client and agent/wrapper paths where they read these indexers. | Each consuming app/agent maintainer — names to confirm | Date not set; after each squid catches up and before new protocol activity. Track Base and Polygon cutovers separately. |
-| **Pearl / operate-app** | Make displayed reward eligibility aware of v0.4 rebaseline and missing/recovered baseline states. Validate reward recipients/history against both staking and Pearl indexers, including legacy instances. | Pearl/operate-app maintainer — name to confirm | Date not set; before Pearl uses v0.4 programmes on each supported chain. Needs both indexer releases. |
+| **Pearl / operate-app** | Make displayed reward eligibility aware of v0.4 rebaseline and missing/recovered baseline states. Validate reward recipients/history against both staking and Pearl indexers, including direct Master Safe rewards from `stake(serviceId)`, multiple recipients and legacy instances. Reconcile reward events and ERC20 transfers without duplicate rewards or wallet balance changes. | Pearl/operate-app maintainer — name to confirm | Date not set; before Pearl uses v0.4 programmes on each supported chain. Needs both indexer releases. |
 | **Website staking/APR** | Update current VoteWeighting reads and validate staking-indexer inputs. Preserve historical APR data across the address/indexer cutover; check old/new intervals and totals. | Website/APR maintainer — name to confirm | Date not set; before publishing post-activation staking/APR data. Needs VoteWeighting configuration and validated staking inputs. |
 | **Build — Hire guide** | Validate the example mech and request flow against the release; update instructions if the supported workflow changes. | Build documentation / mech-client maintainer — names to confirm | Date not set; before recommending the upgraded workflow. Needs a validated mech and client/settlement combination. |
 | **Build — Monetize guide** | Validate factory selection, tracker setup and Safe-wrapper permissions per chain. Update setup instructions where the supported deployment/delivery workflow changes. | Build documentation / mech-server maintainer — names to confirm | Date not set; before recommending new factories/wrappers. Needs release configuration and a successful end-to-end deployment. |
