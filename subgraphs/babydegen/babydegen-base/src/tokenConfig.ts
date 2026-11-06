@@ -1,4 +1,4 @@
-import { Address, BigInt } from "@graphprotocol/graph-ts"
+import { Address, BigInt, log } from "@graphprotocol/graph-ts"
 import {
   ETH_USD_FEED,
   USDC_USD_FEED,
@@ -122,7 +122,8 @@ function usdcReferencedStable(address: Address, symbol: string, decimals: i32): 
 
 // A stablecoin priced off its own Chainlink feed, with an Aero USDC pool as the
 // priority-2 fallback when the feed gives no valid price (stale, out of range). Neither
-// source assumes $1, so a depeg shows. No pool → feed only.
+// source assumes $1, so a depeg shows. The CL adapter's decimal adjustment is inverted for
+// pairs whose decimals differ, so only a 6-decimal token may take a USDC pool fallback.
 function chainlinkStable(
   address: Address,
   symbol: string,
@@ -134,6 +135,12 @@ function chainlinkStable(
     new PriceSourceConfig(Address.fromString(getChainlinkFeedSafe(feedName)), "chainlink", 1, 95)
   ]
   if (fallbackPool !== null) {
+    if (decimals != 6) {
+      log.critical("chainlinkStable: {} has {} decimals; a USDC pool fallback would misprice it", [
+        symbol,
+        decimals.toString()
+      ])
+    }
     sources.push(new PriceSourceConfig(fallbackPool, "velodrome_slipstream", 2, 80, USDC_NATIVE))
   }
   return new TokenConfig(address, symbol, decimals, sources)
@@ -199,7 +206,7 @@ function initializeTokens(): void {
     ]
   ))
 
-  // AERO of Aero (the merged protocol) — Aero CL/v2 gauge reward token, priced off an Aero v2 AERO/USDC pool.
+  // AERO of Aero (the merged protocol)
   TOKENS.set(AERO_PROTOCOL_AERO.toHexString().toLowerCase(), new TokenConfig(
     AERO_PROTOCOL_AERO,
     "AERO",
@@ -215,11 +222,9 @@ function initializeTokens(): void {
     ]
   ))
 
-  // Chainlink-priced stablecoins. USDT falls back to the Aero CL tickSpacing-1 USDC/USDT pool.
-  // DAI, USDe and USDS are feed-only: the CL adapter's decimal adjustment is inverted for
-  // 18-vs-6-decimal pairs, so a pool fallback would price them at ~1e-24.
   TOKENS.set(USDT.toHexString().toLowerCase(), chainlinkStable(USDT, "USDT", 6, "USDT_USD",
     Address.fromString("0xD448990883e3Bf9cDD8ebCA368A3ECF9D629aAf7"))) // Aero USDC/USDT CL
+  // 18-decimal, so feed-only (see chainlinkStable).
   TOKENS.set(DAI.toHexString().toLowerCase(), chainlinkStable(DAI, "DAI", 18, "DAI_USD", null))
   TOKENS.set(USDE.toHexString().toLowerCase(), chainlinkStable(USDE, "USDe", 18, "USDE_USD", null))
   TOKENS.set(USDS.toHexString().toLowerCase(), chainlinkStable(USDS, "USDS", 18, "USDS_USD", null))
