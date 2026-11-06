@@ -206,7 +206,8 @@ export function getBalancerPrice(
 
 // Velodrome V2 stable (x³y + y³x) pool adapter. The reserve ratio is only the marginal price
 // on a volatile x*y=k pool; on a stable pool it drifts far from it once the pool is imbalanced,
-// so quote 1 token through the pool's own curve with getAmountOut instead.
+// so quote 1 token through the pool's own curve with getAmountOut instead. getAmountOut takes
+// the pool fee off amountIn first, so this is the after-fee quote: low by the fee rate (~5 bps).
 export function getVelodromeV2StablePrice(
   token: Address,
   poolAddress: Address,

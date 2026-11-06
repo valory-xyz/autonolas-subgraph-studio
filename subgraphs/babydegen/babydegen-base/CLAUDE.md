@@ -9,7 +9,7 @@ Indexing **filters by Olas `agentId == 115`** and tracks every Basius service (c
 > **Id note:** 115 is the **agent** id, not a service id. (Service *115* is an unrelated
 > 2025 service on the generic agent 9 — an early Divya/Tanya mix-up, resolved on-chain.)
 
-> Status: **Phase 1 complete.** Builds + 19 tests green. Registry, Aerodrome surface (ABI
+> Status: **Phase 1 complete.** Builds and tests green. Registry, Aerodrome surface (ABI
 > compatibility verified vs deployed contracts; LpSugar bootstrap uses `forSwaps`), Chainlink
 > feeds, LiFi, v2 PoolFactory, startBlock and cadence all confirmed. AERO is priced off the
 > Aerodrome AERO/USDC volatile pool; OLAS dropped (not held). Phase 2 (per-day transactions /
