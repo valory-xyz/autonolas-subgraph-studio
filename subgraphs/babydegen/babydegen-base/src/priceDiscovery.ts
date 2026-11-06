@@ -159,12 +159,24 @@ function getPriceFromSources(
   let confidences: BigDecimal[] = []
   let sourceTypes: string[] = []
   
-  // Try all sources and collect valid prices
+  // Collect valid prices from the best priority that has any: a higher-numbered source is a
+  // fallback, only read when every better one fails (e.g. a stablecoin's pool behind its
+  // Chainlink feed). Sources sharing a priority are averaged by confidence below.
+  let bestPriority = i32.MAX_VALUE
   for (let i = 0; i < config.priceSources.length; i++) {
     let sourceConfig = config.priceSources[i]
+    if (sourceConfig.priority > bestPriority) {
+      continue
+    }
     let result = getPriceFromSource(token, sourceConfig, timestamp)
     
     if (result.price.gt(BigDecimal.fromString("0"))) {
+      if (sourceConfig.priority < bestPriority) {
+        bestPriority = sourceConfig.priority
+        validPrices = []
+        confidences = []
+        sourceTypes = []
+      }
       validPrices.push(result.price)
       confidences.push(result.confidence)
       sourceTypes.push(result.source)
@@ -256,7 +268,8 @@ function getPriceFromSource(
       sourceConfig.pairToken!
     )
     if (price.gt(BigDecimal.fromString("0")) && isValidPriceResult(price, token.symbol)) {
-      return new PriceResult(price, baseConfidence, "velodrome_cl")
+      // Label with the configured sourceType so createPriceUpdate attributes it to this source
+      return new PriceResult(price, baseConfidence, sourceType)
     }
   }
   
@@ -315,14 +328,14 @@ function isValidPriceResult(price: BigDecimal, tokenSymbol: string): boolean {
   let maxPrice: BigDecimal
   
   // Different bounds for stablecoins vs other tokens
-  if (tokenSymbol == "USDC" || tokenSymbol == "USDT" || 
-      tokenSymbol == "DAI" || tokenSymbol == "USDC.e") {
+  if (tokenSymbol == "USDC" || tokenSymbol == "USDC.e") {
     // Core stablecoins should be within a very tight range around $1
     minPrice = BigDecimal.fromString("0.95")   // $0.95
     maxPrice = BigDecimal.fromString("1.05")   // $1.05
   } else if (tokenSymbol == "LUSD" || tokenSymbol == "FRAX" || 
-      tokenSymbol == "DOLA") {
-    // Variable stablecoins can have slightly more variation
+      tokenSymbol == "DOLA" || tokenSymbol == "USDT" || tokenSymbol == "DAI" ||
+      tokenSymbol == "USDe" || tokenSymbol == "USDS") {
+    // Loose band so a real depeg reported by a token's own feed is kept.
     minPrice = BigDecimal.fromString("0.5")    // $0.50
     maxPrice = BigDecimal.fromString("1.5")    // $1.50
   } else {

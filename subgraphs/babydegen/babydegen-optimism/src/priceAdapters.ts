@@ -1,4 +1,4 @@
-import { Address, BigDecimal, BigInt, ethereum, Bytes } from "@graphprotocol/graph-ts"
+import { Address, BigDecimal, BigInt, ethereum, Bytes, log } from "@graphprotocol/graph-ts"
 import { VelodromeCLPool } from "../generated/VeloNFTManager/VelodromeCLPool"
 import { VelodromeV2Pool } from "../generated/templates/VeloV2Pool/VelodromeV2Pool"
 import { AggregatorV3Interface } from "../generated/templates/Safe/AggregatorV3Interface"
@@ -202,6 +202,49 @@ export function getBalancerPrice(
   let finalPrice = rawPrice.times(pairPrice)
   
   return finalPrice
+}
+
+// Velodrome V2 stable (x³y + y³x) pool adapter. The reserve ratio is only the marginal price
+// on a volatile x*y=k pool; on a stable pool it drifts far from it once the pool is imbalanced,
+// so quote 1 token through the pool's own curve with getAmountOut instead. getAmountOut takes
+// the pool fee off amountIn first, so this is the after-fee quote: low by the fee rate (~5 bps).
+export function getVelodromeV2StablePrice(
+  token: Address,
+  poolAddress: Address,
+  pairToken: Address
+): BigDecimal {
+  let targetTokenConfig = getTokenConfig(token)
+  let pairTokenConfig = getTokenConfig(pairToken)
+  if (targetTokenConfig == null || pairTokenConfig == null) {
+    return BigDecimal.fromString("0")
+  }
+
+  let pool = VelodromeV2Pool.bind(poolAddress)
+  let token0Result = pool.try_token0()
+  let token1Result = pool.try_token1()
+  if (token0Result.reverted || token1Result.reverted) {
+    log.warning("velodrome_v2_stable: token0()/token1() reverted on pool {} pricing {}", [poolAddress.toHexString(), token.toHexString()])
+    return BigDecimal.fromString("0")
+  }
+  // getAmountOut returns the pool's other token, so that must be the pair token
+  let isPair = (token.equals(token0Result.value) && pairToken.equals(token1Result.value)) ||
+    (token.equals(token1Result.value) && pairToken.equals(token0Result.value))
+  if (!isPair) {
+    log.warning("velodrome_v2_stable: pool {} does not pair {} with {}", [poolAddress.toHexString(), token.toHexString(), pairToken.toHexString()])
+    return BigDecimal.fromString("0")
+  }
+
+  let oneToken = BigInt.fromI32(10).pow(targetTokenConfig.decimals as u8)
+  let outResult = pool.try_getAmountOut(oneToken, token)
+  if (outResult.reverted) {
+    log.warning("velodrome_v2_stable: getAmountOut() reverted on pool {} pricing {}", [poolAddress.toHexString(), token.toHexString()])
+    return BigDecimal.fromString("0")
+  }
+
+  let pairAmount = outResult.value.toBigDecimal().div(
+    BigInt.fromI32(10).pow(pairTokenConfig.decimals as u8).toBigDecimal()
+  )
+  return pairAmount.times(getPairTokenPrice(pairToken))
 }
 
 // Helper functions

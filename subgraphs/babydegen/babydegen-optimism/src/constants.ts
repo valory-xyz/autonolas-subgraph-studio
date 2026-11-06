@@ -1,4 +1,4 @@
-import { Address, BigInt } from "@graphprotocol/graph-ts"
+import { Address, BigInt, log } from "@graphprotocol/graph-ts"
 
 // =============================================================================
 // MATHEMATICAL CONSTANTS
@@ -28,6 +28,9 @@ export const USDT0 = Address.fromString("0x01bff41798a0bcf287b996046ca68b395dbc1
 export const OUSDT = Address.fromString("0x1217bfe6c773eec6cc4a38b5dc45b92292b6e189") // oUSDT
 export const USDGLO = Address.fromString("0x4f604735c1cf31399c6e711d5962b2b3e0225ad3") // USDGLO
 export const VELO = Address.fromString("0x9560e827aF36c94D2Ac33a39bCE1Fe78631088Db") // VELO
+export const BOLD_V2 = Address.fromString("0x03569CC076654F82679C4BA2124D64774781B01D") // BOLD the agent holds (same as Base); BOLD above keeps its history
+export const USDS = Address.fromString("0x4F13a96EC5C4Cf34e442b46Bbd98a0791F20edC3") // USDS
+export const XAERO = Address.fromString("0xbdEaeA5205d16f34Cb40038052d91235D87B4C54") // xAERO — Aero gauge reward token
 
 // Chainlink price feeds (Optimism mainnet)
 export const ETH_USD_FEED = Address.fromString("0x13e3Ee699D1909E989722E753853AE30b17e08c5")
@@ -44,6 +47,13 @@ export const VELO_VOTER = Address.fromString("0x41C914ee0c7E1A5edCD0295623e6dC55
 // Velodrome CL (Concentrated Liquidity) addresses
 export const VELO_MANAGER = Address.fromString("0x416b433906b1B72FA758e166e239c43d68dC6F29") // Velodrome CL NFT Position Manager
 export const VELO_FACTORY = Address.fromString("0xCc0bDDB707055e04e497aB22a59c2aF4391cd12F") // Velodrome CL Factory (NOT V2 Factory!)
+
+// Aero (merged Velodrome/Aerodrome, live 2026-10-22) — Optimism mainnet.
+// Same addresses as on Base except the CL factory, read from AERO_NFT_MANAGER.factory().
+export const AERO_NFT_MANAGER = Address.fromString("0x4857DB576eE0e45F10525eC59527BfD10beeC60b")
+export const AERO_CL_FACTORY = Address.fromString("0xfeaB42D90055db3a0616249f76B6002D72266778")
+export const AERO_V2_STABLE_FACTORY = Address.fromString("0x78589E876edcEbdce72ee3436ab3c9AD3a7cEF2D")
+export const AERO_V2_VOLATILE_FACTORY = Address.fromString("0x8E6a9FCd1d638CC760Ffba397605Fe3355dE76D2")
 
 // Uniswap V3 addresses (Optimism mainnet)
 export const UNI_V3_MANAGER = Address.fromString("0xC36442b4a4522E871399CD717aBDD847Ab11FE88") // Uniswap V3 NFT Position Manager
@@ -64,6 +74,19 @@ export const PROTOCOL_BALANCER = "balancer"
 export const PROTOCOL_VELODROME_V2 = "velodrome-v2"
 export const PROTOCOL_VELODROME_V3 = "velodrome-v3"
 export const PROTOCOL_UNISWAP_V3 = "uniswap-v3"
+export const PROTOCOL_AERO_CL = "aero-cl"
+export const PROTOCOL_AERO_V2 = "aero-v2"
+
+// Gauge reward token of a Velodrome-family venue: Aero's gauges pay xAERO, the legacy Velodrome ones VELO.
+export function rewardTokenFor(protocol: string): Address {
+  if (protocol == PROTOCOL_AERO_CL || protocol == PROTOCOL_AERO_V2) {
+    return XAERO
+  }
+  if (protocol != PROTOCOL_VELODROME_V2 && protocol != PROTOCOL_VELODROME_V3) {
+    log.critical("rewardTokenFor: '{}' is not a Velodrome-family venue", [protocol])
+  }
+  return VELO
+}
 
 // Excluded service IDs - these are testing agents
 export const EXCLUDED_SERVICE_IDS: BigInt[] = [
@@ -87,8 +110,25 @@ export const WHITELISTED_TOKENS: string[] = [
   USDT0.toHexString(),
   OUSDT.toHexString(),
   USDGLO.toHexString(),
-  VELO.toHexString()
+  VELO.toHexString(),
+  BOLD_V2.toHexString(),
+  USDS.toHexString(),
+  XAERO.toHexString()
 ]
+
+function isTokenWhitelisted(tokenAddress: Address): boolean {
+  let tokenString = tokenAddress.toHexString().toLowerCase()
+  for (let i = 0; i < WHITELISTED_TOKENS.length; i++) {
+    if (WHITELISTED_TOKENS[i].toLowerCase() == tokenString) {
+      return true
+    }
+  }
+  return false
+}
+
+export function isPoolRelevant(token0: Address, token1: Address): boolean {
+  return isTokenWhitelisted(token0) && isTokenWhitelisted(token1)
+}
 
 // Stablecoin addresses (for price fallbacks)
 export const STABLECOINS: string[] = [

@@ -3,6 +3,7 @@ import {
   Burn,
   Transfer
 } from "../generated/templates/VeloV2Pool/VelodromeV2Pool"
+import { Mint as AeroV2Mint } from "../generated/templates/AeroV2Pool/AeroV2Pool"
 
 import {
   refreshVeloV2PositionWithBurnAmounts,
@@ -15,7 +16,7 @@ import { getServiceByAgent } from "./config"
 import { PendingMintPosition, ProtocolPosition } from "../generated/schema"
 import { getTokenPriceUSD } from "./priceDiscovery"
 import { getTokenDecimals } from "./tokenUtils"
-import { Address, BigDecimal } from "@graphprotocol/graph-ts"
+import { Address, BigDecimal, ethereum } from "@graphprotocol/graph-ts"
 
 // Helper function to convert token amount to human readable format
 function toHumanAmount(amount: BigInt, decimals: i32): BigDecimal {
@@ -92,6 +93,15 @@ export function handleVeloV2Transfer(event: Transfer): void {
 
 // Handle VelodromeV2 Pool Mint events (liquidity additions) - THIS COMES SECOND
 export function handleVeloV2Mint(event: Mint): void {
+  recordMintEntryAmounts(event, event.params.amount0, event.params.amount1)
+}
+
+// Aero v2 pools emit Mint(indexed sender, indexed to, amount0, amount1).
+export function handleAeroV2Mint(event: AeroV2Mint): void {
+  recordMintEntryAmounts(event, event.params.amount0, event.params.amount1)
+}
+
+function recordMintEntryAmounts(event: ethereum.Event, amount0: BigInt, amount1: BigInt): void {
   
   // Note: In Velodrome V2, the Mint event sender is the router contract, not the actual user
   // We need to look for the pending position to determine if this mint is for a tracked service
@@ -114,8 +124,8 @@ export function handleVeloV2Mint(event: Mint): void {
       const token1Decimals = getTokenDecimals(Address.fromBytes(position.token1!))
       
       // Convert to human amounts
-      const amount0Human = toHumanAmount(event.params.amount0, token0Decimals)
-      const amount1Human = toHumanAmount(event.params.amount1, token1Decimals)
+      const amount0Human = toHumanAmount(amount0, token0Decimals)
+      const amount1Human = toHumanAmount(amount1, token1Decimals)
       
       // Get USD values
       const token0Price = getTokenPriceUSD(Address.fromBytes(position.token0!), event.block.timestamp, false)

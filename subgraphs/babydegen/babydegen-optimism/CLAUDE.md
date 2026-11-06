@@ -66,6 +66,10 @@ subgraphs/babydegen/babydegen-optimism/
 | BalancerVault | `0xBA12222222228d8Ba445958a75a0704d566BF2C8` | Balancer V2 liquidity |
 | LiFiDiamond | `0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE` | Swap routing & slippage |
 | USDC Native | `0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85` | Funding tracking |
+| AeroNFTManager | `0x4857DB576eE0e45F10525eC59527BfD10beeC60b` | Aero CL positions |
+| Aero CL factory | `0xfeaB42D90055db3a0616249f76B6002D72266778` | Aero CL pool lookup (`AERO_NFT_MANAGER.factory()`) |
+| AeroV2Stable/VolatileFactory | `0x78589E87…EF2D` / `0x8E6a9FCd…76D2` | Aero v2 pool discovery |
+| AeroGaugeManager | `0xbF234b32c5e58868243A4a14831626f3EdE7b183` | `GaugeCreated` → Aero v2 pool→gauge map |
 
 ### Chainlink Price Feeds
 - ETH/USD, USDC/USD, USDT/USD, DAI/USD (addresses in `constants.ts`)
@@ -122,10 +126,10 @@ Same fields as AgentPortfolio plus `timestamp`, `block`, `positionIds`.
 ### DeFi Positions
 
 #### ProtocolPosition
-Individual LP positions across protocols (id: `<agent>-<tokenId>`).
+Individual LP positions across protocols (id: `<agent>-<protocol>-<tokenId>` for CL, `<agent>-<protocol>-<pool>` for v2).
 | Field | Type | Notes |
 |-------|------|-------|
-| protocol | `String!` | "velodrome-cl", "velodrome-v2", "uniswap-v3", "balancer" |
+| protocol | `String!` | "velodrome-v3" (Velodrome CL), "velodrome-v2", "aero-cl", "aero-v2", "uniswap-v3", "balancer" |
 | tokenId | `BigInt!` | NFT token ID for LP positions |
 | isActive | `Boolean!` | Open/closed status |
 | usdCurrent | `BigDecimal!` | Current USD value |
@@ -200,7 +204,7 @@ Daily population-level stats at UTC midnight (id: `<dayTimestamp>`).
 - `handleRegisterInstance`: Records registration, filters by `OPTIMUS_AGENT_ID = 40`, excludes test service IDs [29, 37, 56, 58]
 - `handleCreateMultisigWithAgents`: Creates Service entity, registers for snapshots, creates Safe template instances for service safe and operator safe
 
-### 2. Token Transfers (USDC + 13 tracked tokens)
+### 2. Token Transfers (USDC + tracked tokens)
 **Files**: `src/funding.ts`, `src/tokenBalances.ts`
 - `handleUSDC` → redirects to `handleERC20Transfer`
 - `handleERC20Transfer`: Central handler for all token transfers. Updates TokenBalance with USD values, identifies funding flows (EOA/operator → service = funding in), updates FundingBalance
@@ -214,6 +218,18 @@ Daily population-level stats at UTC midnight (id: `<dayTimestamp>`).
 - `handleCollect`: Tracks reward collection
 - All call `refreshVeloCLPosition()` to load current on-chain state
 
+### 3b. AeroNFTManager (Aero CL)
+**File**: `src/veloNFTManager.ts` (same handlers), `src/veloCLShared.ts`
+- Aero (the merged Velodrome/Aerodrome protocol, live 2026-10-22) has its own NFPM. Its
+  `IncreaseLiquidity` carries `tickLower`/`tickUpper`, so it has its own handler
+  `handleAeroIncreaseLiquidity`; Transfer/Decrease/Collect reuse the Velodrome handlers.
+- The emitting NFPM picks a `CLVenue` (`clVenueForManager`): manager, CL factory, reward token,
+  protocol label. Mapping and position ids carry the label, so the two NFPMs' token ids never collide.
+- Rewards: Aero's CLGauge has no `earned(address,uint256)`. `getAeroCLEarned` checks
+  `stakedContains(agent, tokenId)` (unstaked → 0) then reads `earned(agent, [tokenId])`.
+  Rewards are **xAERO**, recorded as `claimableReward` with `claimableRewardUSD = 0`: its
+  Optimism pools are too thin to price.
+
 ### 4. UniV3NFTManager (Uniswap V3)
 **File**: `src/uniV3NFTManager.ts`
 - Same event pattern as VeloNFTManager
@@ -226,6 +242,16 @@ Daily population-level stats at UTC midnight (id: `<dayTimestamp>`).
 ### 6. VeloV2Factory
 **File**: `src/veloV2Bootstrap.ts`
 - `handleVeloV2PoolCreated`: Discovers new V2 pools for price discovery
+
+### 6b. Aero v2 factories + AeroGaugeManager
+**Files**: `src/veloV2Factory.ts`, `src/aeroGaugeManager.ts`
+- `handleAeroV2PoolCreated` (stable + volatile factories; Aero's `PoolCreated` has no indexed
+  `stable`, hence `AeroV2PoolFactory.json`): whitelisted pairs get a `V2PoolVenue` row
+  (`aero-v2`) and an `AeroV2Pool` template.
+- Aero v2 pools have no `gauge()` and the Aero Voter has no `gauges(pool)`, so
+  `handleAeroGaugeCreated` stores `AeroGauge { id: pool, gauge }` from GaugeManager
+  `GaugeCreated`; the `aero-v2` branch of `resolveV2Gauge` reads it on every refresh (a later
+  `GaugeCreated` replaces it).
 
 ### 7. PortfolioScheduler (Block Handler)
 **File**: `src/portfolioScheduler.ts`
@@ -241,6 +267,9 @@ Daily population-level stats at UTC midnight (id: `<dayTimestamp>`).
 
 ### 10. Dynamic Templates
 - **VeloV2Pool**: Mint/Burn/Transfer for V2 position tracking. `refreshVeloV2Position` is **gauge-aware**: V2 LP staked into a Velodrome gauge leaves the safe (`pool.balanceOf(safe)==0`), so it resolves the gauge via the Velodrome **Voter** (`gauges(pool)`, `VELO_VOTER`, cached on `rewardsContract`), counts `gauge.balanceOf(safe)` as staked LP (so a staked position isn't misread as closed), and folds `gauge.earned(safe)` VELO into `usdCurrentWithRewards`. ABIs: `VeloVoter.json`, `VeloV2Gauge.json`. (CL gauge rewards already handled in `veloCLShared.ts`.)
+- **AeroV2Pool**: same handlers as VeloV2Pool except `handleAeroV2Mint` — Aero pools emit
+  `Mint(indexed sender, indexed to, amount0, amount1)` and have no `stable()`. Positions are
+  labelled `aero-v2` via `v2ProtocolFor(pool)` (`V2PoolVenue`); rewards are xAERO (unpriced).
 - **Safe**: SafeReceived, ExecutionSuccess, ExecutionFromModuleSuccess for ETH tracking
 
 ---
@@ -307,7 +336,11 @@ handleBlock (every 1800 blocks)
 - EOA detection cached in AddressType entity
 
 ### Tracked Tokens
-WETH, DAI, USDT, DOLA, BOLD, LUSD, FRAX, sDAI, USDC (Native + Bridged), USDT0, oUSDT, USDGLO, VELO
+WETH, DAI, USDT, DOLA, BOLD (legacy `0x087c…`), LUSD, FRAX, sDAI, USDC (Native + Bridged), USDT0, oUSDT, USDGLO, VELO,
+plus the agent's BOLD `0x0356…` (Velodrome v2 stable BOLD/USDC `0x8828…`, quoted with
+`getAmountOut` by the `velodrome_v2_stable` source, since a stable pool's reserve ratio is not its price), USDS and
+xAERO. USDS and xAERO have no price source yet: tracked for balances, valued at $0, and
+`getPriceFromSources` logs a warning. Neither is on the $1 stablecoin fallback.
 
 ---
 
@@ -320,7 +353,7 @@ WETH, DAI, USDT, DOLA, BOLD, LUSD, FRAX, sDAI, USDC (Native + Bridged), USDT0, o
 | OPTIMUS_AGENT_ID | 40 | Only this agent type is tracked |
 | Excluded service IDs | [29, 37, 56, 58] | Test/development agents |
 | Whitelisted tokens | 13+ tokens | See tokenConfig.ts for full list |
-| Protocol names | "velodrome-cl", "velodrome-v2", "uniswap-v3", "balancer" | |
+| Protocol names | "velodrome-v3", "velodrome-v2", "aero-cl", "aero-v2", "uniswap-v3", "balancer" | |
 
 ---
 
@@ -427,9 +460,9 @@ yarn test                           # Run Matchstick tests
 ### Critical Points
 1. **Agent filtering**: Only `OPTIMUS_AGENT_ID = 40` tracked. Test services [29, 37, 56, 58] excluded at registration.
 2. **Portfolio snapshots**: Immutable daily snapshots created at UTC midnight via block handler (every 1800 blocks). ID format: `<serviceSafe>-<dayTimestamp>`.
-3. **Position ID format**: `<agent>-<tokenId>` — unique per agent + NFT token combination.
+3. **Position ID format**: `<agent>-<protocol>-<tokenId>` (CL) / `<agent>-<protocol>-<pool>` (v2) — the label keeps the two NFPMs' token ids apart.
 4. **ROI from closed positions only**: `calculateActualROI()` uses only closed positions. Active positions contribute to `positionsValue` and `unrealisedPnL` but not ROI.
-5. **Multi-protocol support**: Velodrome CL, Velodrome V2, Uniswap V3, Balancer — each with separate handler files but unified portfolio calculation.
+5. **Multi-protocol support**: Velodrome CL, Velodrome V2, Aero CL, Aero v2, Uniswap V3, Balancer — each with separate handler files but unified portfolio calculation.
 6. **Price discovery is multi-source**: Chainlink primary, DEX fallback, stablecoin fallback. 5-minute cache. Confidence scoring.
 7. **Funding tracking**: Only USDC Native and ETH affect `FundingBalance`. Other tokens tracked for balance only. Funding direction determined by EOA/operator detection.
 8. **ETH-adjusted metrics**: Separates agent alpha from ETH price movement. `ETHDelta = (currentEthPrice/firstEthPrice - 1) * 100`.

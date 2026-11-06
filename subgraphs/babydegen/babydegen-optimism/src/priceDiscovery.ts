@@ -1,4 +1,4 @@
-import { Address, BigDecimal, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts"
+import { Address, BigDecimal, BigInt, Bytes, ethereum, log } from "@graphprotocol/graph-ts"
 import { Token, PriceSource, PriceUpdate } from "../generated/schema"
 import { getTokenConfig, TokenConfig, PriceSourceConfig } from "./tokenConfig"
 import { CRITICAL_STABLECOINS, DOLA } from "./constants"
@@ -180,6 +180,10 @@ function getPriceFromSources(
   if (config == null) {
     return new PriceResult(BigDecimal.fromString("0"), BigDecimal.fromString("0"), "none")
   }
+  if (config.priceSources.length == 0) {
+    log.warning("PRICE: {} ({}) has no price source — valued at $0", [config.symbol, token.id.toHexString()])
+    return new PriceResult(BigDecimal.fromString("0"), BigDecimal.fromString("0"), "none")
+  }
   
   // Track valid prices and their confidence
   let validPrices: BigDecimal[] = []
@@ -299,6 +303,17 @@ function getPriceFromSource(
     }
   }
   
+  if (sourceType == "velodrome_v2_stable") {
+    let price = getVelodromeV2StablePrice(
+      Address.fromBytes(token.id),
+      sourceConfig.address,
+      sourceConfig.pairToken!
+    )
+    if (price.gt(BigDecimal.fromString("0")) && isValidPriceResult(price, token.symbol)) {
+      return new PriceResult(price, baseConfidence, "velodrome_v2_stable")
+    }
+  }
+  
   if (sourceType == "balancer_v2") {
     // For Balancer V2 weighted pools
     let price = getBalancerPrice(
@@ -383,5 +398,6 @@ import {
   getUniswapV3Price,
   getVelodromePrice,
   getVelodromeV2Price,
+  getVelodromeV2StablePrice,
   getBalancerPrice
 } from "./priceAdapters"

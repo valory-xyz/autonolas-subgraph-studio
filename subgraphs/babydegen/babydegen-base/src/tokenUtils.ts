@@ -7,7 +7,12 @@ import {
   MSUSD,
   FRXUSD,
   EUSD,
-  AXLUSDC
+  AXLUSDC,
+  AERO_PROTOCOL_AERO,
+  USDT,
+  DAI,
+  USDE,
+  USDS
 } from "./constants"
 
 // Centralized function to get token decimals (Base token set)
@@ -22,6 +27,11 @@ export function getTokenDecimals(tokenAddress: Address): i32 {
   if (tokenHex == FRXUSD.toHexString().toLowerCase()) return 18       // frxUSD
   if (tokenHex == EUSD.toHexString().toLowerCase()) return 18         // eUSD
   if (tokenHex == AXLUSDC.toHexString().toLowerCase()) return 6       // axlUSDC
+  if (tokenHex == AERO_PROTOCOL_AERO.toHexString().toLowerCase()) return 18     // AERO (Aero)
+  if (tokenHex == USDT.toHexString().toLowerCase()) return 6          // USDT
+  if (tokenHex == DAI.toHexString().toLowerCase()) return 18          // DAI
+  if (tokenHex == USDE.toHexString().toLowerCase()) return 18         // USDe
+  if (tokenHex == USDS.toHexString().toLowerCase()) return 18         // USDS
 
   // Default to 18 decimals for unknown tokens
   log.warning("TOKEN_UTILS: Unknown token decimals for {}, defaulting to 18", [tokenHex])
@@ -40,6 +50,11 @@ export function getTokenSymbol(tokenAddress: Address): string {
   if (tokenHex == FRXUSD.toHexString().toLowerCase()) return "frxUSD"
   if (tokenHex == EUSD.toHexString().toLowerCase()) return "eUSD"
   if (tokenHex == AXLUSDC.toHexString().toLowerCase()) return "axlUSDC"
+  if (tokenHex == AERO_PROTOCOL_AERO.toHexString().toLowerCase()) return "AERO"
+  if (tokenHex == USDT.toHexString().toLowerCase()) return "USDT"
+  if (tokenHex == DAI.toHexString().toLowerCase()) return "DAI"
+  if (tokenHex == USDE.toHexString().toLowerCase()) return "USDe"
+  if (tokenHex == USDS.toHexString().toLowerCase()) return "USDS"
 
   // Return the address as fallback for unknown tokens
   log.warning("TOKEN_UTILS: Unknown token symbol for {}, using address", [tokenHex])

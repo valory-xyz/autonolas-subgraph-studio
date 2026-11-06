@@ -1,14 +1,15 @@
 # BabyDegen Base (Basius) Subgraph
 
 Tracks the **Basius** babydegen agent's portfolio performance on **Base**. Port of
-`babydegen-optimism` repointed to Base + **Aerodrome** (the only DEX Basius trades on).
+`babydegen-optimism` repointed to Base + **Aerodrome**, plus **Aero** (the merged protocol Basius
+moved to in optimus v0.13.10; see "Aero" below).
 Indexing **filters by Olas `agentId == 115`** and tracks every Basius service (currently
 607/610/611/612 on Base), mirroring optimism's `OPTIMUS_AGENT_ID` filter.
 
 > **Id note:** 115 is the **agent** id, not a service id. (Service *115* is an unrelated
 > 2025 service on the generic agent 9 — an early Divya/Tanya mix-up, resolved on-chain.)
 
-> Status: **Phase 1 complete.** Builds + 19 tests green. Registry, Aerodrome surface (ABI
+> Status: **Phase 1 complete.** Builds and tests green. Registry, Aerodrome surface (ABI
 > compatibility verified vs deployed contracts; LpSugar bootstrap uses `forSwaps`), Chainlink
 > feeds, LiFi, v2 PoolFactory, startBlock and cadence all confirmed. AERO is priced off the
 > Aerodrome AERO/USDC volatile pool; OLAS dropped (not held). Phase 2 (per-day transactions /
@@ -20,10 +21,10 @@ Indexing **filters by Olas `agentId == 115`** and tracks every Basius service (c
 | Aspect | Optimism | Base (this subgraph) |
 |--------|----------|----------------------|
 | Network | `optimism` | `base` |
-| DEXs tracked | Velodrome CL + V2, **Uniswap V3**, **Balancer** | **Aerodrome only** (CL = Slipstream, v2) |
+| DEXs tracked | Velodrome CL + V2, **Uniswap V3**, **Balancer** | **Aerodrome** (CL = Slipstream, v2) + **Aero** (CL, v2) |
 | Agent scoping | agent-id filter (`OPTIMUS_AGENT_ID = 40`) + excluded ids | agent-id filter (`BASIUS_AGENT_ID = 115`), all matching services |
-| Pricing | Chainlink + DEX | Chainlink (Base feeds) + Aerodrome; stables via $1 |
-| Reward token | VELO | AERO |
+| Pricing | Chainlink + DEX | Chainlink (Base feeds) + Aerodrome/Aero pools; whitelisted stables via $1, USDT/DAI/USDe/USDS via their own feeds |
+| Reward token | VELO | AERO (legacy) / Aero's AERO |
 
 **Dropped files** (Uniswap V3 / Balancer / manual bootstrap / dead helpers):
 `uniV3NFTManager.ts`, `uniV3Pool.ts`, `uniV3Shared.ts`, `balancerVault.ts`,
@@ -49,12 +50,18 @@ strings changed: `ProtocolPosition.protocol` is now `aerodrome-cl` / `aerodrome-
 | LiFi Diamond | `0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE` | CREATE2, same on all EVM |
 | USDC | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` | primary funding/valuation |
 | WETH / OLAS / AERO | `0x4200…0006` / `0x54330d28…` / `0x940181a9…` | |
+| Aero NFPM | `0x4857DB576eE0e45F10525eC59527BfD10beeC60b` | Aero CL positions (`AeroNFTManager`) |
+| Aero CL factory | `0x9CB220581b91b0C83223012FE69688b92aD07a76` | `AERO_NFT_MANAGER.factory()` |
+| Aero v2 stable / volatile factory | `0x78589E87…EF2D` / `0x8E6a9FCd…76D2` | Aero v2 pool discovery |
+| Aero GaugeManager | `0xbF234b32c5e58868243A4a14831626f3EdE7b183` | `GaugeCreated` → Aero v2 pool→gauge map |
+| AERO (Aero) | `0x3f5bF3EdAc59d650D8fDf9657a71F2f904A3a4Ee` | Aero gauge reward token (`AERO_PROTOCOL_AERO`) |
 
 Chainlink feeds (Base, verified on-chain — live, 8 decimals): ETH/USD `0x71041ddd…`,
-USDC/USD `0x7e860098…`.
+USDC/USD `0x7e860098…`, USDT/USD `0xf19d560e…`, DAI/USD `0x591e7923…`, USDe/USD `0x790181e9…`,
+USDS/USD `0x2330aaE3…` (`constants.ts`).
 
-**startBlock** for every data source = `47163056` (earliest agentId-115 service, #607,
-2026-06-10).
+**startBlock** = `47163056` (earliest agentId-115 service, #607, 2026-06-10) for every data
+source except the Aero ones, which start at their deployment block (see `subgraph.yaml`).
 
 ### Base reference addresses (NOT indexed by this subgraph)
 
@@ -72,20 +79,20 @@ Optimism values): StakingToken `0x2585e63df7BD9De8e058884D496658a030b5c6ce`, Act
 > particular: token/funding sources need `AggregatorV3Interface` + `VelodromeCLPool` +
 > `VelodromeV2Pool` (token pricing via `priceAdapters`), `ServiceRegistryL2` needs
 > `AggregatorV3Interface` (`getEthUsd` seeds `firstFundingEthPrice`), and `PortfolioScheduler`
-> needs `VeloVoter` + `VeloV2Gauge` + `VeloCLGauge` (the snapshot block handler runs
+> needs `VeloVoter` + `VeloV2Gauge` + `VeloCLGauge` + `AeroCLGauge` (the snapshot block handler runs
 > `refreshAllActivePositions`, which re-binds each position's gauge). Run
 > `node scripts/check-subgraph-abis.mjs` to list candidate gaps (it over-approximates
 > branch-guarded binds — review against the code).
 
 ## Tracked tokens
 
-USDC (native), WETH, AERO, and the whitelisted stablecoins BOLD / msUSD / frxUSD / eUSD /
-axlUSDC. USDC+WETH price off Chainlink; stables resolve to ~$1 (referenced to the USDC feed
+USDC (native), WETH, AERO (legacy + Aero's), the whitelisted stablecoins BOLD / msUSD / frxUSD /
+eUSD / axlUSDC, and USDT / DAI / USDe / USDS (Chainlink-priced, see Aero below). USDC+WETH price off Chainlink; stables resolve to ~$1 (referenced to the USDC feed
 — confirmed fine by Divya); **AERO** (the CL-gauge reward token) prices off the Aerodrome
 AERO/USDC volatile pool `0x6cdcb1c4…` via the `velodrome_v2` adapter (`tokenConfig.ts`).
 **OLAS is not tracked** — Basius holds none and it isn't a trading asset for this agent.
 
-> **AERO gauge rewards.** Both DEX paths now read claimable AERO from the position's gauge
+> **AERO gauge rewards (legacy Aerodrome venues; Aero: see below).** Both DEX paths now read claimable AERO from the position's gauge
 > into `usdCurrentWithRewards` (→ APR/ROI):
 > - **V2** (`refreshVeloV2Position`): resolves the gauge via Aerodrome **Voter** (`gauges(pool)`,
 >   `VELO_VOTER`), counts `gauge.balanceOf(safe)` as **staked LP** (so a staked position isn't
@@ -105,11 +112,35 @@ AERO/USDC volatile pool `0x6cdcb1c4…` via the `velodrome_v2` adapter (`tokenCo
 > (0 = stable, -1 = volatile, positive = CL tickSpacing).
 
 > **V2 entry amounts.** `Transfer(0x0 → safe)` creates the position and stores a
-> `PendingMintPosition` keyed by `getVeloV2PositionId` (protocol string `aerodrome-v2`); the
+> `PendingMintPosition` keyed by `getVeloV2PositionId` (protocol string from `v2ProtocolFor`: `aerodrome-v2` or `aero-v2`); the
 > same-tx `Mint` event then records the real entry amounts (entry USD feeds closed-position
 > ROI, so a dropped mint pins ROI/APR at 0). If entry amounts are still zero on a later
 > refresh, `refreshVeloV2Position` backfills them from current amounts — keyed on
 > `entryAmountUSD == 0` alone, since `entryTimestamp` is always set at creation.
+
+## Aero
+
+Basius moved to Aero (the merged Velodrome/Aerodrome protocol, live 2026-10-22) in optimus
+v0.13.10. Aero positions are labelled **`aero-cl` / `aero-v2`**; legacy labels and ids are unchanged.
+
+- **CL** — `AeroNFTManager` reuses the Slipstream handlers except `handleAeroIncreaseLiquidity`
+  (Aero's `IncreaseLiquidity` adds `tickLower`/`tickUpper`). The emitting NFPM picks a `CLVenue`
+  (manager, CL factory, reward token, label) for the shared `veloCLShared.ts` refresh. Aero's
+  CLGauge has no `earned(address,uint256)`: `getAeroCLEarned` checks `stakedContains(agent,
+  tokenId)` (unstaked → 0, no revert) and reads `earned(agent, [tokenId])`, paid in Aero's AERO.
+- **v2** — both Aero factories (own `PoolCreated` ABI, no indexed `stable`) write a
+  `V2PoolVenue` and start an `AeroV2Pool` template (Aero's `Mint` has an indexed `to`; pools have
+  no `stable()`). Aero v2 pools have no `gauge()` and the Aero Voter has no `gauges(pool)`, so the
+  GaugeManager's `GaugeCreated` builds `AeroGauge { pool → gauge }`, read on every refresh by the
+  `aero-v2` branch of `resolveV2Gauge`.
+- **Pricing** — Aero's AERO prices off the Aero v2 AERO/USDC volatile pool `0xF634058d…` (`tokenConfig.ts`).
+  USDT / DAI / USDe / USDS price off their own Chainlink feeds (priority 1) with
+  the Aero CL tickSpacing-1 USDC/USDT pool as USDT's priority-2 fallback. DAI / USDe / USDS are
+  feed-only (the CL adapter mis-scales 18-vs-6-decimal pairs, so a pool would price them ~0). They are
+  **not** on `usdcReferencedStable` or `CRITICAL_STABLECOINS`. `getPriceFromSources` reads a
+  higher-numbered priority only when every better source failed. They validate against the
+  0.5–1.5 band (not USDC's 0.95–1.05), so a depeg their feed reports is kept, and Chainlink
+  answers up to 90000s old are accepted (24h heartbeat + grace).
 
 ## Schema, core logic, KPIs
 
