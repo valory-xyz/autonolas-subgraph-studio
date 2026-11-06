@@ -29,13 +29,13 @@
       "review": "2027-01-22"
     },
     {
-      "id": 1240992,
-      "ghsa": "GHSA-vfj7-8cjw-p6xm",
-      "package": "braces",
+      "id": 1243066,
+      "ghsa": "GHSA-mrhx-c7xc-m3w5",
+      "package": "zod",
       "severity": "high",
-      "reason": "Stack-exhaustion DoS on deeply nested brace patterns. Build-time only via @graphprotocol/graph-cli>kubo-rpc-client>it-glob>fast-glob>micromatch>braces; patterns come from our own code/config, not untrusted input, and graph-cli does not call kubo-rpc-client's globSource. No fixed braces release (fix in <0.0.0; 3.0.3 is latest). Revisit when braces ships a fix.",
-      "added": "2026-10-22",
-      "review": "2027-01-22"
+      "reason": "Build/deployment tooling only via @graphprotocol/graph-cli > web3-eth-abi > web3-validator 2.0.6, which requires zod ^3.21.4. The advisory fixes only Zod >=4.6.6; forcing that major would replace the validator's declared API. The oversized-array memory-exhaustion risk is limited to validation of repository-controlled ABIs/manifests in CLI commands; deployed subgraph WASM does not include Zod. Keep ABIs/manifests trusted and review when web3-validator supports a patched Zod version.",
+      "added": "2026-11-05",
+      "review": "2026-12-05"
     }
   ]
 }
