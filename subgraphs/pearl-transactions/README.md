@@ -31,7 +31,7 @@ Category values (`FundsCategory`, shared by both ledgers — the
 | `SAFE_SETUP_TRANSFER` | First live Master EOA → Master Safe inbound hop |
 | `MASTER_FUNDING_IN` | Later EOA → Master Safe top-ups |
 | `MASTER_WITHDRAWAL` | Master Safe → external EOA (tokens; native-out not indexed) |
-| `MASTER_TO_AGENT` | Master Safe → Agent Safe/EOA (grouped via `AgentFundingEvent`) |
+| `MASTER_TO_AGENT` | Master Safe → Agent Safe/EOA (grouped via `AgentFundingEvent`). The native leg to an Agent Signer is `SEMANTIC`, decoded from the Pearl Safe's own `execTransaction` (plain CALL or MultiSend v1.3.0) |
 | `AGENT_TO_MASTER` | Agent Safe → Master Safe in native / non-OLAS token |
 | `AGENT_OLAS_TO_MASTER` | Agent Safe → Master Safe in OLAS (reward sweeps + manual returns; split out so the wallet can exclude it at query time) |
 | `SERVICE_BOND_DEPOSIT` / `SERVICE_BOND_REFUND` | SRTU bond posted / refunded (with `bondType`) — **`BondMovement` rows, not `FundsMovement`** |
@@ -111,9 +111,10 @@ emits no opening-balance row).
 
 ## What it does **not** cover
 
-- **Native coin leaving a Safe** (withdrawals to external wallets, the native
-  agent gas-funding leg) — emits no usable event; accepted v1 gap. Native
-  *inflows* and all *token* flows are covered.
+- **Native coin leaving a Safe**, except to an Agent Signer (withdrawals to
+  external wallets, relayed and module executions) — emits no usable event;
+  accepted v1 gap. Native *inflows*, native transfers to an Agent Signer
+  and all *token* flows are covered.
 - **Arbitrary tokens** — only the wallet's token set is indexed (OLAS,
   wrapped-native, USDC/USDC.e/pUSD per chain).
 - In-market bet flows — the [Polymarket squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/predict-polymarket)

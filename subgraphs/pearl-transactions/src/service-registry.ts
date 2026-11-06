@@ -27,6 +27,7 @@ import {
   isStakingContract,
   serviceEntityId,
   setServiceIndex,
+  upsertAgentInstance,
 } from "./utils";
 
 // handleRegisterInstance —
@@ -34,6 +35,9 @@ import {
 //     earlier in this tx), record agentId + operator directly on it.
 //   * Otherwise buffer into PendingRegistration; drained at
 //     CreateMultisigWithAgents time.
+//   * Either way, point the Agent Signer's AgentInstance at this service
+//     (latest registration wins). It stores the service id, so it needs no
+//     loaded Service.
 //   * Attribute the AGENT_BOND row enqueued by the preceding
 //     registerAgentsTokenDeposit TokenDeposit (idempotent via the dedupe
 //     guard, since RegisterInstance fires once per agent instance but
@@ -42,6 +46,12 @@ export function handleRegisterInstance(event: RegisterInstanceEvent): void {
   const serviceId = event.params.serviceId;
   const agentId = event.params.agentId.toI32();
   const operator = event.params.operator;
+
+  upsertAgentInstance(
+    event.params.agentInstance,
+    serviceEntityId(serviceId),
+    event.block.number
+  );
 
   const existing = Service.load(serviceEntityId(serviceId));
   if (existing != null) {

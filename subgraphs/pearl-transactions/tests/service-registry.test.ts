@@ -437,6 +437,34 @@ describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds",
     assert.entityCount("ServiceIndex", 1);
   });
 
+  test("RegisterInstance links the Agent Signer to its latest service, buffered or not", () => {
+    const tx = mockTx(30);
+    // Buffered: the Service does not exist yet.
+    handleRegisterInstance(
+      newRegisterInstance(OPERATOR, SERVICE_ID, AGENT_INSTANCE_1, PEARL_AGENT_ID, tx, 0)
+    );
+    assert.entityCount("Service", 0);
+    assert.fieldEquals(
+      "AgentInstance",
+      AGENT_INSTANCE_1.toHexString(),
+      "service",
+      SERVICE_ID_HEX
+    );
+
+    // The same Signer re-registered to another service: latest wins.
+    const otherService = BigInt.fromI32(43);
+    handleRegisterInstance(
+      newRegisterInstance(OPERATOR, otherService, AGENT_INSTANCE_1, PEARL_AGENT_ID, mockTx(31), 0)
+    );
+    assert.entityCount("AgentInstance", 1);
+    assert.fieldEquals(
+      "AgentInstance",
+      AGENT_INSTANCE_1.toHexString(),
+      "service",
+      Bytes.fromByteArray(Bytes.fromBigInt(otherService)).toHexString()
+    );
+  });
+
   test("Agent IDs are recorded for ANY agent (no WASM-level Pearl gate)", () => {
     const tx = mockTx(2);
     handleRegisterInstance(

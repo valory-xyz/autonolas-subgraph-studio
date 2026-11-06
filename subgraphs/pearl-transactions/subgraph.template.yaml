@@ -20,6 +20,7 @@ dataSources:
         - AgentSafe
         - MasterSafe
         - TrackedAddress
+        - AgentInstance
         - ServiceIndex
         - PendingRegistration
         - PendingBondCounter
@@ -199,6 +200,8 @@ templates:
         - MasterSafe
         - TokenBalance
         - Token
+        - AgentInstance
+        - AgentFundingEvent
       abis:
         - name: GnosisSafe
           file: ../../abis/GnosisSafe.json

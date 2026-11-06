@@ -818,7 +818,9 @@ incompatible event ABIs.
   captures Master EOA OLAS transfers via the tracked-address filter
   (§6.1). **Native → Agent EOA transfers remain a confirmed accepted v1
   gap** (EOAs emit no events; only call traces expose them, which defeats
-  the §2.2 discipline).
+  the §2.2 discipline). *Superseded by OPE-1979:* the Pearl Safe → Agent
+  Signer leg is now decoded from the Pearl Safe's own `execTransaction`
+  (see the Rev. 10 note under "Known accepted gap — native → Agent EOA").
 - In-market bet flows — the predict subgraphs; join on Agent Safe address.
 
 ---
@@ -913,6 +915,16 @@ to a plain EOA emit no on-chain log. The Agent EOA gas-funding leg
 unobservable from event-based subgraph indexing on
 Gnosis/Polygon/Optimism/Base, where call handlers are not supported.
 This gap is accepted for v1 and documented here.
+
+**Rev. 10 (OPE-1979) — the Pearl Safe → Agent Signer leg is indexed.**
+The leg emits no log, but the Pearl Safe's `ExecutionSuccess` does, and
+Pearl's middleware always sends it as the Master EOA calling
+`execTransaction` on the Pearl Safe itself: a plain CALL, or a
+DELEGATECALL to MultiSend v1.3.0 for a split. `handleSafeExecutionSuccess`
+decodes that outer calldata and writes each leg to an Agent Signer of one
+of the Pearl Safe's services (`AgentInstance`, from
+`RegisterInstance.agentInstance`) as a `MASTER_TO_AGENT` row in the tx's
+`AgentFundingEvent`. Relayed or module executions remain unobservable.
 
 **VLOP-73 AC #3 implication** (Rev. 4 follow-up, per @rajat2502's
 self-correction on PR #130). AC #3 is verbatim:
@@ -1274,7 +1286,8 @@ CI runs `yarn graph codegen` + `yarn graph test` via the `ci.yml` matrix.
    UI renders "History starts here" at that block; opening balances are
    fetched by the frontend via archive RPC (`eth_getBalance` /
    `token.balanceOf` at `historyFloorBlock`).
-   Native → Agent EOA transfers are a confirmed accepted gap for v1.
+   Native → Agent EOA transfers are a confirmed accepted gap for v1
+   (Pearl Safe → Agent Signer since indexed, OPE-1979 / Rev. 10).
 
 ---
 
