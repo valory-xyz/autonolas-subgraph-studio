@@ -34,10 +34,10 @@ function convertTokenAmount(amount: BigInt, tokenAddress: Address): BigDecimal {
 // the positions()/pool/factory interfaces, so one refresh path serves both; the venue picks
 // the contracts, the gauge reward token and the protocol label.
 export class CLVenue {
-  manager: Address
-  factory: Address
-  rewardToken: Address
-  protocol: string
+  readonly manager: Address
+  readonly factory: Address
+  readonly rewardToken: Address
+  readonly protocol: string
 
   constructor(manager: Address, factory: Address, rewardToken: Address, protocol: string) {
     this.manager = manager
@@ -490,10 +490,9 @@ function refreshOrCreateCLPosition(
   }
 }
 
-// A CL pool's gauge; Address.zero() when the pool has none. Legacy gauges are cached on the
-// position once found. Aero CL gauges are re-read on every refresh, like Aero v2 ones, since
-// nothing here shows they can't be replaced. Neither a zero gauge nor a revert is cached, so a
-// pool gauged later is picked up on the next refresh.
+// A CL pool's gauge; Address.zero() when the pool has none. Legacy CL gauges are cached once
+// found; Aero ones are re-read each refresh. A zero or reverted gauge() is never cached, so a
+// pool gauged later is picked up.
 function resolveCLGauge(pool: VelodromeCLPool, position: ProtocolPosition, venue: CLVenue): Address {
   const cached = position.rewardsContract
   if (cached && venue.protocol != PROTOCOL_AERO_CL) {
