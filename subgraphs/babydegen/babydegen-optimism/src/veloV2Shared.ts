@@ -19,8 +19,6 @@ import { getTokenDecimals, getTokenSymbol } from "./tokenUtils"
 import { calculatePositionROI } from "./roiCalculation"
 import { PROTOCOL_VELODROME_V2, VELO_VOTER, PROTOCOL_AERO_V2, rewardTokenFor, WHITELISTED_TOKENS } from "./constants"
 
-// A pool's venue is recorded by the factory handler that created it; pools with no
-// V2PoolVenue row came from the legacy factory.
 export function v2ProtocolFor(poolAddress: Address): string {
   const venue = V2PoolVenue.load(poolAddress)
   return venue != null ? venue.protocol : PROTOCOL_VELODROME_V2
@@ -40,8 +38,7 @@ export function isPoolRelevant(token0: Address, token1: Address): boolean {
   return isTokenWhitelisted(token0) && isTokenWhitelisted(token1)
 }
 
-// Fee tier of a v2 pool: 5 (0.05%) stable, 30 (0.30%) volatile. Aero v2 pools have no stable();
-// the factory that created them recorded which kind they are in V2PoolVenue.
+// Fee tier of a v2 pool in bps.
 function setV2PoolFee(pp: ProtocolPosition, poolContract: VelodromeV2Pool): void {
   const venue = V2PoolVenue.load(Address.fromBytes(pp.pool))
   if (venue != null) {
@@ -65,7 +62,7 @@ function resolveV2Gauge(poolAddress: Address, pp: ProtocolPosition): Address {
   if (pp.protocol == PROTOCOL_AERO_V2) {
     const aeroGauge = AeroGauge.load(poolAddress)
     if (aeroGauge == null) {
-      return Address.zero() // pool has no gauge yet
+      return Address.zero()
     }
     pp.rewardsContract = aeroGauge.gauge
     return Address.fromBytes(aeroGauge.gauge)

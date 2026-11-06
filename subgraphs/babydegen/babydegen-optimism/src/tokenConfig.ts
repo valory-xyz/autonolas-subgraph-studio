@@ -329,7 +329,7 @@ function initializeTokens(): void {
   // Note: These tokens now use pool-based price discovery similar to DOLA
   // Pool addresses provided for accurate price tracking
 
-  // BOLD (agent's, 0x0356…) - priced off the Velodrome V2 stable BOLD/USDC pool.
+  // BOLD_V2 - Velodrome V2 stable BOLD/USDC pool
   TOKENS.set(BOLD_V2.toHexString().toLowerCase(), new TokenConfig(
     BOLD_V2,
     "BOLD",

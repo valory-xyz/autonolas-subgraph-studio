@@ -335,9 +335,7 @@ function isValidPriceResult(price: BigDecimal, tokenSymbol: string): boolean {
   } else if (tokenSymbol == "LUSD" || tokenSymbol == "FRAX" || 
       tokenSymbol == "DOLA" || tokenSymbol == "USDT" || tokenSymbol == "DAI" ||
       tokenSymbol == "USDe" || tokenSymbol == "USDS") {
-    // USDT/DAI/USDe/USDS are here, not in the tight band, so a real depeg reported by
-    // their own feed is kept.
-    // Variable stablecoins can have slightly more variation
+    // Loose band so a real depeg reported by a token's own feed is kept.
     minPrice = BigDecimal.fromString("0.5")    // $0.50
     maxPrice = BigDecimal.fromString("1.5")    // $1.50
   } else {
