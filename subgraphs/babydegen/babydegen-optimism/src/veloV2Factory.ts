@@ -2,8 +2,8 @@ import { PoolCreated } from "../generated/VeloV2Factory/PoolFactory"
 import { PoolCreated as AeroV2PoolCreated } from "../generated/AeroV2StableFactory/AeroV2PoolFactory"
 import { AeroV2Pool as AeroV2PoolTemplate } from "../generated/templates"
 import { V2PoolVenue } from "../generated/schema"
-import { ensureVeloV2PoolTemplate, isPoolRelevant } from "./veloV2Shared"
-import { PROTOCOL_AERO_V2, AERO_V2_STABLE_FACTORY } from "./constants"
+import { ensureVeloV2PoolTemplate } from "./veloV2Shared"
+import { PROTOCOL_AERO_V2, AERO_V2_STABLE_FACTORY, isPoolRelevant } from "./constants"
 import { log } from "@graphprotocol/graph-ts"
 
 // Handle VelodromeV2 Factory PoolCreated events

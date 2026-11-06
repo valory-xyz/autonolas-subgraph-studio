@@ -16,8 +16,7 @@ import {
   ethereum,
   log 
 } from "@graphprotocol/graph-ts"
-import { VELO_V2_SUGAR, VELO_V2_FACTORY } from "./constants"
-import { isPoolRelevant } from "./veloV2Shared"
+import { VELO_V2_SUGAR, VELO_V2_FACTORY, isPoolRelevant } from "./constants"
 
 // Configuration
 const SUGAR_ADDRESS = VELO_V2_SUGAR

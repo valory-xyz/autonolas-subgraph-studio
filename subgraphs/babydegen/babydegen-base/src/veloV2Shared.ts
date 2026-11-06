@@ -17,25 +17,11 @@ import { getServiceByAgent } from "./config"
 import { parseTotalSlippageFromBucket, associateSwapsWithPosition, calculatePortfolioMetrics } from "./helpers"
 import { getTokenDecimals, getTokenSymbol } from "./tokenUtils"
 import { calculatePositionROI } from "./roiCalculation"
-import { PROTOCOL_VELODROME_V2, VELO_VOTER, PROTOCOL_AERO_V2, rewardTokenFor, WHITELISTED_TOKENS } from "./constants"
+import { PROTOCOL_VELODROME_V2, VELO_VOTER, PROTOCOL_AERO_V2, rewardTokenFor } from "./constants"
 
 export function v2ProtocolFor(poolAddress: Address): string {
   const venue = V2PoolVenue.load(poolAddress)
   return venue != null ? venue.protocol : PROTOCOL_VELODROME_V2
-}
-
-function isTokenWhitelisted(tokenAddress: Address): boolean {
-  let tokenString = tokenAddress.toHexString().toLowerCase()
-  for (let i = 0; i < WHITELISTED_TOKENS.length; i++) {
-    if (WHITELISTED_TOKENS[i].toLowerCase() == tokenString) {
-      return true
-    }
-  }
-  return false
-}
-
-export function isPoolRelevant(token0: Address, token1: Address): boolean {
-  return isTokenWhitelisted(token0) && isTokenWhitelisted(token1)
 }
 
 // Fee tier of a v2 pool in bps.
@@ -52,9 +38,7 @@ function setV2PoolFee(pp: ProtocolPosition, poolContract: VelodromeV2Pool): void
 }
 
 // Resolve a v2 pool's gauge. Returns Address.zero() when the pool has no gauge.
-// - aero-v2: Aero v2 pools have no gauge() and the Aero Voter has no gauges(pool), so read the AeroGauge row
-//   built from GaugeManager GaugeCreated (aeroGaugeManager.ts), re-read on every refresh rather
-//   than cached (see AeroGauge in schema.graphql); no row means no gauge yet.
+// - aero-v2: no gauge() and no Voter gauges(pool); read AeroGauge (written by handleAeroGaugeCreated) on every refresh.
 // - legacy: the Aerodrome Voter's gauges(pool), cached on the position's rewardsContract. A Voter
 //   revert (transient) is logged and not cached, so the next refresh retries; a zero gauge
 //   (legitimate) is silent and not cached, so a later-gauged pool is picked up.
