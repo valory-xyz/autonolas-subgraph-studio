@@ -31,40 +31,39 @@ function convertTokenAmount(amount: BigInt, tokenAddress: Address): BigDecimal {
 }
 
 // A CL position manager and what goes with it. The legacy Slipstream NFPM and Aero's share
-// the positions()/pool/factory interfaces, so one refresh path serves both; the venue picks
-// the contracts, the gauge reward token and the protocol label.
+// the positions()/pool/factory interfaces, so one refresh path serves both; the label picks
+// the contracts and the gauge reward token, so they can't be mixed across venues.
 export class CLVenue {
   readonly manager: Address
   readonly factory: Address
   readonly rewardToken: Address
   readonly protocol: string
 
-  constructor(manager: Address, factory: Address, rewardToken: Address, protocol: string) {
-    this.manager = manager
-    this.factory = factory
-    this.rewardToken = rewardToken
-    this.protocol = protocol
+  constructor(protocol: string) {
+    if (protocol == PROTOCOL_AERO_CL) {
+      this.manager = AERO_NFT_MANAGER
+      this.factory = AERO_CL_FACTORY
+      this.protocol = PROTOCOL_AERO_CL
+    } else {
+      if (protocol != PROTOCOL_VELODROME_V3) {
+        log.critical("CLVenue: '{}' is not a CL venue", [protocol])
+      }
+      this.manager = VELO_MANAGER
+      this.factory = VELO_FACTORY
+      this.protocol = PROTOCOL_VELODROME_V3
+    }
+    this.rewardToken = rewardTokenFor(this.protocol)
   }
-}
-
-export function clVenueFor(protocol: string): CLVenue {
-  if (protocol == PROTOCOL_AERO_CL) {
-    return new CLVenue(AERO_NFT_MANAGER, AERO_CL_FACTORY, rewardTokenFor(protocol), protocol)
-  }
-  if (protocol != PROTOCOL_VELODROME_V3) {
-    log.critical("clVenueFor: '{}' is not a CL venue", [protocol])
-  }
-  return new CLVenue(VELO_MANAGER, VELO_FACTORY, rewardTokenFor(PROTOCOL_VELODROME_V3), PROTOCOL_VELODROME_V3)
 }
 
 export function clVenueForManager(manager: Address): CLVenue {
   if (manager.equals(AERO_NFT_MANAGER)) {
-    return clVenueFor(PROTOCOL_AERO_CL)
+    return new CLVenue(PROTOCOL_AERO_CL)
   }
   if (!manager.equals(VELO_MANAGER)) {
     log.critical("clVenueForManager: {} is not a known CL position manager", [manager.toHexString()])
   }
-  return clVenueFor(PROTOCOL_VELODROME_V3)
+  return new CLVenue(PROTOCOL_VELODROME_V3)
 }
 
 // What refreshVeloCLPosition needs to create a position it hasn't seen: the NFT's owner and
@@ -151,7 +150,7 @@ export function refreshVeloCLPositionWithEventAmounts(
   }
   
   const nftOwner = Address.fromBytes(pp.agent)
-  const mgr = VelodromePositionNFTManager.bind(clVenueFor(pp.protocol).manager)
+  const mgr = VelodromePositionNFTManager.bind(new CLVenue(pp.protocol).manager)
   
   const dataResult = mgr.try_positions(tokenId)
   if (dataResult.reverted) {
@@ -221,7 +220,7 @@ export function refreshVeloCLPositionWithExitAmounts(
     return // Position should already exist
   }
   
-  const venue = clVenueFor(pp.protocol)
+  const venue = new CLVenue(pp.protocol)
   const nftOwner = Address.fromBytes(pp.agent)
   const mgr = VelodromePositionNFTManager.bind(venue.manager)
   
@@ -385,7 +384,7 @@ function refreshOrCreateCLPosition(
     initializePositionCosts(position)
   } else {
   // Use existing position
-    venue = clVenueFor(position.protocol)
+    venue = new CLVenue(position.protocol)
     nftOwner = Address.fromBytes(position.agent)
     poolAddress = Address.fromBytes(position.pool)
   }
