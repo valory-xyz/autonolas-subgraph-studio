@@ -2,6 +2,26 @@
 
 This repository contains multiple subgraphs for [The Graph](https://thegraph.com), primarily indexing contracts related to the Autonolas ecosystem.
 
+## Deployment status
+
+Active source locations for these indexers:
+
+- **Polystrat trader (Polymarket, Polygon):** [squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/predict-polymarket).
+- **Omen trader (Gnosis):** [self-hosted subgraph](https://github.com/valory-xyz/autonolas-subgraph/tree/main/subgraphs/predict-omen).
+- **Service registry (Gnosis):** [self-hosted subgraph](https://github.com/valory-xyz/autonolas-subgraph/tree/main/subgraphs/service-registry).
+
+Current deployments, endpoints and consumer migrations are tracked in the internal **[WD] Subgraph&Squids Development and Deployment Tracking** document. Update that document when deploying or switching consumers; deployment details do not need to be duplicated here.
+
+Manifests and chain configuration describe what the code supports, not which deployment consumers use. A built image or deployed indexer does not mean consumers have switched to it. For Pearl's consumer configuration, see [olas-operate-app](https://github.com/valory-xyz/olas-operate-app); use the internal tracking document for the full inventory.
+
+### Published Studio retirement
+
+The published Studio deployments `predict-omen`, `predict-polymarket` and
+`olas-gnosis-registry` have been deprecated. The repository maintainer confirmed
+on 2026-11-05, while addressing [PR #176](https://github.com/valory-xyz/autonolas-subgraph-studio/pull/176),
+that no consumers still use these deployments. This PR removes their source and
+deployment configuration; it makes no live deployment changes.
+
 ## Getting Started
 
 - Prerequisites: `yarn global add @graphprotocol/graph-cli`

@@ -33,7 +33,7 @@
 /CLAUDE.md                       @Tanya-atatakai
 
 # Per-subgraph package metadata + lockfiles. Picks up flat (subgraphs/<name>/)
-# and nested (subgraphs/predict/predict-omen/, subgraphs/babydegen/babydegen-optimism/) layouts.
+# and nested (subgraphs/babydegen/babydegen-base/, subgraphs/babydegen/babydegen-optimism/) layouts.
 /subgraphs/*/package.json        @Tanya-atatakai
 /subgraphs/*/yarn.lock           @Tanya-atatakai
 /subgraphs/*/*/package.json      @Tanya-atatakai

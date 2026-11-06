@@ -1,6 +1,10 @@
 # Staking Subgraph
 
-Indexes OLAS staking activities and reward distributions across 7 networks in the Autonolas ecosystem.
+Indexes OLAS staking activities and reward distributions. This source includes
+seven chain configurations; Base now uses the
+[staking squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/staking),
+as does Robinhood. Current deployments and endpoints are tracked in the internal
+**[WD] Subgraph&Squids Development and Deployment Tracking** document.
 
 > **Technical reference**: See [CLAUDE.md](CLAUDE.md) for full schema reference, handler details, business logic, implementation whitelists, and AI context.
 
