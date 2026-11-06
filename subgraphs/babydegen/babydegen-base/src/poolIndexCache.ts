@@ -95,6 +95,11 @@ class PoolNFTCache {
 // Global cache instance
 let cache = new PoolNFTCache()
 
+// Tests only: Matchstick's clearStore() doesn't reset module state such as this cache.
+export function resetPoolNFTCache(): void {
+  cache = new PoolNFTCache()
+}
+
 // Exported functions
 export function addAgentNFTToPool(protocol: string, poolAddress: Address, tokenId: BigInt): void {
   cache.addNFTToPool(protocol, poolAddress, tokenId)

@@ -16,6 +16,7 @@ import { refreshAllActivePositions } from "../src/helpers"
 import { ProtocolPosition, Service, V2PoolVenue } from "../generated/schema"
 import { handleNFTTransfer, handleAeroIncreaseLiquidity, handleDecreaseLiquidity, handleIncreaseLiquidity } from "../src/veloNFTManager"
 import { refreshVeloCLPosition, clVenueForManager } from "../src/veloCLShared"
+import { resetPoolNFTCache } from "../src/poolIndexCache"
 import { handleVeloV2Transfer, handleVeloV2Burn, handleAeroV2Mint } from "../src/veloV2Pool"
 import { handleAeroV2PoolCreated } from "../src/veloV2Factory"
 import { handleAeroGaugeCreated } from "../src/aeroGaugeManager"
@@ -775,6 +776,7 @@ function openAeroCLPosition(): Bytes {
 describe("Aero CL positions (AeroNFTManager)", () => {
   afterEach(() => {
     clearStore()
+    resetPoolNFTCache()
   })
 
   test("the emitting NFPM picks the venue", () => {
@@ -861,12 +863,15 @@ describe("Aero CL positions (AeroNFTManager)", () => {
     createService(SERVICE_SAFE)
     mockChainlinkEthUsd()
     mockAeroCLPosition()
+    mockAeroCLStaked(true)
+    mockAeroCLEarned(BigInt.fromString("2000000000000000000"))
+    const id = openAeroCLPosition()
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimableReward", "2")
+
     createMockedFunction(AERO_CL_GAUGE, "stakedContains", "stakedContains(address,uint256):(bool)")
       .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE), ethereum.Value.fromUnsignedBigInt(AERO_TOKEN_ID)])
       .reverts()
-
-    // earned(address,uint256[]) is not mocked: calling it would fail the test
-    const id = openAeroCLPosition()
+    refreshVeloCLPosition(id, AERO_TOKEN_ID, v2Block(), TX_HASH, false)
 
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimableReward", "0")
   })
@@ -946,10 +951,11 @@ describe("Aero CL positions (AeroNFTManager)", () => {
     createService(SERVICE_SAFE)
     mockChainlinkEthUsd()
     mockAeroCLPosition()
-    mockAeroCLStaked(false)
-    const id = openAeroCLPosition()
-
     mockAeroCLStaked(true)
+    mockAeroCLEarned(BigInt.fromString("2000000000000000000"))
+    const id = openAeroCLPosition()
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimableReward", "2")
+
     const tokenIds: Array<BigInt> = [AERO_TOKEN_ID]
     createMockedFunction(AERO_CL_GAUGE, "earned", "earned(address,uint256[]):(uint256)")
       .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE), ethereum.Value.fromUnsignedBigIntArray(tokenIds)])
@@ -974,6 +980,8 @@ describe("Aero CL positions (AeroNFTManager)", () => {
     assert.entityCount("ProtocolPosition", 2)
     assert.fieldEquals("ProtocolPosition", aeroId.toHexString(), "protocol", "aero-cl")
     assert.fieldEquals("ProtocolPosition", legacyId.toHexString(), "protocol", "velodrome-v3")
+    assert.fieldEquals("ProtocolPosition", aeroId.toHexString(), "pool", AERO_CL_POOL.toHexString())
+    assert.fieldEquals("ProtocolPosition", legacyId.toHexString(), "pool", LEGACY_CL_POOL.toHexString())
   })
 })
 
@@ -1012,6 +1020,7 @@ function openLegacyCLPosition(): Bytes {
 describe("Legacy CL venue after the CLVenue refactor", () => {
   afterEach(() => {
     clearStore()
+    resetPoolNFTCache()
   })
 
   test("mint + 4-arg IncreaseLiquidity through the legacy NFPM keeps its label, mapping and reward token", () => {
@@ -1049,6 +1058,45 @@ describe("Legacy CL venue after the CLVenue refactor", () => {
 
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "rewardsContract", LEGACY_CL_GAUGE.toHexString())
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimableReward", "2")
+  })
+
+  test("a full-exit DecreaseLiquidity from the legacy NFPM closes the legacy position", () => {
+    createService(SERVICE_SAFE)
+    mockChainlinkEthUsd()
+    mockLegacyCLPosition()
+    mockVeloUsdcPool()
+    const id = openLegacyCLPosition()
+
+    mockCLPositions(VELO_MANAGER, BigInt.zero())
+    const dec = createDecreaseLiquidityEvent(
+      VELO_MANAGER,
+      AERO_TOKEN_ID,
+      BigInt.fromString("1000000000000000000"),
+      BigInt.fromString("1000000000000000000"),
+      BigInt.fromString("3000000000000000000")
+    )
+    dec.block = v2Block()
+    dec.transaction.hash = TX_HASH
+    handleDecreaseLiquidity(dec)
+
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "isActive", "false")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "exitAmount1", "3")
+  })
+
+  test("a burn from the legacy NFPM closes the legacy position", () => {
+    createService(SERVICE_SAFE)
+    mockChainlinkEthUsd()
+    mockLegacyCLPosition()
+    mockVeloUsdcPool()
+    const id = openLegacyCLPosition()
+
+    const burn = createNFTTransferEvent(VELO_MANAGER, SERVICE_SAFE, Address.zero(), AERO_TOKEN_ID)
+    burn.block = v2Block()
+    burn.transaction.hash = TX_HASH
+    handleNFTTransfer(burn)
+
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "isActive", "false")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "exitTxHash", TX_HASH.toHexString())
   })
 
   test("a legacy pool whose gauge() reverts still closes the position", () => {
@@ -1103,6 +1151,23 @@ describe("Aero v2 pools (factories + GaugeManager)", () => {
     clearStore()
   })
 
+  // Templates outlive clearStore(), so these run before any test that creates one.
+  test("PoolCreated for a non-whitelisted pair is ignored", () => {
+    const ev = createAeroV2PoolCreatedEvent(AERO_V2_STABLE_FACTORY, DUMMY0, DUMMY1, AERO_V2_POOL)
+    handleAeroV2PoolCreated(ev)
+
+    assert.entityCount("V2PoolVenue", 0)
+    assert.dataSourceCount("AeroV2Pool", 0)
+  })
+
+  test("PoolCreated with only one whitelisted token is ignored", () => {
+    const ev = createAeroV2PoolCreatedEvent(AERO_V2_STABLE_FACTORY, USDC_OP, DUMMY1, AERO_V2_POOL)
+    handleAeroV2PoolCreated(ev)
+
+    assert.entityCount("V2PoolVenue", 0)
+    assert.dataSourceCount("AeroV2Pool", 0)
+  })
+
   test("PoolCreated from an Aero factory records the venue and starts the AeroV2Pool template", () => {
     const ev = createAeroV2PoolCreatedEvent(AERO_V2_STABLE_FACTORY, BOLD_V2, USDC_OP, AERO_V2_POOL)
     handleAeroV2PoolCreated(ev)
@@ -1117,13 +1182,6 @@ describe("Aero v2 pools (factories + GaugeManager)", () => {
     handleAeroV2PoolCreated(ev)
 
     assert.fieldEquals("V2PoolVenue", AERO_V2_POOL.toHexString(), "stable", "false")
-  })
-
-  test("PoolCreated for a non-whitelisted pair is ignored", () => {
-    const ev = createAeroV2PoolCreatedEvent(AERO_V2_STABLE_FACTORY, DUMMY0, DUMMY1, AERO_V2_POOL)
-    handleAeroV2PoolCreated(ev)
-
-    assert.entityCount("V2PoolVenue", 0)
   })
 
   test("GaugeCreated feeds the aero-v2 gauge lookup; staked LP and xAERO rewards are counted", () => {
@@ -1287,6 +1345,7 @@ describe("Aero v2 pools (factories + GaugeManager)", () => {
   test("a legacy v2 pool with no venue row takes its fee from stable()", () => {
     createService(SERVICE_SAFE)
     mockChainlinkEthUsd()
+    mockV2PoolStateNoGauge(Address.zero())
     createMockedFunction(V2_POOL, "token0", "token0():(address)")
       .withArgs([]).returns([ethereum.Value.fromAddress(DUMMY0)])
     createMockedFunction(V2_POOL, "token1", "token1():(address)")
@@ -1296,17 +1355,6 @@ describe("Aero v2 pools (factories + GaugeManager)", () => {
     createMockedFunction(V2_POOL, "balanceOf", "balanceOf(address):(uint256)")
       .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
       .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(500))])
-    createMockedFunction(V2_POOL, "totalSupply", "totalSupply():(uint256)")
-      .withArgs([]).returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1000))])
-    createMockedFunction(V2_POOL, "getReserves", "getReserves():(uint256,uint256,uint256)")
-      .withArgs([]).returns([
-        ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1000)),
-        ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1000)),
-        ethereum.Value.fromUnsignedBigInt(BigInt.zero())
-      ])
-    createMockedFunction(VELO_VOTER, "gauges", "gauges(address):(address)")
-      .withArgs([ethereum.Value.fromAddress(V2_POOL)])
-      .returns([ethereum.Value.fromAddress(Address.zero())])
 
     const transfer = createV2TransferEvent(V2_POOL, Address.zero(), SERVICE_SAFE, BigInt.fromI32(500))
     transfer.block = v2Block()

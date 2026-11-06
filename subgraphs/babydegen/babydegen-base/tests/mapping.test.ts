@@ -22,6 +22,8 @@ import { handleVeloV2Transfer, handleVeloV2Burn, handleVeloV2Mint, handleAeroV2M
 import { ProtocolPosition, Service, V2PoolVenue } from "../generated/schema"
 import { handleNFTTransfer, handleAeroIncreaseLiquidity, handleDecreaseLiquidity, handleIncreaseLiquidity } from "../src/veloNFTManager"
 import { refreshVeloCLPosition, clVenueForManager } from "../src/veloCLShared"
+import { resetPoolNFTCache } from "../src/poolIndexCache"
+import { getTokenDecimals } from "../src/tokenUtils"
 import { handleAeroV2PoolCreated } from "../src/veloV2Factory"
 import { handleAeroGaugeCreated } from "../src/aeroGaugeManager"
 import { getTokenPriceUSD } from "../src/priceDiscovery"
@@ -1271,6 +1273,7 @@ function openAeroCLPosition(): Bytes {
 describe("Aero CL positions (AeroNFTManager)", () => {
   afterEach(() => {
     clearStore()
+    resetPoolNFTCache()
   })
 
   test("the emitting NFPM picks the venue", () => {
@@ -1364,12 +1367,15 @@ describe("Aero CL positions (AeroNFTManager)", () => {
     createService(SERVICE_SAFE)
     mockChainlinkEthUsd()
     mockAeroCLPosition()
+    mockAeroCLStaked(true)
+    mockAeroCLEarned(BigInt.fromString("2000000000000000000"))
+    const id = openAeroCLPosition()
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimableReward", "2")
+
     createMockedFunction(AERO_CL_GAUGE, "stakedContains", "stakedContains(address,uint256):(bool)")
       .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE), ethereum.Value.fromUnsignedBigInt(AERO_TOKEN_ID)])
       .reverts()
-
-    // earned(address,uint256[]) is not mocked: calling it would fail the test
-    const id = openAeroCLPosition()
+    refreshVeloCLPosition(id, AERO_TOKEN_ID, aeroBlock(), TX_HASH, false)
 
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimableReward", "0")
   })
@@ -1449,10 +1455,11 @@ describe("Aero CL positions (AeroNFTManager)", () => {
     createService(SERVICE_SAFE)
     mockChainlinkEthUsd()
     mockAeroCLPosition()
-    mockAeroCLStaked(false)
-    const id = openAeroCLPosition()
-
     mockAeroCLStaked(true)
+    mockAeroCLEarned(BigInt.fromString("2000000000000000000"))
+    const id = openAeroCLPosition()
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimableReward", "2")
+
     const tokenIds: Array<BigInt> = [AERO_TOKEN_ID]
     createMockedFunction(AERO_CL_GAUGE, "earned", "earned(address,uint256[]):(uint256)")
       .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE), ethereum.Value.fromUnsignedBigIntArray(tokenIds)])
@@ -1477,6 +1484,8 @@ describe("Aero CL positions (AeroNFTManager)", () => {
     assert.entityCount("ProtocolPosition", 2)
     assert.fieldEquals("ProtocolPosition", aeroId.toHexString(), "protocol", "aero-cl")
     assert.fieldEquals("ProtocolPosition", legacyId.toHexString(), "protocol", "aerodrome-cl")
+    assert.fieldEquals("ProtocolPosition", aeroId.toHexString(), "pool", AERO_CL_POOL.toHexString())
+    assert.fieldEquals("ProtocolPosition", legacyId.toHexString(), "pool", LEGACY_CL_POOL.toHexString())
   })
 })
 
@@ -1515,6 +1524,7 @@ function openLegacyCLPosition(): Bytes {
 describe("Legacy CL venue after the CLVenue refactor", () => {
   afterEach(() => {
     clearStore()
+    resetPoolNFTCache()
   })
 
   test("mint + 4-arg IncreaseLiquidity through the legacy NFPM keeps its label, mapping and reward token", () => {
@@ -1552,6 +1562,45 @@ describe("Legacy CL venue after the CLVenue refactor", () => {
 
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "rewardsContract", LEGACY_CL_GAUGE.toHexString())
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "claimableReward", "2")
+  })
+
+  test("a full-exit DecreaseLiquidity from the legacy NFPM closes the legacy position", () => {
+    createService(SERVICE_SAFE)
+    mockChainlinkEthUsd()
+    mockLegacyCLPosition()
+    mockAeroUsdcPool()
+    const id = openLegacyCLPosition()
+
+    mockCLPositions(VELO_MANAGER, BigInt.zero())
+    const dec = createDecreaseLiquidityEvent(
+      VELO_MANAGER,
+      AERO_TOKEN_ID,
+      BigInt.fromString("1000000000000000000"),
+      BigInt.fromString("1000000000000000000"),
+      BigInt.fromString("3000000000000000000")
+    )
+    dec.block = aeroBlock()
+    dec.transaction.hash = TX_HASH
+    handleDecreaseLiquidity(dec)
+
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "isActive", "false")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "exitAmount1", "3")
+  })
+
+  test("a burn from the legacy NFPM closes the legacy position", () => {
+    createService(SERVICE_SAFE)
+    mockChainlinkEthUsd()
+    mockLegacyCLPosition()
+    mockAeroUsdcPool()
+    const id = openLegacyCLPosition()
+
+    const burn = createNFTTransferEvent(VELO_MANAGER, SERVICE_SAFE, Address.zero(), AERO_TOKEN_ID)
+    burn.block = aeroBlock()
+    burn.transaction.hash = TX_HASH
+    handleNFTTransfer(burn)
+
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "isActive", "false")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "exitTxHash", TX_HASH.toHexString())
   })
 
   test("a legacy pool whose gauge() reverts still closes the position", () => {
@@ -1606,6 +1655,23 @@ describe("Aero v2 pools (factories + GaugeManager)", () => {
     clearStore()
   })
 
+  // Templates outlive clearStore(), so these run before any test that creates one.
+  test("PoolCreated for a non-whitelisted pair is ignored", () => {
+    const ev = createAeroV2PoolCreatedEvent(AERO_V2_STABLE_FACTORY, DUMMY0, DUMMY1, AERO_V2_POOL)
+    handleAeroV2PoolCreated(ev)
+
+    assert.entityCount("V2PoolVenue", 0)
+    assert.dataSourceCount("AeroV2Pool", 0)
+  })
+
+  test("PoolCreated with only one whitelisted token is ignored", () => {
+    const ev = createAeroV2PoolCreatedEvent(AERO_V2_STABLE_FACTORY, USDC_NATIVE, DUMMY1, AERO_V2_POOL)
+    handleAeroV2PoolCreated(ev)
+
+    assert.entityCount("V2PoolVenue", 0)
+    assert.dataSourceCount("AeroV2Pool", 0)
+  })
+
   test("PoolCreated from an Aero factory records the venue and starts the AeroV2Pool template", () => {
     const ev = createAeroV2PoolCreatedEvent(AERO_V2_STABLE_FACTORY, USDC_NATIVE, USDT, AERO_V2_POOL)
     handleAeroV2PoolCreated(ev)
@@ -1620,13 +1686,6 @@ describe("Aero v2 pools (factories + GaugeManager)", () => {
     handleAeroV2PoolCreated(ev)
 
     assert.fieldEquals("V2PoolVenue", AERO_V2_POOL.toHexString(), "stable", "false")
-  })
-
-  test("PoolCreated for a non-whitelisted pair is ignored", () => {
-    const ev = createAeroV2PoolCreatedEvent(AERO_V2_STABLE_FACTORY, DUMMY0, DUMMY1, AERO_V2_POOL)
-    handleAeroV2PoolCreated(ev)
-
-    assert.entityCount("V2PoolVenue", 0)
   })
 
   test("GaugeCreated feeds the aero-v2 gauge lookup; staked LP and AERO rewards are counted", () => {
@@ -1860,6 +1919,34 @@ describe("Chainlink-priced stablecoins (feed first, pool fallback)", () => {
     // The PriceUpdate is attributed to the pool that priced it, not the (failed) feed
     const updateId = USDT.concat(Bytes.fromUTF8(BLOCK_TIMESTAMP.toString()))
     assert.fieldEquals("PriceUpdate", updateId.toHexString(), "source", USDT_FALLBACK_POOL.toHexString())
+  })
+
+  test("the USDT pool fallback prices USDT as token1, not token0", () => {
+    createMockedFunction(USDT_USD_FEED, "latestRoundData", "latestRoundData():(uint80,int256,uint256,uint256,uint80)")
+      .withArgs([]).reverts()
+    // token1 per token0 = 1/0.98, so 1 USDT = 0.98 USDC; the inverted read would give ≈1.0204
+    createMockedFunction(USDT_FALLBACK_POOL, "slot0", "slot0():(uint160,int24,uint16,uint16,uint16,bool)")
+      .withArgs([])
+      .returns([
+        ethereum.Value.fromUnsignedBigInt(BigInt.fromString("80032529963980199883902768896")),
+        ethereum.Value.fromI32(0),
+        ethereum.Value.fromI32(0),
+        ethereum.Value.fromI32(0),
+        ethereum.Value.fromI32(0),
+        ethereum.Value.fromBoolean(true)
+      ])
+    createMockedFunction(USDT_FALLBACK_POOL, "token0", "token0():(address)")
+      .withArgs([]).returns([ethereum.Value.fromAddress(USDC_NATIVE)])
+    createMockedFunction(USDT_FALLBACK_POOL, "token1", "token1():(address)")
+      .withArgs([]).returns([ethereum.Value.fromAddress(USDT)])
+
+    const price = getTokenPriceUSD(USDT, BLOCK_TIMESTAMP, true)
+    assert.assertTrue(price.gt(BigDecimal.fromString("0.9799")))
+    assert.assertTrue(price.lt(BigDecimal.fromString("0.9801")))
+  })
+
+  test("USDT has 6 decimals", () => {
+    assert.i32Equals(6, getTokenDecimals(USDT))
   })
 
   test("a USDe depeg reported by its feed is kept (0.5–1.5 band)", () => {
