@@ -66,11 +66,11 @@ export function clVenueForManager(manager: Address): CLVenue {
   return new CLVenue(PROTOCOL_VELODROME_V3)
 }
 
-// What refreshVeloCLPosition needs to create a position it hasn't seen: the NFT's owner and
+// What createVeloCLPosition needs to create a position it hasn't seen: the NFT's owner and
 // the venue of the NFPM that minted it.
 export class CLPositionCreate {
-  owner: Address
-  venue: CLVenue
+  readonly owner: Address
+  readonly venue: CLVenue
 
   constructor(owner: Address, venue: CLVenue) {
     this.owner = owner
@@ -435,8 +435,7 @@ function refreshOrCreateCLPosition(
       : VeloCLGauge.bind(gaugeAddress).try_earned(nftOwner, tokenId)
   
     if (!earnedResult.reverted) {
-      rewardAmount = earnedResult.value.toBigDecimal().div(BigDecimal.fromString("1e18"))
-      // Both reward tokens are 18-dec (rewardTokenFor).
+      rewardAmount = convertTokenAmount(earnedResult.value, venue.rewardToken)
       const rewardPrice = getTokenPriceUSD(venue.rewardToken, block.timestamp, false)
       rewardUSD = rewardAmount.times(rewardPrice)
     } else {

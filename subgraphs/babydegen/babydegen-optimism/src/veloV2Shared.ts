@@ -24,16 +24,20 @@ export function v2ProtocolFor(poolAddress: Address): string {
   return venue != null ? venue.protocol : PROTOCOL_VELODROME_V2
 }
 
-// Fee tier of a v2 pool in bps.
+// Fee tier in bps: 0.05% stable, 0.30% volatile.
+function v2FeeBps(stable: boolean): i32 {
+  return stable ? 5 : 30
+}
+
 function setV2PoolFee(pp: ProtocolPosition, poolContract: VelodromeV2Pool): void {
   const venue = V2PoolVenue.load(Address.fromBytes(pp.pool))
   if (venue != null) {
-    pp.fee = venue.stable ? 5 : 30
+    pp.fee = v2FeeBps(venue.stable)
     return
   }
   const stableResult = poolContract.try_stable()
   if (!stableResult.reverted) {
-    pp.fee = stableResult.value ? 5 : 30
+    pp.fee = v2FeeBps(stableResult.value)
   }
 }
 
@@ -378,8 +382,8 @@ export function refreshVeloV2Position(
 
   // Velodrome V2 LP can be staked into a gauge. Staking transfers the LP ERC20 out of the
   // safe (balanceOf(safe) -> 0) into the gauge, but the agent still owns the position and
-  // earns VELO. Count the gauge-staked LP toward the position value, and read its claimable
-  // VELO rewards, so a staked position isn't misread as closed/zero.
+  // earns the venue's gauge reward token. Count the gauge-staked LP toward the position value,
+  // and read its claimable gauge rewards, so a staked position isn't misread as closed/zero.
   let stakedBalance = BigInt.zero()
   let rewardAmount = BigDecimal.zero()
   let rewardUSD = BigDecimal.zero()
@@ -394,20 +398,20 @@ export function refreshVeloV2Position(
       // Same silent-zero guard: a reverting balanceOf on a staked position (where
       // balanceOf(safe)==0 is the normal state) would flip it to closed/zero. Log it.
       log.warning(
-        "VELO rewards (V2): gauge.balanceOf() reverted for staked position (pool {}, gauge {}, account {}) — staked LP read as 0.",
+        "V2 gauge rewards: gauge.balanceOf() reverted for staked position (pool {}, gauge {}, account {}) — staked LP read as 0.",
         [poolAddress.toHexString(), gaugeAddr.toHexString(), userAddress.toHexString()]
       )
     }
     const earnedRes = gauge.try_earned(userAddress)
     if (!earnedRes.reverted) {
-      // VELO and xAERO are both 18-dec.
-      rewardAmount = earnedRes.value.toBigDecimal().div(BigDecimal.fromString("1e18"))
-      rewardUSD = rewardAmount.times(getTokenPriceUSD(rewardTokenFor(pp.protocol), block.timestamp, false))
+      const rewardToken = rewardTokenFor(pp.protocol)
+      rewardAmount = toHumanAmount(earnedRes.value, getTokenDecimals(rewardToken))
+      rewardUSD = rewardAmount.times(getTokenPriceUSD(rewardToken, block.timestamp, false))
     } else {
       // Same silent-zero guard as the CL path: earned(address) reverting on a staked
       // position means a non-standard gauge ABI — log it instead of recording 0 quietly.
       log.warning(
-        "VELO rewards (V2): gauge.earned() reverted for staked position (pool {}, gauge {}, account {}) — recording 0 reward.",
+        "V2 gauge rewards: gauge.earned() reverted for staked position (pool {}, gauge {}, account {}) — recording 0 reward.",
         [poolAddress.toHexString(), gaugeAddr.toHexString(), userAddress.toHexString()]
       )
     }
@@ -458,7 +462,7 @@ export function refreshVeloV2Position(
     pp.amount0USD = token0Price.times(pp.amount0!)
     pp.amount1USD = token1Price.times(pp.amount1!)
     pp.usdCurrent = pp.amount0USD.plus(pp.amount1USD)
-    // Base liquidity value plus claimable VELO gauge rewards (0 if the LP isn't staked).
+    // Base liquidity value plus claimable gauge rewards (0 if the LP isn't staked).
     pp.claimableReward = rewardAmount
     pp.claimableRewardUSD = rewardUSD
     pp.usdCurrentWithRewards = pp.usdCurrent.plus(rewardUSD)

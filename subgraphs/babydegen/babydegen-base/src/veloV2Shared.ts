@@ -24,16 +24,20 @@ export function v2ProtocolFor(poolAddress: Address): string {
   return venue != null ? venue.protocol : PROTOCOL_VELODROME_V2
 }
 
-// Fee tier of a v2 pool in bps.
+// Fee tier in bps: 0.05% stable, 0.30% volatile.
+function v2FeeBps(stable: boolean): i32 {
+  return stable ? 5 : 30
+}
+
 function setV2PoolFee(pp: ProtocolPosition, poolContract: VelodromeV2Pool): void {
   const venue = V2PoolVenue.load(Address.fromBytes(pp.pool))
   if (venue != null) {
-    pp.fee = venue.stable ? 5 : 30
+    pp.fee = v2FeeBps(venue.stable)
     return
   }
   const stableResult = poolContract.try_stable()
   if (!stableResult.reverted) {
-    pp.fee = stableResult.value ? 5 : 30
+    pp.fee = v2FeeBps(stableResult.value)
   }
 }
 
@@ -401,9 +405,9 @@ export function refreshVeloV2Position(
     }
     const earnedRes = gauge.try_earned(userAddress)
     if (!earnedRes.reverted) {
-      // Both reward tokens are 18-dec (rewardTokenFor).
-      rewardAmount = earnedRes.value.toBigDecimal().div(BigDecimal.fromString("1e18"))
-      rewardUSD = rewardAmount.times(getTokenPriceUSD(rewardTokenFor(pp.protocol), block.timestamp, false))
+      const rewardToken = rewardTokenFor(pp.protocol)
+      rewardAmount = toHumanAmount(earnedRes.value, getTokenDecimals(rewardToken))
+      rewardUSD = rewardAmount.times(getTokenPriceUSD(rewardToken, block.timestamp, false))
     } else {
       // Symmetric with the CL guard: earned(address) reverting on a staked position is the
       // silent-zero failure mode (non-standard gauge ABI). Log it loudly. See AERO-REWARDS-PLAN.md.
