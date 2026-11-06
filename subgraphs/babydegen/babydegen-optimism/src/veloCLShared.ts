@@ -21,14 +21,10 @@ import {
 } from "./constants"
 import { isServiceAgent, getServiceByAgent } from "./config"
 import { parseTotalSlippageFromBucket, associateSwapsWithPosition } from "./helpers"
-import { getTokenDecimals, getTokenSymbol } from "./tokenUtils"
-import { initializePositionCosts, calculatePositionROI } from "./roiCalculation"
+import { getTokenSymbol, convertTokenAmount } from "./tokenUtils"
+import { initializePositionCosts, calculatePositionROI, initializePositionIncome } from "./roiCalculation"
+import { recordClaimableRewardBeforeBlock, nftPositionMappingId, closedWithNoExitThisBlock, exitClosedInBlock, recordFullExit } from "./positionIncome"
 
-function convertTokenAmount(amount: BigInt, tokenAddress: Address): BigDecimal {
-  const decimals = getTokenDecimals(tokenAddress)
-  const divisor = BigDecimal.fromString("1e" + decimals.toString())
-  return amount.toBigDecimal().div(divisor)
-}
 
 // A CL position manager and what goes with it. The legacy Slipstream NFPM and Aero's share
 // the positions()/pool/factory interfaces, so one refresh path serves both; the label picks
@@ -66,8 +62,6 @@ export function clVenueForManager(manager: Address): CLVenue {
   return new CLVenue(PROTOCOL_VELODROME_V3)
 }
 
-// What createVeloCLPosition needs to create a position it hasn't seen: the NFT's owner and
-// the venue of the NFPM that minted it.
 export class CLPositionCreate {
   readonly owner: Address
   readonly venue: CLVenue
@@ -82,9 +76,8 @@ export class CLPositionCreate {
   }
 }
 
-// NFTPositionMapping key of a CL NFT. Not used by handleCollect, whose key has no separator.
 export function getCLMappingId(protocol: string, tokenId: BigInt): Bytes {
-  return Bytes.fromUTF8(protocol + "-" + tokenId.toString())
+  return nftPositionMappingId(protocol, tokenId)
 }
 
 export function getVeloCLPositionId(userAddress: Address, tokenId: BigInt, protocol: string): Bytes {
@@ -154,6 +147,9 @@ export function refreshVeloCLPositionWithEventAmounts(
   
   const dataResult = mgr.try_positions(tokenId)
   if (dataResult.reverted) {
+    log.warning("CL entry: positions() reverted for position {} (tokenId {}, venue {}) — entry amounts not recorded", [
+      positionId.toString(), tokenId.toString(), pp.protocol
+    ])
     return
   }
   
@@ -220,51 +216,28 @@ export function refreshVeloCLPositionWithExitAmounts(
     return // Position should already exist
   }
   
+  if (closedWithNoExitThisBlock(pp, block)) {
+    log.warning("CL exit: tx {} — DecreaseLiquidity for position {} (tokenId {}) skipped: the position is closed and recorded no exit in this block", [
+      txHash.toHexString(), positionId.toString(), tokenId.toString()
+    ])
+    return
+  }
+  
   const venue = new CLVenue(pp.protocol)
   const nftOwner = Address.fromBytes(pp.agent)
   const mgr = VelodromePositionNFTManager.bind(venue.manager)
   
+  // positions() reads end-of-block state, so it reverts when the NFT is burned later in the block
   const dataResult = mgr.try_positions(tokenId)
   if (dataResult.reverted) {
-    return
+    log.warning("CL exit: positions() reverted for position {} (tokenId {}, venue {}) — burned in this block; exit taken from the DecreaseLiquidity amounts", [
+      positionId.toString(), tokenId.toString(), venue.protocol
+    ])
   }
+  const isFullExit = dataResult.reverted || dataResult.value.value7.equals(BigInt.zero())
   
-  const data = dataResult.value
-  const remainingLiquidity = data.value7
-  const isFullExit = remainingLiquidity.equals(BigInt.zero())
-  
-  if (isFullExit) {
-    const token0Price = getTokenPriceUSD(data.value2, block.timestamp, false)
-    const token1Price = getTokenPriceUSD(data.value3, block.timestamp, false)
-    
-    const exitAmount0Human = convertTokenAmount(eventAmount0, data.value2)
-    const exitAmount1Human = convertTokenAmount(eventAmount1, data.value3)
-    
-    const exitUsd0 = exitAmount0Human.times(token0Price)
-    const exitUsd1 = exitAmount1Human.times(token1Price)
-    const exitUsd = exitUsd0.plus(exitUsd1)
-    
-    pp.isActive = false
-    pp.exitTxHash = txHash
-    pp.exitTimestamp = block.timestamp
-    pp.exitAmount0 = exitAmount0Human
-    pp.exitAmount0USD = exitUsd0
-    pp.exitAmount1 = exitAmount1Human
-    pp.exitAmount1USD = exitUsd1
-    pp.exitAmountUSD = exitUsd
-    
-    pp.amount0 = BigDecimal.zero()
-    pp.amount1 = BigDecimal.zero()
-    pp.amount0USD = BigDecimal.zero()
-    pp.amount1USD = BigDecimal.zero()
-    pp.usdCurrent = BigDecimal.zero()
-    pp.liquidity = BigInt.zero()
-    
-    calculatePositionROI(pp)
-    
-    const poolAddress = getPoolAddress(venue, data.value2, data.value3, data.value4 as i32, tokenId)
-    removeAgentNFTFromPool(venue.protocol, poolAddress, tokenId)
-    
+  if (isFullExit && recordFullExit(pp, eventAmount0, eventAmount1, block, txHash)) {
+    removeAgentNFTFromPool(venue.protocol, Address.fromBytes(pp.pool), tokenId)
     pp.save()
     refreshPortfolio(nftOwner, block)
   } else {
@@ -316,7 +289,7 @@ function refreshOrCreateCLPosition(
     const mgr = VelodromePositionNFTManager.bind(venue.manager)
     const dataResult = mgr.try_positions(tokenId)
     if (dataResult.reverted) {
-      log.warning(
+      log.error(
         "CL create: positions() reverted for position {} (tokenId {}, venue {}, manager {}) — not created.",
         [positionId.toString(), tokenId.toString(), venue.protocol, venue.manager.toHexString()]
       )
@@ -327,7 +300,7 @@ function refreshOrCreateCLPosition(
     poolAddress = getPoolAddress(venue, data.value2, data.value3, data.value4 as i32, tokenId)
     
     if (poolAddress.equals(Address.zero())) {
-      log.warning(
+      log.error(
         "CL create: no pool for position {} (tokenId {}, venue {}, factory {}, token0 {}, token1 {}, tickSpacing {}) — not created.",
         [positionId.toString(), tokenId.toString(), venue.protocol, venue.factory.toHexString(),
          data.value2.toHexString(), data.value3.toHexString(), data.value4.toString()]
@@ -337,6 +310,7 @@ function refreshOrCreateCLPosition(
     
     // Create new position
     position = new ProtocolPosition(positionId)
+    initializePositionIncome(position)
     position.agent = nftOwner
     position.service = nftOwner
     position.protocol = venue.protocol
@@ -438,9 +412,9 @@ function refreshOrCreateCLPosition(
       rewardAmount = convertTokenAmount(earnedResult.value, venue.rewardToken)
       const rewardPrice = getTokenPriceUSD(venue.rewardToken, block.timestamp, false)
       rewardUSD = rewardAmount.times(rewardPrice)
-    } else if (venue.protocol == PROTOCOL_AERO_CL) {
+    } else {
       log.warning(
-        "xAERO rewards: gauge.earned() reverted for active CL position {} (gauge {}, account {}, tokenId {}) — recording 0 reward.",
+        "CL rewards: gauge.earned() reverted for active CL position {} (gauge {}, account {}, tokenId {}) — recording 0 reward.",
         [positionId.toString(), gaugeAddress.toHexString(), nftOwner.toHexString(), tokenId.toString()]
       )
     }
@@ -458,6 +432,7 @@ function refreshOrCreateCLPosition(
   position.amount1 = amount1Human
   position.amount1USD = usd1
   position.liquidity = data.value7
+  recordClaimableRewardBeforeBlock(position, block)
   position.claimableReward = rewardAmount
   position.claimableRewardUSD = rewardUSD
   
@@ -468,14 +443,17 @@ function refreshOrCreateCLPosition(
   }
   
   if (isPositionClosed(data.value7, amount0Human, amount1Human)) {
+    // A refresh after this block's exit (e.g. an IncreaseLiquidity) keeps that exit
+    if (!exitClosedInBlock(position, block)) {
+      position.exitTxHash = txHash
+      position.exitTimestamp = block.timestamp
+      position.exitAmount0 = amount0Human
+      position.exitAmount0USD = usd0
+      position.exitAmount1 = amount1Human
+      position.exitAmount1USD = usd1
+      position.exitAmountUSD = usd
+    }
     position.isActive = false
-    position.exitTxHash = txHash
-    position.exitTimestamp = block.timestamp
-    position.exitAmount0 = amount0Human
-    position.exitAmount0USD = usd0
-    position.exitAmount1 = amount1Human
-    position.exitAmount1USD = usd1
-    position.exitAmountUSD = usd
     
     calculatePositionROI(position)
     removeAgentNFTFromPool(venue.protocol, poolAddress, tokenId)

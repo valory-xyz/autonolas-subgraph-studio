@@ -11,7 +11,7 @@ import {
   Address, 
   log 
 } from "@graphprotocol/graph-ts"
-import { isSafe } from "./common"
+import { isServiceSafe } from "./common"
 
 // VelodromeV2 Factory address
 const VELO_V2_FACTORY = Address.fromString("0xF1046053aa5682b4F9a81b5481394DA16BE5FF5a")
@@ -82,7 +82,7 @@ export function ensureVeloV2PoolDiscovery(poolAddress: Address): void {
 // Handle any ERC20 transfer to detect VelodromeV2 LP tokens
 export function handleVeloV2Discovery(event: TransferEvent): void {
   // Only care about transfers TO the Safe
-  if (!isSafe(event.params.to)) {
+  if (!isServiceSafe(event.params.to)) {
     return
   }
   

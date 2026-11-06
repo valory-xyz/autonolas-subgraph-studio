@@ -21,10 +21,10 @@ Indexing **filters by Olas `agentId == 115`** and tracks every Basius service (c
 | Aspect | Optimism | Base (this subgraph) |
 |--------|----------|----------------------|
 | Network | `optimism` | `base` |
-| DEXs tracked | Velodrome CL + V2, **Uniswap V3**, **Balancer** | **Aerodrome** (CL = Slipstream, v2) + **Aero** (CL, v2) |
+| DEXs tracked | Velodrome CL + V2, **Aero** (CL, v2), **Uniswap V3**, **Balancer** | **Aerodrome** (CL = Slipstream, v2) + **Aero** (CL, v2) |
 | Agent scoping | agent-id filter (`OPTIMUS_AGENT_ID = 40`) + excluded ids | agent-id filter (`BASIUS_AGENT_ID = 115`), all matching services |
-| Pricing | Chainlink + DEX | Chainlink (Base feeds) + Aerodrome/Aero pools; whitelisted stables via $1, USDT/DAI/USDe/USDS via their own feeds |
-| Reward token | VELO | AERO (legacy) / Aero's AERO |
+| Pricing | Chainlink + DEX | Chainlink (Base feeds) + Aerodrome/Aero pools; whitelisted stables referenced to the USDC feed, USDT/DAI/USDe/USDS via their own feeds |
+| Reward token | VELO (Velodrome) / xAERO (Aero) | AERO (legacy) / Aero's AERO |
 
 **Dropped files** (Uniswap V3 / Balancer / manual bootstrap / dead helpers):
 `uniV3NFTManager.ts`, `uniV3Pool.ts`, `uniV3Shared.ts`, `balancerVault.ts`,
@@ -77,7 +77,8 @@ Optimism values): StakingToken `0x2585e63df7BD9De8e058884D496658a030b5c6ce`, Act
 > helpers bind the Chainlink feed and the Aerodrome pools/gauges, **every** data source whose
 > handler reaches them must declare those ABIs — not just the pool/NFT templates. In
 > particular: token/funding sources need `AggregatorV3Interface` + `VelodromeCLPool` +
-> `VelodromeV2Pool` (token pricing via `priceAdapters`), `ServiceRegistryL2` needs
+> `VelodromeV2Pool` (token pricing via `priceAdapters`), token sources and the `Safe` template
+> need `GnosisSafe` (`getThreshold()` for the user-side check), `ServiceRegistryL2` needs
 > `AggregatorV3Interface` (`getEthUsd` seeds `firstFundingEthPrice`), and `PortfolioScheduler`
 > needs `VeloVoter` + `VeloV2Gauge` + `VeloCLGauge` + `AeroCLGauge` (the snapshot block handler runs
 > `refreshAllActivePositions`, which re-binds each position's gauge). Run
@@ -87,8 +88,7 @@ Optimism values): StakingToken `0x2585e63df7BD9De8e058884D496658a030b5c6ce`, Act
 ## Tracked tokens
 
 USDC (native), WETH, AERO (legacy + Aero's), the whitelisted stablecoins BOLD / msUSD / frxUSD /
-eUSD / axlUSDC, and USDT / DAI / USDe / USDS (Chainlink-priced, see Aero below). USDC+WETH price off Chainlink; stables resolve to ~$1 (referenced to the USDC feed
-— confirmed fine by Divya); **AERO** (the CL-gauge reward token) prices off the Aerodrome
+eUSD / axlUSDC, and USDT / DAI / USDe / USDS (Chainlink-priced, see Aero below). USDC+WETH price off Chainlink; the whitelisted stables are referenced to the USDC feed; **AERO** `0x940181a9…` (the Aerodrome CL-gauge reward token; Aero CL gauges pay Aero's AERO `0x3f5b…a4ee` instead) prices off the Aerodrome
 AERO/USDC volatile pool `0x6cdcb1c4…` via the `velodrome_v2` adapter (`tokenConfig.ts`).
 **OLAS is not tracked** — Basius holds none and it isn't a trading asset for this agent.
 
@@ -136,11 +136,8 @@ v0.13.10. Aero positions are labelled **`aero-cl` / `aero-v2`**; legacy labels a
 - **Pricing** — Aero's AERO prices off the Aero v2 AERO/USDC volatile pool `0xF634058d…` (`tokenConfig.ts`).
   USDT / DAI / USDe / USDS price off their own Chainlink feeds (priority 1) with
   the Aero CL tickSpacing-1 USDC/USDT pool as USDT's priority-2 fallback. DAI / USDe / USDS are
-  feed-only (the CL adapter mis-scales 18-vs-6-decimal pairs, so a pool would price them ~0). They are
-  **not** on `usdcReferencedStable` or `CRITICAL_STABLECOINS`. `getPriceFromSources` reads a
-  higher-numbered priority only when every better source failed. They validate against the
-  0.5–1.5 band (not USDC's 0.95–1.05), so a depeg their feed reports is kept, and Chainlink
-  answers up to 90000s old are accepted (24h heartbeat + grace).
+  feed-only (no pool fallback is configured for them), are not on `usdcReferencedStable`, and are in
+  `STABLECOINS`. Bands, priorities, staleness and the depeg flag: see *Pricing* below.
 
 ## Schema, core logic, KPIs
 
@@ -150,6 +147,82 @@ babydegen-optimism (network-agnostic). The website KPIs map to existing entities
 - "APR relative to USDC – MA7D" → `DailyPopulationMetric.sma7dAPR`
 - "APR relative to ETH – MA7D" → `DailyPopulationMetric.sma7dEthAdjustedAPR`
 - per-day ROI (explorer heatmap) → `AgentPortfolioSnapshot.roi`
+
+The `ethAdjusted*` fields are deprecated and equal their unadjusted counterparts.
+
+### Funding and withdrawals (`common.ts`, `tokenBalances.ts`, `safe.ts`)
+- Every token in `WHITELISTED_TOKENS` and ETH moves `FundingBalance` (funding in, `totalWithdrawnUsd`
+  out), valued at the transfer. The user side (`isUserSide`) is the operator Safe, any Safe (`getThreshold()` answers,
+  cached as `AddressType.isSafe`), the tx sender (an EIP-7702 wallet included), or an EOA that is
+  not one of `Service.agentInstances`. The Safe itself, its agent EOAs and the zero address never are.
+- An outflow to any other contract is a withdrawal only when the receipt shows nothing coming
+  back to the Safe: no ERC-20/ERC-721 `Transfer` to it, no WETH `Deposit` for it (wrapping) and no `SafeReceived` it emitted
+  (`isWithdrawalRecipient`). With no receipt it is not counted. Token Transfer handlers and the Safe's `ExecutionSuccess` set `receipt: true`;
+  the other Safe handlers never read it.
+- ETH in comes from `SafeReceived`. ETH out is decoded from the Safe's `execTransaction` calldata
+  (`ethSentBySafe`): its Call's value, or each Call of a `multiSend` it delegatecalls. ETH to an
+  agent EOA lowers value as a cost. A module execution or a relayed execTransaction is not
+  readable; its ETH is not counted and a `SAFE_ETH:` warning is logged. A send to the operator
+  Safe is counted once (its `SafeReceived` skips a send the decoder read from the same tx).
+- Withdrawals go to `totalWithdrawnUsd`; they never reduce `netUsd`, which equals `totalInUsd`.
+  `totalOutUsd` and `fundingOutTxs` are deprecated: no longer written, they stay 0 / empty. A transfer of an unpriced
+  token is valued at $0 and logged (`FUNDING:`).
+
+### Pricing (`priceDiscovery.ts`, `priceAdapters.ts`, `tokenConfig.ts`)
+- No $1 fallback. With no valid price a token keeps its last valid price with `priceStale = true`
+  (logged once, `PRICING:`); a token never priced is 0.
+- `getTokenPriceUSD` reads sources by priority; a higher-numbered one only when every better
+  source failed. Chainlink answers within `STALE_PRICE_THRESHOLD` are accepted.
+- A pool's pair leg is priced from its own token config, never taken as $1: its Chainlink source,
+  else its `velodrome_v2` pool when that pool's pair leg has one; otherwise the pool gives no
+  price. Feed staleness is judged against the event's block.
+- `STABLECOINS` tokens have no lower price bound ($0–1.50; USDC $0–1.05), so a depeg is recorded:
+  `depegged` below `DEPEG_THRESHOLD`.
+- A stable pool's `getAmountOut` quote is net of the pool's swap fee (about 0.9995 × at the default 5 bps stable fee). The bias is accepted: it is far inside the `DEPEG_THRESHOLD` depeg line. A v2 pool is quoted as stable when
+  its `V2PoolVenue` row says so, else when its `stable()` is true (`v2PoolKind`); it is priced from its
+  `getAmountOut` quote for one token, not its reserve ratio.
+
+### v2 position cycles (`veloV2Pool.ts`)
+- A v2 position is one row per pool, reused across cycles. LP minted into a closed row (seen by
+  the LP mint Transfer, before its refresh marks the row active) restarts it: income, exit, costs,
+  ROI and entry tracking reset as for a new row, and the Mint records the new entry. The Mint after
+  the LP mint that found the row missing or closed (`PendingMintPosition.startsEntry`) replaces the
+  entry, including the refresh's fallback from current amounts; every other Mint, in that tx or a
+  later top-up, adds to it; either way `investmentUSD` = entry +
+  `totalCostsUSD`. A partial
+  Burn records an exit but leaves the row active, so a later top-up keeps its income. `isActive`
+  comes from end-of-block `balanceOf`, so a full exit and re-entry in one block keeps the old cycle
+  (accepted).
+
+### CL exits (`veloCLShared.ts`)
+- A `DecreaseLiquidity` leaving zero liquidity, or whose `positions()` reverts because the NFT is
+  burned later in the same block (`eth_call` reads end-of-block state), closes the position: the
+  exit is valued from the event amounts and the stored tokens, decreases in the burn block add up,
+  and a `CL exit:` warning is logged. A refresh later in the exit block (e.g. an IncreaseLiquidity
+  reading end-of-block zero liquidity) keeps that exit, and any other decrease on a closed row (the
+  NFT burned with no exit recorded, or the exit already booked in an earlier block) is skipped and logged.
+  A CL transfer out does not close the row (a staked NFT leaves the Safe while still open), so a
+  decrease by a wallet the NFT was sent to is still booked as the Safe's exit.
+
+### Position income (`positionIncome.ts`)
+- `ProtocolPosition.collectedFees0/1` and `collectedFeesUSD`: every `Collect` first pays out the
+  principal `DecreaseLiquidity` released since the last one (`UncollectedPrincipal`, keyed
+  `<protocol>-<tokenId>`), wherever it is sent; only the rest, and only to the Safe, is a fee.
+- `claimedRewards` / `claimedRewardsUSD`: a reward Transfer from a position's gauge
+  (`rewardsContract`) goes to the tokenId of the first `Withdraw(user = Safe, …)` that gauge emits
+  after it. With none, a CL claim is split by each active position's `claimableReward` as it stood
+  before the block (`ClaimableRewardBeforeBlock`), by liquidity when all are 0; a v2 position takes it all.
+- Aero CL (`aero-cl`): from the gauge's `EmissionsClaimed(_account, _tokenId, _recipient,
+  _rewardAmount)` with `_recipient` = Safe and a tokenId the Safe owns. A Transfer of
+  `rewardTokenFor(PROTOCOL_AERO_CL)` — Aero's AERO `0x3f5b…a4ee` (`AERO_PROTOCOL_AERO`, not the
+  `AERO` `0x940181a9…` above), which the gauge mints to the claimer — pays the not-yet-credited
+  claims it covers, in log order, each once (`CreditedRewardClaim`). Skipped claims are logged.
+- A Withdraw naming a tokenId the Safe does not track is logged, not split. A v2 reward after the
+  exit goes to the most recently closed v2 position on that gauge. An `EmissionsClaimed` counts
+  only when the position's own gauge emitted it.
+- `aero-v2` rewards are not attributed to a position yet; a reward Transfer to a Safe that holds
+  or held an `aero-v2` position (rewards are often claimed after the exit) logs a `REWARDS:` warning.
+- `grossGainUSD = exitAmountUSD + collectedFeesUSD + claimedRewardsUSD`.
 
 Snapshots fire from the `PortfolioScheduler` block handler at UTC-midnight crossings.
 Block-handler interval is `every: 1800` (~1h on Base) — confirmed: a finer interval can't

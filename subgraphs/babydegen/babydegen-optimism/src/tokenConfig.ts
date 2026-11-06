@@ -1,5 +1,5 @@
 import { Address, BigInt } from "@graphprotocol/graph-ts"
-import { ETH_USD_FEED, USDC_USD_FEED, USDT_USD_FEED, DAI_USD_FEED, USDC_NATIVE, WETH, DAI, USDT, USDC_BRIDGED, USDT0, OUSDT, USDGLO, BOLD_V2, USDS, XAERO } from "./constants"
+import { ETH_USD_FEED, USDC_USD_FEED, USDT_USD_FEED, DAI_USD_FEED, WBTC_USD_FEED, SUSD_USD_FEED, USDC_NATIVE, WETH, DAI, USDT, USDC_BRIDGED, USDT0, OUSDT, USDGLO, BOLD_V2, USDS, XAERO, WBTC, SUSD } from "./constants"
 
 // Token configurations with Chainlink-first approach
 export const TOKENS = new Map<string, TokenConfig>()
@@ -54,6 +54,8 @@ CHAINLINK_FEEDS.set("ETH_USD", ETH_USD_FEED.toHexString())
 CHAINLINK_FEEDS.set("USDC_USD", USDC_USD_FEED.toHexString())
 CHAINLINK_FEEDS.set("USDT_USD", USDT_USD_FEED.toHexString())
 CHAINLINK_FEEDS.set("DAI_USD", DAI_USD_FEED.toHexString())
+CHAINLINK_FEEDS.set("WBTC_USD", WBTC_USD_FEED.toHexString())
+CHAINLINK_FEEDS.set("SUSD_USD", SUSD_USD_FEED.toHexString())
 
 export function getTokenConfig(address: Address): TokenConfig | null {
   let key = address.toHexString().toLowerCase()
@@ -113,6 +115,14 @@ function initializeTokens(): void {
       )
     ]
   ))
+
+  // WBTC and sUSD: whitelisted, so they count as funding; each priced off its own Chainlink feed
+  TOKENS.set(WBTC.toHexString().toLowerCase(), new TokenConfig(WBTC, "WBTC", 8, [
+    new PriceSourceConfig(Address.fromString(getChainlinkFeedSafe("WBTC_USD")), "chainlink", 1, 99)
+  ]))
+  TOKENS.set(SUSD.toHexString().toLowerCase(), new TokenConfig(SUSD, "sUSD", 18, [
+    new PriceSourceConfig(Address.fromString(getChainlinkFeedSafe("SUSD_USD")), "chainlink", 1, 99)
+  ]))
 
   // DAI - Simplified: Chainlink only as it's consistently close to $1
   TOKENS.set("0xda10009cbd5d07dd0cecc66161fc93d7c9000da1", new TokenConfig(
@@ -182,7 +192,7 @@ function initializeTokens(): void {
     ]
   ))
 
-  // BOLD - Maintain both sources as we should monitor BOLD/LUSD
+  // BOLD (legacy)
   TOKENS.set("0x087c440f251ff6cfe62b86dde1be558b95b4bb9b", new TokenConfig(
     Address.fromString("0x087c440f251ff6cfe62b86dde1be558b95b4bb9b"),
     "BOLD",
@@ -326,8 +336,6 @@ function initializeTokens(): void {
     ]
   ))
 
-  // Note: These tokens now use pool-based price discovery similar to DOLA
-  // Pool addresses provided for accurate price tracking
 
   TOKENS.set(BOLD_V2.toHexString().toLowerCase(), new TokenConfig(
     BOLD_V2,
@@ -336,7 +344,7 @@ function initializeTokens(): void {
     [
       new PriceSourceConfig(
         Address.fromString("0x8828B7792499A7d86E931DF56E3D37C428d12d2b"),
-        "velodrome_v2_stable",
+        "velodrome_v2",
         1,
         85,
         USDC_NATIVE
@@ -344,8 +352,7 @@ function initializeTokens(): void {
     ]
   ))
 
-  // No feed and no pool with real liquidity yet: tracked for balances, valued at $0
-  // (getPriceFromSources logs it) until a source exists. Not on the $1 stablecoin fallback.
+  // No feed and no pool with real liquidity yet: tracked for balances
   TOKENS.set(USDS.toHexString().toLowerCase(), new TokenConfig(USDS, "USDS", 18, []))
   // xAERO - Aero gauge rewards. Its Optimism pools are too thin to price from, so it values at $0
   // (getPriceFromSources logs it).

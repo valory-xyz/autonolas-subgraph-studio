@@ -1,11 +1,10 @@
 specVersion: 0.0.8
 schema:
   file: ./schema.graphql
-# BabyDegen Base (Basius) — Aerodrome-only port of babydegen-optimism.
+# BabyDegen Base (Basius) — Aerodrome / Aero port of babydegen-optimism.
 # Indexing filters by Olas agentId 115 and tracks every Basius service
 # (currently 607/610/611/612 on Base); see src/serviceRegistry.ts.
-# NOTE: only USDC (native) and ETH flows affect funding metrics; other token
-# transfers are tracked for balance only.
+# NOTE: see CLAUDE.md for the funding and withdrawal rules and which handlers set `receipt: true`.
 #
 # startBlock 47163056 = earliest agentId-115 (Basius) service registration
 # (service 607, 2026-06-10); nothing relevant exists on Base before it.
@@ -40,6 +39,8 @@ dataSources:
       file: ./src/serviceRegistry.ts
 
   # ---- Tracked token Transfer sources --------------------------------------
+  # handleERC20Transfer prices the token via getTokenPriceUSD → priceAdapters, which binds
+  # the Chainlink feed and the Aerodrome CL/V2 pools, so every token source declares their ABIs.
   - kind: ethereum
     name: USDC_Native
     network: base
@@ -55,11 +56,10 @@ dataSources:
         - FundingBalance
         - TokenBalance
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
-        # handleERC20Transfer prices the token via getTokenPriceUSD →
-        # priceAdapters, which binds the Chainlink feed and the Aerodrome
-        # CL/V2 pools. These must be declared on every token data source.
         - name: AggregatorV3Interface
           file: ../../../abis/oracles/AggregatorV3Interface.json
         - name: VelodromeCLPool
@@ -69,6 +69,7 @@ dataSources:
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleUSDC
+          receipt: true
       file: ./src/funding.ts
 
   - kind: ethereum
@@ -85,11 +86,10 @@ dataSources:
       entities:
         - TokenBalance
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
-        # handleERC20Transfer prices the token via getTokenPriceUSD →
-        # priceAdapters, which binds the Chainlink feed and the Aerodrome
-        # CL/V2 pools. These must be declared on every token data source.
         - name: AggregatorV3Interface
           file: ../../../abis/oracles/AggregatorV3Interface.json
         - name: VelodromeCLPool
@@ -99,6 +99,7 @@ dataSources:
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
+          receipt: true
       file: ./src/tokenBalances.ts
 
   - kind: ethereum
@@ -115,11 +116,10 @@ dataSources:
       entities:
         - TokenBalance
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
-        # handleERC20Transfer prices the token via getTokenPriceUSD →
-        # priceAdapters, which binds the Chainlink feed and the Aerodrome
-        # CL/V2 pools. These must be declared on every token data source.
         - name: AggregatorV3Interface
           file: ../../../abis/oracles/AggregatorV3Interface.json
         - name: VelodromeCLPool
@@ -129,6 +129,7 @@ dataSources:
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
+          receipt: true
       file: ./src/tokenBalances.ts
 
   - kind: ethereum
@@ -145,11 +146,10 @@ dataSources:
       entities:
         - TokenBalance
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
-        # handleERC20Transfer prices the token via getTokenPriceUSD →
-        # priceAdapters, which binds the Chainlink feed and the Aerodrome
-        # CL/V2 pools. These must be declared on every token data source.
         - name: AggregatorV3Interface
           file: ../../../abis/oracles/AggregatorV3Interface.json
         - name: VelodromeCLPool
@@ -159,6 +159,7 @@ dataSources:
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
+          receipt: true
       file: ./src/tokenBalances.ts
 
   - kind: ethereum
@@ -175,11 +176,10 @@ dataSources:
       entities:
         - TokenBalance
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
-        # handleERC20Transfer prices the token via getTokenPriceUSD →
-        # priceAdapters, which binds the Chainlink feed and the Aerodrome
-        # CL/V2 pools. These must be declared on every token data source.
         - name: AggregatorV3Interface
           file: ../../../abis/oracles/AggregatorV3Interface.json
         - name: VelodromeCLPool
@@ -189,6 +189,7 @@ dataSources:
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
+          receipt: true
       file: ./src/tokenBalances.ts
 
   - kind: ethereum
@@ -205,11 +206,10 @@ dataSources:
       entities:
         - TokenBalance
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
-        # handleERC20Transfer prices the token via getTokenPriceUSD →
-        # priceAdapters, which binds the Chainlink feed and the Aerodrome
-        # CL/V2 pools. These must be declared on every token data source.
         - name: AggregatorV3Interface
           file: ../../../abis/oracles/AggregatorV3Interface.json
         - name: VelodromeCLPool
@@ -219,6 +219,7 @@ dataSources:
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
+          receipt: true
       file: ./src/tokenBalances.ts
 
   - kind: ethereum
@@ -235,11 +236,10 @@ dataSources:
       entities:
         - TokenBalance
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
-        # handleERC20Transfer prices the token via getTokenPriceUSD →
-        # priceAdapters, which binds the Chainlink feed and the Aerodrome
-        # CL/V2 pools. These must be declared on every token data source.
         - name: AggregatorV3Interface
           file: ../../../abis/oracles/AggregatorV3Interface.json
         - name: VelodromeCLPool
@@ -249,6 +249,7 @@ dataSources:
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
+          receipt: true
       file: ./src/tokenBalances.ts
 
   - kind: ethereum
@@ -265,11 +266,10 @@ dataSources:
       entities:
         - TokenBalance
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
-        # handleERC20Transfer prices the token via getTokenPriceUSD →
-        # priceAdapters, which binds the Chainlink feed and the Aerodrome
-        # CL/V2 pools. These must be declared on every token data source.
         - name: AggregatorV3Interface
           file: ../../../abis/oracles/AggregatorV3Interface.json
         - name: VelodromeCLPool
@@ -279,6 +279,7 @@ dataSources:
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
+          receipt: true
       file: ./src/tokenBalances.ts
 
   - kind: ethereum
@@ -295,11 +296,10 @@ dataSources:
       entities:
         - TokenBalance
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
-        # handleERC20Transfer prices the token via getTokenPriceUSD →
-        # priceAdapters, which binds the Chainlink feed and the Aerodrome
-        # CL/V2 pools. These must be declared on every token data source.
         - name: AggregatorV3Interface
           file: ../../../abis/oracles/AggregatorV3Interface.json
         - name: VelodromeCLPool
@@ -309,6 +309,7 @@ dataSources:
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
+          receipt: true
       file: ./src/tokenBalances.ts
 
   - kind: ethereum
@@ -325,11 +326,10 @@ dataSources:
       entities:
         - TokenBalance
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
-        # handleERC20Transfer prices the token via getTokenPriceUSD →
-        # priceAdapters, which binds the Chainlink feed and the Aerodrome
-        # CL/V2 pools. These must be declared on every token data source.
         - name: AggregatorV3Interface
           file: ../../../abis/oracles/AggregatorV3Interface.json
         - name: VelodromeCLPool
@@ -339,6 +339,7 @@ dataSources:
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
+          receipt: true
       file: ./src/tokenBalances.ts
 
   - kind: ethereum
@@ -355,11 +356,10 @@ dataSources:
       entities:
         - TokenBalance
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
-        # handleERC20Transfer prices the token via getTokenPriceUSD →
-        # priceAdapters, which binds the Chainlink feed and the Aerodrome
-        # CL/V2 pools. These must be declared on every token data source.
         - name: AggregatorV3Interface
           file: ../../../abis/oracles/AggregatorV3Interface.json
         - name: VelodromeCLPool
@@ -369,6 +369,7 @@ dataSources:
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
+          receipt: true
       file: ./src/tokenBalances.ts
 
   - kind: ethereum
@@ -385,11 +386,10 @@ dataSources:
       entities:
         - TokenBalance
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
-        # handleERC20Transfer prices the token via getTokenPriceUSD →
-        # priceAdapters, which binds the Chainlink feed and the Aerodrome
-        # CL/V2 pools. These must be declared on every token data source.
         - name: AggregatorV3Interface
           file: ../../../abis/oracles/AggregatorV3Interface.json
         - name: VelodromeCLPool
@@ -399,6 +399,7 @@ dataSources:
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
+          receipt: true
       file: ./src/tokenBalances.ts
 
   - kind: ethereum
@@ -415,11 +416,10 @@ dataSources:
       entities:
         - TokenBalance
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
-        # handleERC20Transfer prices the token via getTokenPriceUSD →
-        # priceAdapters, which binds the Chainlink feed and the Aerodrome
-        # CL/V2 pools. These must be declared on every token data source.
         - name: AggregatorV3Interface
           file: ../../../abis/oracles/AggregatorV3Interface.json
         - name: VelodromeCLPool
@@ -429,6 +429,7 @@ dataSources:
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
+          receipt: true
       file: ./src/tokenBalances.ts
 
   # ---- Aerodrome Slipstream (CL) positions ---------------------------------
@@ -472,7 +473,6 @@ dataSources:
       file: ./src/veloNFTManager.ts
 
   # ---- Aero CL positions ----------------------------------------------------
-  # Slipstream handlers, except handleAeroIncreaseLiquidity (veloNFTManager.ts).
   - kind: ethereum
     name: AeroNFTManager
     network: base
@@ -798,6 +798,8 @@ templates:
         - FundingBalance
         - Service
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: Safe
           file: ../../../abis/Safe.json
         - name: AggregatorV3Interface
@@ -809,6 +811,7 @@ templates:
           handler: handleSafeReceived
         - event: ExecutionSuccess(bytes32,uint256)
           handler: handleExecutionSuccess
+          receipt: true
         - event: ExecutionFromModuleSuccess(indexed address)
           handler: handleExecutionFromModuleSuccess
       file: ./src/safe.ts

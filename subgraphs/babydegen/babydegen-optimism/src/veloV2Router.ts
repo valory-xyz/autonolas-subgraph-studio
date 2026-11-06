@@ -7,7 +7,7 @@ import {
 } from "../generated/templates/VeloV2Pool/VelodromeV2Pool"
 import { ensureVeloV2PoolTemplate } from "./veloV2Shared"
 import { log, Address } from "@graphprotocol/graph-ts"
-import { isSafe } from "./common"
+import { isServiceSafe } from "./common"
 
 // Handle VelodromeV2 Router Mint events
 export function handleVeloV2RouterMint(event: RouterMint): void {
@@ -34,7 +34,7 @@ export function handleVeloV2RouterMint(event: RouterMint): void {
   ])
   
   // Check if the recipient is our Safe
-  if (isSafe(event.params.to)) {
+  if (isServiceSafe(event.params.to)) {
     log.warning("VELODROME V2 ROUTER: ✅ MINT TO SAFE DETECTED! Creating pool template for {}", [
       event.params.pool.toHexString()
     ])

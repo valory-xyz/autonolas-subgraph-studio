@@ -5,7 +5,7 @@ import { getServiceByAgent } from "./config"
 /**
  * Calculate position-based ROI for an agent from closed positions only
  * Formula: (Sum(Gi) - Sum(Ii) - Sum(Ci)) / (Sum(Ii) + Sum(Ci))
- * Where: Gi = gross gains, Ii = investments, Ci = costs
+ * Where: Gi = gross gains (exit + collected fees + claimed rewards), Ii = investments, Ci = costs
  */
 export function calculateActualROI(agent: Address): BigDecimal {
   let service = Service.load(agent)
@@ -14,7 +14,7 @@ export function calculateActualROI(agent: Address): BigDecimal {
   }
   
   let totalInvestments = BigDecimal.zero()  // Sum of Ii (entry amounts only)
-  let totalGrossGains = BigDecimal.zero()   // Sum of Gi (exit amounts)
+  let totalGrossGains = BigDecimal.zero()   // Sum of Gi
   let totalCosts = BigDecimal.zero()        // Sum of Ci (costs only)
   
   // Iterate through all positions
@@ -28,10 +28,7 @@ export function calculateActualROI(agent: Address): BigDecimal {
       totalInvestments = totalInvestments.plus(position.entryAmountUSD)  // Ii
       totalCosts = totalCosts.plus(position.totalCostsUSD)              // Ci
       
-      // Gross gains = exit amount
-      if (position.exitAmountUSD) {
-        totalGrossGains = totalGrossGains.plus(position.exitAmountUSD!)  // Gi
-      }
+      totalGrossGains = totalGrossGains.plus(positionGrossGain(position))  // Gi
     }
   }
   
@@ -56,6 +53,12 @@ export function calculateActualROI(agent: Address): BigDecimal {
   return BigDecimal.zero()
 }
 
+function positionGrossGain(position: ProtocolPosition): BigDecimal {
+  let exitAmountUSD = position.exitAmountUSD
+  let gain = exitAmountUSD ? exitAmountUSD : BigDecimal.zero()
+  return gain.plus(position.collectedFeesUSD).plus(position.claimedRewardsUSD)
+}
+
 /**
  * Calculate individual position ROI when position closes
  */
@@ -68,11 +71,9 @@ export function calculatePositionROI(position: ProtocolPosition): BigDecimal {
   let investment = position.entryAmountUSD.plus(position.totalCostsUSD)
   
   if (investment.gt(BigDecimal.zero())) {
-    // grossGainUSD = exitAmount
-    let grossGainUSD = position.exitAmountUSD!
+    let grossGainUSD = positionGrossGain(position)
     
-    // netGainUSD = exitAmount - investmentUSD (gain after all costs including slippage)
-    let netGainUSD = position.exitAmountUSD!.minus(investment)
+    let netGainUSD = grossGainUSD.minus(investment)
     
     // Position ROI = netGainUSD / investmentUSD * 100
     let positionROI = netGainUSD.div(investment).times(BigDecimal.fromString("100"))
@@ -110,28 +111,15 @@ export function aggregateClosedPositionMetrics(agent: Address): PositionAggregat
     if (position != null && !position.isActive) {  // Only closed positions
       totalInvestments = totalInvestments.plus(position.entryAmountUSD)
       totalCosts = totalCosts.plus(position.totalCostsUSD)
-      
-      if (position.exitAmountUSD) {
-        totalGrossGains = totalGrossGains.plus(position.exitAmountUSD!)
-      }
+      totalGrossGains = totalGrossGains.plus(positionGrossGain(position))
     }
   }
   
   return new PositionAggregates(totalInvestments, totalGrossGains, totalCosts)
 }
 
-/**
- * Update position costs (called when swaps are associated)
- */
-export function updatePositionCosts(position: ProtocolPosition, additionalCosts: BigDecimal): void {
-  position.totalCostsUSD = position.totalCostsUSD.plus(additionalCosts)
-  position.investmentUSD = position.entryAmountUSD.plus(position.totalCostsUSD)
-  
-  // Recalculate position ROI if position is closed
-  if (!position.isActive && position.exitAmountUSD) {
-    calculatePositionROI(position)
-  }
-  
+export function saveWithROI(position: ProtocolPosition): void {
+  calculatePositionROI(position)
   position.save()
 }
 
@@ -146,6 +134,14 @@ export function initializePositionCosts(position: ProtocolPosition): void {
   position.netGainUSD = BigDecimal.zero()
   position.positionROI = BigDecimal.zero()
   position.save()
+}
+
+export function initializePositionIncome(position: ProtocolPosition): void {
+  position.collectedFees0 = BigDecimal.zero()
+  position.collectedFees1 = BigDecimal.zero()
+  position.collectedFeesUSD = BigDecimal.zero()
+  position.claimedRewards = BigDecimal.zero()
+  position.claimedRewardsUSD = BigDecimal.zero()
 }
 
 /**

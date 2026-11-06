@@ -23,14 +23,14 @@ export const WETH = Address.fromString("0x42000000000000000000000000000000000000
 export const AERO = Address.fromString("0x940181a94A35A4569E4529A3CDfB74e38FD98631") // AERO (Aerodrome reward token) on Base
 export const AERO_PROTOCOL_AERO = Address.fromString("0x3f5bF3EdAc59d650D8fDf9657a71F2f904A3a4Ee") // AERO of Aero (the merged protocol) — Aero gauge reward token
 
-// Whitelisted stablecoins (Base) — priced via $1 fallback until pools confirmed
+// Whitelisted stablecoins (Base) — referenced to the USDC/USD feed until pools are confirmed
 export const BOLD = Address.fromString("0x03569Cc076654F82679C4BA2124D64774781b01d") // BOLD
 export const MSUSD = Address.fromString("0x526728DBc96689597F85ae4cd716d4f7fCCBAE9d") // msUSD
 export const FRXUSD = Address.fromString("0xe5020A6D073a794B6e7F05678707dE47986Fb0B6") // frxUSD
 export const EUSD = Address.fromString("0xCfA3Ef56d303AE4fAabA0592388F19d7C3399FB4") // eUSD
 export const AXLUSDC = Address.fromString("0xEB466342C4d449BC9f53A865D5Cb90586f405215") // axlUSDC
 
-// Chainlink-priced stablecoins — their own feed, never $1; only USDT has a pool fallback (tokenConfig.ts)
+// Chainlink-priced stablecoins
 export const USDT = Address.fromString("0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2") // USDT
 export const DAI = Address.fromString("0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb") // DAI
 export const USDE = Address.fromString("0x5d3a1Ff2b6BAb83b63cd9AD0787074081a52ef34") // USDe
@@ -38,10 +38,8 @@ export const USDS = Address.fromString("0x820C137fa70C8691f0e44Dc420a5e53c168921
 
 // ---- Chainlink price feeds (Base mainnet) -----------------------------------
 // Base DOES have Chainlink feeds (unlike the Mode port), so keep Chainlink primary.
-// Both verified on-chain (live, 8 decimals, "ETH / USD" / "USDC / USD").
 export const ETH_USD_FEED = Address.fromString("0x71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70")
 export const USDC_USD_FEED = Address.fromString("0x7e860098F58bBFC8648a4311b374B1D669a2bc6B")
-// Verified on-chain: live, 8 decimals, "USDT / USD" / "DAI / USD" / "USDe / USD" / "USDS / USD"
 export const USDT_USD_FEED = Address.fromString("0xf19d560eB8d2ADf07BD6D13ed03e1D11215721F9")
 export const DAI_USD_FEED = Address.fromString("0x591e79239a7d679378eC8c847e5038150364C78F")
 export const USDE_USD_FEED = Address.fromString("0x790181e93e9F4Eedb5b864860C12e4d2CffFe73B")
@@ -122,22 +120,25 @@ export function isPoolRelevant(token0: Address, token1: Address): boolean {
   return isTokenWhitelisted(token0) && isTokenWhitelisted(token1)
 }
 
-// Stablecoin addresses (for $1 price fallbacks)
 export const STABLECOINS: string[] = [
   USDC_NATIVE.toHexString(),
   BOLD.toHexString(),
   MSUSD.toHexString(),
   FRXUSD.toHexString(),
   EUSD.toHexString(),
-  AXLUSDC.toHexString()
+  AXLUSDC.toHexString(),
+  USDT.toHexString(),
+  DAI.toHexString(),
+  USDE.toHexString(),
+  USDS.toHexString()
 ]
 
-// Critical stablecoins (for emergency fallbacks)
-export const CRITICAL_STABLECOINS: string[] = [
-  USDC_NATIVE.toHexString(),
-  BOLD.toHexString(),
-  MSUSD.toHexString(),
-  FRXUSD.toHexString(),
-  EUSD.toHexString(),
-  AXLUSDC.toHexString()
-]
+export enum V2PoolKind {
+  Volatile,
+  Stable,
+  Unknown
+}
+
+// Default v2 pool swap fees, in basis points
+export const V2_STABLE_FEE_BPS = 5
+export const V2_VOLATILE_FEE_BPS = 30

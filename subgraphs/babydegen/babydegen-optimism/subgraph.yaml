@@ -1,9 +1,7 @@
 specVersion: 0.0.8
 schema:
   file: ./schema.graphql
-# NOTE: This subgraph is configured to track USDC Native and ETH transfers for funding balance calculations.
-# While all token transfers are tracked for token balance purposes, only USDC Native and ETH flows affect
-# the funding metrics. Other token outflows are logged but do not affect funding calculations.
+# NOTE: see CLAUDE.md for the funding and withdrawal rules and which handlers set `receipt: true`.
 dataSources:
   - kind: ethereum
     name: ServiceRegistryL2
@@ -58,6 +56,8 @@ dataSources:
         - FundingBalance
         - TokenBalance
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
         - name: AggregatorV3Interface
@@ -71,6 +71,7 @@ dataSources:
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleUSDC
+          receipt: true
       file: ./src/funding.ts
   # Additional token data sources for balance tracking
   - kind: ethereum
@@ -87,6 +88,8 @@ dataSources:
       entities:
         - TokenBalance
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
         - name: AggregatorV3Interface
@@ -100,6 +103,7 @@ dataSources:
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
+          receipt: true
       file: ./src/tokenBalances.ts
   - kind: ethereum
     name: DAI
@@ -115,6 +119,8 @@ dataSources:
       entities:
         - TokenBalance
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
         - name: AggregatorV3Interface
@@ -128,6 +134,7 @@ dataSources:
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
+          receipt: true
       file: ./src/tokenBalances.ts
   - kind: ethereum
     name: USDT
@@ -143,6 +150,8 @@ dataSources:
       entities:
         - TokenBalance
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
         - name: AggregatorV3Interface
@@ -156,6 +165,7 @@ dataSources:
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
+          receipt: true
       file: ./src/tokenBalances.ts
   - kind: ethereum
     name: DOLA
@@ -171,6 +181,8 @@ dataSources:
       entities:
         - TokenBalance
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
         - name: AggregatorV3Interface
@@ -184,6 +196,7 @@ dataSources:
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
+          receipt: true
       file: ./src/tokenBalances.ts
   - kind: ethereum
     name: BOLD
@@ -199,6 +212,8 @@ dataSources:
       entities:
         - TokenBalance
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
         - name: AggregatorV3Interface
@@ -212,6 +227,7 @@ dataSources:
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
+          receipt: true
       file: ./src/tokenBalances.ts
   - kind: ethereum
     name: LUSD
@@ -227,6 +243,8 @@ dataSources:
       entities:
         - TokenBalance
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
         - name: AggregatorV3Interface
@@ -240,6 +258,7 @@ dataSources:
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
+          receipt: true
       file: ./src/tokenBalances.ts
   - kind: ethereum
     name: FRAX
@@ -255,6 +274,8 @@ dataSources:
       entities:
         - TokenBalance
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
         - name: AggregatorV3Interface
@@ -268,6 +289,7 @@ dataSources:
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
+          receipt: true
       file: ./src/tokenBalances.ts
   - kind: ethereum
     name: sDAI
@@ -283,6 +305,8 @@ dataSources:
       entities:
         - TokenBalance
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
         - name: AggregatorV3Interface
@@ -296,6 +320,7 @@ dataSources:
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
+          receipt: true
       file: ./src/tokenBalances.ts
   - kind: ethereum
     name: USDC_Bridged
@@ -312,6 +337,8 @@ dataSources:
         - FundingBalance
         - TokenBalance
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
         - name: AggregatorV3Interface
@@ -325,6 +352,7 @@ dataSources:
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleUSDC
+          receipt: true
       file: ./src/funding.ts
   - kind: ethereum
     name: USDT0
@@ -340,6 +368,8 @@ dataSources:
       entities:
         - TokenBalance
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
         - name: AggregatorV3Interface
@@ -353,6 +383,7 @@ dataSources:
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
+          receipt: true
       file: ./src/tokenBalances.ts
   - kind: ethereum
     name: oUSDT
@@ -368,6 +399,8 @@ dataSources:
       entities:
         - TokenBalance
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
         - name: AggregatorV3Interface
@@ -381,6 +414,7 @@ dataSources:
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
+          receipt: true
       file: ./src/tokenBalances.ts
   - kind: ethereum
     name: USDGLO
@@ -396,6 +430,8 @@ dataSources:
       entities:
         - TokenBalance
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
         - name: AggregatorV3Interface
@@ -409,6 +445,69 @@ dataSources:
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
+          receipt: true
+      file: ./src/tokenBalances.ts
+  - kind: ethereum
+    name: WBTC
+    network: optimism
+    source:
+      address: "0x68f180fcCe6836688e9084f035309E29Bf0A2095"
+      abi: ERC20
+      startBlock: 136563000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - TokenBalance
+      abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
+        - name: ERC20
+          file: ../../../abis/ERC20.json
+        - name: AggregatorV3Interface
+          file: ../../../abis/oracles/AggregatorV3Interface.json
+        - name: VelodromeCLPool
+          file: ../../../abis/defi/VelodromeCLPool.json
+        - name: UniswapV3Pool
+          file: ../../../abis/defi/UniswapV3Pool.json
+        - name: VelodromeV2Pool
+          file: ../../../abis/defi/VelodromeV2Pool.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleERC20Transfer
+          receipt: true
+      file: ./src/tokenBalances.ts
+  - kind: ethereum
+    name: sUSD
+    network: optimism
+    source:
+      address: "0x8c6f28f2F1A3C87F0f938b96d27520d9751ec8d9"
+      abi: ERC20
+      startBlock: 136563000
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - TokenBalance
+      abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
+        - name: ERC20
+          file: ../../../abis/ERC20.json
+        - name: AggregatorV3Interface
+          file: ../../../abis/oracles/AggregatorV3Interface.json
+        - name: VelodromeCLPool
+          file: ../../../abis/defi/VelodromeCLPool.json
+        - name: UniswapV3Pool
+          file: ../../../abis/defi/UniswapV3Pool.json
+        - name: VelodromeV2Pool
+          file: ../../../abis/defi/VelodromeV2Pool.json
+      eventHandlers:
+        - event: Transfer(indexed address,indexed address,uint256)
+          handler: handleERC20Transfer
+          receipt: true
       file: ./src/tokenBalances.ts
   - kind: ethereum
     name: VELO
@@ -424,6 +523,8 @@ dataSources:
       entities:
         - TokenBalance
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
         - name: AggregatorV3Interface
@@ -437,6 +538,7 @@ dataSources:
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
+          receipt: true
       file: ./src/tokenBalances.ts
   - kind: ethereum
     name: BOLD_V2
@@ -452,6 +554,8 @@ dataSources:
       entities:
         - TokenBalance
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
         - name: AggregatorV3Interface
@@ -465,6 +569,7 @@ dataSources:
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
+          receipt: true
       file: ./src/tokenBalances.ts
   - kind: ethereum
     name: USDS
@@ -480,6 +585,8 @@ dataSources:
       entities:
         - TokenBalance
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
         - name: AggregatorV3Interface
@@ -493,12 +600,13 @@ dataSources:
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
+          receipt: true
       file: ./src/tokenBalances.ts
   - kind: ethereum
     name: xAERO
     network: optimism
     source:
-      address: "0xbdEaeA5205d16f34Cb40038052d91235D87B4C54" # Aero gauge reward token; unpriced
+      address: "0xbdEaeA5205d16f34Cb40038052d91235D87B4C54" # xAERO, the Aero gauge reward token
       abi: ERC20
       startBlock: 136563000
     mapping:
@@ -508,6 +616,8 @@ dataSources:
       entities:
         - TokenBalance
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: ERC20
           file: ../../../abis/ERC20.json
         - name: AggregatorV3Interface
@@ -521,6 +631,7 @@ dataSources:
       eventHandlers:
         - event: Transfer(indexed address,indexed address,uint256)
           handler: handleERC20Transfer
+          receipt: true
       file: ./src/tokenBalances.ts
   - kind: ethereum
     name: VeloNFTManager
@@ -560,7 +671,7 @@ dataSources:
         - event: Transfer(indexed address,indexed address,indexed uint256)
           handler: handleNFTTransfer
       file: ./src/veloNFTManager.ts
-  # Aero CL positions: Velodrome handlers, except handleAeroIncreaseLiquidity (veloNFTManager.ts).
+  # Aero CL positions
   - kind: ethereum
     name: AeroNFTManager
     network: optimism
@@ -962,6 +1073,8 @@ templates:
         - FundingBalance
         - Service
       abis:
+        - name: GnosisSafe
+          file: ../../../abis/GnosisSafe.json
         - name: Safe
           file: ../../../abis/Safe.json
         - name: AggregatorV3Interface
@@ -977,6 +1090,7 @@ templates:
           handler: handleSafeReceived
         - event: ExecutionSuccess(bytes32,uint256)
           handler: handleExecutionSuccess
+          receipt: true
         - event: ExecutionFromModuleSuccess(indexed address)
           handler: handleExecutionFromModuleSuccess
       file: ./src/safe.ts

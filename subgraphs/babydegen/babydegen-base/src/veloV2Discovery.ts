@@ -11,7 +11,7 @@ import {
   Address, 
   log 
 } from "@graphprotocol/graph-ts"
-import { isSafe } from "./common"
+import { isServiceSafe } from "./common"
 import { VELO_V2_FACTORY } from "./constants"
 
 // Cache for already discovered pools
@@ -80,7 +80,7 @@ export function ensureVeloV2PoolDiscovery(poolAddress: Address): void {
 // Handle any ERC20 transfer to detect VelodromeV2 LP tokens
 export function handleVeloV2Discovery(event: TransferEvent): void {
   // Only care about transfers TO the Safe
-  if (!isSafe(event.params.to)) {
+  if (!isServiceSafe(event.params.to)) {
     return
   }
   

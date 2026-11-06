@@ -34,6 +34,7 @@ export function bootstrapManualService(block: ethereum.Block): void {
   registration.registrationBlock = block.number
   registration.registrationTimestamp = block.timestamp
   registration.registrationTxHash = Bytes.fromUTF8("manual-registration")
+  registration.agentInstances = []
   registration.save()
   
   // Create ServiceIndex
@@ -50,6 +51,7 @@ export function bootstrapManualService(block: ethereum.Block): void {
   
   // Initialize positionIds as empty array
   service.positionIds = []
+  service.agentInstances = []
   
   // Set registration data
   service.latestRegistrationBlock = block.number

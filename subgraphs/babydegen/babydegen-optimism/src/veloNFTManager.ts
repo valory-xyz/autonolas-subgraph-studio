@@ -8,9 +8,10 @@ import {
 import { IncreaseLiquidity as AeroIncreaseLiquidity } from "../generated/AeroNFTManager/AeroPositionNFTManager"
 import { getServiceByAgent } from "./config"
 import { refreshVeloCLPosition, refreshVeloCLPositionWithEventAmounts, refreshVeloCLPositionWithExitAmounts, getVeloCLPositionId, clVenueForManager, CLPositionCreate, createVeloCLPosition, getCLMappingId } from "./veloCLShared"
-import { Address, Bytes, BigInt, ethereum, log } from "@graphprotocol/graph-ts"
+import { Address, BigInt, ethereum, log } from "@graphprotocol/graph-ts"
 import { ProtocolPosition, NFTPositionMapping } from "../generated/schema"
 import { calculatePortfolioMetrics } from "./helpers"
+import { mapNFTPosition, loadMappedPosition, recordReleasedPrincipal, recordCollectedFees } from "./positionIncome"
 
 const ZERO_ADDRESS = Address.fromString("0x0000000000000000000000000000000000000000")
 
@@ -30,18 +31,9 @@ export function handleNFTTransfer(event: Transfer): void {
     const toService = getServiceByAgent(to)
     
     if (toService != null) {
-      // Create mapping entity for this NFT
-      const mappingId = getCLMappingId(protocol, tokenId)
-      let mapping = NFTPositionMapping.load(mappingId)
-      
       const create = new CLPositionCreate(to, venue)
       const positionId = create.positionId(tokenId)
-      if (mapping == null) {
-        mapping = new NFTPositionMapping(mappingId)
-        mapping.protocol = protocol
-        mapping.positionId = positionId
-        mapping.save()
-      }
+      mapNFTPosition(protocol, tokenId, positionId)
       
       if (ProtocolPosition.load(positionId) == null) {
         // Create placeholder position - amounts will be set by IncreaseLiquidity
@@ -107,13 +99,16 @@ export function handleDecreaseLiquidity(event: DecreaseLiquidity): void {
   const tokenId = event.params.tokenId
   
   // Look up position using mapping
-  const mappingId = getCLMappingId(clVenueForManager(event.address).protocol, tokenId)
+  const protocol = clVenueForManager(event.address).protocol
+  const mappingId = getCLMappingId(protocol, tokenId)
   const mapping = NFTPositionMapping.load(mappingId)
   
   if (mapping == null) {
     // Position not tracked (not owned by a service)
     return
   }
+  
+  recordReleasedPrincipal(protocol, tokenId, event.params.amount0, event.params.amount1)
   
   // Check if this is a full withdrawal by looking at remaining liquidity
   // This will be handled in refreshVeloCLPositionWithExitAmounts
@@ -132,23 +127,20 @@ export function handleDecreaseLiquidity(event: DecreaseLiquidity): void {
 export function handleCollect(event: Collect): void {
   const tokenId = event.params.tokenId
   
-  // Look up position using mapping
-  const mappingId = Bytes.fromUTF8(clVenueForManager(event.address).protocol + tokenId.toString())
-  const mapping = NFTPositionMapping.load(mappingId)
-  
-  if (mapping == null) {
+  const protocol = clVenueForManager(event.address).protocol
+  const position = loadMappedPosition(protocol, tokenId)
+  if (position == null) {
     // Position not tracked (not owned by a service)
     return
   }
   
-  // Load position to get owner for portfolio update
-  let position = ProtocolPosition.load(mapping.positionId)
-  if (position == null) {
-    return
-  }
+  recordCollectedFees(position, protocol, event.params.recipient, event.params.amount0, event.params.amount1, event.block.timestamp)
   
-  // Refresh position (fees collected don't change liquidity amounts)
-  refreshVeloCLPosition(mapping.positionId, tokenId, event.block, event.transaction.hash, false)
+  // Refresh position (fees collected don't change liquidity amounts). A closed position keeps
+  // the exit amounts its DecreaseLiquidity recorded.
+  if (position.isActive) {
+    refreshVeloCLPosition(position.id, tokenId, event.block, event.transaction.hash, false)
+  }
   
   // Trigger portfolio recalculation
   calculatePortfolioMetrics(Address.fromBytes(position.agent), event.block)

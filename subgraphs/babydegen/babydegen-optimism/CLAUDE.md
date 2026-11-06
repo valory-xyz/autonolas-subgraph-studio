@@ -1,6 +1,6 @@
 # BabyDegen Optimism Subgraph
 
-Tracks autonomous agent portfolio performance and population-level metrics for the BabyDegen agent economy on Optimism. Monitors agents participating in DeFi protocols (Velodrome CL, Velodrome V2, Uniswap V3, Balancer), tracking portfolio performance, position management, funding flows, and aggregated population statistics.
+Tracks autonomous agent portfolio performance and population-level metrics for the BabyDegen agent economy on Optimism. Monitors agents participating in DeFi protocols (Velodrome CL, Velodrome V2, Aero CL, Aero v2, Uniswap V3, Balancer), tracking portfolio performance, position management, funding flows, and aggregated population statistics.
 
 ## Table of Contents
 - [Architecture Overview](#architecture-overview)
@@ -26,7 +26,7 @@ subgraphs/babydegen/babydegen-optimism/
 ├── src/
 │   ├── serviceRegistry.ts        # Agent registration & service creation
 │   ├── safe.ts                   # ETH balance tracking via Safe events
-│   ├── funding.ts                # USDC funding redirect
+│   ├── funding.ts                # USDC Transfers → handleERC20Transfer
 │   ├── tokenBalances.ts          # ERC20 balance & funding flow tracking
 │   ├── helpers.ts                # Portfolio metric calculations (ROI, APR, values)
 │   ├── roiCalculation.ts         # Position-based ROI from closed positions
@@ -40,12 +40,15 @@ subgraphs/babydegen/babydegen-optimism/
 │   ├── uniV3Shared.ts            # Uniswap V3 position state refresh
 │   ├── veloV2Shared.ts           # Velodrome V2 AMM position handling
 │   ├── veloV2Bootstrap.ts        # V2 pool discovery & bootstrap
+│   ├── veloV2Factory.ts          # Aero v2 PoolFactory → V2PoolVenue
+│   ├── aeroGaugeManager.ts       # Aero GaugeCreated → AeroGauge
+│   ├── positionIncome.ts         # Collected fees and claimed rewards per position
 │   ├── balancerVault.ts          # Balancer V2 pool join/exit events
 │   ├── balancerShared.ts         # Balancer position value calculation
 │   ├── lifiDiamond.ts            # LiFi swap tracking & slippage
 │   ├── swapTracking.ts           # Swap-to-position association & cost tracking
 │   ├── constants.ts              # Addresses, IDs, whitelists
-│   ├── common.ts                 # EOA detection, ETH price helpers
+│   ├── common.ts                 # User side / withdrawal rules, address types, ABI-word readers, ETH price
 │   ├── config.ts                 # Service lookup helpers
 │   └── libs/
 │       ├── TickMath.ts           # Uniswap V3 tick-to-price math
@@ -72,7 +75,7 @@ subgraphs/babydegen/babydegen-optimism/
 | AeroGaugeManager | `0xbF234b32c5e58868243A4a14831626f3EdE7b183` | `GaugeCreated` → Aero v2 pool→gauge map |
 
 ### Chainlink Price Feeds
-- ETH/USD, USDC/USD, USDT/USD, DAI/USD (addresses in `constants.ts`)
+- The `*_USD_FEED` constants in `constants.ts`, wired to tokens in `tokenConfig.ts`
 
 ---
 
@@ -92,6 +95,10 @@ Registered autonomous agent service.
 | positions | `[ProtocolPosition!]!` | @derivedFrom |
 | balances | `[TokenBalance!]!` | @derivedFrom |
 | positionIds | `[String!]!` | Array of position identifiers |
+| agentInstances | `[Bytes!]!` | Agent EOAs from `RegisterInstance` — never the user side of a funding flow |
+
+#### ServiceRegistration
+One per serviceId (id: serviceId as a UTF-8 string), written by `RegisterInstance`. `agentInstances` collects every agent EOA registered for the service, and can fill before the `Service` exists; it is copied onto `Service.agentInstances`, which the funding rules read.
 
 #### ServiceIndex
 Maps serviceId to current service safe (handles safe migrations).
@@ -100,7 +107,7 @@ Maps serviceId to current service safe (handles safe migrations).
 Singleton tracking all service addresses (used by portfolio scheduler for iteration).
 
 #### AddressType
-Cached EOA/contract detection to avoid repeated RPC calls.
+Cached EOA/contract detection (`isContract`) and Safe detection (`isSafe`, `getThreshold()` answers) to avoid repeated RPC calls.
 
 ### Portfolio Tracking
 
@@ -117,7 +124,7 @@ Current portfolio metrics for an agent (id: service safe address).
 | firstTradingTimestamp | `BigInt` | When agent started trading |
 | totalPositions | `Int!` | Count of active positions |
 
-Also tracks: ETH-adjusted metrics (ROI - ETHDelta), reward tracking, unrealized PnL.
+Also tracks: reward tracking, unrealized PnL, and `ethAdjusted*` fields that are deprecated and equal their unadjusted counterparts.
 
 #### AgentPortfolioSnapshot
 Immutable daily snapshots at UTC midnight (id: `<serviceSafe>-<dayTimestamp>`).
@@ -142,7 +149,27 @@ Individual LP positions across protocols (id: `<agent>-<protocol>-<tokenId>` for
 | tickLower/tickUpper | `BigInt` | Position range (CL positions) |
 | claimableReward | `BigDecimal!` | Unclaimed rewards |
 | claimableRewardUSD | `BigDecimal!` | USD value of rewards |
+| collectedFees0/1, collectedFeesUSD | `BigDecimal!` | Fee part of each `Collect` paid to the Safe (principal excluded), USD at the Collect |
+| claimedRewards, claimedRewardsUSD | `BigDecimal!` | Gauge rewards claimed for this position (reward-token units), USD at the claim |
 | swapSlippageUSD | `BigDecimal!` | Associated swap slippage costs |
+
+#### NFTPositionMapping
+NFT to position (id: `<protocol>-<tokenId>`), so a CL or Uniswap V3 event finds its position without `ownerOf`. CL mappings are written at the mint. A Uniswap V3 mapping follows the NFT: `handleUniV3Transfer` points it at the receiving service Safe's row, or drops it when that Safe has no row yet (the refresh maps the row it creates).
+
+#### UncollectedPrincipal
+Principal a `DecreaseLiquidity` released and no `Collect` has paid out yet (id: `<protocol>-<tokenId>`, as `NFTPositionMapping`). Each `Collect` pays it first; only the rest counts as fees.
+
+#### ClaimableRewardBeforeBlock
+A position's `claimableReward` as it stood before the first refresh in a block (id: the position id), so a reward claim in that block is split by what each position had earned when no `Withdraw` names its tokenId.
+
+#### CreditedRewardClaim
+Immutable marker for a reward claim log already credited to a position (id: tx hash + log index), so one `EmissionsClaimed` is credited once.
+
+#### V2PoolVenue
+Venue of a v2 pool, written by the Aero v2 factory handler that created it (id: pool address; `protocol`, `stable`). A pool with no row is a legacy Velodrome v2 pool.
+
+#### AeroGauge
+Aero pool to gauge, from the GaugeManager's `GaugeCreated` (id: pool address). Read by `resolveV2Gauge`; a later `GaugeCreated` for the same pool replaces it.
 
 ### Token & Pricing
 
@@ -153,6 +180,8 @@ Token metadata with multi-source pricing.
 | derivedUSD | `BigDecimal!` | Current best price |
 | priceSources | `[PriceSource!]!` | Available sources |
 | priceConfidence | `String!` | Confidence level |
+| priceStale | `Boolean!` | `derivedUSD` is the last valid price; no source gave a valid one since |
+| depegged | `Boolean!` | Stablecoin (`STABLECOINS`) last priced below `DEPEG_THRESHOLD` |
 
 #### TokenBalance
 Agent's token holdings (id: `<serviceSafe>-<tokenAddress>`).
@@ -163,11 +192,12 @@ Price source details and immutable price update history.
 ### Funding
 
 #### FundingBalance
-Tracks funding flows in/out (id: service safe address).
+Tracks funding in and withdrawals (id: service safe address).
 | Field | Type | Notes |
 |-------|------|-------|
 | totalInUsd | `BigDecimal!` | Total funded amount |
-| totalOutUsd | `BigDecimal!` | Total outflows |
+| totalOutUsd | `BigDecimal!` | Deprecated: no longer written, stays 0 (as `fundingOutTxs` stays empty); outflows are only in `totalWithdrawnUsd` |
+| netUsd | `BigDecimal!` | Equals `totalInUsd` |
 | totalWithdrawnUsd | `BigDecimal!` | Total withdrawn |
 | firstInTimestamp | `BigInt` | When first funded |
 
@@ -204,18 +234,20 @@ Daily population-level stats at UTC midnight (id: `<dayTimestamp>`).
 - `handleRegisterInstance`: Records registration, filters by `OPTIMUS_AGENT_ID = 40`, excludes test service IDs [29, 37, 56, 58]
 - `handleCreateMultisigWithAgents`: Creates Service entity, registers for snapshots, creates Safe template instances for service safe and operator safe
 
-### 2. Token Transfers (USDC + tracked tokens)
+### 2. Token Transfers (every whitelisted token)
 **Files**: `src/funding.ts`, `src/tokenBalances.ts`
 - `handleUSDC` → redirects to `handleERC20Transfer`
-- `handleERC20Transfer`: Central handler for all token transfers. Updates TokenBalance with USD values, identifies funding flows (EOA/operator → service = funding in), updates FundingBalance
-- **Only USDC Native and ETH affect funding metrics**; other tokens tracked for balance only
+- `handleERC20Transfer`: Central handler for all token transfers. Updates TokenBalance with USD values, attributes gauge rewards to positions, and updates FundingBalance
+- **Every tracked token and ETH counts as funding in, or as a withdrawal out, valued at its price at the transfer.** The user side (`isUserSide`, `common.ts`) is the operator Safe, any Safe, the tx sender, or an EOA that is not one of the service's agent EOAs; the zero address (mints) and the agent EOAs never are. An outflow to any other contract is a withdrawal only when the tx receipt shows nothing coming back to the Safe — no ERC-20/ERC-721 `Transfer` to it, no WETH `Deposit` for it (wrapping) and no `SafeReceived` (`isWithdrawalRecipient`). This catches EIP-7702 wallets (they have code) and keeps swaps and LP entries out. Token Transfer handlers and the Safe's `ExecutionSuccess` set `receipt: true` (the other Safe handlers never read it)
+- Withdrawals go to `totalWithdrawnUsd` (added back into `finalValue`); they never reduce `netUsd`
+- Matchstick has no `ethereum.hasCode`, so `processERC20Transfer` / `processSafeReceived` take the address-type reader; handlers pass `getAddressType`, tests pass a reader over seeded `AddressType` rows
 
 ### 3. VeloNFTManager (Velodrome CL)
 **File**: `src/veloNFTManager.ts`
 - `handleNFTTransfer`: FROM zero = position created; TO zero = position closed
 - `handleIncreaseLiquidity`: Updates position with new liquidity
-- `handleDecreaseLiquidity`: Updates after partial withdrawal
-- `handleCollect`: Tracks reward collection
+- `handleDecreaseLiquidity`: Records the released principal, then refreshes the position. A decrease leaving zero liquidity, or whose `positions()` reverts because the NFT is burned later in the same block (`eth_call` reads end-of-block state), closes it: the exit is valued from the event amounts and the stored tokens, decreases in the burn block add up, and a `CL exit:` warning is logged. A refresh later in the exit block (e.g. an IncreaseLiquidity reading end-of-block zero liquidity) keeps that exit, and any other decrease on a closed row (burned with no exit recorded, or the exit already booked in an earlier block) is skipped and logged. A CL transfer out does not close the row (a staked NFT leaves the Safe while still open), so a decrease by a wallet the NFT was sent to is still booked as the Safe's exit
+- `handleCollect`: Records the fee part of a `Collect` paid to the Safe — the amount minus principal that `DecreaseLiquidity` released since the last collect (`UncollectedPrincipal`). Looks the position up by `<protocol>-<tokenId>` like the other handlers; a closed position is not refreshed, so its exit amounts stay
 - All call `refreshVeloCLPosition()` to load current on-chain state
 
 ### 3b. AeroNFTManager (Aero CL)
@@ -232,7 +264,8 @@ Daily population-level stats at UTC midnight (id: `<dayTimestamp>`).
 
 ### 4. UniV3NFTManager (Uniswap V3)
 **File**: `src/uniV3NFTManager.ts`
-- Same event pattern as VeloNFTManager
+- Same event pattern as VeloNFTManager, with the same fee accounting (`NFTPositionMapping` `uniswap-v3-<tokenId>`)
+- `handleUniV3DecreaseLiquidity` finds the position through its mapping, not `ownerOf`, and closes it on a full exit with the same rules as CL (`recordFullExit`, `positionIncome.ts`): a `positions()` revert is the NFT burned later in the block, decreases in the burn block add up, and an `UNISWAP V3 exit:` warning is logged. A decrease on a closed row is skipped (and logged) unless that row's exit was recorded in this block, so neither a new owner's decrease after a transfer out nor one on an already exited NFT replaces the agent's exit; not by `ownerOf`, which reads end-of-block state and would name the new owner for the Safe's own exit followed by a transfer out in the same block. `handleUniV3Transfer` closes the row on a transfer out (and recalculates the portfolio, as nothing values the NFT after it leaves), and on a transfer in points the mapping at the receiving Safe's row (reopening it when it was closed with no exit), or drops the mapping and logs `UNISWAP V3:` when that Safe ends the block with no row
 - Calls `refreshUniV3Position()` for on-chain state
 
 ### 5. VeloV2Sugar (Bootstrap)
@@ -270,11 +303,15 @@ Daily population-level stats at UTC midnight (id: `<dayTimestamp>`).
 - **AeroV2Pool**: same handlers as VeloV2Pool except `handleAeroV2Mint` — Aero pools emit
   `Mint(indexed sender, indexed to, amount0, amount1)` and have no `stable()`. Positions are
   labelled `aero-v2` via `v2ProtocolFor(pool)` (`V2PoolVenue`); rewards are xAERO (unpriced).
-- **Safe**: SafeReceived, ExecutionSuccess, ExecutionFromModuleSuccess for ETH tracking
+- **Safe**: `SafeReceived` for ETH in. ETH out is read from the Safe's own `execTransaction` calldata when the tx calls the Safe (`ethSentBySafe`, `safe.ts`): its Call's value, or each Call of a `multiSend` it delegatecalls. The outer tx's `value` is the executor's, not the Safe's. Each recipient goes through `isWithdrawalRecipient`; ETH to an agent EOA lowers value as a cost. A module execution's calldata, or an execTransaction relayed through another contract, is not readable here: its ETH is not counted and a `SAFE_ETH:` warning is logged. A send to an indexed Safe (the operator Safe) is counted once: its own `SafeReceived` skips a send the decoder already read from the same tx, and still records one sent through a relayed execution
 
 ---
 
 ## Core Logic
+
+### Funding and withdrawals
+The rules are under *2. Token Transfers*; ETH follows them too (see the *Safe* template under *10.
+Dynamic Templates*), valued as WETH, with portfolio metrics recalculated after every funding or withdrawal update.
 
 ### Portfolio Calculation Flow
 ```
@@ -286,7 +323,7 @@ handleBlock (every 1800 blocks)
       → calculateUninvestedValue() (sum whitelisted token balances)
       → calculateActualROI() (from closed positions only)
       → getTokenPriceUSD() (cached, multi-source)
-      → Calculate ETH-adjusted metrics (ROI - ETHDelta)
+      → Set the deprecated ethAdjusted* fields equal to their unadjusted values
     → Create AgentPortfolioSnapshot (immutable)
   → calculateGlobalMetrics()
     → Collect all agent snapshots for the day
@@ -301,12 +338,20 @@ handleBlock (every 1800 blocks)
   - Formula: `(Sum(GrossGains) - Sum(Investments) - Sum(Costs)) / (Sum(Investments) + Sum(Costs))`
 - `calculatePositionROI()`: Individual position ROI when closed
   - `Investment = entryAmountUSD + totalCostsUSD`
-  - `NetGain = exitAmountUSD - investmentUSD`
+  - `GrossGain = exitAmountUSD + collectedFeesUSD + claimedRewardsUSD`
+  - `NetGain = GrossGain - investmentUSD`
   - `PositionROI = netGain / investment * 100`
 
+### Claimed rewards (`src/positionIncome.ts`)
+A reward Transfer into the Safe is credited to positions, never to funding:
+- From a gauge (`ProtocolPosition.rewardsContract`): to the tokenId of the first `Withdraw(user = Safe, tokenId, …)` that gauge emits after it in the receipt. With no such Withdraw, a CL `getReward(tokenId)` claim is split across the Safe's active CL positions on that gauge by `claimableReward` as it stood before the block (`ClaimableRewardBeforeBlock` — a refresh in the claim's block writes it to 0), by liquidity when all are 0. A v2 gauge holds one LP position per pool.
+- Aero CL (`aero-cl`): from the gauge's `EmissionsClaimed(_account, _tokenId, _recipient, _rewardAmount)` with `_recipient` = Safe: each event credits its `_tokenId` its own `_rewardAmount`. A Transfer of the Aero CL reward token (`rewardTokenFor(PROTOCOL_AERO_CL)`: xAERO here, Aero's AERO on Base) pays the not-yet-credited events, in log order, whose amounts it covers; each is credited once (`CreditedRewardClaim`). A claim not covered by the Transfer, or for a tokenId the Safe doesn't own, is skipped and logged.
+- A Withdraw that names a tokenId the Safe does not track is logged and not split across its other positions. A v2 gauge reward that arrives after the position closed (a `getReward` after the exit) goes to the most recently closed v2 position on that gauge. An `EmissionsClaimed` counts only when the position's own gauge (`rewardsContract`) emitted it.
+- `aero-v2`: not attributed to a position yet; a reward Transfer to a Safe that holds or held an `aero-v2` position (rewards are often claimed after the exit) logs a `REWARDS:` warning.
+Fees and rewards already sit in the Safe, so portfolio `finalValue` is unchanged by them.
+
 ### ETH-Adjusted Metrics
-- `ETHDelta = (CurrentEthPrice / FirstEthPrice - 1) * 100`
-- `ETH-adjusted ROI = ROI - ETHDelta` (removes ETH price impact from performance)
+Deprecated: every `ethAdjusted*` field equals its unadjusted counterpart. Subtracting ETH's whole price move misstated every Safe that never held ETH.
 
 ### Swap-to-Position Association
 - 20-minute window for matching swaps to position entries
@@ -315,20 +360,26 @@ handleBlock (every 1800 blocks)
 
 ### Position State Management
 - `isActive: true` → open position, current values updated on-chain
-- `isActive: false` → closed position, entry/exit amounts frozen
+- `isActive: false` → closed position. CL / Uni V3 rows keep their entry and exit amounts; v2 rows: see *v2 position cycles*
 - Both active and closed positions used in portfolio calculations
 
 ---
+
+### v2 position cycles
+- A v2 position is one row per pool, reused across cycles: LP minted into a closed row (the LP mint Transfer, before its refresh) restarts it — income, exit, costs, ROI and entry tracking reset as for a new row, and the Mint records the new entry. The Mint after the LP mint that found the row missing or closed (`PendingMintPosition.startsEntry`) replaces the entry; every other Mint, in that tx or a later top-up, adds to it; either way `investmentUSD` = entry + `totalCostsUSD`. A partial Burn records an exit but leaves the row active, so a later top-up keeps its income. `isActive` comes from end-of-block `balanceOf`, so a full exit and re-entry in one block keeps the old cycle (accepted)
 
 ## Price Discovery
 
 **File**: `src/priceDiscovery.ts`, `src/tokenConfig.ts`
 
 ### Resolution Order
-1. **Chainlink feeds** (primary for ETH, USDC, DAI, USDT)
-2. **DEX pools** (Velodrome CL/SlipStream, Velodrome V2, Uniswap V3)
-3. **Stablecoin fallback** (assume $1 for USDC/USDT/DAI/LUSD/DOLA)
-4. **Hardcoded** ($1 for DOLA)
+1. **Chainlink feeds** (primary for ETH, USDC, DAI, USDT, WBTC, sUSD)
+2. **DEX pools** (Velodrome CL/SlipStream, Velodrome V2, Uniswap V3) — DOLA included. A v2 *stable* pool is priced from its `getAmountOut` quote for one token, not its reserve ratio (wrong on a stable curve); whether a pool is stable comes from its `V2PoolVenue` row first (Aero v2 pools have no `stable()`), else `stable()` (`v2PoolKind`)
+3. **No valid price**: the last valid price, with `priceStale = true`; a token never priced is 0. There is no $1 fallback
+- A pool's pair leg is priced from its own token config, never taken as $1: its Chainlink source, else its `velodrome_v2` pool when that pool's pair leg has a feed (LUSD); otherwise the pool gives no price (`getPairTokenPrice`). Feed staleness is judged against the event's block, within `STALE_PRICE_THRESHOLD`
+- `STABLECOINS` tokens have no lower price bound ($0–1.50; USDC $0–1.05), so a depeg is recorded: `depegged` below `DEPEG_THRESHOLD`
+- Sources are read by priority: a priority-2 source (e.g. BOLD's BOLD/LUSD pool) counts only when every priority-1 source gives no price; sources sharing a priority are averaged by confidence. Base does the same
+- A stable pool's `getAmountOut` quote is net of the pool's swap fee, so its price reads below the fee-free price by that fee (about 0.9995 × at Velodrome's default 5 bps stable fee). This bias is accepted: it is far inside the `DEPEG_THRESHOLD` depeg line, and adding the fee back would need a factory `getFee` read per quote
 
 ### Caching
 - 5-minute cache for token prices
@@ -336,11 +387,10 @@ handleBlock (every 1800 blocks)
 - EOA detection cached in AddressType entity
 
 ### Tracked Tokens
-WETH, DAI, USDT, DOLA, BOLD (legacy `0x087c…`), LUSD, FRAX, sDAI, USDC (Native + Bridged), USDT0, oUSDT, USDGLO, VELO,
-plus the agent's BOLD `0x0356…` (Velodrome v2 stable BOLD/USDC `0x8828…`, quoted with
-`getAmountOut` by the `velodrome_v2_stable` source, since a stable pool's reserve ratio is not its price), USDS and
-xAERO. USDS and xAERO have no price source yet: tracked for balances, valued at $0, and
-`getPriceFromSources` logs a warning. Neither is on the $1 stablecoin fallback.
+WETH, WBTC, DAI, USDT, DOLA, BOLD (legacy `0x087c…`), LUSD, FRAX, sDAI, sUSD, USDC (Native + Bridged), USDT0, oUSDT, USDGLO, VELO,
+plus the agent's BOLD `0x0356…` (Velodrome v2 stable BOLD/USDC `0x8828…`), USDS and xAERO. USDS and xAERO have no price source yet: tracked for balances,
+valued at $0, and `getPriceFromSources` logs a warning. BOLD `0x0356…` and USDS are in `STABLECOINS`, so
+`depegged` is set when they are priced below `DEPEG_THRESHOLD`.
 
 ---
 
@@ -463,9 +513,9 @@ yarn test                           # Run Matchstick tests
 3. **Position ID format**: `<agent>-<protocol>-<tokenId>` (CL) / `<agent>-<protocol>-<pool>` (v2) — the label keeps the two NFPMs' token ids apart.
 4. **ROI from closed positions only**: `calculateActualROI()` uses only closed positions. Active positions contribute to `positionsValue` and `unrealisedPnL` but not ROI.
 5. **Multi-protocol support**: Velodrome CL, Velodrome V2, Aero CL, Aero v2, Uniswap V3, Balancer — each with separate handler files but unified portfolio calculation.
-6. **Price discovery is multi-source**: Chainlink primary, DEX fallback, stablecoin fallback. 5-minute cache. Confidence scoring.
-7. **Funding tracking**: Only USDC Native and ETH affect `FundingBalance`. Other tokens tracked for balance only. Funding direction determined by EOA/operator detection.
-8. **ETH-adjusted metrics**: Separates agent alpha from ETH price movement. `ETHDelta = (currentEthPrice/firstEthPrice - 1) * 100`.
+6. **Price discovery is multi-source**: Chainlink primary, DEX fallback, then the last valid price marked stale. No $1 fallback. 5-minute cache. Confidence scoring.
+7. **Funding tracking**: Every tracked token and ETH moves `FundingBalance` (funding in, `totalWithdrawnUsd` out) through `isUserSide` / `isWithdrawalRecipient` (receipt-based for contract recipients). Agent EOAs are never the user side.
+8. **ETH-adjusted metrics**: Deprecated; equal to the unadjusted values.
 9. **Swap slippage**: LiFi swaps associated with position entries within 20-min window. Time-bucket system for efficiency.
 10. **Population metrics**: Daily median ROI/APR across all agents, 7-day SMA, separates "lifetime active" (>2 positions) vs stagnant agents.
 11. **Safe template**: Dynamic data source created for each service safe and operator safe — tracks ETH in/out via Safe events.

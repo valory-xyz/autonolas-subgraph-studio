@@ -4,8 +4,10 @@ import { VelodromeV2Pool } from "../generated/templates/VeloV2Pool/VelodromeV2Po
 import { AggregatorV3Interface } from "../generated/templates/Safe/AggregatorV3Interface"
 import { BalancerV2WeightedPool } from "../generated/BalancerVault/BalancerV2WeightedPool"
 import { BalancerV2Vault } from "../generated/BalancerVault/BalancerV2Vault"
-import { getTokenConfig } from "./tokenConfig"
-import { USDC_NATIVE, USDT, DAI, LUSD, DOLA, WETH, Q96, BALANCER_VAULT } from "./constants"
+import { getTokenConfig, TokenConfig, PriceSourceConfig } from "./tokenConfig"
+import { convertTokenAmount } from "./tokenUtils"
+import { V2PoolVenue } from "../generated/schema"
+import { Q96, BALANCER_VAULT, V2PoolKind } from "./constants"
 
 // Chainlink price adapter with validation
 export function getChainlinkPrice(feedAddress: Address, blockTimestamp: BigInt = BigInt.fromI32(0)): BigDecimal {
@@ -25,8 +27,8 @@ export function getChainlinkPrice(feedAddress: Address, blockTimestamp: BigInt =
     // Chainlink updatedAt timestamp
     let updatedAt = roundData.value3
     
-    // Stale data threshold (24 hours in seconds)
-    const STALE_PRICE_THRESHOLD = BigInt.fromI32(86400)
+    // 24h heartbeat + 1h grace, so a feed is not rejected just before its next update
+    const STALE_PRICE_THRESHOLD = BigInt.fromI32(90000)
     
     // Calculate how old the data is
     let dataAge = blockTimestamp.minus(updatedAt)
@@ -51,7 +53,8 @@ export function getUniswapV3Price(
   token: Address,
   poolAddress: Address,
   pairToken: Address,
-  fee: number
+  fee: number,
+  blockTimestamp: BigInt
 ): BigDecimal {
   
   let pool = VelodromeCLPool.bind(poolAddress) // Same interface
@@ -74,6 +77,10 @@ export function getUniswapV3Price(
   
   let token0 = token0Result.value
   let token1 = token1Result.value
+  // The price is scaled by the other side's decimals and price, so it must be `pairToken`
+  if (!poolPairs(poolAddress, token0, token1, token, pairToken)) {
+    return BigDecimal.fromString("0")
+  }
   
   // Get actual token decimals from config instead of hardcoding
   let targetTokenConfig = getTokenConfig(token)
@@ -87,11 +94,6 @@ export function getUniswapV3Price(
   let token0Decimals: number
   let token1Decimals: number
 
-
-  // Get current block timestamp from slot0 if available
-  // Convert to BigInt as observationCardinality is a number
-  let blockTimestamp = BigInt.fromI32(slot0.value2) // observationCardinality contains the timestamp
-  
   if (token.equals(token0)) {
     token0Decimals = targetTokenConfig.decimals
     token1Decimals = pairTokenConfig.decimals
@@ -117,17 +119,19 @@ export function getUniswapV3Price(
 export function getVelodromePrice(
   token: Address,
   poolAddress: Address,
-  pairToken: Address
+  pairToken: Address,
+  blockTimestamp: BigInt
 ): BigDecimal {
   // Use same logic as Uniswap V3 since Velodrome CL uses similar interface
-  return getUniswapV3Price(token, poolAddress, pairToken, 0)
+  return getUniswapV3Price(token, poolAddress, pairToken, 0, blockTimestamp)
 }
 
 // Balancer V2 price adapter for weighted pools
 export function getBalancerPrice(
   token: Address,
   poolAddress: Address,
-  pairToken: Address
+  pairToken: Address,
+  blockTimestamp: BigInt
 ): BigDecimal {
   
   const poolContract = BalancerV2WeightedPool.bind(poolAddress)
@@ -198,53 +202,10 @@ export function getBalancerPrice(
   const rawPrice = pairTokenBalanceHuman.div(tokenBalanceHuman)
   
   // Get pair token price
-  let pairPrice = getPairTokenPrice(pairToken, BigInt.fromI32(0))
+  let pairPrice = getPairTokenPrice(pairToken, blockTimestamp)
   let finalPrice = rawPrice.times(pairPrice)
   
   return finalPrice
-}
-
-// Velodrome V2 stable (x³y + y³x) pool adapter. The reserve ratio is only the marginal price
-// on a volatile x*y=k pool; on a stable pool it drifts far from it once the pool is imbalanced,
-// so quote 1 token through the pool's own curve with getAmountOut instead. getAmountOut takes
-// the pool fee off amountIn first, so this is the after-fee quote: low by the fee rate (~5 bps).
-export function getVelodromeV2StablePrice(
-  token: Address,
-  poolAddress: Address,
-  pairToken: Address
-): BigDecimal {
-  let targetTokenConfig = getTokenConfig(token)
-  let pairTokenConfig = getTokenConfig(pairToken)
-  if (targetTokenConfig == null || pairTokenConfig == null) {
-    return BigDecimal.fromString("0")
-  }
-
-  let pool = VelodromeV2Pool.bind(poolAddress)
-  let token0Result = pool.try_token0()
-  let token1Result = pool.try_token1()
-  if (token0Result.reverted || token1Result.reverted) {
-    log.warning("velodrome_v2_stable: token0()/token1() reverted on pool {} pricing {}", [poolAddress.toHexString(), token.toHexString()])
-    return BigDecimal.fromString("0")
-  }
-  // getAmountOut returns the pool's other token, so that must be the pair token
-  let isPair = (token.equals(token0Result.value) && pairToken.equals(token1Result.value)) ||
-    (token.equals(token1Result.value) && pairToken.equals(token0Result.value))
-  if (!isPair) {
-    log.warning("velodrome_v2_stable: pool {} does not pair {} with {}", [poolAddress.toHexString(), token.toHexString(), pairToken.toHexString()])
-    return BigDecimal.fromString("0")
-  }
-
-  let oneToken = BigInt.fromI32(10).pow(targetTokenConfig.decimals as u8)
-  let outResult = pool.try_getAmountOut(oneToken, token)
-  if (outResult.reverted) {
-    log.warning("velodrome_v2_stable: getAmountOut() reverted on pool {} pricing {}", [poolAddress.toHexString(), token.toHexString()])
-    return BigDecimal.fromString("0")
-  }
-
-  let pairAmount = outResult.value.toBigDecimal().div(
-    BigInt.fromI32(10).pow(pairTokenConfig.decimals as u8).toBigDecimal()
-  )
-  return pairAmount.times(getPairTokenPrice(pairToken))
 }
 
 // Helper functions
@@ -252,7 +213,8 @@ export function getVelodromeV2StablePrice(
 export function getVelodromeV2Price(
   token: Address,
   poolAddress: Address,
-  pairToken: Address
+  pairToken: Address,
+  blockTimestamp: BigInt
 ): BigDecimal {
   
   let pool = VelodromeV2Pool.bind(poolAddress)
@@ -276,6 +238,11 @@ export function getVelodromeV2Price(
     return BigDecimal.fromString("0")
   }
   
+  // Both the quote and the reserve ratio read the pool's other token as `pairToken`
+  if (!poolPairs(poolAddress, token0, token1, token, pairToken)) {
+    return BigDecimal.fromString("0")
+  }
+
   // Get reserves
   let reservesResult = pool.try_getReserves()
   
@@ -286,8 +253,17 @@ export function getVelodromeV2Price(
   let reserves = reservesResult.value
   let reserve0 = reserves.value0
   let reserve1 = reserves.value1
-  let blockTimestampLast = BigInt.fromI32(reserves.value2.toI32())
   
+  // On a stable (curve) pool the reserve ratio is not the price: quote one token instead
+  if (v2PoolKind(pool) == V2PoolKind.Stable) {
+    let oneToken = BigInt.fromI32(10).pow(targetTokenConfig.decimals as u8)
+    let quote = pool.try_getAmountOut(oneToken, token)
+    if (quote.reverted) {
+      log.warning("PRICING: getAmountOut() reverted on stable pool {} pricing {}", [poolAddress.toHexString(), token.toHexString()])
+      return BigDecimal.fromString("0")
+    }
+    return convertTokenAmount(quote.value, pairToken).times(getPairTokenPrice(pairToken, blockTimestamp))
+  }
   
   // Get token decimals
   let token0Decimals: number
@@ -324,7 +300,7 @@ export function getVelodromeV2Price(
     }
     
     // Multiply by pair token price to get USD value
-    let pairPrice = getPairTokenPrice(pairToken, blockTimestampLast)
+    let pairPrice = getPairTokenPrice(pairToken, blockTimestamp)
     let finalPrice = rawPrice.times(pairPrice)
     
     return finalPrice
@@ -358,7 +334,7 @@ export function getVelodromeV2Price(
     }
     
     // Multiply by pair token price to get USD value
-    let pairPrice = getPairTokenPrice(pairToken, blockTimestampLast)
+    let pairPrice = getPairTokenPrice(pairToken, blockTimestamp)
     let finalPrice = rawPrice.times(pairPrice)
     
     return finalPrice
@@ -367,34 +343,65 @@ export function getVelodromeV2Price(
   return BigDecimal.fromString("0")
 }
 
-function getPairTokenPrice(pairToken: Address, blockTimestamp: BigInt = BigInt.fromI32(0)): BigDecimal {
-  let tokenHex = pairToken.toHexString().toLowerCase()
-  
-  // Direct stablecoin pricing - NO RECURSION
-  let stablecoins = [
-    USDC_NATIVE.toHexString().toLowerCase(),
-    USDT.toHexString().toLowerCase(),
-    DAI.toHexString().toLowerCase(),
-    LUSD.toHexString().toLowerCase(),
-    DOLA.toHexString().toLowerCase()  // Add DOLA to direct stablecoin list
-  ]
-  
-  for (let i = 0; i < stablecoins.length; i++) {
-    if (tokenHex == stablecoins[i]) {
-      return BigDecimal.fromString("1.0")
+// A pool's pair leg is priced from its own token config, never assumed to be $1: its Chainlink
+// feed, else its velodrome_v2 pool when that pool's pair leg has a Chainlink source configured. The
+// check limits which pools qualify, not depth: if that leg's feed then fails, its own pool is tried.
+function getPairTokenPrice(pairToken: Address, blockTimestamp: BigInt): BigDecimal {
+  let config = getTokenConfig(pairToken)
+  if (config !== null) {
+    let feed = sourceOfType(config!, "chainlink")
+    if (feed !== null) {
+      let feedPrice = getChainlinkPrice(feed!.address, blockTimestamp)
+      if (feedPrice.gt(BigDecimal.zero())) {
+        return feedPrice
+      }
+      log.warning("PRICING: pair token {} feed {} gave no valid price at block time {} (reverted, stale or not positive)", [
+        pairToken.toHexString(), feed!.address.toHexString(), blockTimestamp.toString()
+      ])
+    }
+    let pool = sourceOfType(config!, "velodrome_v2")
+    if (pool !== null && pool!.pairToken !== null) {
+      let poolPairConfig = getTokenConfig(pool!.pairToken!)
+      if (poolPairConfig !== null && sourceOfType(poolPairConfig!, "chainlink") !== null) {
+        return getVelodromeV2Price(pairToken, pool!.address, pool!.pairToken!, blockTimestamp)
+      }
     }
   }
-  
-  // WETH - direct Chainlink call (NO RECURSION)
-  if (tokenHex == WETH.toHexString().toLowerCase()) {
-    let ethFeed = Address.fromString("0x13e3Ee699D1909E989722E753853AE30b17e08c5")
-    // Pass block timestamp for staleness checking if available
-    let ethPrice = getChainlinkPrice(ethFeed, blockTimestamp)
-    return ethPrice.gt(BigDecimal.fromString("0")) ? ethPrice : BigDecimal.fromString("3000.0")
+  log.warning("PRICING: pair token {} has no valid feed price and no feed-paired pool — its pools give no price", [pairToken.toHexString()])
+  return BigDecimal.zero()
+}
+
+// A v2 pool's kind: the V2PoolVenue row its factory wrote first (Aero v2 pools have no stable()),
+// else the pool's stable()
+export function v2PoolKind(pool: VelodromeV2Pool): V2PoolKind {
+  let venue = V2PoolVenue.load(pool._address)
+  if (venue != null) {
+    return venue.stable ? V2PoolKind.Stable : V2PoolKind.Volatile
   }
-  
-  // Safe fallback for unknown tokens
-  return BigDecimal.fromString("1.0")
+  let stableResult = pool.try_stable()
+  if (stableResult.reverted) {
+    return V2PoolKind.Unknown
+  }
+  return stableResult.value ? V2PoolKind.Stable : V2PoolKind.Volatile
+}
+
+function poolPairs(pool: Address, token0: Address, token1: Address, token: Address, pairToken: Address): boolean {
+  if ((token.equals(token0) && pairToken.equals(token1)) || (token.equals(token1) && pairToken.equals(token0))) {
+    return true
+  }
+  log.warning("PRICING: pool {} does not pair {} with {}; not used", [
+    pool.toHexString(), token.toHexString(), pairToken.toHexString()
+  ])
+  return false
+}
+
+function sourceOfType(config: TokenConfig, sourceType: string): PriceSourceConfig | null {
+  for (let i = 0; i < config.priceSources.length; i++) {
+    if (config.priceSources[i].sourceType == sourceType) {
+      return config.priceSources[i]
+    }
+  }
+  return null
 }
 
 function sqrtPriceToToken0Price(
@@ -424,8 +431,8 @@ function sqrtPriceToToken0Price(
   
   let price = sqrtPrice.times(sqrtPrice) // Square it safely
   
-  // Decimal adjustment with bounds checking
-  let decimalDiff = token1Decimals - token0Decimals
+  // sqrtPrice² is raw token1 per raw token0; scale by 10^(token0Decimals - token1Decimals)
+  let decimalDiff = token0Decimals - token1Decimals
   if (decimalDiff > 0 && decimalDiff <= 18) {
     let multiplier = BigDecimal.fromString("1")
     for (let i = 0; i < decimalDiff; i++) {

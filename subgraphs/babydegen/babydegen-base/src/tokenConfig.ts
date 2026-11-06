@@ -1,4 +1,4 @@
-import { Address, BigInt, log } from "@graphprotocol/graph-ts"
+import { Address, BigInt } from "@graphprotocol/graph-ts"
 import {
   ETH_USD_FEED,
   USDC_USD_FEED,
@@ -120,8 +120,8 @@ function usdcReferencedStable(address: Address, symbol: string, decimals: i32): 
   ])
 }
 
-// Feed-first stable (no $1 assumption, so a depeg shows); an optional USDC-pool fallback suits
-// only 6-decimal tokens, as the CL adapter's decimal adjustment is inverted otherwise.
+// A stablecoin priced off its own Chainlink feed, with an optional Aero USDC pool as the
+// priority-2 fallback when the feed gives no valid price.
 function chainlinkStable(
   address: Address,
   symbol: string,
@@ -133,12 +133,6 @@ function chainlinkStable(
     new PriceSourceConfig(Address.fromString(getChainlinkFeedSafe(feedName)), "chainlink", 1, 95)
   ]
   if (fallbackPool !== null) {
-    if (decimals != 6) {
-      log.critical("chainlinkStable: {} has {} decimals; a USDC pool fallback would misprice it", [
-        symbol,
-        decimals.toString()
-      ])
-    }
     sources.push(new PriceSourceConfig(fallbackPool, "velodrome_slipstream", 2, 80, USDC_NATIVE))
   }
   return new TokenConfig(address, symbol, decimals, sources)
@@ -222,7 +216,6 @@ function initializeTokens(): void {
 
   TOKENS.set(USDT.toHexString().toLowerCase(), chainlinkStable(USDT, "USDT", 6, "USDT_USD",
     Address.fromString("0xD448990883e3Bf9cDD8ebCA368A3ECF9D629aAf7"))) // Aero USDC/USDT CL
-  // 18-decimal, so feed-only (see chainlinkStable).
   TOKENS.set(DAI.toHexString().toLowerCase(), chainlinkStable(DAI, "DAI", 18, "DAI_USD", null))
   TOKENS.set(USDE.toHexString().toLowerCase(), chainlinkStable(USDE, "USDe", 18, "USDE_USD", null))
   TOKENS.set(USDS.toHexString().toLowerCase(), chainlinkStable(USDS, "USDS", 18, "USDS_USD", null))

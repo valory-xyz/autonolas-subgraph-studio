@@ -13,36 +13,29 @@ import { VeloVoter } from "../generated/templates/VeloV2Pool/VeloVoter"
 import { VeloV2Gauge } from "../generated/templates/VeloV2Pool/VeloV2Gauge"
 import { VeloV2Pool as VeloV2PoolTemplate } from "../generated/templates"
 import { getTokenPriceUSD } from "./priceDiscovery"
+import { v2PoolKind } from "./priceAdapters"
 import { getServiceByAgent } from "./config"
 import { parseTotalSlippageFromBucket, associateSwapsWithPosition, calculatePortfolioMetrics } from "./helpers"
-import { getTokenDecimals, getTokenSymbol } from "./tokenUtils"
-import { calculatePositionROI } from "./roiCalculation"
-import { PROTOCOL_VELODROME_V2, VELO_VOTER, PROTOCOL_AERO_V2, rewardTokenFor } from "./constants"
+import { getTokenSymbol, convertTokenAmount } from "./tokenUtils"
+import { calculatePositionROI, initializePositionIncome } from "./roiCalculation"
+import { PROTOCOL_VELODROME_V2, VELO_VOTER, PROTOCOL_AERO_V2, rewardTokenFor, V2_STABLE_FEE_BPS, V2_VOLATILE_FEE_BPS, V2PoolKind } from "./constants"
 
 export function v2ProtocolFor(poolAddress: Address): string {
   const venue = V2PoolVenue.load(poolAddress)
   return venue != null ? venue.protocol : PROTOCOL_VELODROME_V2
 }
 
-// Fee tier in bps: 0.05% stable, 0.30% volatile.
-function v2FeeBps(stable: boolean): i32 {
-  return stable ? 5 : 30
-}
-
+// Fee tier of a v2 pool by kind (v2PoolKind)
 function setV2PoolFee(pp: ProtocolPosition, poolContract: VelodromeV2Pool): void {
-  const venue = V2PoolVenue.load(Address.fromBytes(pp.pool))
-  if (venue != null) {
-    pp.fee = v2FeeBps(venue.stable)
-    return
-  }
-  const stableResult = poolContract.try_stable()
-  if (!stableResult.reverted) {
-    pp.fee = v2FeeBps(stableResult.value)
+  const kind = v2PoolKind(poolContract)
+  if (kind != V2PoolKind.Unknown) {
+    pp.fee = kind == V2PoolKind.Stable ? V2_STABLE_FEE_BPS : V2_VOLATILE_FEE_BPS
   }
 }
 
 // Resolve a v2 pool's gauge. Returns Address.zero() when the pool has no gauge.
-// - aero-v2: no gauge() and no Voter gauges(pool); read AeroGauge (written by handleAeroGaugeCreated) on every refresh.
+// - aero-v2: no gauge() and no Voter gauges(pool); read AeroGauge (written by handleAeroGaugeCreated) on every refresh
+//   and written to rewardsContract, which positionIncome matches rewards on.
 // - legacy: the Velodrome Voter's gauges(pool), cached on the position's rewardsContract. A Voter
 //   revert (transient) is logged and not cached, so the next refresh retries; a zero gauge
 //   (legitimate) is silent and not cached, so a later-gauged pool is picked up.
@@ -81,15 +74,6 @@ const VELODROME_V2_ROUTER = Address.fromString("0xa062ae8a9c5e11aaa026fc2670b0d6
 // Cache for VelodromeV2 pools to avoid repeated RPC calls
 let poolCache = new Map<string, boolean>()
 
-// Helper function to convert token amount to human readable format
-function toHumanAmount(amount: BigInt, decimals: i32): BigDecimal {
-  if (amount.equals(BigInt.zero())) {
-    return BigDecimal.zero()
-  }
-  
-  let divisor = BigInt.fromI32(10).pow(decimals as u8)
-  return amount.toBigDecimal().div(divisor.toBigDecimal())
-}
 
 // Ensure pool template is created for tracking events
 export function ensureVeloV2PoolTemplate(poolAddress: Address): void {
@@ -127,6 +111,7 @@ export function refreshVeloV2PositionWithEventAmounts(
   let pp = ProtocolPosition.load(positionId)
   if (!pp) {
     pp = new ProtocolPosition(positionId)
+    initializePositionIncome(pp)
     pp.agent = userAddress
     pp.service = userAddress // Link to service
     pp.protocol = v2ProtocolFor(poolAddress)
@@ -215,11 +200,9 @@ export function refreshVeloV2PositionWithEventAmounts(
   }
   
   // Convert event amounts to human readable format
-  const token0Decimals = getTokenDecimals(Address.fromBytes(pp.token0!))
-  const token1Decimals = getTokenDecimals(Address.fromBytes(pp.token1!))
   
-  const eventAmount0Human = toHumanAmount(eventAmount0, token0Decimals)
-  const eventAmount1Human = toHumanAmount(eventAmount1, token1Decimals)
+  const eventAmount0Human = convertTokenAmount(eventAmount0, Address.fromBytes(pp.token0!))
+  const eventAmount1Human = convertTokenAmount(eventAmount1, Address.fromBytes(pp.token1!))
   
   // Get USD values
   let token0Price = getTokenPriceUSD(Address.fromBytes(pp.token0!), block.timestamp, false)
@@ -294,6 +277,7 @@ export function refreshVeloV2Position(
     
     // Create a new position if it doesn't exist
     pp = new ProtocolPosition(positionId)
+    initializePositionIncome(pp)
     pp.agent = userAddress
     pp.service = userAddress // Link to service
     pp.protocol = v2ProtocolFor(poolAddress)
@@ -405,7 +389,7 @@ export function refreshVeloV2Position(
     const earnedRes = gauge.try_earned(userAddress)
     if (!earnedRes.reverted) {
       const rewardToken = rewardTokenFor(pp.protocol)
-      rewardAmount = toHumanAmount(earnedRes.value, getTokenDecimals(rewardToken))
+      rewardAmount = convertTokenAmount(earnedRes.value, rewardToken)
       rewardUSD = rewardAmount.times(getTokenPriceUSD(rewardToken, block.timestamp, false))
     } else {
       // Same silent-zero guard as the CL path: earned(address) reverting on a staked
@@ -446,11 +430,9 @@ export function refreshVeloV2Position(
     const userSharePercent = userShare.times(BigDecimal.fromString("100"))
     
     // Calculate current token amounts based on reserves and user's share
-    const token0Decimals = getTokenDecimals(Address.fromBytes(pp.token0!))
-    const token1Decimals = getTokenDecimals(Address.fromBytes(pp.token1!))
     
-    const reserve0Human = toHumanAmount(reserves.value0, token0Decimals)
-    const reserve1Human = toHumanAmount(reserves.value1, token1Decimals)
+    const reserve0Human = convertTokenAmount(reserves.value0, Address.fromBytes(pp.token0!))
+    const reserve1Human = convertTokenAmount(reserves.value1, Address.fromBytes(pp.token1!))
     
     pp.amount0 = reserve0Human.times(userShare)
     pp.amount1 = reserve1Human.times(userShare)
@@ -526,11 +508,9 @@ export function refreshVeloV2PositionWithBurnAmounts(
   }
   
   // Convert event amounts to human readable format
-  const token0Decimals = getTokenDecimals(Address.fromBytes(pp.token0!))
-  const token1Decimals = getTokenDecimals(Address.fromBytes(pp.token1!))
   
-  const eventAmount0Human = toHumanAmount(eventAmount0, token0Decimals)
-  const eventAmount1Human = toHumanAmount(eventAmount1, token1Decimals)
+  const eventAmount0Human = convertTokenAmount(eventAmount0, Address.fromBytes(pp.token0!))
+  const eventAmount1Human = convertTokenAmount(eventAmount1, Address.fromBytes(pp.token1!))
   
   // Get USD values for exit tracking
   let token0Price = getTokenPriceUSD(Address.fromBytes(pp.token0!), block.timestamp, false)
