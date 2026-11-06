@@ -21,13 +21,14 @@ import { Address, BigDecimal, ethereum } from "@graphprotocol/graph-ts"
 
 
 // Store pending position that needs mint data
-function storePendingPosition(txHash: Bytes, poolAddress: Bytes, positionId: Bytes, recipient: Bytes): void {
+function storePendingPosition(txHash: Bytes, poolAddress: Bytes, positionId: Bytes, recipient: Bytes, startsEntry: boolean): void {
   const id = txHash.toHexString() + "-" + poolAddress.toHexString()
   let pending = new PendingMintPosition(id)
   pending.txHash = txHash
   pending.poolAddress = poolAddress
   pending.positionId = positionId
   pending.recipient = recipient
+  pending.startsEntry = startsEntry
   pending.save()
   
 }
@@ -79,6 +80,7 @@ export function handleVeloV2Transfer(event: Transfer): void {
     if (service != null) {
       // Read before the refresh below marks the row active again (CLAUDE.md: v2 position cycles)
       const closed = ProtocolPosition.load(getVeloV2PositionId(to, event.address))
+      const startsEntry = closed == null || !closed.isActive
       if (closed != null && !closed.isActive) {
         startNewCycle(closed, event)
       }
@@ -91,7 +93,8 @@ export function handleVeloV2Transfer(event: Transfer): void {
         event.transaction.hash,
         event.address,
         getVeloV2PositionId(to, event.address),
-        to
+        to,
+        startsEntry
       )
     }
     return
@@ -149,9 +152,9 @@ function recordMintEntryAmounts(event: ethereum.Event, amount0: BigInt, amount1:
       const amount1USD = token1Price.times(amount1Human)
       const totalUSD = amount0USD.plus(amount1USD)
       
-      // The LP mint Transfer of a new row or a new cycle sets entryTxHash to this tx, and its refresh may
-      // already have filled the entry from current amounts: that Mint replaces the entry. A top-up adds to it
-      if (position.entryTxHash.equals(event.transaction.hash)) {
+      // The Mint after the LP mint that found the row missing or closed starts the entry, replacing
+      // anything its refresh filled in from current amounts. Every later Mint, in this tx or another, adds
+      if (pending.startsEntry) {
         position.entryAmount0 = amount0Human
         position.entryAmount0USD = amount0USD
         position.entryAmount1 = amount1Human

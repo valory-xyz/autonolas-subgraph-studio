@@ -2111,6 +2111,59 @@ describe("Aero v2 pools (factories + GaugeManager)", () => {
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "netGainUSD", "0")
   })
 
+  test("two LP mints in the tx that creates the row add up to its entry", () => {
+
+    createService(SERVICE_SAFE)
+    mockChainlinkEthUsd()
+    mockAeroUsdcPool()
+    saveAeroV2Venue(false)
+    // token0 = legacy AERO (priced ~$1.30) so entryAmountUSD is non-zero, as in the legacy Mint test
+    createMockedFunction(AERO_V2_POOL, "token0", "token0():(address)")
+      .withArgs([]).returns([ethereum.Value.fromAddress(AERO)])
+    createMockedFunction(AERO_V2_POOL, "token1", "token1():(address)")
+      .withArgs([]).returns([ethereum.Value.fromAddress(DUMMY1)])
+    createMockedFunction(AERO_V2_POOL, "stable", "stable():(bool)").withArgs([]).reverts()
+    createMockedFunction(AERO_V2_POOL, "balanceOf", "balanceOf(address):(uint256)")
+      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
+      .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(500))])
+    createMockedFunction(AERO_V2_POOL, "totalSupply", "totalSupply():(uint256)")
+      .withArgs([]).returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(1000))])
+    createMockedFunction(AERO_V2_POOL, "getReserves", "getReserves():(uint256,uint256,uint256)")
+      .withArgs([]).returns([
+        ethereum.Value.fromUnsignedBigInt(BigInt.fromString("2000000000000000000")),
+        ethereum.Value.fromUnsignedBigInt(BigInt.fromString("4000000000000000000")),
+        ethereum.Value.fromUnsignedBigInt(BigInt.zero())
+      ])
+
+    const id = getVeloV2PositionId(SERVICE_SAFE, AERO_V2_POOL)
+    let firstEntry = BigDecimal.zero()
+    for (let n = 0; n < 2; n++) {
+      const transfer = createV2TransferEvent(AERO_V2_POOL, Address.zero(), SERVICE_SAFE, BigInt.fromI32(500))
+      transfer.block = v2Block()
+      transfer.transaction.hash = TX_HASH
+      handleVeloV2Transfer(transfer)
+      const mint = createAeroV2MintEvent(
+        AERO_V2_POOL,
+        ROUTER,
+        SERVICE_SAFE,
+        BigInt.fromString("2000000000000000000"),
+        BigInt.fromString("6000000000000000000")
+      )
+      mint.block = v2Block()
+      mint.transaction.hash = TX_HASH
+      handleAeroV2Mint(mint)
+      if (n == 0) {
+        firstEntry = ProtocolPosition.load(id)!.entryAmountUSD
+      }
+    }
+
+    // The second Mint adds the same amounts to the first one's entry
+    const created = ProtocolPosition.load(id)!
+    assert.assertTrue(firstEntry.gt(BigDecimal.zero()))
+    assert.stringEquals(created.entryAmountUSD.toString(), firstEntry.times(BigDecimal.fromString("2")).toString())
+    assert.stringEquals(created.investmentUSD.toString(), created.entryAmountUSD.plus(created.totalCostsUSD).toString())
+  })
+
   test("a top-up after a partial Burn keeps the open position's income", () => {
     createService(SERVICE_SAFE)
     mockChainlinkEthUsd()
@@ -2164,7 +2217,7 @@ describe("Aero v2 pools (factories + GaugeManager)", () => {
     const topUpTx = Bytes.fromHexString("0x00000000000000000000000000000000000000000000000000000000000070b0")
     const transfer2 = createV2TransferEvent(AERO_V2_POOL, Address.zero(), SERVICE_SAFE, BigInt.fromI32(500))
     transfer2.block = aeroBlock()
-    transfer2.transaction.hash = changetype<Bytes>(topUpTx)
+    transfer2.transaction.hash = topUpTx
     handleVeloV2Transfer(transfer2)
 
     const mint2 = createAeroV2MintEvent(
@@ -2175,7 +2228,7 @@ describe("Aero v2 pools (factories + GaugeManager)", () => {
       BigInt.fromString("6000000000000000000")
     )
     mint2.block = aeroBlock()
-    mint2.transaction.hash = changetype<Bytes>(topUpTx)
+    mint2.transaction.hash = topUpTx
     handleAeroV2Mint(mint2)
 
     assert.fieldEquals("ProtocolPosition", id.toHexString(), "isActive", "true")

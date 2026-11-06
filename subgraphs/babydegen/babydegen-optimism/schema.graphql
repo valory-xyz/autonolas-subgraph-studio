@@ -273,6 +273,7 @@ type PendingMintPosition @entity(immutable: false) {
   poolAddress: Bytes!           # Pool address
   positionId: Bytes!            # Position ID that needs mint amounts
   recipient: Bytes!             # The recipient address (for validation)
+  startsEntry: Boolean!         # The LP mint found the row missing or closed: its Mint replaces the entry
 }
 
 # Registry to track all services for snapshot scheduling
