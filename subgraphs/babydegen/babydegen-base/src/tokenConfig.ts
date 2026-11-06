@@ -120,10 +120,8 @@ function usdcReferencedStable(address: Address, symbol: string, decimals: i32): 
   ])
 }
 
-// A stablecoin priced off its own Chainlink feed, with an Aero USDC pool as the
-// priority-2 fallback when the feed gives no valid price (stale, out of range). Neither
-// source assumes $1, so a depeg shows. The CL adapter's decimal adjustment is inverted for
-// pairs whose decimals differ, so only a 6-decimal token may take a USDC pool fallback.
+// Feed-first stable (no $1 assumption, so a depeg shows); an optional USDC-pool fallback suits
+// only 6-decimal tokens, as the CL adapter's decimal adjustment is inverted otherwise.
 function chainlinkStable(
   address: Address,
   symbol: string,

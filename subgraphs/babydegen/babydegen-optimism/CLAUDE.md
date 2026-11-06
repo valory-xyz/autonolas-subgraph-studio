@@ -204,7 +204,7 @@ Daily population-level stats at UTC midnight (id: `<dayTimestamp>`).
 - `handleRegisterInstance`: Records registration, filters by `OPTIMUS_AGENT_ID = 40`, excludes test service IDs [29, 37, 56, 58]
 - `handleCreateMultisigWithAgents`: Creates Service entity, registers for snapshots, creates Safe template instances for service safe and operator safe
 
-### 2. Token Transfers (USDC + 13 tracked tokens)
+### 2. Token Transfers (USDC + tracked tokens)
 **Files**: `src/funding.ts`, `src/tokenBalances.ts`
 - `handleUSDC` → redirects to `handleERC20Transfer`
 - `handleERC20Transfer`: Central handler for all token transfers. Updates TokenBalance with USD values, identifies funding flows (EOA/operator → service = funding in), updates FundingBalance
