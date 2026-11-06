@@ -366,7 +366,7 @@ Deprecated: every `ethAdjusted*` field equals its unadjusted counterpart. Subtra
 ---
 
 ### v2 position cycles
-- A v2 position is one row per pool, reused across cycles: LP minted into a closed row (the LP mint Transfer, before its refresh) restarts it — income, exit, costs, ROI and entry tracking reset as for a new row, and the Mint records the new entry. The Mint in the tx that created or restarted the row (its `entryTxHash`) replaces the entry; a top-up Mint adds to it; either way `investmentUSD` = entry + `totalCostsUSD`. A partial Burn records an exit but leaves the row active, so a later top-up keeps its income. `isActive` comes from end-of-block `balanceOf`, so a full exit and re-entry in one block keeps the old cycle (accepted)
+- A v2 position is one row per pool, reused across cycles: LP minted into a closed row (the LP mint Transfer, before its refresh) restarts it — income, exit, costs, ROI and entry tracking reset as for a new row, and the Mint records the new entry. The Mint after the LP mint that found the row missing or closed (`PendingMintPosition.startsEntry`) replaces the entry; every other Mint, in that tx or a later top-up, adds to it; either way `investmentUSD` = entry + `totalCostsUSD`. A partial Burn records an exit but leaves the row active, so a later top-up keeps its income. `isActive` comes from end-of-block `balanceOf`, so a full exit and re-entry in one block keeps the old cycle (accepted)
 
 ## Price Discovery
 

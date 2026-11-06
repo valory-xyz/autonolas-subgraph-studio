@@ -427,8 +427,8 @@ export function reopenClosedWithoutExit(pp: ProtocolPosition): void {
 }
 
 // A decrease on a closed row is not this position's unless the row recorded its exit in this block
-// (decreases before a burn add up): otherwise its exit is already booked, or (Uniswap V3 only) a
-// transfer out closed it with no exit. A CL transfer out does not close the row
+// (decreases before a burn add up): otherwise its exit is already booked, or it closed with no exit
+// recorded (burned, or for Uniswap V3 a transfer out). A CL transfer out does not close the row
 export function closedWithNoExitThisBlock(pp: ProtocolPosition, block: ethereum.Block): boolean {
   return !pp.isActive && !exitClosedInBlock(pp, block)
 }

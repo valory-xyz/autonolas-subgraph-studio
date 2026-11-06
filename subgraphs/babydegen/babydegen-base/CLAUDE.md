@@ -186,9 +186,10 @@ The `ethAdjusted*` fields are deprecated and equal their unadjusted counterparts
 ### v2 position cycles (`veloV2Pool.ts`)
 - A v2 position is one row per pool, reused across cycles. LP minted into a closed row (seen by
   the LP mint Transfer, before its refresh marks the row active) restarts it: income, exit, costs,
-  ROI and entry tracking reset as for a new row, and the Mint records the new entry. The Mint in the
-  tx that created or restarted the row (its `entryTxHash`) replaces the entry, including the refresh's
-  fallback from current amounts; a top-up Mint adds to it; either way `investmentUSD` = entry +
+  ROI and entry tracking reset as for a new row, and the Mint records the new entry. The Mint after
+  the LP mint that found the row missing or closed (`PendingMintPosition.startsEntry`) replaces the
+  entry, including the refresh's fallback from current amounts; every other Mint, in that tx or a
+  later top-up, adds to it; either way `investmentUSD` = entry +
   `totalCostsUSD`. A partial
   Burn records an exit but leaves the row active, so a later top-up keeps its income. `isActive`
   comes from end-of-block `balanceOf`, so a full exit and re-entry in one block keeps the old cycle
