@@ -50,7 +50,7 @@ strings changed: `ProtocolPosition.protocol` is now `aerodrome-cl` / `aerodrome-
 | LiFi Diamond | `0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE` | CREATE2, same on all EVM |
 | USDC | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` | primary funding/valuation |
 | WETH / OLAS / AERO | `0x4200…0006` / `0x54330d28…` / `0x940181a9…` | |
-| Aero NFPM | `0x4857DB576eE0e45F10525eC59527BfD10beeC60b` | Aero CL positions (`AeroNFTManager`, start block 52881675) |
+| Aero NFPM | `0x4857DB576eE0e45F10525eC59527BfD10beeC60b` | Aero CL positions (`AeroNFTManager`) |
 | Aero CL factory | `0x9CB220581b91b0C83223012FE69688b92aD07a76` | `AERO_NFT_MANAGER.factory()` |
 | Aero v2 stable / volatile factory | `0x78589E87…EF2D` / `0x8E6a9FCd…76D2` | Aero v2 pool discovery |
 | Aero GaugeManager | `0xbF234b32c5e58868243A4a14831626f3EdE7b183` | `GaugeCreated` → Aero v2 pool→gauge map |
@@ -61,8 +61,7 @@ USDC/USD `0x7e860098…`, USDT/USD `0xf19d560e…`, DAI/USD `0x591e7923…`, USD
 USDS/USD `0x2330aaE3…` (`constants.ts`).
 
 **startBlock** = `47163056` (earliest agentId-115 service, #607, 2026-06-10) for every data
-source except the Aero ones, which start at their deployment: NFPM `52881675`, v2 volatile /
-stable factories `52880042` / `52880046`, GaugeManager `52688318`.
+source except the Aero ones, which start at their deployment block (see `subgraph.yaml`).
 
 ### Base reference addresses (NOT indexed by this subgraph)
 

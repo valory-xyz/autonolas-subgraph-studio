@@ -198,7 +198,7 @@ function initializeTokens(): void {
     ]
   ))
 
-  // AERO of Aero (the merged protocol) — Aero CL/v2 gauge reward token, priced off an Aero v2 AERO/USDC pool.
+  // AERO of Aero (the merged protocol)
   TOKENS.set(AERO_PROTOCOL_AERO.toHexString().toLowerCase(), new TokenConfig(
     AERO_PROTOCOL_AERO,
     "AERO",

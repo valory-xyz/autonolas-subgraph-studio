@@ -18,27 +18,11 @@ import { getServiceByAgent } from "./config"
 import { parseTotalSlippageFromBucket, associateSwapsWithPosition, calculatePortfolioMetrics } from "./helpers"
 import { getTokenSymbol, convertTokenAmount } from "./tokenUtils"
 import { calculatePositionROI, initializePositionIncome } from "./roiCalculation"
-import { PROTOCOL_VELODROME_V2, VELO_VOTER, PROTOCOL_AERO_V2, rewardTokenFor, WHITELISTED_TOKENS, V2_STABLE_FEE_BPS, V2_VOLATILE_FEE_BPS, V2PoolKind } from "./constants"
+import { PROTOCOL_VELODROME_V2, VELO_VOTER, PROTOCOL_AERO_V2, rewardTokenFor, V2_STABLE_FEE_BPS, V2_VOLATILE_FEE_BPS, V2PoolKind } from "./constants"
 
-// A pool's venue is recorded by the factory handler that created it; pools with no
-// V2PoolVenue row came from the legacy factory.
 export function v2ProtocolFor(poolAddress: Address): string {
   const venue = V2PoolVenue.load(poolAddress)
   return venue != null ? venue.protocol : PROTOCOL_VELODROME_V2
-}
-
-function isTokenWhitelisted(tokenAddress: Address): boolean {
-  let tokenString = tokenAddress.toHexString().toLowerCase()
-  for (let i = 0; i < WHITELISTED_TOKENS.length; i++) {
-    if (WHITELISTED_TOKENS[i].toLowerCase() == tokenString) {
-      return true
-    }
-  }
-  return false
-}
-
-export function isPoolRelevant(token0: Address, token1: Address): boolean {
-  return isTokenWhitelisted(token0) && isTokenWhitelisted(token1)
 }
 
 // Fee tier of a v2 pool by kind (v2PoolKind)
@@ -50,10 +34,8 @@ function setV2PoolFee(pp: ProtocolPosition, poolContract: VelodromeV2Pool): void
 }
 
 // Resolve a v2 pool's gauge. Returns Address.zero() when the pool has no gauge.
-// - aero-v2: Aero v2 pools have no gauge() and the Aero Voter has no gauges(pool), so read the AeroGauge row
-//   built from GaugeManager GaugeCreated, re-read on every refresh and written
-//   to rewardsContract (which positionIncome matches rewards on) but never read back from it; no
-//   row means no gauge yet.
+// - aero-v2: no gauge() and no Voter gauges(pool); read AeroGauge (written by handleAeroGaugeCreated) on every refresh
+//   and written to rewardsContract, which positionIncome matches rewards on.
 // - legacy: the Velodrome Voter's gauges(pool), cached on the position's rewardsContract. A Voter
 //   revert (transient) is logged and not cached, so the next refresh retries; a zero gauge
 //   (legitimate) is silent and not cached, so a later-gauged pool is picked up.
@@ -61,7 +43,7 @@ function resolveV2Gauge(poolAddress: Address, pp: ProtocolPosition): Address {
   if (pp.protocol == PROTOCOL_AERO_V2) {
     const aeroGauge = AeroGauge.load(poolAddress)
     if (aeroGauge == null) {
-      return Address.zero() // pool has no gauge yet
+      return Address.zero()
     }
     pp.rewardsContract = aeroGauge.gauge
     return Address.fromBytes(aeroGauge.gauge)
@@ -384,8 +366,8 @@ export function refreshVeloV2Position(
 
   // Velodrome V2 LP can be staked into a gauge. Staking transfers the LP ERC20 out of the
   // safe (balanceOf(safe) -> 0) into the gauge, but the agent still owns the position and
-  // earns VELO. Count the gauge-staked LP toward the position value, and read its claimable
-  // VELO rewards, so a staked position isn't misread as closed/zero.
+  // earns the venue's gauge reward token. Count the gauge-staked LP toward the position value,
+  // and read its claimable gauge rewards, so a staked position isn't misread as closed/zero.
   let stakedBalance = BigInt.zero()
   let rewardAmount = BigDecimal.zero()
   let rewardUSD = BigDecimal.zero()
@@ -400,7 +382,7 @@ export function refreshVeloV2Position(
       // Same silent-zero guard: a reverting balanceOf on a staked position (where
       // balanceOf(safe)==0 is the normal state) would flip it to closed/zero. Log it.
       log.warning(
-        "VELO rewards (V2): gauge.balanceOf() reverted for staked position (pool {}, gauge {}, account {}) — staked LP read as 0.",
+        "V2 gauge rewards: gauge.balanceOf() reverted for staked position (pool {}, gauge {}, account {}) — staked LP read as 0.",
         [poolAddress.toHexString(), gaugeAddr.toHexString(), userAddress.toHexString()]
       )
     }
@@ -413,7 +395,7 @@ export function refreshVeloV2Position(
       // Same silent-zero guard as the CL path: earned(address) reverting on a staked
       // position means a non-standard gauge ABI — log it instead of recording 0 quietly.
       log.warning(
-        "VELO rewards (V2): gauge.earned() reverted for staked position (pool {}, gauge {}, account {}) — recording 0 reward.",
+        "V2 gauge rewards: gauge.earned() reverted for staked position (pool {}, gauge {}, account {}) — recording 0 reward.",
         [poolAddress.toHexString(), gaugeAddr.toHexString(), userAddress.toHexString()]
       )
     }
@@ -462,7 +444,7 @@ export function refreshVeloV2Position(
     pp.amount0USD = token0Price.times(pp.amount0!)
     pp.amount1USD = token1Price.times(pp.amount1!)
     pp.usdCurrent = pp.amount0USD.plus(pp.amount1USD)
-    // Base liquidity value plus claimable VELO gauge rewards (0 if the LP isn't staked).
+    // Base liquidity value plus claimable gauge rewards (0 if the LP isn't staked).
     pp.claimableReward = rewardAmount
     pp.claimableRewardUSD = rewardUSD
     pp.usdCurrentWithRewards = pp.usdCurrent.plus(rewardUSD)

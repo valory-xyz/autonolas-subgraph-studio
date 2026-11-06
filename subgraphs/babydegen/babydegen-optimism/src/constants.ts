@@ -121,6 +121,20 @@ export const WHITELISTED_TOKENS: string[] = [
   XAERO.toHexString()
 ]
 
+function isTokenWhitelisted(tokenAddress: Address): boolean {
+  let tokenString = tokenAddress.toHexString().toLowerCase()
+  for (let i = 0; i < WHITELISTED_TOKENS.length; i++) {
+    if (WHITELISTED_TOKENS[i].toLowerCase() == tokenString) {
+      return true
+    }
+  }
+  return false
+}
+
+export function isPoolRelevant(token0: Address, token1: Address): boolean {
+  return isTokenWhitelisted(token0) && isTokenWhitelisted(token1)
+}
+
 export const STABLECOINS: string[] = [
   USDC_NATIVE.toHexString(),
   USDC_BRIDGED.toHexString(),

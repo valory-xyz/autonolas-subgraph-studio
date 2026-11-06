@@ -116,8 +116,7 @@ export function handleVeloV2Mint(event: Mint): void {
   recordMintEntryAmounts(event, event.params.amount0, event.params.amount1)
 }
 
-// Aero v2 pools emit Mint(indexed sender, indexed to, amount0, amount1); the entry
-// amounts are recorded the same way.
+// Aero v2 pools emit Mint(indexed sender, indexed to, amount0, amount1).
 export function handleAeroV2Mint(event: AeroV2Mint): void {
   recordMintEntryAmounts(event, event.params.amount0, event.params.amount1)
 }

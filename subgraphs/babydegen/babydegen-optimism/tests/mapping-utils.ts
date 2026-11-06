@@ -88,12 +88,7 @@ export function createCreateMultisigWithAgentsEvent(
   return event
 }
 
-/**
- * Creates a mock VelodromeV2Pool (Velodrome v2) LP Transfer event.
- *
- * Solidity signature:
- *   Transfer(indexed address from, indexed address to, uint256 value)
- */
+/** v2 pool LP Transfer (Velodrome or Aero). */
 export function createV2TransferEvent(
   pool: Address,
   from: Address,

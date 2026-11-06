@@ -69,7 +69,7 @@ subgraphs/babydegen/babydegen-optimism/
 | BalancerVault | `0xBA12222222228d8Ba445958a75a0704d566BF2C8` | Balancer V2 liquidity |
 | LiFiDiamond | `0x1231DEB6f5749EF6cE6943a275A1D3E7486F4EaE` | Swap routing & slippage |
 | USDC Native | `0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85` | Funding tracking |
-| AeroNFTManager | `0x4857DB576eE0e45F10525eC59527BfD10beeC60b` | Aero CL positions (start block 158477277) |
+| AeroNFTManager | `0x4857DB576eE0e45F10525eC59527BfD10beeC60b` | Aero CL positions |
 | Aero CL factory | `0xfeaB42D90055db3a0616249f76B6002D72266778` | Aero CL pool lookup (`AERO_NFT_MANAGER.factory()`) |
 | AeroV2Stable/VolatileFactory | `0x78589E87…EF2D` / `0x8E6a9FCd…76D2` | Aero v2 pool discovery |
 | AeroGaugeManager | `0xbF234b32c5e58868243A4a14831626f3EdE7b183` | `GaugeCreated` → Aero v2 pool→gauge map |
