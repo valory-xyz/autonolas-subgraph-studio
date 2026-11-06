@@ -1146,6 +1146,11 @@ function mockAeroV2PoolState(pool: Address, gauge: Address): void {
     .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromString("500"))])
 }
 
+function mockAeroV2GaugeEarnedReverts(gauge: Address): void {
+  createMockedFunction(gauge, "earned", "earned(address):(uint256)")
+    .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)]).reverts()
+}
+
 describe("Aero v2 pools (factories + GaugeManager)", () => {
   afterEach(() => {
     clearStore()
@@ -1264,15 +1269,13 @@ describe("Aero v2 pools (factories + GaugeManager)", () => {
     saveAeroV2Venue(false)
     handleAeroGaugeCreated(createGaugeCreatedEvent(AERO_V2_POOL, AERO_V2_GAUGE))
     mockAeroV2PoolState(AERO_V2_POOL, AERO_V2_GAUGE)
-    createMockedFunction(AERO_V2_GAUGE, "earned", "earned(address):(uint256)")
-      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)]).reverts()
+    mockAeroV2GaugeEarnedReverts(AERO_V2_GAUGE)
     refreshVeloV2Position(SERVICE_SAFE, AERO_V2_POOL, v2Block(), TX_HASH, false)
 
     const NEW_GAUGE = Address.fromString("0x00000000000000000000000000000000000000e5")
     handleAeroGaugeCreated(createGaugeCreatedEvent(AERO_V2_POOL, NEW_GAUGE))
     mockAeroV2PoolState(AERO_V2_POOL, NEW_GAUGE)
-    createMockedFunction(NEW_GAUGE, "earned", "earned(address):(uint256)")
-      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)]).reverts()
+    mockAeroV2GaugeEarnedReverts(NEW_GAUGE)
     refreshVeloV2Position(SERVICE_SAFE, AERO_V2_POOL, v2Block(), TX_HASH, false)
 
     const id = getVeloV2PositionId(SERVICE_SAFE, AERO_V2_POOL)
@@ -1332,8 +1335,7 @@ describe("Aero v2 pools (factories + GaugeManager)", () => {
     saveAeroV2Venue(true)
     handleAeroGaugeCreated(createGaugeCreatedEvent(AERO_V2_POOL, AERO_V2_GAUGE))
     mockAeroV2PoolState(AERO_V2_POOL, AERO_V2_GAUGE)
-    createMockedFunction(AERO_V2_GAUGE, "earned", "earned(address):(uint256)")
-      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)]).reverts()
+    mockAeroV2GaugeEarnedReverts(AERO_V2_GAUGE)
 
     refreshVeloV2Position(SERVICE_SAFE, AERO_V2_POOL, v2Block(), TX_HASH, false)
 
@@ -1458,6 +1460,7 @@ describe("BOLD (0x0356…) stable-pool pricing", () => {
 describe("refreshAllActivePositions dispatch (snapshot refresh)", () => {
   afterEach(() => {
     clearStore()
+    resetPoolNFTCache()
   })
 
   test("refreshes active aero-cl and aero-v2 positions", () => {
@@ -1473,8 +1476,7 @@ describe("refreshAllActivePositions dispatch (snapshot refresh)", () => {
     saveAeroV2Venue(false)
     handleAeroGaugeCreated(createGaugeCreatedEvent(AERO_V2_POOL, AERO_V2_GAUGE))
     mockAeroV2PoolState(AERO_V2_POOL, AERO_V2_GAUGE)
-    createMockedFunction(AERO_V2_GAUGE, "earned", "earned(address):(uint256)")
-      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)]).reverts()
+    mockAeroV2GaugeEarnedReverts(AERO_V2_GAUGE)
     refreshVeloV2Position(SERVICE_SAFE, AERO_V2_POOL, v2Block(), TX_HASH, false)
     const v2Id = getVeloV2PositionId(SERVICE_SAFE, AERO_V2_POOL)
     assert.fieldEquals("ProtocolPosition", clId.toHexString(), "claimableReward", "0")
