@@ -1539,6 +1539,11 @@ function multiSendData(legs: string): Bytes {
   );
 }
 
+// execTransaction input that DELEGATECALLs MultiSend v1.3.0 with `legs`.
+function execMultiSend(legs: string): Bytes {
+  return execTransactionInput(MULTISEND, BigInt.zero(), multiSendData(legs), 1);
+}
+
 // The shape of the ZD#1285 Fund Agent split (synthetic addresses): Agent
 // Signer leg first, then the Agent Safe leg.
 const SPLIT_LEGS = packedLeg(0, SIGNER, SIGNER_SHARE) + packedLeg(0, AGENT_SAFE, SAFE_SHARE);
@@ -1603,7 +1608,7 @@ describe("pearl-transactions / Pearl Safe → Agent Signer MASTER_TO_AGENT", () 
     // The Agent Safe leg arrives as SafeReceived during execution.
     handleSafeReceived(newSafeReceived(MASTER_SAFE, SAFE_SHARE, AGENT_SAFE, tx, 2));
     fundFromPearlSafe(
-      execTransactionInput(MULTISEND, BigInt.zero(), multiSendData(SPLIT_LEGS), 1),
+      execMultiSend(SPLIT_LEGS),
       tx
     );
 
@@ -1640,7 +1645,7 @@ describe("pearl-transactions / Pearl Safe → Agent Signer MASTER_TO_AGENT", () 
     const tx = mockTx(86);
     handleSafeReceived(newSafeReceived(MASTER_SAFE, SAFE_SHARE, AGENT_SAFE, tx, 0));
     fundFromPearlSafe(
-      execTransactionInput(MULTISEND, BigInt.zero(), multiSendData(SPLIT_LEGS), 1),
+      execMultiSend(SPLIT_LEGS),
       tx
     );
     assert.entityCount("FundsMovement", 2);
@@ -1676,12 +1681,7 @@ describe("pearl-transactions / Pearl Safe → Agent Signer MASTER_TO_AGENT", () 
     seedPearlFunding();
     const tx = mockTx(82);
     fundFromPearlSafe(
-      execTransactionInput(
-        MULTISEND,
-        BigInt.zero(),
-        multiSendData(packedLeg(0, AGENT_SAFE, SAFE_SHARE) + packedLeg(0, SIGNER, SIGNER_SHARE)),
-        1
-      ),
+      execMultiSend(packedLeg(0, AGENT_SAFE, SAFE_SHARE) + packedLeg(0, SIGNER, SIGNER_SHARE)),
       tx
     );
     assert.entityCount("FundsMovement", 1);
@@ -1696,7 +1696,7 @@ describe("pearl-transactions / Pearl Safe → Agent Signer MASTER_TO_AGENT", () 
   test("reentrant ExecutionSuccess counts the legs once", () => {
     seedPearlFunding();
     const tx = mockTx(83);
-    const input = execTransactionInput(MULTISEND, BigInt.zero(), multiSendData(SPLIT_LEGS), 1);
+    const input = execMultiSend(SPLIT_LEGS);
     fundFromPearlSafe(input, tx, 4);
     fundFromPearlSafe(input, tx, 5);
     assert.entityCount("FundsMovement", 1);
@@ -1741,12 +1741,30 @@ describe("pearl-transactions / Pearl Safe → Agent Signer MASTER_TO_AGENT", () 
     seedAgentInstance(OTHER_SIGNER, "43");
     const tx = mockTx(94);
     fundFromPearlSafe(
-      execTransactionInput(
-        MULTISEND,
-        BigInt.zero(),
-        multiSendData(packedLeg(0, OTHER_SIGNER, AMOUNT) + packedLeg(0, SIGNER, SIGNER_SHARE)),
-        1
-      ),
+      execMultiSend(packedLeg(0, OTHER_SIGNER, AMOUNT) + packedLeg(0, SIGNER, SIGNER_SHARE)),
+      tx
+    );
+    assert.entityCount("FundsMovement", 1);
+    assert.fieldEquals(
+      "FundsMovement",
+      signerLegId(tx, 1).toHexString(),
+      "amount",
+      SIGNER_SHARE.toString()
+    );
+    assert.fieldEquals(
+      "AgentFundingEvent",
+      agentFundingEventId(tx, MASTER_SAFE, serviceBytes(SERVICE_ID)).toHexString(),
+      "totalNativeAmount",
+      SIGNER_SHARE.toString()
+    );
+  });
+
+  test("a buffered Signer leg does not stop the next leg from being booked", () => {
+    seedPearlFunding();
+    seedAgentInstance(OTHER_SIGNER, "44"); // no Service 44 yet
+    const tx = mockTx(95);
+    fundFromPearlSafe(
+      execMultiSend(packedLeg(0, OTHER_SIGNER, AMOUNT) + packedLeg(0, SIGNER, SIGNER_SHARE)),
       tx
     );
     assert.entityCount("FundsMovement", 1);
@@ -1769,7 +1787,7 @@ describe("pearl-transactions / Pearl Safe → Agent Signer MASTER_TO_AGENT", () 
     seedPearlService("43", OTHER_MASTER_SAFE, null);
     seedAgentInstance(SIGNER, "43");
     fundFromPearlSafe(
-      execTransactionInput(MULTISEND, BigInt.zero(), multiSendData(SPLIT_LEGS), 1),
+      execMultiSend(SPLIT_LEGS),
       mockTx(85)
     );
     assert.entityCount("FundsMovement", 0);
@@ -1785,14 +1803,9 @@ describe("pearl-transactions / Pearl Safe → Agent Signer MASTER_TO_AGENT", () 
   test("legs that are not plain native transfers write no row", () => {
     seedPearlFunding();
     fundFromPearlSafe(
-      execTransactionInput(
-        MULTISEND,
-        BigInt.zero(),
-        multiSendData(
-          packedLeg(0, SIGNER, BigInt.zero(), "a9059cbb") + // ERC-20-shaped call
-            packedLeg(1, SIGNER, AMOUNT) // DELEGATECALL
-        ),
-        1
+      execMultiSend(
+        packedLeg(0, SIGNER, BigInt.zero(), "a9059cbb") + // ERC-20-shaped call
+          packedLeg(1, SIGNER, AMOUNT) // DELEGATECALL
       ),
       mockTx(87)
     );
@@ -1802,12 +1815,7 @@ describe("pearl-transactions / Pearl Safe → Agent Signer MASTER_TO_AGENT", () 
   test("a CALL to the Agent Signer carrying value and data writes no row", () => {
     seedPearlFunding();
     fundFromPearlSafe(
-      execTransactionInput(
-        MULTISEND,
-        BigInt.zero(),
-        multiSendData(packedLeg(0, SIGNER, AMOUNT, "a9059cbb")),
-        1
-      ),
+      execMultiSend(packedLeg(0, SIGNER, AMOUNT, "a9059cbb")),
       mockTx(93)
     );
     assert.entityCount("FundsMovement", 0);
@@ -1827,7 +1835,7 @@ describe("pearl-transactions / Pearl Safe → Agent Signer MASTER_TO_AGENT", () 
     seedPearlFunding();
     const legs = SPLIT_LEGS.slice(0, SPLIT_LEGS.length - 20);
     fundFromPearlSafe(
-      execTransactionInput(MULTISEND, BigInt.zero(), multiSendData(legs), 1),
+      execMultiSend(legs),
       mockTx(89)
     );
     assert.entityCount("FundsMovement", 0);
@@ -1840,7 +1848,7 @@ describe("pearl-transactions / Pearl Safe → Agent Signer MASTER_TO_AGENT", () 
         AGENT_SAFE,
         AGENT_EOA,
         AGENT_SAFE,
-        execTransactionInput(MULTISEND, BigInt.zero(), multiSendData(SPLIT_LEGS), 1),
+        execMultiSend(SPLIT_LEGS),
         mockTx(90),
         0
       )

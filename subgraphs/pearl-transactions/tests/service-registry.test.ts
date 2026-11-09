@@ -441,12 +441,11 @@ describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds",
     handleRegisterInstance(
       newRegisterInstance(OPERATOR, SERVICE_ID, AGENT_INSTANCE_1, PEARL_AGENT_ID, mockTx(32), 0)
     );
-    // Service 43 is created first, so the next registration takes the
-    // existing-Service branch, not the buffer.
     handleRegisterInstance(
       newRegisterInstance(OPERATOR, OTHER_SERVICE_ID, AGENT_INSTANCE_2, PEARL_AGENT_ID, mockTx(33), 0)
     );
     handleCreateMultisigWithAgents(newCreateMultisig(OTHER_SERVICE_ID, AGENT_SAFE, mockTx(33), 1));
+    // Service 43 now exists, so reRegister takes the existing-Service branch, not the buffer.
     assert.entityCount("Service", 1);
 
     const reRegister = newRegisterInstance(
