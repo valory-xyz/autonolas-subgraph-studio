@@ -82,7 +82,7 @@ Agent identity from the IdentityRegistryBridger contract.
 |-------|------|-------|
 | id | `ID!` | Agent ID (string) |
 | service | `[Service!]!` | `@derivedFrom(field: "erc8004Agent")` |
-| agentWallet | `Bytes` | Nullable. Set on `AgentWalletSet` |
+| agentWallet | `Bytes` | Nullable. Set on `AgentWalletSet`; cleared by `AgentMultisigUpdated` with nonzero old multisig |
 | metadata | `[ERC8004Metadata!]` | `@derivedFrom(field: "agent")` |
 
 ### ERC8004Metadata
@@ -303,7 +303,7 @@ Uses **template pattern**: `subgraph.template.yaml` + `networks.json` + `scripts
 |-------------|--------|--------------|
 | ServiceRegistry (mainnet) | `CreateService(indexed uint256)`, `CreateMultisigWithAgents`, `RegisterInstance`, `TerminateService` | `mapping-eth.ts` |
 | ServiceRegistryL2 (L2s) | `CreateService(indexed uint256, bytes32)`, `CreateMultisigWithAgents`, `RegisterInstance`, `TerminateService` | `mapping.ts` |
-| IdentityRegistryBridger | `ServiceAgentLinked`, `AgentWalletSet`, `MetadataSet` | `mapping.ts` / `mapping-eth.ts` |
+| IdentityRegistryBridger | `ServiceAgentLinked`, `AgentMultisigUpdated`, `AgentWalletSet`, `MetadataSet` | `mapping.ts` / `mapping-eth.ts` |
 
 ### Dynamic Template
 

@@ -10,7 +10,7 @@
     "deploy-ethereum": "graph deploy --network mainnet --studio olas-ethereum-registry subgraph.mainnet.yaml",
     "deploy-polygon": "graph deploy --network matic --studio olas-polygon-registry subgraph.matic.yaml",
     "deploy-optimism": "graph deploy --network optimism --studio olas-optimism-registry subgraph.optimism.yaml",
-    "test": "graph test"
+    "test": "node --test scripts/bridger-manifests.test.cjs && graph test"
   },
   "dependencies": {
     "@graphprotocol/graph-cli": "0.98.1",
