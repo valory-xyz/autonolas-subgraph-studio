@@ -59,3 +59,8 @@ yarn test                     # Run unit tests (12 tests)
 
 ### Setup & Deployment
 **Check the [root README](/README.md).**
+
+
+## Staking v0.4
+
+See [source ABI, event semantics and release requirements](../../abis/StakingTokenV4.README.md).

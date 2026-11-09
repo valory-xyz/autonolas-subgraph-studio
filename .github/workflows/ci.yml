@@ -101,6 +101,11 @@ jobs:
         working-directory: ${{ matrix.path }}
         run: yarn graph codegen
 
+      - name: Check staking v0.4 manifests and ABI
+        if: matrix.subgraph == 'staking'
+        working-directory: ${{ matrix.path }}
+        run: node --test scripts/v4-manifests.test.cjs
+
       - name: Run tests
         working-directory: ${{ matrix.path }}
         # Pin the matchstick binary version (-v) so `graph test` doesn't query the

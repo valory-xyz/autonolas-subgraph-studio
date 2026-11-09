@@ -42,6 +42,8 @@ type VerifierUpdated @entity(immutable: true) {
 }
 
 type Checkpoint @entity(immutable: true) {
+  isRebaseline: Boolean
+
   id: Bytes!
   epoch: BigInt! # uint256
   availableRewards: BigInt! # uint256
@@ -66,6 +68,9 @@ type Deposit @entity(immutable: true) {
 }
 
 type RewardClaimed @entity(immutable: true) {
+  receivers: [Bytes!]
+  rewardAmounts: [BigInt!]
+
   id: Bytes!
   epoch: BigInt! # uint256
   serviceId: BigInt! # uint256
@@ -103,6 +108,8 @@ type ServiceInactivityWarning @entity(immutable: true) {
 }
 
 type ServiceStaked @entity(immutable: true) {
+  rewardDistributionInfo: BigInt
+
   id: Bytes!
   epoch: BigInt! # uint256
   serviceId: BigInt! # uint256
@@ -204,6 +211,8 @@ type Service @entity(immutable: false) {
 }
 
 type ServiceRewardsHistory @entity(immutable: false) {
+  isRebaseline: Boolean
+
   id: ID! # {serviceId}-{contractAddress}-{epoch}
   service: Service!
   epoch: BigInt!
@@ -244,4 +253,49 @@ type CumulativeDailyStakingGlobal @entity(immutable: false) {
   totalRewardsClaimed: BigInt!
   numServices: Int!
   medianCumulativeRewards: BigInt!
+}
+# v0.4 has no reward amount on unstake; payouts are recorded only by RewardClaimed.
+type ServiceUnstakedV4 @entity(immutable: true) {
+  id: Bytes!
+  epoch: BigInt!
+  serviceId: BigInt!
+  owner: Bytes!
+  multisig: Bytes!
+  nonces: [BigInt!]!
+  availableRewards: BigInt!
+  enforced: Boolean!
+  contractAddress: Bytes!
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+# One baseline per contract/epoch, correlated with the immediately following Checkpoint.
+type ServicesRebaselined @entity(immutable: true) {
+  id: ID!
+  epoch: BigInt!
+  contractAddress: Bytes!
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+type ServiceBaselineEvent @entity(immutable: true) {
+  id: Bytes!
+  epoch: BigInt!
+  serviceId: BigInt!
+  kind: String! # Missing or Recovered
+  contractAddress: Bytes!
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
+}
+
+# Service baseline status is scoped to the instance, not only the service ID.
+type ServiceBaselineState @entity(immutable: false) {
+  id: ID!
+  serviceId: BigInt!
+  contractAddress: Bytes!
+  baselineMissing: Boolean!
+  epoch: BigInt!
 }

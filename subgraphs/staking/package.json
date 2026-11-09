@@ -11,7 +11,7 @@
     "deploy-ethereum": "graph deploy --network mainnet olas-ethereum-staking subgraph.mainnet.yaml",
     "deploy-polygon": "graph deploy --network matic olas-polygon-staking subgraph.matic.yaml",
     "deploy-optimism": "graph deploy --network optimism olas-optimism-staking subgraph.optimism.yaml",
-    "test": "ln -s subgraph.gnosis.yaml subgraph.yaml && graph test; rm -f subgraph.yaml"
+    "test": "node --test scripts/v4-manifests.test.cjs && graph test"
   },
   "dependencies": {
     "@graphprotocol/graph-cli": "0.98.1",
@@ -21,7 +21,7 @@
     "matchstick-as": "0.6.0"
   },
   "resolutions": {
-    "//": "Selective version resolutions. Two scoping forms in Yarn 1: (1) unscoped \"pkg\": \"^X\" forces ONE version everywhere — safe only for single-major packages. (2) Path-scoped \"**/parent/pkg\": \"^X\" forces pkg only when nested under parent — required for multi-major (e.g. picomatch 2.x+4.x, glob 7.x+11.x). The **/ prefix is mandatory; bare \"parent/pkg\" is silently ignored by Yarn 1 for transitively-nested instances. Each allowlist removal must be paired with a resolution (or a fresh-lockfile cascade). Workflow: edit package.json, rm yarn.lock + subgraphs/*/yarn.lock, yarn install in root + each subgraph, node scripts/audit-install-hooks.mjs --update, node scripts/audit.mjs — any \"no longer in production tree\" warnings name audit-allowlist entries that can now be removed.",
+    "//": "Selective version resolutions. Two scoping forms in Yarn 1: (1) unscoped \"pkg\": \"^X\" forces ONE version everywhere \u2014 safe only for single-major packages. (2) Path-scoped \"**/parent/pkg\": \"^X\" forces pkg only when nested under parent \u2014 required for multi-major (e.g. picomatch 2.x+4.x, glob 7.x+11.x). The **/ prefix is mandatory; bare \"parent/pkg\" is silently ignored by Yarn 1 for transitively-nested instances. Each allowlist removal must be paired with a resolution (or a fresh-lockfile cascade). Workflow: edit package.json, rm yarn.lock + subgraphs/*/yarn.lock, yarn install in root + each subgraph, node scripts/audit-install-hooks.mjs --update, node scripts/audit.mjs \u2014 any \"no longer in production tree\" warnings name audit-allowlist entries that can now be removed.",
     "immutable": "^5.1.5",
     "cross-spawn": "^7.0.6",
     "semver": "^7.5.2",

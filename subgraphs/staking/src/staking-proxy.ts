@@ -26,9 +26,14 @@ import {
 import { createRewardUpdate, getOrCreateGlobal, getOlasForStaking, upsertCumulativeDailyStakingGlobal, getOrCreateServiceRewardsHistory, processUnstake, recordRewardsClaimed, isOlasStakingContract } from "./utils"
 
 export function handleCheckpoint(event: CheckpointEvent): void {
+  processCheckpoint(event, false);
+}
+
+export function processCheckpoint(event: CheckpointEvent, isRebaseline: boolean): void {
   let entity = new Checkpoint(
     event.transaction.hash.concatI32(event.logIndex.toI32()),
   )
+  entity.isRebaseline = isRebaseline;
   entity.epoch = event.params.epoch
   entity.availableRewards = event.params.availableRewards
   entity.serviceIds = event.params.serviceIds
@@ -78,6 +83,7 @@ export function handleCheckpoint(event: CheckpointEvent): void {
       event.block.timestamp,
       event.transaction.hash
     );
+    history.isRebaseline = isRebaseline;
     history.rewardAmount = reward;
     history.checkpoint = entity.id;
     history.checkpointedAt = event.block.timestamp;
@@ -115,6 +121,7 @@ export function handleCheckpoint(event: CheckpointEvent): void {
         event.block.timestamp,
         event.transaction.hash
       );
+      history.isRebaseline = isRebaseline;
       history.rewardAmount = BigInt.fromI32(0);
       history.checkpoint = entity.id;
       history.checkpointedAt = event.block.timestamp;
@@ -157,6 +164,9 @@ export function handleCheckpoint(event: CheckpointEvent): void {
     nextTracker.save();
   }
 
+  // A baseline establishes counters, not claimable rewards for the preceding gap.
+  if (isRebaseline) return;
+
   // 4. Update Global states and rewards
   if (!isOlas) return;
 
@@ -193,6 +203,10 @@ export function handleDeposit(event: DepositEvent): void {
 }
 
 export function handleRewardClaimed(event: RewardClaimedEvent): void {
+  processRewardClaimed(event, null, null);
+}
+
+export function processRewardClaimed(event: RewardClaimedEvent, receivers: Bytes[] | null, amounts: BigInt[] | null): void {
   let entity = new RewardClaimed(
     event.transaction.hash.concatI32(event.logIndex.toI32()),
   )
@@ -202,6 +216,8 @@ export function handleRewardClaimed(event: RewardClaimedEvent): void {
   entity.multisig = event.params.multisig
   entity.nonces = event.params.nonces
   entity.reward = event.params.reward
+  entity.receivers = receivers;
+  entity.rewardAmounts = amounts;
 
   entity.blockNumber = event.block.number
   entity.blockTimestamp = event.block.timestamp
@@ -282,9 +298,14 @@ export function handleServiceInactivityWarning(
 }
 
 export function handleServiceStaked(event: ServiceStakedEvent): void {
+  processServiceStaked(event, null);
+}
+
+export function processServiceStaked(event: ServiceStakedEvent, distribution: BigInt | null): void {
   let entity = new ServiceStaked(
     event.transaction.hash.concatI32(event.logIndex.toI32()),
   )
+  entity.rewardDistributionInfo = distribution;
   entity.epoch = event.params.epoch
   entity.serviceId = event.params.serviceId
   entity.owner = event.params.owner
