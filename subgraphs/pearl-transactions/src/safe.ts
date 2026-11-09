@@ -1,4 +1,4 @@
-import { BigInt, Bytes, ethereum, log } from "@graphprotocol/graph-ts";
+import { Address, BigInt, Bytes, ethereum, log } from "@graphprotocol/graph-ts";
 import {
   AddedOwner as AddedOwnerEvent,
   ChangedThreshold as ChangedThresholdEvent,
@@ -34,8 +34,7 @@ import {
   fundsMovementId,
   getOrCreateAgentFundingEvent,
   markSetupTransferSeen,
-  multiSendTransactions,
-  unpackMultiSend,
+  multiSendNativeLegs,
 } from "./utils";
 
 // handleSafeReceived — native coin inbound. Reliable: the event
@@ -118,29 +117,9 @@ function hasExecTransactionSelector(input: Bytes): boolean {
   return true;
 }
 
-// handleSafeExecutionSuccess — native out from a Safe's own execTransaction.
-// ExecutionSuccess carries no amount or recipient, so they come from the
-// outer tx, which must call the emitting Safe directly. Two shapes:
-//
-//   * Agent Safe → its own Agent Signer (AGENT_SAFE_TO_AGENT_EOA): one plain
-//     CALL, no data, value > 0, paying the tx sender. The check proves only
-//     that the Agent Safe paid the tx sender: the Agent Signer submits its
-//     own Safe txs, so that payee is taken to be the Agent Signer.
-//   * Pearl Safe → Agent Signers (MASTER_TO_AGENT): a plain CALL, or a
-//     DELEGATECALL to MultiSend v1.3.0 unpacked leg by leg; see
-//     writeAgentSignerLegs.
-//
-// A tx that does not call the Safe itself (a relay through a contract, or a
-// module execution) is skipped before decoding; for the Agent Safe, a call
-// whose recipient is not the tx sender is also skipped. Every other native
-// outflow stays unindexed.
-//
-// Fires on every execution of every Safe sharing the template, so every
-// shape check runs before any store load (OPE-1965 D39).
-//
-// Row IDs are fixed per tx: a reentrant execTransaction from the same Safe
-// (e.g. an Agent Signer with EIP-7702 code) emits a second ExecutionSuccess
-// in the same tx, which reads the same outer input and is skipped.
+// handleSafeExecutionSuccess — the event has no amount or recipient, so both
+// come from decoding the outer tx. Row ids are fixed per tx, so a reentrant
+// execTransaction from the same Safe in the same tx writes no second row.
 export function handleSafeExecutionSuccess(
   event: ExecutionSuccessEvent
 ): void {
@@ -180,13 +159,10 @@ export function handleSafeExecutionSuccess(
   const tracked = TrackedAddress.load(event.address);
   if (tracked !== null && tracked.role == ROLE_MASTER) {
     if (plainNative) {
-      const single: NativeLeg[] = [new NativeLeg(0, target, value)];
-      writeAgentSignerLegs(event, single);
+      writeAgentSignerLegs(event, [new NativeLeg(0, target, value)]);
       return;
     }
-    let legs: NativeLeg[] | null = null;
-    const transactions = multiSendTransactions(data);
-    if (transactions !== null) legs = unpackMultiSend(transactions);
+    const legs = multiSendNativeLegs(data);
     if (legs === null) {
       log.warning(
         "Pearl Safe {} MultiSend calldata does not unpack (tx={}, data_len={}); skipping",
@@ -198,7 +174,7 @@ export function handleSafeExecutionSuccess(
       );
       return;
     }
-    writeAgentSignerLegs(event, legs!);
+    writeAgentSignerLegs(event, legs);
     return;
   }
 
@@ -225,7 +201,13 @@ export function handleSafeExecutionSuccess(
   const id = agentSafeTopUpId(event.transaction.hash);
   if (FundsMovement.load(id) !== null) return;
 
-  const row = new FundsMovement(id);
+  const row = nativeOutflowRow(
+    id,
+    event,
+    CATEGORY_AGENT_SAFE_TO_AGENT_EOA,
+    target,
+    value
+  );
   if (tracked.service !== null) {
     row.service = tracked.service!;
   }
@@ -233,24 +215,29 @@ export function handleSafeExecutionSuccess(
     row.masterSafe = tracked.masterSafe!;
   }
   row.agentSafe = tracked.id;
-  row.category = CATEGORY_AGENT_SAFE_TO_AGENT_EOA;
-  row.source = SOURCE_SEMANTIC;
-  // token = null (native); no TokenBalance for native.
-  row.amount = value;
-  row.from = event.address;
-  row.to = target;
-  row.blockNumber = event.block.number;
-  row.blockTimestamp = event.block.timestamp;
-  row.transactionHash = event.transaction.hash;
   row.save();
 }
 
-// writeAgentSignerLegs — each Pearl Safe → Agent Signer native leg becomes a
-// MASTER_TO_AGENT row in the tx's AgentFundingEvent, next to the Agent Safe
-// leg handleSafeReceived books. A leg counts only when its recipient is an
-// Agent Signer of a service whose Pearl Safe is the emitter; other
-// recipients (the Agent Safe, the Master EOA, anyone else) are left to their
-// own handlers.
+// token stays null (native), and native has no TokenBalance.
+function nativeOutflowRow(
+  id: Bytes,
+  event: ExecutionSuccessEvent,
+  category: string,
+  to: Address,
+  amount: BigInt
+): FundsMovement {
+  const row = new FundsMovement(id);
+  row.category = category;
+  row.source = SOURCE_SEMANTIC;
+  row.amount = amount;
+  row.from = event.address;
+  row.to = to;
+  row.blockNumber = event.block.number;
+  row.blockTimestamp = event.block.timestamp;
+  row.transactionHash = event.transaction.hash;
+  return row;
+}
+
 function writeAgentSignerLegs(
   event: ExecutionSuccessEvent,
   legs: NativeLeg[]
@@ -259,7 +246,7 @@ function writeAgentSignerLegs(
     const leg = legs[i];
     const instance = AgentInstance.load(leg.to);
     if (instance === null) continue;
-    const service = Service.load(instance.service);
+    const service = Service.load(instance.serviceId);
     if (service === null) continue;
     const masterSafe = service.masterSafe;
     if (masterSafe === null || !masterSafe.equals(event.address)) continue;
@@ -267,21 +254,16 @@ function writeAgentSignerLegs(
     const id = agentSignerLegId(event.transaction.hash, leg.index);
     if (FundsMovement.load(id) !== null) continue;
 
-    const row = new FundsMovement(id);
+    const row = nativeOutflowRow(
+      id,
+      event,
+      CATEGORY_MASTER_TO_AGENT,
+      leg.to,
+      leg.value
+    );
     row.service = service.id;
     row.masterSafe = event.address;
-    if (service.agentSafe !== null) {
-      row.agentSafe = service.agentSafe!;
-    }
-    row.category = CATEGORY_MASTER_TO_AGENT;
-    row.source = SOURCE_SEMANTIC;
-    // token = null (native); no TokenBalance for native.
-    row.amount = leg.value;
-    row.from = event.address;
-    row.to = leg.to;
-    row.blockNumber = event.block.number;
-    row.blockTimestamp = event.block.timestamp;
-    row.transactionHash = event.transaction.hash;
+    row.agentSafe = service.agentSafe;
 
     const afe = getOrCreateAgentFundingEvent(
       event.transaction.hash,

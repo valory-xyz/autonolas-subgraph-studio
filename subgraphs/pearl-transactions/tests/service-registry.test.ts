@@ -447,7 +447,7 @@ describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds",
     assert.fieldEquals(
       "AgentInstance",
       AGENT_INSTANCE_1.toHexString(),
-      "service",
+      "serviceId",
       SERVICE_ID_HEX
     );
 
@@ -460,7 +460,7 @@ describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds",
     assert.fieldEquals(
       "AgentInstance",
       AGENT_INSTANCE_1.toHexString(),
-      "service",
+      "serviceId",
       Bytes.fromByteArray(Bytes.fromBigInt(otherService)).toHexString()
     );
   });

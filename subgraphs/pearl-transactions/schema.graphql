@@ -207,14 +207,10 @@ type PendingRegistration @entity(immutable: false) {
   operators: [Bytes!]!
 }
 
-# Agent Signer (RegisterInstance.agentInstance) -> the service of its latest
-# registration. Read by handleSafeExecutionSuccess to attribute a Pearl Safe
-# -> Agent Signer native leg. Mutable, latest registration wins, and kept
-# out of TrackedAddress on purpose: that table is write-once and feeds
-# classifyTransfer, whose rows must not change.
+# Not in TrackedAddress, whose rows are write-once: a Signer can re-register.
 type AgentInstance @entity(immutable: false) {
   id: Bytes!                          # Agent Signer address
-  service: Service!                   # written as an id, even while the Service is still buffered
+  serviceId: Bytes!                   # no Service reference: the Service may never leave the buffer
   updatedBlock: BigInt!
 }
 

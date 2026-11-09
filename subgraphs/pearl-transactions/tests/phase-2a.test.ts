@@ -41,8 +41,7 @@ import {
   agentFundingEventId,
   agentSafeTopUpId,
   agentSignerLegId,
-  multiSendTransactions,
-  unpackMultiSend,
+  multiSendNativeLegs,
 } from "../src/utils";
 
 // ----------------- Fixtures -----------------
@@ -1564,7 +1563,7 @@ function seedPearlService(
 
 function seedAgentInstance(signer: Address, serviceId: string): void {
   const instance = new AgentInstance(signer);
-  instance.service = serviceBytes(serviceId);
+  instance.serviceId = serviceBytes(serviceId);
   instance.updatedBlock = BigInt.fromI32(1);
   instance.save();
 }
@@ -1800,9 +1799,9 @@ describe("pearl-transactions / Pearl Safe → Agent Signer MASTER_TO_AGENT", () 
   });
 });
 
-describe("pearl-transactions / unpackMultiSend", () => {
+describe("pearl-transactions / multiSendNativeLegs", () => {
   test("unpacks native legs with their position", () => {
-    const legs = unpackMultiSend(Bytes.fromHexString("0x" + SPLIT_LEGS))!;
+    const legs = multiSendNativeLegs(multiSendData(SPLIT_LEGS))!;
     assert.i32Equals(legs.length, 2);
     assert.i32Equals(legs[0].index, 0);
     assert.addressEquals(legs[0].to, SIGNER);
@@ -1813,10 +1812,9 @@ describe("pearl-transactions / unpackMultiSend", () => {
   });
 
   test("keeps positions but drops legs that are not plain native transfers", () => {
-    const legs = unpackMultiSend(
-      Bytes.fromHexString(
-        "0x" +
-          packedLeg(0, AGENT_SAFE, BigInt.zero(), "a9059cbb") +
+    const legs = multiSendNativeLegs(
+      multiSendData(
+        packedLeg(0, AGENT_SAFE, BigInt.zero(), "a9059cbb") +
           packedLeg(1, AGENT_SAFE, AMOUNT) +
           packedLeg(0, AGENT_SAFE, BigInt.zero()) +
           packedLeg(0, AGENT_SAFE, AMOUNT, "a9059cbb") + // value AND data
@@ -1829,35 +1827,32 @@ describe("pearl-transactions / unpackMultiSend", () => {
   });
 
   test("an empty buffer has no legs", () => {
-    assert.i32Equals(unpackMultiSend(new Bytes(0))!.length, 0);
+    assert.i32Equals(multiSendNativeLegs(multiSendData(""))!.length, 0);
   });
 
   test("a truncated head is malformed", () => {
     assert.assertTrue(
-      unpackMultiSend(Bytes.fromHexString("0x" + SPLIT_LEGS.slice(0, SPLIT_LEGS.length - 20))) === null
+      multiSendNativeLegs(multiSendData(SPLIT_LEGS.slice(0, SPLIT_LEGS.length - 20))) === null
     );
   });
 
   test("trailing bytes are malformed", () => {
-    assert.assertTrue(unpackMultiSend(Bytes.fromHexString("0x" + SPLIT_LEGS + "00")) === null);
+    assert.assertTrue(multiSendNativeLegs(multiSendData(SPLIT_LEGS + "00")) === null);
   });
 
   test("a data length past the end is malformed", () => {
     const leg = packedLeg(0, AGENT_SAFE, AMOUNT, "1234");
-    assert.assertTrue(
-      unpackMultiSend(Bytes.fromHexString("0x" + leg.slice(0, leg.length - 2))) === null
-    );
+    assert.assertTrue(multiSendNativeLegs(multiSendData(leg.slice(0, leg.length - 2))) === null);
   });
 
-  test("multiSendTransactions reads the packed buffer out of the calldata", () => {
-    const transactions = multiSendTransactions(multiSendData(SPLIT_LEGS))!;
-    assert.bytesEquals(transactions, Bytes.fromHexString("0x" + SPLIT_LEGS));
-  });
-
-  test("multiSendTransactions rejects another selector", () => {
+  test("calldata with another selector is not a multiSend", () => {
     const data = multiSendData(SPLIT_LEGS).toHexString();
     assert.assertTrue(
-      multiSendTransactions(Bytes.fromHexString("0x8d80ff0b" + data.slice(10))) === null
+      multiSendNativeLegs(Bytes.fromHexString("0x8d80ff0b" + data.slice(10))) === null
     );
+  });
+
+  test("calldata shorter than a selector is not a multiSend", () => {
+    assert.assertTrue(multiSendNativeLegs(Bytes.fromHexString("0x8d80ff")) === null);
   });
 });

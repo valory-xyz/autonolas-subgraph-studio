@@ -75,8 +75,6 @@ export function agentSafeTopUpId(txHash: Bytes): Bytes {
   return Bytes.fromUTF8("topup:").concat(txHash);
 }
 
-// One MASTER_TO_AGENT row per Pearl Safe -> Agent Signer native leg (see
-// handleSafeExecutionSuccess), matching the squid's `agentSignerLegId`.
 // `legIndex` is 0 for a plain CALL, the leg's position in the MultiSend
 // otherwise.
 export function agentSignerLegId(txHash: Bytes, legIndex: i32): Bytes {
@@ -988,23 +986,19 @@ export function addToAgentFundingEvent(
   afe.save();
 }
 
-// --- Agent Signer legs (OPE-1979) ------------------------------------
-
 export function upsertAgentInstance(
   agentInstance: Address,
   serviceId: Bytes,
   blockNumber: BigInt
 ): void {
-  let instance = AgentInstance.load(agentInstance);
-  if (instance == null) instance = new AgentInstance(agentInstance);
-  instance.service = serviceId;
+  const instance = new AgentInstance(agentInstance);
+  instance.serviceId = serviceId;
   instance.updatedBlock = blockNumber;
   instance.save();
 }
 
 // Pearl batches a Fund Agent split (Agent Signer + Agent Safe) into one Safe
-// tx that DELEGATECALLs MultiSend v1.3.0. Only the canonical v1.3.0
-// deployment is decoded; a DELEGATECALL to any other target is skipped.
+// tx that DELEGATECALLs MultiSend v1.3.0.
 export const MULTISEND_V130 = Address.fromString(
   "0xA238CBeb142c10Ef7Ad8442C6D1f9E89e07e7761"
 );
@@ -1023,9 +1017,20 @@ export class NativeLeg {
   }
 }
 
-// The packed `transactions` argument of a `multiSend(bytes)` call, or null
-// when `data` is not one.
-export function multiSendTransactions(data: Bytes): Bytes | null {
+// Big-endian uint256 at `bytes[start..start+32)`. BigInt.fromUnsignedBytes
+// reads little-endian, so the slice (a copy) is reversed.
+function readUint256(bytes: Bytes, start: i32): BigInt {
+  const word = bytes.slice(start, start + 32);
+  word.reverse();
+  return BigInt.fromUnsignedBytes(Bytes.fromUint8Array(word));
+}
+
+// The plain native transfers (CALL, no data, value > 0) in `multiSend(bytes)`
+// calldata, with their leg position. Legs are packed back to back as
+// `operation uint8 | to address | value uint256 | dataLength uint256 | data`.
+// Null when `data` is not a multiSend call or its buffer does not unpack
+// exactly.
+export function multiSendNativeLegs(data: Bytes): NativeLeg[] | null {
   if (data.length < 4) return null;
   for (let i = 0; i < 4; i++) {
     if (data[i] != MULTISEND_SELECTOR[i]) return null;
@@ -1035,22 +1040,8 @@ export function multiSendTransactions(data: Bytes): Bytes | null {
     Bytes.fromUint8Array(data.subarray(4))
   );
   if (decoded === null) return null;
-  return decoded.toBytes();
-}
+  const transactions = decoded.toBytes();
 
-// Big-endian uint256 at `bytes[start..start+32)`. BigInt.fromUnsignedBytes
-// reads little-endian, so the slice (a copy) is reversed.
-function readUint256(bytes: Bytes, start: i32): BigInt {
-  const word = bytes.slice(start, start + 32);
-  word.reverse();
-  return BigInt.fromUnsignedBytes(Bytes.fromUint8Array(word));
-}
-
-// Unpack MultiSend's packed legs — `operation uint8 | to address |
-// value uint256 | dataLength uint256 | data bytes`, back to back — and keep
-// the plain native transfers (CALL, no data, value > 0) with their position.
-// Returns null when the buffer does not unpack exactly.
-export function unpackMultiSend(transactions: Bytes): NativeLeg[] | null {
   const HEAD = 1 + 20 + 32 + 32;
   const legs: NativeLeg[] = [];
   let pos = 0;
