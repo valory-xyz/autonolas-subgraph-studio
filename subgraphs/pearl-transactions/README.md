@@ -111,9 +111,9 @@ emits no opening-balance row).
 
 ## What it does **not** cover
 
-- **Native coin leaving a Safe** (withdrawals, relayed/module executions) is
-  not indexed, except direct `execTransaction` legs to an Agent Signer — it
-  emits no usable event; accepted v1 gap. Native *inflows* and all *token*
+- **Native coin leaving a Safe** (withdrawals, txs relayed through a contract,
+  module executions) is not indexed, except direct `execTransaction` legs to
+  an Agent Signer — it emits no usable event; accepted v1 gap. Native *inflows* and all *token*
   flows are covered.
 - **Arbitrary tokens** — only the wallet's token set is indexed (OLAS,
   wrapped-native, USDC/USDC.e/pUSD per chain).

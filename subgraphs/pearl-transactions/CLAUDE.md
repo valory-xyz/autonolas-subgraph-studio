@@ -43,7 +43,10 @@ for Pearl's consumer configuration.
   replacing the old `TrackedSafe`+`TrackedEOA`; halves `classifyTransfer`'s
   hot-path loads from 6 → 2), `TokenBalance`.
 - **Internal helpers:** `ServiceIndex`, `PendingRegistration`,
-  `PendingBondCounter`, `PendingBondRow`, `AgentBondAttributionGuard`.
+  `PendingBondCounter`, `PendingBondRow`, `AgentBondAttributionGuard`,
+  `AgentInstance` (mutable; Agent Signer → `serviceId`, written on every
+  `RegisterInstance`; kept out of write-once `TrackedAddress` because a
+  Signer can re-register).
 - **Enums:** `FundsCategory`, `ServiceBondType`, `FundsSource`.
 
 ## Data sources & handlers
@@ -158,8 +161,8 @@ for Pearl's consumer configuration.
   call the emitting Safe's `execTransaction` directly. The shape checks
   (emitter, selector, operation, MultiSend target) run before any store
   load; the `TrackedAddress` role load then runs for every plain native
-  CALL, because the Pearl Safe branch needs the role before it can check
-  the recipient.
+  CALL and every DELEGATECALL to MultiSend v1.3.0, because the Pearl Safe
+  branch needs the role before it can check the recipient.
   - OPE-1965: an `AGENT_SAFE_TO_AGENT_EOA` row (SEMANTIC, `token` null, no
     `TokenBalance`) for one plain CALL, empty data, value > 0, paid to the
     tx sender, when the Safe is tracked as `AGENT`. One row per tx
@@ -174,8 +177,8 @@ for Pearl's consumer configuration.
     `RegisterInstance`. A MultiSend buffer that does not unpack exactly is
     skipped with a warning.
   `handleSafeExecutionFromModuleSuccess` stays a no-op. Consequence: **native
-  withdrawals to external wallets** and relayed / module executions do not
-  appear. Native *inflows* (`SafeReceived`), native transfers to an Agent
+  withdrawals to external wallets**, txs that do not call the Safe itself
+  (e.g. relayed through a contract) and module executions are not decoded. Native *inflows* (`SafeReceived`), native transfers to an Agent
   Signer and all *token* flows in/out are captured. Closing the rest needs
   call/trace handlers (the rejected self-hosted indexer); accepted v1 gap.
 - **Token coverage is a fixed allowlist, not "any token."** A subgraph
