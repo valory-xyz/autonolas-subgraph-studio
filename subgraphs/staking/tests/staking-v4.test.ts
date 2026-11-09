@@ -28,8 +28,8 @@ function rebaseline(epoch: i32): void {
   e.parameters = [new ethereum.EventParam('epoch', ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(epoch)))];
   h.handleServicesRebaselined(e);
 }
-function claim(amounts: BigInt[], recipients: Address[]): void {
-  let e = changetype<V4.RewardClaimed>(createRewardClaimedEvent(one, one, BigInt.zero(), contract));
+function claim(amounts: BigInt[], recipients: Address[], epoch: i32 = 1): void {
+  let e = changetype<V4.RewardClaimed>(createRewardClaimedEvent(one, BigInt.fromI32(epoch), BigInt.zero(), contract));
   e.logIndex = BigInt.fromI32(30); e.parameters = e.parameters.slice(0, 5);
   e.parameters.push(new ethereum.EventParam('receivers', ethereum.Value.fromAddressArray(recipients)));
   e.parameters.push(new ethereum.EventParam('rewardAmounts', ethereum.Value.fromUnsignedBigIntArray(amounts)));
@@ -40,7 +40,7 @@ function claim(amounts: BigInt[], recipients: Address[]): void {
   assert.bytesEquals(row.receivers![0], recipients[0]);
 }
 function unstake(forced: boolean): void {
-  let e = changetype<V4.ServiceUnstaked>(createServiceUnstakedEvent(one, one, BigInt.zero(), contract));
+  let e = changetype<V4.ServiceUnstaked>(createServiceUnstakedEvent(one, BigInt.fromI32(2), BigInt.zero(), contract));
   e.logIndex = BigInt.fromI32(31); e.parameters = e.parameters.slice(0, 5);
   e.parameters.push(new ethereum.EventParam('availableRewards', ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(100))));
   e.parameters.push(new ethereum.EventParam('enforced', ethereum.Value.fromBoolean(forced)));
@@ -59,14 +59,14 @@ beforeEach(() => {
 });
 afterEach(() => {clearStore(); dataSourceMock.resetValues();});
 test('v0.4 recipient arrays and normal unstake count one payout and preserve earned rewards', () => {
-  stake(); checkpoint(1, 100); claim([BigInt.fromI32(40), BigInt.fromI32(60)], [master, agentSafe]); unstake(false);
+  stake(); checkpoint(1, 100); claim([BigInt.fromI32(40), BigInt.fromI32(60)], [master, agentSafe], 2); unstake(false);
   assert.fieldEquals('Global', '', 'totalRewards', '100'); assert.fieldEquals('Global', '', 'totalRewardsClaimed', '100');
   assert.fieldEquals('Global', '', 'currentOlasStaked', '0'); assert.fieldEquals('Service', '1', 'olasRewardsClaimed', '100');
   assert.fieldEquals('ServiceRewardsHistory', '1-' + contract.toHexString() + '-1', 'rewardAmount', '100');
   assert.entityCount('ServiceUnstakedV4', 1); assert.entityCount('RewardClaimed', 1); assert.entityCount('RewardUpdate', 2);
 });
 test('a recipient array can pay the Master Safe directly without an Agent Safe sweep', () => {
-  stake(); claim([BigInt.fromI32(50)], [master]); assert.fieldEquals('Global', '', 'totalRewardsClaimed', '50');
+  stake(); checkpoint(1, 50); claim([BigInt.fromI32(50)], [master], 2); assert.fieldEquals('Global', '', 'totalRewardsClaimed', '50');
 });
 test('forced unstake returns no payout and retains checkpoint earnings', () => {
   stake(); checkpoint(1, 100); unstake(true);
