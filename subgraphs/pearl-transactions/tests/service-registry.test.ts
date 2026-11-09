@@ -437,7 +437,35 @@ describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds",
     assert.entityCount("ServiceIndex", 1);
   });
 
-  test("RegisterInstance links the Agent Signer to its latest service, buffered or not", () => {
+  test("RegisterInstance re-links the Agent Signer when its new Service already exists", () => {
+    handleRegisterInstance(
+      newRegisterInstance(OPERATOR, SERVICE_ID, AGENT_INSTANCE_1, PEARL_AGENT_ID, mockTx(32), 0)
+    );
+    // Service 43 is created first, so the next registration takes the
+    // existing-Service branch, not the buffer.
+    handleRegisterInstance(
+      newRegisterInstance(OPERATOR, OTHER_SERVICE_ID, AGENT_INSTANCE_2, PEARL_AGENT_ID, mockTx(33), 0)
+    );
+    handleCreateMultisigWithAgents(newCreateMultisig(OTHER_SERVICE_ID, AGENT_SAFE, mockTx(33), 1));
+    assert.entityCount("Service", 1);
+
+    const reRegister = newRegisterInstance(
+      OPERATOR,
+      OTHER_SERVICE_ID,
+      AGENT_INSTANCE_1,
+      PEARL_AGENT_ID,
+      mockTx(34),
+      0
+    );
+    reRegister.block.number = BigInt.fromI32(777);
+    handleRegisterInstance(reRegister);
+
+    const otherServiceHex = Bytes.fromByteArray(Bytes.fromBigInt(OTHER_SERVICE_ID)).toHexString();
+    assert.fieldEquals("AgentInstance", AGENT_INSTANCE_1.toHexString(), "serviceId", otherServiceHex);
+    assert.fieldEquals("AgentInstance", AGENT_INSTANCE_1.toHexString(), "updatedBlock", "777");
+  });
+
+  test("RegisterInstance links a still-buffered Agent Signer to its latest service", () => {
     const tx = mockTx(30);
     // Buffered: the Service does not exist yet.
     handleRegisterInstance(

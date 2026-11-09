@@ -40,7 +40,6 @@ import { handleTokenDeposit } from "../src/service-registry-token-utility";
 import {
   agentFundingEventId,
   agentSafeTopUpId,
-  agentSignerLegId,
   multiSendNativeLegs,
 } from "../src/utils";
 
@@ -1543,16 +1542,22 @@ function multiSendData(legs: string): Bytes {
 // Signer leg first, then the Agent Safe leg.
 const SPLIT_LEGS = packedLeg(0, SIGNER, SIGNER_SHARE) + packedLeg(0, AGENT_SAFE, SAFE_SHARE);
 
+// Spelled out rather than built with agentSignerLegId, so the cross-indexer
+// id layout is pinned.
+function signerLegId(tx: Bytes, legIndex: i32): Bytes {
+  return Bytes.fromUTF8("signer:").concat(tx).concatI32(legIndex);
+}
+
 function seedPearlService(
   serviceId: string,
-  masterSafe: Address,
+  masterSafe: Address | null,
   agentSafe: Address | null
 ): void {
   const svc = new Service(serviceBytes(serviceId));
   svc.serviceId = BigInt.fromString(serviceId);
   svc.agentIds = [40];
-  svc.operators = [masterSafe];
-  svc.masterSafe = masterSafe;
+  svc.operators = masterSafe !== null ? [masterSafe] : [];
+  if (masterSafe !== null) svc.masterSafe = masterSafe;
   if (agentSafe !== null) svc.agentSafe = agentSafe;
   svc.state = "DEPLOYED";
   svc.totalOlasRewardsClaimed = BigInt.zero();
@@ -1601,7 +1606,7 @@ describe("pearl-transactions / Pearl Safe → Agent Signer MASTER_TO_AGENT", () 
       tx
     );
 
-    const id = agentSignerLegId(tx, 0).toHexString();
+    const id = signerLegId(tx, 0).toHexString();
     const afeId = agentFundingEventId(tx, MASTER_SAFE, serviceBytes(SERVICE_ID)).toHexString();
     assert.entityCount("FundsMovement", 2);
     assert.fieldEquals("FundsMovement", id, "category", "MASTER_TO_AGENT");
@@ -1609,7 +1614,7 @@ describe("pearl-transactions / Pearl Safe → Agent Signer MASTER_TO_AGENT", () 
     assert.fieldEquals("FundsMovement", id, "amount", SIGNER_SHARE.toString());
     assert.fieldEquals("FundsMovement", id, "from", MASTER_SAFE.toHexString());
     assert.fieldEquals("FundsMovement", id, "to", SIGNER.toHexString());
-    assert.assertTrue(FundsMovement.load(agentSignerLegId(tx, 0))!.token === null);
+    assert.assertTrue(FundsMovement.load(signerLegId(tx, 0))!.token === null);
     assert.fieldEquals("FundsMovement", id, "service", serviceBytes(SERVICE_ID).toHexString());
     assert.fieldEquals("FundsMovement", id, "masterSafe", MASTER_SAFE.toHexString());
     assert.fieldEquals("FundsMovement", id, "agentSafe", AGENT_SAFE.toHexString());
@@ -1629,12 +1634,35 @@ describe("pearl-transactions / Pearl Safe → Agent Signer MASTER_TO_AGENT", () 
     assert.entityCount("TokenBalance", 0);
   });
 
+  test("Signer leg id does not collide with a SafeReceived row at logIndex 0", () => {
+    seedPearlFunding();
+    const tx = mockTx(86);
+    handleSafeReceived(newSafeReceived(MASTER_SAFE, SAFE_SHARE, AGENT_SAFE, tx, 0));
+    fundFromPearlSafe(
+      execTransactionInput(MULTISEND, BigInt.zero(), multiSendData(SPLIT_LEGS), 1),
+      tx
+    );
+    assert.entityCount("FundsMovement", 2);
+    assert.fieldEquals(
+      "FundsMovement",
+      signerLegId(tx, 0).toHexString(),
+      "amount",
+      SIGNER_SHARE.toString()
+    );
+    assert.fieldEquals(
+      "FundsMovement",
+      tx.concatI32(0).toHexString(),
+      "amount",
+      SAFE_SHARE.toString()
+    );
+  });
+
   test("plain CALL to the Agent Signer creates its AgentFundingEvent", () => {
     seedPearlFunding();
     const tx = mockTx(81);
     fundFromPearlSafe(execTransactionInput(SIGNER, AMOUNT, NO_DATA, 0), tx);
 
-    const id = agentSignerLegId(tx, 0).toHexString();
+    const id = signerLegId(tx, 0).toHexString();
     const afeId = agentFundingEventId(tx, MASTER_SAFE, serviceBytes(SERVICE_ID)).toHexString();
     assert.entityCount("FundsMovement", 1);
     assert.fieldEquals("FundsMovement", id, "amount", AMOUNT.toString());
@@ -1658,7 +1686,7 @@ describe("pearl-transactions / Pearl Safe → Agent Signer MASTER_TO_AGENT", () 
     assert.entityCount("FundsMovement", 1);
     assert.fieldEquals(
       "FundsMovement",
-      agentSignerLegId(tx, 1).toHexString(),
+      signerLegId(tx, 1).toHexString(),
       "amount",
       SIGNER_SHARE.toString()
     );
@@ -1686,7 +1714,7 @@ describe("pearl-transactions / Pearl Safe → Agent Signer MASTER_TO_AGENT", () 
     const tx = mockTx(84);
     fundFromPearlSafe(execTransactionInput(SIGNER, AMOUNT, NO_DATA, 0), tx);
     assert.entityCount("FundsMovement", 1);
-    assert.assertTrue(FundsMovement.load(agentSignerLegId(tx, 0))!.agentSafe === null);
+    assert.assertTrue(FundsMovement.load(signerLegId(tx, 0))!.agentSafe === null);
   });
 
   test("Agent Signer of a still-buffered service writes no row", () => {
@@ -1699,15 +1727,7 @@ describe("pearl-transactions / Pearl Safe → Agent Signer MASTER_TO_AGENT", () 
 
   test("Agent Signer of a service with no Pearl Safe yet writes no row", () => {
     seedMasterSafe(true);
-    const svc = new Service(serviceBytes(SERVICE_ID));
-    svc.serviceId = BigInt.fromString(SERVICE_ID);
-    svc.agentIds = [40];
-    svc.operators = [];
-    svc.state = "REGISTERED";
-    svc.totalOlasRewardsClaimed = BigInt.zero();
-    svc.registeredTimestamp = BigInt.fromI32(1);
-    svc.updatedTimestamp = BigInt.fromI32(1);
-    svc.save();
+    seedPearlService(SERVICE_ID, null, null);
     seedAgentInstance(SIGNER, SERVICE_ID);
     fundFromPearlSafe(execTransactionInput(SIGNER, AMOUNT, NO_DATA, 0), mockTx(92));
     assert.entityCount("FundsMovement", 0);
