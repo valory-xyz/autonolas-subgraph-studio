@@ -39,7 +39,6 @@ import {
   CATEGORY_SAFE_DEPLOYED,
   CATEGORY_SAFE_SETUP_TRANSFER,
   CATEGORY_STAKING_REWARD_CLAIM,
-  MULTISEND_V130,
   OPERATION_CALL,
   ROLE_AGENT,
   ROLE_AGENT_EOA,
@@ -1039,7 +1038,7 @@ export function multiSendNativeLegs(data: Bytes): NativeLeg[] | null {
   if (!hasSelector(data, MULTISEND_SELECTOR)) return null;
   const decoded = ethereum.decode(
     "bytes",
-    Bytes.fromUint8Array(data.subarray(4))
+    Bytes.fromUint8Array(data.subarray(MULTISEND_SELECTOR.length))
   );
   if (decoded === null) return null;
   const transactions = decoded.toBytes();
