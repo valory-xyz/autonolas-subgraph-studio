@@ -16,7 +16,7 @@ import {
   ethereum,
   log 
 } from "@graphprotocol/graph-ts"
-import { VELO_V2_SUGAR, VELO_V2_FACTORY, WHITELISTED_TOKENS } from "./constants"
+import { VELO_V2_SUGAR, VELO_V2_FACTORY, isPoolRelevant } from "./constants"
 
 // Configuration
 const SUGAR_ADDRESS = VELO_V2_SUGAR
@@ -24,20 +24,6 @@ const FACTORY_ADDRESS = VELO_V2_FACTORY
 
 // Cache to track discovered pools
 let discoveredPools = new Map<string, boolean>()
-
-function isTokenWhitelisted(tokenAddress: Address): boolean {
-  let tokenString = tokenAddress.toHexString().toLowerCase()
-  for (let i = 0; i < WHITELISTED_TOKENS.length; i++) {
-    if (WHITELISTED_TOKENS[i].toLowerCase() == tokenString) {
-      return true
-    }
-  }
-  return false
-}
-
-function isPoolRelevant(token0: Address, token1: Address): boolean {
-  return isTokenWhitelisted(token0) && isTokenWhitelisted(token1)
-}
 
 function createPoolTemplate(poolAddress: Address, token0: Address, token1: Address, stable: boolean): void {
   let poolKey = poolAddress.toHexString()

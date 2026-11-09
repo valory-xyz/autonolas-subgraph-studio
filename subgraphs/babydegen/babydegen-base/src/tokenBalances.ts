@@ -3,10 +3,12 @@ import { TokenBalance, Service, FundingBalance } from "../generated/schema"
 import { Transfer as TransferEvent } from "../generated/USDC_Native/ERC20"
 import { TOKENS } from "./tokenConfig"
 import { getServiceByAgent } from "./config"
-import { isFundingSource, getEthUsd } from "./common"
+import { isUserSide, isWithdrawalRecipient, getAddressType, AddressTypeReader, getEthUsd } from "./common"
 import { getTokenPriceUSD } from "./priceDiscovery"
-import { WETH, WHITELISTED_TOKENS, USDC_NATIVE } from "./constants"
+import { convertTokenAmount } from "./tokenUtils"
+import { WETH, WHITELISTED_TOKENS } from "./constants"
 import { ensureAgentPortfolio, calculatePortfolioMetrics } from "./helpers"
+import { attributeRewardTransfer } from "./positionIncome"
 
 // Helper function to create block from timestamp for ETH price lookup
 function createBlockFromTimestamp(timestamp: BigInt): ethereum.Block {
@@ -28,10 +30,6 @@ function createBlockFromTimestamp(timestamp: BigInt): ethereum.Block {
     BigInt.zero()
   )
 }
-
-// NOTE: This subgraph is configured to track USDC Native and ETH transfers for funding balance calculations.
-// While all token transfers are tracked for token balance purposes, only USDC Native and ETH flows affect
-// the funding metrics. Other token outflows are logged but do not affect funding calculations.
 
 // Calculate the total USD value of uninvested funds (tokens held in the safe)
 export function calculateUninvestedValue(serviceSafe: Address): BigDecimal {
@@ -146,8 +144,7 @@ export function updateTokenBalance(
   }
   
   // Update balance
-  let divisor = BigDecimal.fromString("1" + "0".repeat(tokenConfig.decimals))
-  let amountDecimal = amount.toBigDecimal().div(divisor)
+  let amountDecimal = convertTokenAmount(amount, tokenAddress)
   
   if (isIncrease) {
     balance.balance = balance.balance.plus(amountDecimal)
@@ -169,6 +166,10 @@ export function updateTokenBalance(
 
 // Handle ERC20 transfer events
 export function handleERC20Transfer(event: TransferEvent): void {
+  processERC20Transfer(event, getAddressType)
+}
+
+export function processERC20Transfer(event: TransferEvent, readAddressType: AddressTypeReader): void {
   let from = event.params.from
   let to = event.params.to
   let value = event.params.value
@@ -181,44 +182,19 @@ export function handleERC20Transfer(event: TransferEvent): void {
     return // Not a whitelisted token
   }
   
-  // Format token amount with correct decimals
-  let divisor = BigDecimal.fromString("1" + "0".repeat(tokenConfig.decimals))
-  let formattedAmount = value.toBigDecimal().div(divisor)
-  
   // Handle transfers TO service safes (deposits)
   let toService = getServiceByAgent(to)
   if (toService != null) {
+    attributeRewardTransfer(event, from, to, value)
     updateTokenBalance(to, tokenAddress, value, true, event.block)
     
-    // ALWAYS ensure portfolio exists and is updated for ANY token activity
     ensureAgentPortfolio(to, event.block.timestamp)
-    
-    // Trigger portfolio recalculation for any token balance change
-    calculatePortfolioMetrics(to, event.block)
-    
-    // Check if sender is a valid funding source
-    let isValidSource = isFundingSource(from, to, event.block, event.transaction.hash.toHexString())
-    
-    // Check if it's a funding deposit AND is NATIVE USDC (explicitly excluding bridged USDC)
-    if (isValidSource && tokenAddress.equals(USDC_NATIVE)) {
-      // Calculate USD value using price discovery
-      let divisor = BigDecimal.fromString("1" + "0".repeat(tokenConfig.decimals))
-      let amountDecimal = value.toBigDecimal().div(divisor)
-      let tokenPrice = getTokenPriceUSD(tokenAddress, event.block.timestamp, false)
-      let usdValue = amountDecimal.times(tokenPrice)
-      
-      
-      // Update funding balance directly to avoid circular dependency
-      updateFundingBalance(to, usdValue, true, event.block.timestamp, txHash)
-    } else if (isValidSource) {
-      // Calculate values for better logging
-      let divisor = BigDecimal.fromString("1" + "0".repeat(tokenConfig.decimals))
-      let amountDecimal = value.toBigDecimal().div(divisor)
-      let tokenPrice = getTokenPriceUSD(tokenAddress, event.block.timestamp, false)
-      let usdValue = amountDecimal.times(tokenPrice)
-      
-      // Log non-USDC token transfers that would have been funding but are excluded
+    if (isUserSide(from, to, event, readAddressType)) {
+      let usdValue = transferUsdValue(value, tokenAddress, to, event)
+      updateFundingBalance(to, usdValue, event.block.timestamp, txHash)
     }
+    // After the funding update, so a deposit is in initialValue as well as in the balances
+    calculatePortfolioMetrics(to, event.block)
   }
   
   // Handle transfers FROM service safes (withdrawals)
@@ -226,39 +202,29 @@ export function handleERC20Transfer(event: TransferEvent): void {
   if (fromService != null) {
     updateTokenBalance(from, tokenAddress, value, false, event.block)
     
-    // For outflows, only update funding if it's NATIVE USDC (explicitly excluding bridged USDC)
-    if (tokenAddress.equals(USDC_NATIVE)) {
-      // Check if receiver is valid funding source for this service
-      let isValidTarget = isFundingSource(to, from, event.block, event.transaction.hash.toHexString())
-      
-      if (isValidTarget) {
-        // Calculate USD value 
-        let divisor = BigDecimal.fromString("1" + "0".repeat(tokenConfig.decimals))
-        let amountDecimal = value.toBigDecimal().div(divisor)
-        let tokenPrice = getTokenPriceUSD(tokenAddress, event.block.timestamp, false)
-        let usdValue = amountDecimal.times(tokenPrice)
-        
-        // NEW LOGIC: Track as withdrawal instead of reducing funding
-        // This preserves initial value while tracking total extracted value
-        updateWithdrawalBalance(from, usdValue, event.block.timestamp)
-      }
-    } else {
-      // Calculate USD value for non-USDC tokens for logging purposes only
-      let divisor = BigDecimal.fromString("1" + "0".repeat(tokenConfig.decimals))
-      let amountDecimal = value.toBigDecimal().div(divisor)
-      let tokenPrice = getTokenPriceUSD(tokenAddress, event.block.timestamp, false)
-      let usdValue = amountDecimal.times(tokenPrice)
-      
+    if (isWithdrawalRecipient(to, from, event, readAddressType)) {
+      let usdValue = transferUsdValue(value, tokenAddress, from, event)
+      updateWithdrawalBalance(from, usdValue, event.block.timestamp)
     }
+    calculatePortfolioMetrics(from, event.block)
   }
 }
 
-// Helper function to update funding balance without circular dependency
-// Exported to be the single source of truth for funding balance updates
+export function transferUsdValue(value: BigInt, tokenAddress: Address, safe: Address, event: ethereum.Event): BigDecimal {
+  let tokenPrice = getTokenPriceUSD(tokenAddress, event.block.timestamp, false)
+  if (tokenPrice.equals(BigDecimal.zero())) {
+    log.warning("FUNDING: token {} has no price — its transfer for safe {} in tx {} is valued at $0", [
+      tokenAddress.toHexString(), safe.toHexString(), event.transaction.hash.toHexString()
+    ])
+  }
+  return convertTokenAmount(value, tokenAddress).times(tokenPrice)
+}
+
+// The single source of truth for funding in. Outflows go to updateWithdrawalBalance, so
+// totalOutUsd stays 0 and netUsd equals totalInUsd.
 export function updateFundingBalance(
   serviceSafe: Address,
   usd: BigDecimal,
-  deposit: boolean,
   ts: BigInt,
   txHash: string = ""
 ): void {
@@ -278,49 +244,32 @@ export function updateFundingBalance(
   }
   
   let oldTotalIn = fb.totalInUsd
-  let oldTotalOut = fb.totalOutUsd
   
-  if (deposit) {
-    fb.totalInUsd = fb.totalInUsd.plus(usd)
-    
-    if (txHash != "") {
-      let fundingInTxs = fb.fundingInTxs
-      fundingInTxs.push(txHash)
-      fb.fundingInTxs = fundingInTxs
-    }
-    
-    //  Set firstTradingTimestamp and capture ETH price on first funding
-    if (oldTotalIn.equals(BigDecimal.zero())) {
-      // This is the first funding - update portfolio
-      let portfolio = ensureAgentPortfolio(serviceSafe, ts)
-      if (portfolio.firstTradingTimestamp.equals(BigInt.zero())) {
-        portfolio.firstTradingTimestamp = ts
-        
-        // Capture ETH price at first funding
-        let block = createBlockFromTimestamp(ts)
-        portfolio.firstFundingEthPrice = getEthUsd(block)
-        portfolio.save()
-      }
-    }
-  } else {
-    fb.totalOutUsd = fb.totalOutUsd.plus(usd)
-    
-    if (txHash != "") {
-      let fundingOutTxs = fb.fundingOutTxs
-      fundingOutTxs.push(txHash)
-      fb.fundingOutTxs = fundingOutTxs
+  fb.totalInUsd = fb.totalInUsd.plus(usd)
+  
+  if (txHash != "") {
+    let fundingInTxs = fb.fundingInTxs
+    fundingInTxs.push(txHash)
+    fb.fundingInTxs = fundingInTxs
+  }
+  
+  if (oldTotalIn.equals(BigDecimal.zero())) {
+    let portfolio = ensureAgentPortfolio(serviceSafe, ts)
+    if (portfolio.firstTradingTimestamp.equals(BigInt.zero())) {
+      portfolio.firstTradingTimestamp = ts
+      let block = createBlockFromTimestamp(ts)
+      portfolio.firstFundingEthPrice = getEthUsd(block)
+      portfolio.save()
     }
   }
   
-  fb.netUsd = fb.totalInUsd.minus(fb.totalOutUsd)
+  fb.netUsd = fb.totalInUsd
   fb.lastChangeTs = ts
   fb.save()
   
-  // Ensure AgentPortfolio exists when funding balance is updated
   ensureAgentPortfolio(serviceSafe, ts)
 }
 
-//  Helper function to update withdrawal tracking separately (for EOA withdrawals)
 export function updateWithdrawalBalance(
   serviceSafe: Address,
   usd: BigDecimal,

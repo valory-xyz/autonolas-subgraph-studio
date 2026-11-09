@@ -1,6 +1,13 @@
 # Service Registry Subgraph
 
-Tracks the lifecycle of Olas services across Ethereum mainnet and 7 L2 networks: agent registration, multisig creation, service termination, ERC-8004 agent identity, and daily activity metrics.
+Tracks service lifecycle, multisigs, ERC-8004 identity and daily activity. Gnosis uses the self-hosted `autonolas-subgraph/subgraphs/service-registry` implementation; its Studio manifest and network entry have been removed. Base and Robinhood use the Infra squid. See the internal **[WD] Subgraph&Squids Development and Deployment Tracking** document for active deployments.
+
+This cleanup removes the Gnosis configuration explicitly retired from this
+repository. It does not remove every manifest whose consumers use another backend:
+Base's manifest, network entry and `deploy-base` script remain available for source
+coverage and explicit manual Studio deployment. Their presence is not a recommendation
+to switch consumers from the squid; check the deployment tracker before deploying
+or changing consumer routing. Retiring Base's Studio configuration is a separate decision.
 
 ## Table of Contents
 - [Architecture Overview](#architecture-overview)
@@ -23,7 +30,6 @@ subgraphs/service-registry/
 ├── schema.graphql
 ├── subgraph.template.yaml          # Template for L2 manifests
 ├── subgraph.mainnet.yaml           # Mainnet (uses ServiceRegistry, mapping-eth.ts)
-├── subgraph.gnosis.yaml            # Generated from template
 ├── subgraph.base.yaml
 ├── subgraph.celo.yaml
 ├── subgraph.optimism.yaml
@@ -265,12 +271,11 @@ Uses **template pattern**: `subgraph.template.yaml` + `networks.json` + `scripts
 - Mainnet (`subgraph.mainnet.yaml`) is hand-written — uses `ServiceRegistry` ABI (different `CreateService` signature)
 - Both mainnet and L2 manifests also include `IdentityRegistryBridger` data source
 
-### Supported Networks
+### Retained source configurations
 
 | Network | Contract | Manifest |
 |---------|----------|----------|
 | Ethereum | `ServiceRegistry` 0x48b6af7B | `subgraph.mainnet.yaml` |
-| Gnosis | `ServiceRegistryL2` 0x9338b515 | `subgraph.gnosis.yaml` |
 | Base | `ServiceRegistryL2` 0x3C1fF68f | `subgraph.base.yaml` |
 | Optimism | `ServiceRegistryL2` 0x3d77596b | `subgraph.optimism.yaml` |
 | Polygon | `ServiceRegistryL2` 0xE3607b00 | `subgraph.matic.yaml` |
@@ -314,15 +319,14 @@ Uses **template pattern**: `subgraph.template.yaml` + `networks.json` + `scripts
 
 ```bash
 yarn install                        # Install dependencies
-yarn codegen                        # Generate TS types (defaults to gnosis)
-yarn build                          # Build (defaults to gnosis)
+yarn codegen                        # Generate TS types (defaults to optimism)
+yarn build                          # Build (defaults to optimism)
 yarn generate-manifests             # Regenerate L2 manifests from template
 yarn test                           # Run Matchstick tests
 ```
 
 Deploy per-network:
 ```bash
-yarn deploy-gnosis
 yarn deploy-ethereum
 yarn deploy-base
 yarn deploy-optimism

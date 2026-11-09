@@ -7,44 +7,15 @@ import {
   Service,
   AgentSwapBuffer
 } from "../generated/schema"
-import { calculateUninvestedValue, updateFundingBalance } from "./tokenBalances"
+import { calculateUninvestedValue } from "./tokenBalances"
 import { getServiceByAgent } from "./config"
 import { calculateActualROI, aggregateClosedPositionMetrics } from "./roiCalculation"
 import { getEthUsd } from "./common"
 import { getTokenPriceUSD } from "./priceDiscovery"
-import { WETH, WHITELISTED_TOKENS, PROTOCOL_VELODROME_V2, PROTOCOL_VELODROME_V3 } from "./constants"
+import { WETH, WHITELISTED_TOKENS, PROTOCOL_VELODROME_V2, PROTOCOL_VELODROME_V3, PROTOCOL_AERO_CL, PROTOCOL_AERO_V2 } from "./constants"
 import { TokenBalance } from "../generated/schema"
 import { refreshVeloV2Position } from "./veloV2Shared"
 import { refreshVeloCLPosition } from "./veloCLShared"
-
-// ETH-adjusted metrics calculation class
-class EthAdjustedMetrics {
-  ethAdjustedActualROI: BigDecimal
-  ethAdjustedUnrealisedPnL: BigDecimal
-  ethAdjustedActualAPR: BigDecimal
-  ethAdjustedProjectedUnrealisedPnL: BigDecimal
-  currentEthPrice: BigDecimal
-  firstFundingEthPrice: BigDecimal
-  ethDelta: BigDecimal
-  
-  constructor(
-    ethAdjustedActualROI: BigDecimal,
-    ethAdjustedUnrealisedPnL: BigDecimal,
-    ethAdjustedActualAPR: BigDecimal,
-    ethAdjustedProjectedUnrealisedPnL: BigDecimal,
-    currentEthPrice: BigDecimal,
-    firstFundingEthPrice: BigDecimal,
-    ethDelta: BigDecimal
-  ) {
-    this.ethAdjustedActualROI = ethAdjustedActualROI
-    this.ethAdjustedUnrealisedPnL = ethAdjustedUnrealisedPnL
-    this.ethAdjustedActualAPR = ethAdjustedActualAPR
-    this.ethAdjustedProjectedUnrealisedPnL = ethAdjustedProjectedUnrealisedPnL
-    this.currentEthPrice = currentEthPrice
-    this.firstFundingEthPrice = firstFundingEthPrice
-    this.ethDelta = ethDelta
-  }
-}
 
 // Helper function to create block from timestamp for ETH price lookup
 function createBlockFromTimestamp(timestamp: BigInt): ethereum.Block {
@@ -65,98 +36,6 @@ function createBlockFromTimestamp(timestamp: BigInt): ethereum.Block {
     BigInt.zero(),
     BigInt.zero()
   )
-}
-
-// Calculate ETH-adjusted metrics using the core formula
-function calculateEthAdjustedMetrics(
-  portfolio: AgentPortfolio,
-  actualROI: BigDecimal,
-  unrealisedPnL: BigDecimal,
-  actualAPR: BigDecimal,
-  projectedUnrealisedPnL: BigDecimal,
-  block: ethereum.Block
-): EthAdjustedMetrics {
-  // Get current ETH price
-  let currentEthPrice = getEthUsd(block)
-  
-  // Get first funding ETH price (should be set when first funding occurs)
-  let firstFundingEthPrice = portfolio.firstFundingEthPrice
-  
-  // Calculate ETH delta: ((ETH_f/ETH_i)-1)*100
-  let ethDelta = BigDecimal.zero()
-  if (firstFundingEthPrice.gt(BigDecimal.zero())) {
-    ethDelta = currentEthPrice.div(firstFundingEthPrice)
-      .minus(BigDecimal.fromString("1"))
-      .times(BigDecimal.fromString("100"))
-  }
-  
-  // Calculate ETH-adjusted ROI: ROI - ETHdelta
-  let ethAdjustedActualROI = actualROI.minus(ethDelta)
-  let ethAdjustedUnrealisedPnL = unrealisedPnL.minus(ethDelta)
-  
-  // CORRECTED: Calculate ETH-adjusted APR from ETH-adjusted ROI (not directly from ETH delta)
-  // Get the time period for APR calculation
-  let timestampForAPR = portfolio.firstTradingTimestamp
-  let ethAdjustedActualAPR = BigDecimal.zero()
-  let ethAdjustedProjectedUnrealisedPnL = BigDecimal.zero()
-  
-  if (timestampForAPR.gt(BigInt.zero())) {
-    let secondsSinceStart = block.timestamp.minus(timestampForAPR)
-    let daysSinceStart = secondsSinceStart.toBigDecimal().div(BigDecimal.fromString("86400"))
-    
-    if (daysSinceStart.gt(BigDecimal.zero())) {
-      // APR = ETH-adjusted ROI * (365 / days_invested)
-      let annualizationFactor = BigDecimal.fromString("365").div(daysSinceStart)
-      ethAdjustedActualAPR = ethAdjustedActualROI.times(annualizationFactor)
-      ethAdjustedProjectedUnrealisedPnL = ethAdjustedUnrealisedPnL.times(annualizationFactor)
-    }
-  }
-  
-  return new EthAdjustedMetrics(
-    ethAdjustedActualROI,
-    ethAdjustedUnrealisedPnL,
-    ethAdjustedActualAPR,
-    ethAdjustedProjectedUnrealisedPnL,
-    currentEthPrice,
-    firstFundingEthPrice,
-    ethDelta
-  )
-}
-
-// Use the single source of truth for funding balance updates
-export function updateFunding(
-  serviceSafe: Address,
-  usd: BigDecimal,
-  deposit: boolean,
-  ts: BigInt
-): void {
-  // Update funding balance using the shared function
-  updateFundingBalance(serviceSafe, usd, deposit, ts)
-  
-  log.info("FUNDING: {} {} USD", [
-    deposit ? "IN" : "OUT",
-    usd.toString()
-  ])
-  
-  // Update portfolio after funding change
-  let block = new ethereum.Block(
-    Bytes.empty(),
-    Bytes.empty(),
-    Bytes.empty(),
-    Address.zero(),
-    Bytes.empty(),
-    Bytes.empty(),
-    Bytes.empty(),
-    BigInt.zero(),
-    BigInt.zero(),
-    BigInt.zero(),
-    ts,
-    BigInt.zero(),
-    BigInt.zero(),
-    BigInt.zero(),
-    BigInt.zero()
-  )
-  calculatePortfolioMetrics(serviceSafe, block)
 }
 
 // Refresh all TokenBalance USD values for a service using current prices (with 5-minute caching)
@@ -314,7 +193,7 @@ export function refreshAllActivePositions(
       let protocol = position.protocol
       
       // Call protocol-specific refresh function with updatePortfolio flag
-      if (protocol == PROTOCOL_VELODROME_V2) {
+      if (protocol == PROTOCOL_VELODROME_V2 || protocol == PROTOCOL_AERO_V2) {
         refreshVeloV2Position(
           Address.fromBytes(position.agent),
           Address.fromBytes(position.pool),
@@ -322,7 +201,7 @@ export function refreshAllActivePositions(
           Bytes.empty(),
           updatePortfolio
         )
-      } else if (protocol == PROTOCOL_VELODROME_V3) {
+      } else if (protocol == PROTOCOL_VELODROME_V3 || protocol == PROTOCOL_AERO_CL) {
         refreshVeloCLPosition(
           position.id,
           position.tokenId,
@@ -462,16 +341,6 @@ export function calculatePortfolioMetrics(
     }
   }
   
-  //  Calculate ETH-adjusted metrics
-  let ethAdjustedMetrics = calculateEthAdjustedMetrics(
-    portfolio,
-    actualROI,
-    roi,  // unrealisedPnL (portfolio-based)
-    actualAPR,
-    apr,  // projectedUnrealisedPnL (portfolio-based)
-    block
-  )
-  
   // Update portfolio with standard values
   portfolio.finalValue = finalValue
   portfolio.finalValueWithoutRewards = finalValueWithoutRewards
@@ -490,16 +359,16 @@ export function calculatePortfolioMetrics(
   
   portfolio.lastUpdated = block.timestamp
   
-  // Update portfolio with ETH-adjusted values
-  portfolio.ethAdjustedRoi = ethAdjustedMetrics.ethAdjustedActualROI
-  portfolio.ethAdjustedApr = ethAdjustedMetrics.ethAdjustedActualAPR
-  portfolio.ethAdjustedUnrealisedPnL = ethAdjustedMetrics.ethAdjustedUnrealisedPnL
-  portfolio.ethAdjustedProjectedUnrealisedPnL = ethAdjustedMetrics.ethAdjustedProjectedUnrealisedPnL
-  portfolio.currentEthPrice = ethAdjustedMetrics.currentEthPrice
+  // Deprecated: the ethAdjusted* fields equal the unadjusted values (see CLAUDE.md)
+  portfolio.ethAdjustedRoi = actualROI
+  portfolio.ethAdjustedApr = actualAPR
+  portfolio.ethAdjustedUnrealisedPnL = roi
+  portfolio.ethAdjustedProjectedUnrealisedPnL = apr
+  portfolio.currentEthPrice = getEthUsd(block)
   
   // firstFundingEthPrice is set in updateFundingBalance or registration fallback
   if (portfolio.firstFundingEthPrice.equals(BigDecimal.zero())) {
-    portfolio.firstFundingEthPrice = ethAdjustedMetrics.currentEthPrice
+    portfolio.firstFundingEthPrice = portfolio.currentEthPrice
   }
   
   // Update aggregation fields

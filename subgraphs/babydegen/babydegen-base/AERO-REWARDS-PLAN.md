@@ -10,6 +10,12 @@ positions vanished from the portfolio — which **this PR fixes** (gauge-aware V
 rewards, with tests). This doc captures the path, the verification status, and the runbook to
 close CL out once a real staked CL position exists.
 
+> **Since this plan:** it covers the legacy Slipstream (`aerodrome-cl`) path only. §1's code is
+> as it stood then: the reward amount is now scaled by `convertTokenAmount` for the venue's reward
+> token and priced from that token, not `/ 1e18` and `getTokenPriceUSD(AERO, …)`. Aero CL
+> (`aero-cl`) positions read rewards through `stakedContains` + `earned(address,uint256[])`
+> (`getAeroCLEarned`), so the runbook's `VeloCLGauge.json` fixes do not apply to them.
+
 This is deliberately a docs-first PR: there is **no Basius gauge state on-chain to test
 against today**, so we describe the plan and add self-reporting instrumentation rather than
 guess at fixes.

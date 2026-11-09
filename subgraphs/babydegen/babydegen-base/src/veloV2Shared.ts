@@ -7,25 +7,48 @@ import {
   log
 } from "@graphprotocol/graph-ts"
 
-import { ProtocolPosition, Service, AgentSwapBuffer } from "../generated/schema"
+import { ProtocolPosition, Service, AgentSwapBuffer, AeroGauge, V2PoolVenue } from "../generated/schema"
 import { VelodromeV2Pool } from "../generated/templates/VeloV2Pool/VelodromeV2Pool"
 import { VeloVoter } from "../generated/templates/VeloV2Pool/VeloVoter"
 import { VeloV2Gauge } from "../generated/templates/VeloV2Pool/VeloV2Gauge"
 import { VeloV2Pool as VeloV2PoolTemplate } from "../generated/templates"
 import { getTokenPriceUSD } from "./priceDiscovery"
+import { v2PoolKind } from "./priceAdapters"
 import { getServiceByAgent } from "./config"
 import { parseTotalSlippageFromBucket, associateSwapsWithPosition, calculatePortfolioMetrics } from "./helpers"
-import { getTokenDecimals, getTokenSymbol } from "./tokenUtils"
-import { calculatePositionROI } from "./roiCalculation"
-import { PROTOCOL_VELODROME_V2, AERO, VELO_VOTER } from "./constants"
+import { getTokenSymbol, convertTokenAmount } from "./tokenUtils"
+import { calculatePositionROI, initializePositionIncome } from "./roiCalculation"
+import { PROTOCOL_VELODROME_V2, VELO_VOTER, PROTOCOL_AERO_V2, rewardTokenFor, V2_STABLE_FEE_BPS, V2_VOLATILE_FEE_BPS, V2PoolKind } from "./constants"
 
-// Resolve the Aerodrome V2 gauge for a pool via the Voter (gauges(pool)), caching the result
-// on the position's rewardsContract. Returns Address.zero() when the pool has no gauge.
-// The "Voter reverted" (transient) and "no gauge" (legitimate) cases are kept distinct:
-// a revert is logged (it can silently undervalue a staked position) and never cached, so we
-// retry next refresh; a zero gauge is silent and not cached, so a later-gauged pool is picked up.
-// See AERO-REWARDS-PLAN.md §7.
+export function v2ProtocolFor(poolAddress: Address): string {
+  const venue = V2PoolVenue.load(poolAddress)
+  return venue != null ? venue.protocol : PROTOCOL_VELODROME_V2
+}
+
+// Fee tier of a v2 pool by kind (v2PoolKind)
+function setV2PoolFee(pp: ProtocolPosition, poolContract: VelodromeV2Pool): void {
+  const kind = v2PoolKind(poolContract)
+  if (kind != V2PoolKind.Unknown) {
+    pp.fee = kind == V2PoolKind.Stable ? V2_STABLE_FEE_BPS : V2_VOLATILE_FEE_BPS
+  }
+}
+
+// Resolve a v2 pool's gauge. Returns Address.zero() when the pool has no gauge.
+// - aero-v2: no gauge() and no Voter gauges(pool); read AeroGauge (written by handleAeroGaugeCreated) on every refresh
+//   and written to rewardsContract, which positionIncome matches rewards on.
+// - legacy: the Aerodrome Voter's gauges(pool), cached on the position's rewardsContract. A Voter
+//   revert (transient) is logged and not cached, so the next refresh retries; a zero gauge
+//   (legitimate) is silent and not cached, so a later-gauged pool is picked up. See
+//   AERO-REWARDS-PLAN.md §7.
 function resolveV2Gauge(poolAddress: Address, pp: ProtocolPosition): Address {
+  if (pp.protocol == PROTOCOL_AERO_V2) {
+    const aeroGauge = AeroGauge.load(poolAddress)
+    if (aeroGauge == null) {
+      return Address.zero()
+    }
+    pp.rewardsContract = aeroGauge.gauge
+    return Address.fromBytes(aeroGauge.gauge)
+  }
   const cached = pp.rewardsContract
   if (cached) {
     return Address.fromBytes(cached!)
@@ -52,15 +75,6 @@ const VELODROME_V2_ROUTER = Address.fromString("0xa062ae8a9c5e11aaa026fc2670b0d6
 // Cache for VelodromeV2 pools to avoid repeated RPC calls
 let poolCache = new Map<string, boolean>()
 
-// Helper function to convert token amount to human readable format
-function toHumanAmount(amount: BigInt, decimals: i32): BigDecimal {
-  if (amount.equals(BigInt.zero())) {
-    return BigDecimal.zero()
-  }
-  
-  let divisor = BigInt.fromI32(10).pow(decimals as u8)
-  return amount.toBigDecimal().div(divisor.toBigDecimal())
-}
 
 // Ensure pool template is created for tracking events
 export function ensureVeloV2PoolTemplate(poolAddress: Address): void {
@@ -74,7 +88,7 @@ export function ensureVeloV2PoolTemplate(poolAddress: Address): void {
 
 // Create or get VelodromeV2 position ID
 export function getVeloV2PositionId(userAddress: Address, poolAddress: Address): Bytes {
-  let positionId = userAddress.toHex() + "-" + PROTOCOL_VELODROME_V2 + "-" + poolAddress.toHex()
+  let positionId = userAddress.toHex() + "-" + v2ProtocolFor(poolAddress) + "-" + poolAddress.toHex()
   return Bytes.fromUTF8(positionId)
 }
 
@@ -98,9 +112,10 @@ export function refreshVeloV2PositionWithEventAmounts(
   let pp = ProtocolPosition.load(positionId)
   if (!pp) {
     pp = new ProtocolPosition(positionId)
+    initializePositionIncome(pp)
     pp.agent = userAddress
     pp.service = userAddress // Link to service
-    pp.protocol = PROTOCOL_VELODROME_V2
+    pp.protocol = v2ProtocolFor(poolAddress)
     pp.pool = poolAddress
     pp.isActive = true
     pp.tokenId = BigInt.zero() // VelodromeV2 doesn't use tokenIds
@@ -126,7 +141,6 @@ export function refreshVeloV2PositionWithEventAmounts(
     
     const token0Result = poolContract.try_token0()
     const token1Result = poolContract.try_token1()
-    const stableResult = poolContract.try_stable()
     
     if (!token0Result.reverted && !token1Result.reverted) {
       pp.token0 = token0Result.value
@@ -134,10 +148,7 @@ export function refreshVeloV2PositionWithEventAmounts(
       pp.token0Symbol = getTokenSymbol(token0Result.value)
       pp.token1Symbol = getTokenSymbol(token1Result.value)
       
-      // Set fee based on pool type (stable vs volatile)
-      if (!stableResult.reverted) {
-        pp.fee = stableResult.value ? 5 : 30 // 0.05% for stable, 0.30% for volatile
-      }
+      setV2PoolFee(pp, poolContract)
     }
     
     // Initialize ALL required fields BEFORE calling initializePositionCosts
@@ -178,7 +189,6 @@ export function refreshVeloV2PositionWithEventAmounts(
     
     const token0Result = poolContract.try_token0()
     const token1Result = poolContract.try_token1()
-    const stableResult = poolContract.try_stable()
     
     if (!token0Result.reverted && !token1Result.reverted) {
       pp.token0 = token0Result.value
@@ -186,19 +196,14 @@ export function refreshVeloV2PositionWithEventAmounts(
       pp.token0Symbol = getTokenSymbol(token0Result.value)
       pp.token1Symbol = getTokenSymbol(token1Result.value)
       
-      // Set fee based on pool type (stable vs volatile)
-      if (!stableResult.reverted) {
-        pp.fee = stableResult.value ? 5 : 30 // 0.05% for stable, 0.30% for volatile
-      }
+      setV2PoolFee(pp, poolContract)
     }
   }
   
   // Convert event amounts to human readable format
-  const token0Decimals = getTokenDecimals(Address.fromBytes(pp.token0!))
-  const token1Decimals = getTokenDecimals(Address.fromBytes(pp.token1!))
   
-  const eventAmount0Human = toHumanAmount(eventAmount0, token0Decimals)
-  const eventAmount1Human = toHumanAmount(eventAmount1, token1Decimals)
+  const eventAmount0Human = convertTokenAmount(eventAmount0, Address.fromBytes(pp.token0!))
+  const eventAmount1Human = convertTokenAmount(eventAmount1, Address.fromBytes(pp.token1!))
   
   // Get USD values
   let token0Price = getTokenPriceUSD(Address.fromBytes(pp.token0!), block.timestamp, false)
@@ -273,9 +278,10 @@ export function refreshVeloV2Position(
     
     // Create a new position if it doesn't exist
     pp = new ProtocolPosition(positionId)
+    initializePositionIncome(pp)
     pp.agent = userAddress
     pp.service = userAddress // Link to service
-    pp.protocol = PROTOCOL_VELODROME_V2
+    pp.protocol = v2ProtocolFor(poolAddress)
     pp.pool = poolAddress
     pp.isActive = true
     pp.tokenId = BigInt.zero() // VelodromeV2 doesn't use tokenIds
@@ -301,7 +307,6 @@ export function refreshVeloV2Position(
     
     const token0Result = poolContract.try_token0()
     const token1Result = poolContract.try_token1()
-    const stableResult = poolContract.try_stable()
     
     if (!token0Result.reverted && !token1Result.reverted) {
       pp.token0 = token0Result.value
@@ -309,10 +314,7 @@ export function refreshVeloV2Position(
       pp.token0Symbol = getTokenSymbol(token0Result.value)
       pp.token1Symbol = getTokenSymbol(token1Result.value)
       
-      // Set fee based on pool type (stable vs volatile)
-      if (!stableResult.reverted) {
-        pp.fee = stableResult.value ? 5 : 30 // 0.05% for stable, 0.30% for volatile
-      }
+      setV2PoolFee(pp, poolContract)
     } else {
       return
     }
@@ -372,6 +374,7 @@ export function refreshVeloV2Position(
   let rewardUSD = BigDecimal.zero()
   const gaugeAddr = resolveV2Gauge(poolAddress, pp)
   if (!gaugeAddr.equals(Address.zero())) {
+    // Aero's V2Gauge has the same balanceOf/earned(address) as the legacy one, so VeloV2Gauge binds it.
     const gauge = VeloV2Gauge.bind(gaugeAddr)
     const stakedRes = gauge.try_balanceOf(userAddress)
     if (!stakedRes.reverted) {
@@ -386,9 +389,9 @@ export function refreshVeloV2Position(
     }
     const earnedRes = gauge.try_earned(userAddress)
     if (!earnedRes.reverted) {
-      // Aerodrome V2 gauges emit AERO (18-dec), priced off the AERO/USDC pool (tokenConfig.ts).
-      rewardAmount = earnedRes.value.toBigDecimal().div(BigDecimal.fromString("1e18"))
-      rewardUSD = rewardAmount.times(getTokenPriceUSD(AERO, block.timestamp, false))
+      const rewardToken = rewardTokenFor(pp.protocol)
+      rewardAmount = convertTokenAmount(earnedRes.value, rewardToken)
+      rewardUSD = rewardAmount.times(getTokenPriceUSD(rewardToken, block.timestamp, false))
     } else {
       // Symmetric with the CL guard: earned(address) reverting on a staked position is the
       // silent-zero failure mode (non-standard gauge ABI). Log it loudly. See AERO-REWARDS-PLAN.md.
@@ -428,11 +431,9 @@ export function refreshVeloV2Position(
     const userSharePercent = userShare.times(BigDecimal.fromString("100"))
     
     // Calculate current token amounts based on reserves and user's share
-    const token0Decimals = getTokenDecimals(Address.fromBytes(pp.token0!))
-    const token1Decimals = getTokenDecimals(Address.fromBytes(pp.token1!))
     
-    const reserve0Human = toHumanAmount(reserves.value0, token0Decimals)
-    const reserve1Human = toHumanAmount(reserves.value1, token1Decimals)
+    const reserve0Human = convertTokenAmount(reserves.value0, Address.fromBytes(pp.token0!))
+    const reserve1Human = convertTokenAmount(reserves.value1, Address.fromBytes(pp.token1!))
     
     pp.amount0 = reserve0Human.times(userShare)
     pp.amount1 = reserve1Human.times(userShare)
@@ -510,11 +511,9 @@ export function refreshVeloV2PositionWithBurnAmounts(
   }
   
   // Convert event amounts to human readable format
-  const token0Decimals = getTokenDecimals(Address.fromBytes(pp.token0!))
-  const token1Decimals = getTokenDecimals(Address.fromBytes(pp.token1!))
   
-  const eventAmount0Human = toHumanAmount(eventAmount0, token0Decimals)
-  const eventAmount1Human = toHumanAmount(eventAmount1, token1Decimals)
+  const eventAmount0Human = convertTokenAmount(eventAmount0, Address.fromBytes(pp.token0!))
+  const eventAmount1Human = convertTokenAmount(eventAmount1, Address.fromBytes(pp.token1!))
   
   // Get USD values for exit tracking
   let token0Price = getTokenPriceUSD(Address.fromBytes(pp.token0!), block.timestamp, false)

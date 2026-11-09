@@ -15,6 +15,7 @@ import {
 } from "../generated/schema"
 
 import { getTokenPriceUSD } from "./priceDiscovery"
+import { saveWithROI } from "./roiCalculation"
 import { getTokenDecimals } from "./tokenUtils"
 import { WETH } from "./constants"
 
@@ -291,18 +292,5 @@ function updatePositionCosts(position: ProtocolPosition, totalSlippageUSD: BigDe
   position.totalCostsUSD = position.swapSlippageUSD // Add other costs here if needed
   position.investmentUSD = position.entryAmountUSD.plus(position.totalCostsUSD)
   
-  // If position is closed, calculate ROI
-  let exitAmount = position.exitAmountUSD as BigDecimal | null
-  if (!position.isActive && exitAmount != null) {
-    position.grossGainUSD = exitAmount
-    position.netGainUSD = position.grossGainUSD.minus(position.investmentUSD)
-    
-    if (position.investmentUSD.gt(BigDecimal.zero())) {
-      position.positionROI = position.netGainUSD.div(position.investmentUSD).times(BigDecimal.fromString("100"))
-    } else {
-      position.positionROI = BigDecimal.zero()
-    }
-  }
-  
-  position.save()
+  saveWithROI(position)
 }

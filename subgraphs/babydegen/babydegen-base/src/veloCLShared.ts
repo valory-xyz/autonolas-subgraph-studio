@@ -3,39 +3,98 @@ import { VelodromePositionNFTManager } from "../generated/VeloNFTManager/Velodro
 import { VelodromeCLPool } from "../generated/VeloNFTManager/VelodromeCLPool"
 import { VelodromeCLFactory } from "../generated/VeloNFTManager/VelodromeCLFactory"
 import { VeloCLGauge } from "../generated/VeloNFTManager/VeloCLGauge"
+import { AeroCLGauge } from "../generated/VeloNFTManager/AeroCLGauge"
 import { LiquidityAmounts } from "./libraries/LiquidityAmounts"
 import { TickMath } from "./libraries/TickMath"
 import { ProtocolPosition, Service, AgentSwapBuffer } from "../generated/schema"
 import { getUsd, refreshPortfolio } from "./common"
 import { addAgentNFTToPool, removeAgentNFTFromPool, getCachedPoolAddress, cachePoolAddress } from "./poolIndexCache"
 import { getTokenPriceUSD } from "./priceDiscovery"
-import { VELO_MANAGER, VELO_FACTORY, AERO, PROTOCOL_VELODROME_V3 } from "./constants"
+import {
+  VELO_MANAGER,
+  VELO_FACTORY,
+  PROTOCOL_VELODROME_V3,
+  AERO_NFT_MANAGER,
+  AERO_CL_FACTORY,
+  PROTOCOL_AERO_CL,
+  rewardTokenFor
+} from "./constants"
 import { isServiceAgent, getServiceByAgent } from "./config"
 import { parseTotalSlippageFromBucket, associateSwapsWithPosition } from "./helpers"
-import { getTokenDecimals, getTokenSymbol } from "./tokenUtils"
-import { initializePositionCosts, calculatePositionROI } from "./roiCalculation"
+import { getTokenSymbol, convertTokenAmount } from "./tokenUtils"
+import { initializePositionCosts, calculatePositionROI, initializePositionIncome } from "./roiCalculation"
+import { recordClaimableRewardBeforeBlock, nftPositionMappingId, closedWithNoExitThisBlock, exitClosedInBlock, recordFullExit } from "./positionIncome"
 
-function convertTokenAmount(amount: BigInt, tokenAddress: Address): BigDecimal {
-  const decimals = getTokenDecimals(tokenAddress)
-  const divisor = BigDecimal.fromString("1e" + decimals.toString())
-  return amount.toBigDecimal().div(divisor)
+
+// A CL position manager and what goes with it. The legacy Slipstream NFPM and Aero's share
+// the positions()/pool/factory interfaces, so one refresh path serves both; the label picks
+// the contracts and the gauge reward token, so they can't be mixed across venues.
+export class CLVenue {
+  readonly manager: Address
+  readonly factory: Address
+  readonly rewardToken: Address
+  readonly protocol: string
+
+  constructor(protocol: string) {
+    if (protocol == PROTOCOL_AERO_CL) {
+      this.manager = AERO_NFT_MANAGER
+      this.factory = AERO_CL_FACTORY
+      this.protocol = PROTOCOL_AERO_CL
+    } else {
+      if (protocol != PROTOCOL_VELODROME_V3) {
+        log.critical("CLVenue: '{}' is not a CL venue", [protocol])
+      }
+      this.manager = VELO_MANAGER
+      this.factory = VELO_FACTORY
+      this.protocol = PROTOCOL_VELODROME_V3
+    }
+    this.rewardToken = rewardTokenFor(this.protocol)
+  }
 }
 
-export function getVeloCLPositionId(userAddress: Address, tokenId: BigInt): Bytes {
-  const positionId = userAddress.toHex() + "-" + PROTOCOL_VELODROME_V3 + "-" + tokenId.toString()
+export function clVenueForManager(manager: Address): CLVenue {
+  if (manager.equals(AERO_NFT_MANAGER)) {
+    return new CLVenue(PROTOCOL_AERO_CL)
+  }
+  if (!manager.equals(VELO_MANAGER)) {
+    log.critical("clVenueForManager: {} is not a known CL position manager", [manager.toHexString()])
+  }
+  return new CLVenue(PROTOCOL_VELODROME_V3)
+}
+
+export class CLPositionCreate {
+  readonly owner: Address
+  readonly venue: CLVenue
+
+  constructor(owner: Address, venue: CLVenue) {
+    this.owner = owner
+    this.venue = venue
+  }
+
+  positionId(tokenId: BigInt): Bytes {
+    return getVeloCLPositionId(this.owner, tokenId, this.venue.protocol)
+  }
+}
+
+export function getCLMappingId(protocol: string, tokenId: BigInt): Bytes {
+  return nftPositionMappingId(protocol, tokenId)
+}
+
+export function getVeloCLPositionId(userAddress: Address, tokenId: BigInt, protocol: string): Bytes {
+  const positionId = userAddress.toHex() + "-" + protocol + "-" + tokenId.toString()
   return Bytes.fromUTF8(positionId)
 }
 
 // Helper function to derive pool address from position data with caching
-function getPoolAddress(token0: Address, token1: Address, tickSpacing: i32, tokenId: BigInt | null = null): Address {
+function getPoolAddress(venue: CLVenue, token0: Address, token1: Address, tickSpacing: i32, tokenId: BigInt | null = null): Address {
   if (tokenId !== null) {
-    const cached = getCachedPoolAddress(PROTOCOL_VELODROME_V3, tokenId)
+    const cached = getCachedPoolAddress(venue.protocol, tokenId)
     if (cached !== null) {
       return cached
     }
   }
   
-  const factory = VelodromeCLFactory.bind(VELO_FACTORY)
+  const factory = VelodromeCLFactory.bind(venue.factory)
   const poolResult = factory.try_getPool(token0, token1, tickSpacing)
   
   if (poolResult.reverted) {
@@ -48,7 +107,7 @@ function getPoolAddress(token0: Address, token1: Address, tickSpacing: i32, toke
     const poolAddress = reversedResult.value
     
     if (tokenId !== null) {
-      cachePoolAddress(PROTOCOL_VELODROME_V3, tokenId, poolAddress)
+      cachePoolAddress(venue.protocol, tokenId, poolAddress)
     }
     
     return poolAddress
@@ -57,7 +116,7 @@ function getPoolAddress(token0: Address, token1: Address, tickSpacing: i32, toke
   const poolAddress = poolResult.value
   
   if (tokenId !== null) {
-    cachePoolAddress(PROTOCOL_VELODROME_V3, tokenId, poolAddress)
+    cachePoolAddress(venue.protocol, tokenId, poolAddress)
   }
   
   return poolAddress
@@ -84,10 +143,13 @@ export function refreshVeloCLPositionWithEventAmounts(
   }
   
   const nftOwner = Address.fromBytes(pp.agent)
-  const mgr = VelodromePositionNFTManager.bind(VELO_MANAGER)
+  const mgr = VelodromePositionNFTManager.bind(new CLVenue(pp.protocol).manager)
   
   const dataResult = mgr.try_positions(tokenId)
   if (dataResult.reverted) {
+    log.warning("CL entry: positions() reverted for position {} (tokenId {}, venue {}) — entry amounts not recorded", [
+      positionId.toString(), tokenId.toString(), pp.protocol
+    ])
     return
   }
   
@@ -154,50 +216,28 @@ export function refreshVeloCLPositionWithExitAmounts(
     return // Position should already exist
   }
   
-  const nftOwner = Address.fromBytes(pp.agent)
-  const mgr = VelodromePositionNFTManager.bind(VELO_MANAGER)
-  
-  const dataResult = mgr.try_positions(tokenId)
-  if (dataResult.reverted) {
+  if (closedWithNoExitThisBlock(pp, block)) {
+    log.warning("CL exit: tx {} — DecreaseLiquidity for position {} (tokenId {}) skipped: the position is closed and recorded no exit in this block", [
+      txHash.toHexString(), positionId.toString(), tokenId.toString()
+    ])
     return
   }
   
-  const data = dataResult.value
-  const remainingLiquidity = data.value7
-  const isFullExit = remainingLiquidity.equals(BigInt.zero())
+  const venue = new CLVenue(pp.protocol)
+  const nftOwner = Address.fromBytes(pp.agent)
+  const mgr = VelodromePositionNFTManager.bind(venue.manager)
   
-  if (isFullExit) {
-    const token0Price = getTokenPriceUSD(data.value2, block.timestamp, false)
-    const token1Price = getTokenPriceUSD(data.value3, block.timestamp, false)
-    
-    const exitAmount0Human = convertTokenAmount(eventAmount0, data.value2)
-    const exitAmount1Human = convertTokenAmount(eventAmount1, data.value3)
-    
-    const exitUsd0 = exitAmount0Human.times(token0Price)
-    const exitUsd1 = exitAmount1Human.times(token1Price)
-    const exitUsd = exitUsd0.plus(exitUsd1)
-    
-    pp.isActive = false
-    pp.exitTxHash = txHash
-    pp.exitTimestamp = block.timestamp
-    pp.exitAmount0 = exitAmount0Human
-    pp.exitAmount0USD = exitUsd0
-    pp.exitAmount1 = exitAmount1Human
-    pp.exitAmount1USD = exitUsd1
-    pp.exitAmountUSD = exitUsd
-    
-    pp.amount0 = BigDecimal.zero()
-    pp.amount1 = BigDecimal.zero()
-    pp.amount0USD = BigDecimal.zero()
-    pp.amount1USD = BigDecimal.zero()
-    pp.usdCurrent = BigDecimal.zero()
-    pp.liquidity = BigInt.zero()
-    
-    calculatePositionROI(pp)
-    
-    const poolAddress = getPoolAddress(data.value2, data.value3, data.value4 as i32, tokenId)
-    removeAgentNFTFromPool(PROTOCOL_VELODROME_V3, poolAddress, tokenId)
-    
+  // positions() reads end-of-block state, so it reverts when the NFT is burned later in the block
+  const dataResult = mgr.try_positions(tokenId)
+  if (dataResult.reverted) {
+    log.warning("CL exit: positions() reverted for position {} (tokenId {}, venue {}) — burned in this block; exit taken from the DecreaseLiquidity amounts", [
+      positionId.toString(), tokenId.toString(), venue.protocol
+    ])
+  }
+  const isFullExit = dataResult.reverted || dataResult.value.value7.equals(BigInt.zero())
+  
+  if (isFullExit && recordFullExit(pp, eventAmount0, eventAmount1, block, txHash)) {
+    removeAgentNFTFromPool(venue.protocol, Address.fromBytes(pp.pool), tokenId)
     pp.save()
     refreshPortfolio(nftOwner, block)
   } else {
@@ -207,46 +247,73 @@ export function refreshVeloCLPositionWithExitAmounts(
 
 export function refreshVeloCLPosition(
   positionId: Bytes,
-  tokenId: BigInt, 
-  block: ethereum.Block, 
-  txHash: Bytes = Bytes.empty(), 
-  updatePortfolio: boolean = true,
-  owner: Address | null = null
+  tokenId: BigInt,
+  block: ethereum.Block,
+  txHash: Bytes = Bytes.empty(),
+  updatePortfolio: boolean = true
+): void {
+  refreshOrCreateCLPosition(positionId, tokenId, block, txHash, updatePortfolio, null)
+}
+
+// Creates the position for a newly minted NFT; its id comes from `create`, so it always
+// matches the owner and venue.
+export function createVeloCLPosition(create: CLPositionCreate, tokenId: BigInt, block: ethereum.Block, txHash: Bytes): void {
+  refreshOrCreateCLPosition(create.positionId(tokenId), tokenId, block, txHash, false, create)
+}
+
+function refreshOrCreateCLPosition(
+  positionId: Bytes,
+  tokenId: BigInt,
+  block: ethereum.Block,
+  txHash: Bytes,
+  updatePortfolio: boolean,
+  create: CLPositionCreate | null
 ): void {
   let position = ProtocolPosition.load(positionId)
   let nftOwner: Address
   let poolAddress: Address
+  let venue: CLVenue
   
   if (!position) {
-    if (owner !== null) {
-      nftOwner = owner
-    } else {
+    if (create === null) {
       return
     }
+    nftOwner = create.owner
+    venue = create.venue
     
     // Verify this is a service agent
     if (!isServiceAgent(nftOwner)) {
       return
     }
     
-    const mgr = VelodromePositionNFTManager.bind(VELO_MANAGER)
+    const mgr = VelodromePositionNFTManager.bind(venue.manager)
     const dataResult = mgr.try_positions(tokenId)
     if (dataResult.reverted) {
+      log.error(
+        "CL create: positions() reverted for position {} (tokenId {}, venue {}, manager {}) — not created.",
+        [positionId.toString(), tokenId.toString(), venue.protocol, venue.manager.toHexString()]
+      )
       return
     }
     
     const data = dataResult.value
-    poolAddress = getPoolAddress(data.value2, data.value3, data.value4 as i32, tokenId)
+    poolAddress = getPoolAddress(venue, data.value2, data.value3, data.value4 as i32, tokenId)
     
     if (poolAddress.equals(Address.zero())) {
+      log.error(
+        "CL create: no pool for position {} (tokenId {}, venue {}, factory {}, token0 {}, token1 {}, tickSpacing {}) — not created.",
+        [positionId.toString(), tokenId.toString(), venue.protocol, venue.factory.toHexString(),
+         data.value2.toHexString(), data.value3.toHexString(), data.value4.toString()]
+      )
       return
     }
     
     // Create new position
     position = new ProtocolPosition(positionId)
+    initializePositionIncome(position)
     position.agent = nftOwner
     position.service = nftOwner
-    position.protocol = PROTOCOL_VELODROME_V3
+    position.protocol = venue.protocol
     position.pool = poolAddress
     position.tokenId = tokenId
     position.isActive = true
@@ -291,10 +358,11 @@ export function refreshVeloCLPosition(
     initializePositionCosts(position)
   } else {
   // Use existing position
+    venue = new CLVenue(position.protocol)
     nftOwner = Address.fromBytes(position.agent)
     poolAddress = Address.fromBytes(position.pool)
   }
-  const mgr = VelodromePositionNFTManager.bind(VELO_MANAGER)
+  const mgr = VelodromePositionNFTManager.bind(venue.manager)
   const dataResult = mgr.try_positions(tokenId)
   if (dataResult.reverted) {
     return
@@ -333,46 +401,23 @@ export function refreshVeloCLPosition(
   let rewardAmount = BigDecimal.zero()
   let rewardUSD = BigDecimal.zero()
   
-  // Get gauge address
-  let gaugeAddress: Address
-  let rewardsContract = position.rewardsContract
-  if (rewardsContract) {
-    gaugeAddress = Address.fromBytes(position.rewardsContract!)
-  } 
-  else {
-    const gaugeResult = pool.try_gauge()
-    if (!gaugeResult.reverted) {
-      gaugeAddress = gaugeResult.value
-      position.rewardsContract = gaugeAddress
-    } else {
-      // pool.gauge() reverted → this pool has no gauge (a legitimate pool state, unlike the
-      // earned()-revert case below). Value the position without rewards and return; do NOT
-      // log — a missing gauge is expected, not the silent-zero failure mode we guard against.
-      position.usdCurrent = usd
-      position.save()
-      return
-    }
-  }
+  const gaugeAddress = resolveCLGauge(pool, position, venue)
 
-  // Get claimable rewards from gauge
-  const gauge = VeloCLGauge.bind(gaugeAddress)
-  const earnedResult = gauge.try_earned(nftOwner, tokenId)
+  if (!gaugeAddress.equals(Address.zero())) {
+    const earnedResult = venue.protocol == PROTOCOL_AERO_CL
+      ? getAeroCLEarned(gaugeAddress, nftOwner, tokenId)
+      : VeloCLGauge.bind(gaugeAddress).try_earned(nftOwner, tokenId)
   
-  if (!earnedResult.reverted) {
-    rewardAmount = earnedResult.value.toBigDecimal().div(BigDecimal.fromString("1e18"))
-    // Aerodrome CL gauges emit AERO rewards, now priced off the AERO/USDC pool (tokenConfig.ts).
-    const aeroPrice = getTokenPriceUSD(AERO, block.timestamp, false)
-    rewardUSD = rewardAmount.times(aeroPrice)
-  } else {
-    // earned(account, tokenId) reverted on an active CL position. This is the silent-zero
-    // failure mode flagged in AERO-REWARDS-PLAN.md: if the gauge ABI or the `account`
-    // argument is wrong, rewards quietly record as 0 instead of erroring. Until a real
-    // staked Basius position confirms the path end-to-end, log it loudly so the first
-    // live position surfaces the problem in the indexer logs rather than as quietly-wrong KPIs.
-    log.warning(
-      "AERO rewards: gauge.earned() reverted for active CL position {} (gauge {}, account {}, tokenId {}) — recording 0 reward. See AERO-REWARDS-PLAN.md.",
-      [positionId.toHexString(), gaugeAddress.toHexString(), nftOwner.toHexString(), tokenId.toString()]
-    )
+    if (!earnedResult.reverted) {
+      rewardAmount = convertTokenAmount(earnedResult.value, venue.rewardToken)
+      const rewardPrice = getTokenPriceUSD(venue.rewardToken, block.timestamp, false)
+      rewardUSD = rewardAmount.times(rewardPrice)
+    } else {
+      log.warning(
+        "CL rewards: gauge.earned() reverted for active CL position {} (gauge {}, account {}, tokenId {}) — recording 0 reward.",
+        [positionId.toString(), gaugeAddress.toHexString(), nftOwner.toHexString(), tokenId.toString()]
+      )
+    }
   }
 
   // Separate base position value from rewards to avoid double-counting
@@ -387,6 +432,7 @@ export function refreshVeloCLPosition(
   position.amount1 = amount1Human
   position.amount1USD = usd1
   position.liquidity = data.value7
+  recordClaimableRewardBeforeBlock(position, block)
   position.claimableReward = rewardAmount
   position.claimableRewardUSD = rewardUSD
   
@@ -397,17 +443,20 @@ export function refreshVeloCLPosition(
   }
   
   if (isPositionClosed(data.value7, amount0Human, amount1Human)) {
+    // A refresh after this block's exit (e.g. an IncreaseLiquidity) keeps that exit
+    if (!exitClosedInBlock(position, block)) {
+      position.exitTxHash = txHash
+      position.exitTimestamp = block.timestamp
+      position.exitAmount0 = amount0Human
+      position.exitAmount0USD = usd0
+      position.exitAmount1 = amount1Human
+      position.exitAmount1USD = usd1
+      position.exitAmountUSD = usd
+    }
     position.isActive = false
-    position.exitTxHash = txHash
-    position.exitTimestamp = block.timestamp
-    position.exitAmount0 = amount0Human
-    position.exitAmount0USD = usd0
-    position.exitAmount1 = amount1Human
-    position.exitAmount1USD = usd1
-    position.exitAmountUSD = usd
     
     calculatePositionROI(position)
-    removeAgentNFTFromPool(PROTOCOL_VELODROME_V3, poolAddress, tokenId)
+    removeAgentNFTFromPool(venue.protocol, poolAddress, tokenId)
   }
   
   position.save()
@@ -415,4 +464,46 @@ export function refreshVeloCLPosition(
   if (updatePortfolio) {
     refreshPortfolio(nftOwner, block, true)
   }
+}
+
+// A CL pool's gauge; Address.zero() when the pool has none. Legacy CL gauges are cached once
+// found; Aero ones are re-read each refresh. A zero or reverted gauge() is never cached, so a
+// pool gauged later is picked up.
+function resolveCLGauge(pool: VelodromeCLPool, position: ProtocolPosition, venue: CLVenue): Address {
+  const cached = position.rewardsContract
+  if (cached && venue.protocol != PROTOCOL_AERO_CL) {
+    return Address.fromBytes(cached!)
+  }
+  const gaugeResult = pool.try_gauge()
+  if (gaugeResult.reverted) {
+    log.warning(
+      "CL rewards: pool.gauge() reverted for position {} (pool {}, tokenId {}) — using the cached gauge, if any.",
+      [position.id.toString(), pool._address.toHexString(), position.tokenId.toString()]
+    )
+    return cached ? Address.fromBytes(cached!) : Address.zero()
+  }
+  if (gaugeResult.value.equals(Address.zero())) {
+    return Address.zero()
+  }
+  position.rewardsContract = gaugeResult.value
+  return gaugeResult.value
+}
+
+// Aero's CLGauge has no earned(address,uint256); earned(account, [tokenId]) reads one
+// position, but reverts unless that account has the NFT staked. An unstaked position earns
+// nothing, so it reads as 0 rather than as the revert the caller logs.
+function getAeroCLEarned(gaugeAddress: Address, account: Address, tokenId: BigInt): ethereum.CallResult<BigInt> {
+  const gauge = AeroCLGauge.bind(gaugeAddress)
+  const staked = gauge.try_stakedContains(account, tokenId)
+  if (staked.reverted) {
+    log.warning(
+      "Aero CL rewards: gauge.stakedContains() reverted (gauge {}, account {}, tokenId {}) — recording 0 reward.",
+      [gaugeAddress.toHexString(), account.toHexString(), tokenId.toString()]
+    )
+    return ethereum.CallResult.fromValue(BigInt.zero())
+  }
+  if (!staked.value) {
+    return ethereum.CallResult.fromValue(BigInt.zero())
+  }
+  return gauge.try_earned1(account, [tokenId])
 }

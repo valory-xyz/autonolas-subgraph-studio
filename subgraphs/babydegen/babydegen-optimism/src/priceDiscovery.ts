@@ -1,15 +1,13 @@
-import { Address, BigDecimal, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts"
+import { Address, BigDecimal, BigInt, Bytes, ethereum, log } from "@graphprotocol/graph-ts"
 import { Token, PriceSource, PriceUpdate } from "../generated/schema"
 import { getTokenConfig, TokenConfig, PriceSourceConfig } from "./tokenConfig"
-import { CRITICAL_STABLECOINS, DOLA } from "./constants"
+import { STABLECOINS, USDC_NATIVE, USDC_BRIDGED, WBTC } from "./constants"
 
 // Cache duration: 5 minutes
 const PRICE_CACHE_DURATION = BigInt.fromI32(300)
 const MIN_CONFIDENCE_THRESHOLD = BigDecimal.fromString("0.5") // 50% minimum confidence
 
-// Stablecoin fallback constants
-const STABLECOIN_FALLBACK_PRICE = BigDecimal.fromString("1.0") // Default fallback for stablecoins
-const STABLECOIN_FALLBACK_CONFIDENCE = BigDecimal.fromString("0.95") // 95% confidence for stablecoin fallbacks
+const DEPEG_THRESHOLD = BigDecimal.fromString("0.98")
 
 // Simplified token validation without caching to avoid Map issues
 function isTokenValidated(address: Address): boolean {
@@ -24,33 +22,6 @@ export function getTokenPriceUSD(
   forceRefresh: boolean = false
 ): BigDecimal {
   
-  if (tokenAddress.equals(DOLA)) {
-    // Load or initialize DOLA token
-    let token = Token.load(tokenAddress)
-    if (token == null) {
-      token = initializeToken(tokenAddress)
-      if (token == null) {
-        return BigDecimal.fromString("1.0") // Fallback even if initialization fails
-      }
-    }
-    
-    // Set hardcoded price with high confidence
-    let hardcodedPrice = BigDecimal.fromString("1.0")
-    let hardcodedConfidence = BigDecimal.fromString("0.99") // 99% confidence
-    
-    // Update token with hardcoded values
-    token.derivedUSD = hardcodedPrice
-    token.priceConfidence = hardcodedConfidence
-    token.lastPriceUpdate = currentTimestamp
-    token.save()
-    
-    // Create price update record for tracking
-    let hardcodedResult = new PriceResult(hardcodedPrice, hardcodedConfidence, "hardcoded")
-    createPriceUpdate(token, hardcodedResult, currentTimestamp)
-    
-    return hardcodedPrice
-  }
-
   // Quick validation check first
   if (!isTokenValidated(tokenAddress)) {
     return BigDecimal.fromString("0")
@@ -82,6 +53,8 @@ export function getTokenPriceUSD(
     token.derivedUSD = priceResult.price
     token.priceConfidence = priceResult.confidence
     token.lastPriceUpdate = currentTimestamp
+    token.priceStale = false
+    token.depegged = isStablecoin(tokenAddress) && priceResult.price.lt(DEPEG_THRESHOLD)
     token.save()
     
     // Create price update record
@@ -90,36 +63,31 @@ export function getTokenPriceUSD(
     return priceResult.price
   }
   
-  // No reliable price found for token
-
-  // Fallback strategy based on token type
-  let tokenHex = token.id.toHexString().toLowerCase()
-  
-  // For critical stablecoins (USDC, USDT, DAI, LUSD), use $1.00 with high confidence
-  for (let i = 0; i < CRITICAL_STABLECOINS.length; i++) {
-    if (tokenHex == CRITICAL_STABLECOINS[i]) {
-      // Using $1.00 fallback for critical stablecoin
-      
-      // Update token with fallback price
-      token.derivedUSD = STABLECOIN_FALLBACK_PRICE
-      token.priceConfidence = STABLECOIN_FALLBACK_CONFIDENCE
-      token.lastPriceUpdate = currentTimestamp
+  // No valid price: keep the last valid one, marked stale; a token never priced stays unpriced
+  if (token.derivedUSD.gt(BigDecimal.zero())) {
+    if (!token.priceStale) {
+      log.warning("PRICING: no valid price for {} ({}) — keeping its last price {}, marked stale", [
+        token.symbol, tokenAddress.toHexString(), token.derivedUSD.toString()
+      ])
+      token.priceStale = true
       token.save()
-      
-      // Create fallback price update record
-      let fallbackResult = new PriceResult(
-        STABLECOIN_FALLBACK_PRICE,
-        STABLECOIN_FALLBACK_CONFIDENCE,
-        "fallback"
-      )
-      createPriceUpdate(token, fallbackResult, currentTimestamp)
-      
-      return STABLECOIN_FALLBACK_PRICE
+    }
+    return token.derivedUSD
+  }
+  log.warning("PRICING: no valid price for {} ({}) and no earlier price — valued at $0", [
+    token.symbol, tokenAddress.toHexString()
+  ])
+  return BigDecimal.zero()
+}
+
+function isStablecoin(tokenAddress: Address): boolean {
+  let tokenHex = tokenAddress.toHexString().toLowerCase()
+  for (let i = 0; i < STABLECOINS.length; i++) {
+    if (tokenHex == STABLECOINS[i]) {
+      return true
     }
   }
-
-  // For all other tokens, no reliable fallback
-  return BigDecimal.fromString("0") // Fail gracefully for non-critical tokens
+  return false
 }
 
 class PriceResult {
@@ -146,6 +114,8 @@ function initializeToken(address: Address): Token | null {
   token.decimals = BigInt.fromI32(config.decimals)
   token.derivedUSD = BigDecimal.fromString("0") // Start with 0, not $1
   token.priceConfidence = BigDecimal.fromString("0")
+  token.priceStale = false
+  token.depegged = false
   token.priceSources = []
   token.lastPriceUpdate = BigInt.fromI32(0)
   
@@ -180,18 +150,34 @@ function getPriceFromSources(
   if (config == null) {
     return new PriceResult(BigDecimal.fromString("0"), BigDecimal.fromString("0"), "none")
   }
+  if (config.priceSources.length == 0) {
+    log.warning("PRICING: {} ({}) has no price source — valued at $0", [config.symbol, token.id.toHexString()])
+    return new PriceResult(BigDecimal.fromString("0"), BigDecimal.fromString("0"), "none")
+  }
   
   // Track valid prices and their confidence
   let validPrices: BigDecimal[] = []
   let confidences: BigDecimal[] = []
   let sourceTypes: string[] = []
   
-  // Try all sources and collect valid prices
+  // Collect valid prices from the best priority that has any: a higher-numbered source is a
+  // fallback, only read when every better one fails (e.g. BOLD's BOLD/LUSD pool behind its
+  // BOLD/USDC pool). Sources sharing a priority are averaged by confidence below.
+  let bestPriority = i32.MAX_VALUE
   for (let i = 0; i < config.priceSources.length; i++) {
     let sourceConfig = config.priceSources[i]
+    if (sourceConfig.priority > bestPriority) {
+      continue
+    }
     let result = getPriceFromSource(token, sourceConfig, timestamp)
     
     if (result.price.gt(BigDecimal.fromString("0"))) {
+      if (sourceConfig.priority < bestPriority) {
+        bestPriority = sourceConfig.priority
+        validPrices = []
+        confidences = []
+        sourceTypes = []
+      }
       validPrices.push(result.price)
       confidences.push(result.confidence)
       sourceTypes.push(result.source)
@@ -248,7 +234,7 @@ function getPriceFromSource(
   if (sourceType == "chainlink") {
     // Pass block timestamp for staleness checking
     let price = getChainlinkPrice(sourceConfig.address, timestamp)
-    if (price.gt(BigDecimal.fromString("0")) && isValidPriceResult(price, token.symbol)) {
+    if (price.gt(BigDecimal.fromString("0")) && isValidPriceResult(price, token)) {
       return new PriceResult(price, baseConfidence, "chainlink")
     }
   }
@@ -257,7 +243,7 @@ function getPriceFromSource(
     // Used for tokens without direct feeds (USDC.e referencing USDC)
     // Pass block timestamp for staleness checking
     let price = getChainlinkPrice(sourceConfig.address, timestamp)
-    if (price.gt(BigDecimal.fromString("0")) && isValidPriceResult(price, token.symbol)) {
+    if (price.gt(BigDecimal.fromString("0")) && isValidPriceResult(price, token)) {
       // Slightly lower confidence for reference prices
       return new PriceResult(price, baseConfidence.times(BigDecimal.fromString("0.9")), "chainlink_ref")
     }
@@ -268,9 +254,10 @@ function getPriceFromSource(
       Address.fromBytes(token.id),
       sourceConfig.address,
       sourceConfig.pairToken!,
-      sourceConfig.fee
+      sourceConfig.fee,
+      timestamp
     )
-    if (price.gt(BigDecimal.fromString("0")) && isValidPriceResult(price, token.symbol)) {
+    if (price.gt(BigDecimal.fromString("0")) && isValidPriceResult(price, token)) {
       return new PriceResult(price, baseConfidence, "uniswap_v3")
     }
   }
@@ -280,10 +267,11 @@ function getPriceFromSource(
     let price = getVelodromePrice(
       Address.fromBytes(token.id),
       sourceConfig.address,
-      sourceConfig.pairToken!
+      sourceConfig.pairToken!,
+      timestamp
     )
-    if (price.gt(BigDecimal.fromString("0")) && isValidPriceResult(price, token.symbol)) {
-      return new PriceResult(price, baseConfidence, "velodrome_cl")
+    if (price.gt(BigDecimal.fromString("0")) && isValidPriceResult(price, token)) {
+      return new PriceResult(price, baseConfidence, "velodrome_slipstream")
     }
   }
   
@@ -292,9 +280,10 @@ function getPriceFromSource(
     let price = getVelodromeV2Price(
       Address.fromBytes(token.id),
       sourceConfig.address,
-      sourceConfig.pairToken!
+      sourceConfig.pairToken!,
+      timestamp
     )
-    if (price.gt(BigDecimal.fromString("0")) && isValidPriceResult(price, token.symbol)) {
+    if (price.gt(BigDecimal.fromString("0")) && isValidPriceResult(price, token)) {
       return new PriceResult(price, baseConfidence, "velodrome_v2")
     }
   }
@@ -304,9 +293,10 @@ function getPriceFromSource(
     let price = getBalancerPrice(
       Address.fromBytes(token.id),
       sourceConfig.address,
-      sourceConfig.pairToken!
+      sourceConfig.pairToken!,
+      timestamp
     )
-    if (price.gt(BigDecimal.fromString("0")) && isValidPriceResult(price, token.symbol)) {
+    if (price.gt(BigDecimal.fromString("0")) && isValidPriceResult(price, token)) {
       return new PriceResult(price, baseConfidence, "balancer_v2")
     }
   }
@@ -348,33 +338,32 @@ function createPriceUpdate(
   update.save()
 }
 
-function isValidPriceResult(price: BigDecimal, tokenSymbol: string): boolean {
-  // Set price validation bounds based on token type
+function isValidPriceResult(price: BigDecimal, token: Token): boolean {
+  let tokenAddress = Address.fromBytes(token.id)
   let minPrice: BigDecimal
   let maxPrice: BigDecimal
-  
-  // Different bounds for stablecoins vs other tokens
-  if (tokenSymbol == "USDC" || tokenSymbol == "USDT" || 
-      tokenSymbol == "DAI" || tokenSymbol == "USDC.e") {
-    // Core stablecoins should be within a very tight range around $1
-    minPrice = BigDecimal.fromString("0.95")   // $0.95
-    maxPrice = BigDecimal.fromString("1.05")   // $1.05
-  } else if (tokenSymbol == "LUSD" || tokenSymbol == "FRAX" || 
-      tokenSymbol == "DOLA") {
-    // Variable stablecoins can have slightly more variation
-    minPrice = BigDecimal.fromString("0.5")    // $0.50
-    maxPrice = BigDecimal.fromString("1.5")    // $1.50
+  // Stablecoins (STABLECOINS) have no lower bound, so a depeg is recorded rather than rejected
+  if (tokenAddress.equals(USDC_NATIVE) || tokenAddress.equals(USDC_BRIDGED)) {
+    minPrice = BigDecimal.zero()
+    maxPrice = BigDecimal.fromString("1.05")
+  } else if (isStablecoin(tokenAddress)) {
+    minPrice = BigDecimal.zero()
+    maxPrice = BigDecimal.fromString("1.5")
+  } else if (tokenAddress.equals(WBTC)) {
+    // Above the generic $100,000 cap
+    minPrice = BigDecimal.fromString("1")
+    maxPrice = BigDecimal.fromString("10000000")
   } else {
-    // Non-stablecoin tokens can have a wider range
-    minPrice = BigDecimal.fromString("0.0001") // $0.0001
-    maxPrice = BigDecimal.fromString("100000") // $100,000
+    minPrice = BigDecimal.fromString("0.0001")
+    maxPrice = BigDecimal.fromString("100000")
   }
-  
-  if (price.le(minPrice) || price.ge(maxPrice)) {
-    return false
+  let valid = price.gt(minPrice) && price.lt(maxPrice)
+  if (!valid) {
+    log.warning("PRICING: {} ({}) price {} is outside its band ({}, {}) — rejected", [
+      token.symbol, tokenAddress.toHexString(), price.toString(), minPrice.toString(), maxPrice.toString()
+    ])
   }
-  
-  return true
+  return valid
 }
 
 // Import price adapter functions 

@@ -23,6 +23,8 @@ type Service @entity(immutable: false) {
   # Position tracking
   positions: [ProtocolPosition!]! @derivedFrom(field: "service")
   positionIds: [Bytes!]!             # Array of position IDs for iteration
+
+  agentInstances: [Bytes!]!          # Agent EOAs (RegisterInstance.agentInstance) — never the user side
 }
 
 type ServiceRegistration @entity(immutable: false) {
@@ -32,6 +34,7 @@ type ServiceRegistration @entity(immutable: false) {
   registrationBlock: BigInt!
   registrationTimestamp: BigInt!
   registrationTxHash: Bytes!
+  agentInstances: [Bytes!]!           # Every agentInstance registered for this serviceId
 }
 
 type ServiceIndex @entity(immutable: false) {
@@ -43,6 +46,7 @@ type ServiceIndex @entity(immutable: false) {
 type AddressType @entity(immutable: false) {
   id: Bytes!           # The address itself
   isContract: Boolean! # true = contract, false = EOA
+  isSafe: Boolean!     # contract answers getThreshold() — a Safe, so the user side
   checkedAt: BigInt!   # Block number when first checked
 }
 
@@ -50,20 +54,20 @@ type FundingBalance @entity(immutable: false) {
   id: Bytes!
   service: Service              # Link to service
   totalInUsd: BigDecimal!
-  totalOutUsd: BigDecimal!
-  totalWithdrawnUsd: BigDecimal!  #  Track USDC withdrawals to EOAs separately
-  netUsd: BigDecimal!
+  totalOutUsd: BigDecimal!       # Deprecated: no longer written, stays 0; outflows are in totalWithdrawnUsd
+  totalWithdrawnUsd: BigDecimal!  # Tracked tokens and ETH withdrawn to the user side, or to a contract when nothing came back to the Safe in the same tx; never reduces netUsd
+  netUsd: BigDecimal!            # Equals totalInUsd
   firstInTimestamp: BigInt!
   lastChangeTs: BigInt!
   fundingInTxs: [String!]!      # Array of funding in transaction hashes
-  fundingOutTxs: [String!]!     # Array of funding out transaction hashes
+  fundingOutTxs: [String!]!     # Deprecated: no longer written, stays empty
 }
 
 type ProtocolPosition @entity(immutable: false) {
-  id: Bytes!                # "<agent>-<tokenId>"
+  id: Bytes!                # CL: "<agent>-<protocol>-<tokenId>", v2: "<agent>-<protocol>-<pool>"
   agent: Bytes!             @index
   service: Service          # Link to service
-  protocol: String!         @index   # "velodrome-cl"
+  protocol: String!         @index   # e.g. "aerodrome-cl", "aerodrome-v2", "aero-cl", "aero-v2"
   pool: Bytes!
   
   # Position status
@@ -85,6 +89,13 @@ type ProtocolPosition @entity(immutable: false) {
   # Rewards tracking
   claimableReward: BigDecimal        # Current claimable rewards amount
   claimableRewardUSD: BigDecimal     # Current claimable rewards in USD
+
+  # Income already paid out to the Safe (counted in position gain, not in portfolio value)
+  collectedFees0: BigDecimal!        # Fee part of Collect in token0, principal excluded
+  collectedFees1: BigDecimal!        # Fee part of Collect in token1, principal excluded
+  collectedFeesUSD: BigDecimal!      # Valued at each Collect
+  claimedRewards: BigDecimal!        # Reward token units: legacy AERO or Aero's AERO (rewardTokenFor)
+  claimedRewardsUSD: BigDecimal!     # Valued at each claim
   
   # Protocol-specific
   tokenId: BigInt!          # NFT token ID
@@ -120,8 +131,8 @@ type ProtocolPosition @entity(immutable: false) {
   
   # Position ROI (for closed positions)
   investmentUSD: BigDecimal!        # entryAmountUSD + totalCostsUSD
-  grossGainUSD: BigDecimal!         # exitAmountUSD (total amount received)
-  netGainUSD: BigDecimal!           # exitAmountUSD - investmentUSD (actual profit/loss)
+  grossGainUSD: BigDecimal!         # exitAmountUSD + collectedFeesUSD + claimedRewardsUSD
+  netGainUSD: BigDecimal!           # grossGainUSD - investmentUSD (actual profit/loss)
   positionROI: BigDecimal!          # netGainUSD / investmentUSD * 100
 }
 
@@ -145,6 +156,8 @@ type Token @entity(immutable: false) {
   priceSources: [PriceSource!]! # Hardcoded price sources
   lastPriceUpdate: BigInt!
   priceConfidence: BigDecimal!  # Current price confidence level
+  priceStale: Boolean!          # derivedUSD is the last valid price, not a fresh one
+  depegged: Boolean!            # a stablecoin last priced below DEPEG_THRESHOLD
 }
 
 type PriceUpdate @entity(immutable: true) {
@@ -168,7 +181,7 @@ type AgentPortfolio @entity(immutable: false) {
   initialValue: BigDecimal!     # Initial investment from FundingBalance
   positionsValue: BigDecimal!   # Current value of all active positions (with rewards)
   uninvestedValue: BigDecimal!  # Token balances in safe
-  totalWithdrawnUsd: BigDecimal! # Total amount withdrawn to EOAs
+  totalWithdrawnUsd: BigDecimal! # Total withdrawn (see FundingBalance.totalWithdrawnUsd)
   
   # Performance Metrics (ENHANCED)
   unrealisedPnL: BigDecimal!    # Current ROI calculation (portfolio-based unrealized PnL)
@@ -181,10 +194,10 @@ type AgentPortfolio @entity(immutable: false) {
   projectedUnrealisedPnLWithRewards: BigDecimal!  # APR calculation including claimable rewards
   
   # ETH-adjusted performance metrics
-  ethAdjustedRoi: BigDecimal!              # ETH-adjusted actual ROI
-  ethAdjustedApr: BigDecimal!              # ETH-adjusted actual APR  
-  ethAdjustedUnrealisedPnL: BigDecimal!    # ETH-adjusted unrealised PnL
-  ethAdjustedProjectedUnrealisedPnL: BigDecimal!  # ETH-adjusted projected unrealised PnL
+  ethAdjustedRoi: BigDecimal!  # Deprecated: equals the unadjusted value
+  ethAdjustedApr: BigDecimal!  # Deprecated: equals the unadjusted value
+  ethAdjustedUnrealisedPnL: BigDecimal!  # Deprecated: equals the unadjusted value
+  ethAdjustedProjectedUnrealisedPnL: BigDecimal!  # Deprecated: equals the unadjusted value
 
   # ETH price tracking
   firstFundingEthPrice: BigDecimal!        # ETH price at first funding
@@ -192,7 +205,7 @@ type AgentPortfolio @entity(immutable: false) {
   
   # Position-Based Aggregates (NEW)
   totalInvestments: BigDecimal! # Sum of (entryAmountUSD + costs) for closed positions
-  totalGrossGains: BigDecimal!  # Sum of exitAmountUSD for closed positions
+  totalGrossGains: BigDecimal!  # Sum of exit + collected fees + claimed rewards for closed positions
   totalCosts: BigDecimal!       # Sum of all costs for closed positions
   
   # Timing
@@ -216,7 +229,7 @@ type AgentPortfolioSnapshot @entity(immutable: true) {
   initialValue: BigDecimal!     
   positionsValue: BigDecimal!   
   uninvestedValue: BigDecimal!  
-  totalWithdrawnUsd: BigDecimal! # Total amount withdrawn to EOAs at snapshot time
+  totalWithdrawnUsd: BigDecimal! # Total withdrawn at snapshot time (see FundingBalance.totalWithdrawnUsd)
   
   # Performance at Snapshot
   roi: BigDecimal!              
@@ -225,10 +238,10 @@ type AgentPortfolioSnapshot @entity(immutable: true) {
   projectedUnrealisedPnL: BigDecimal!  # Projected unrealised PnL at snapshot time
   
   # ETH-adjusted metrics for historical snapshots
-  ethAdjustedRoi: BigDecimal!
-  ethAdjustedApr: BigDecimal!
-  ethAdjustedUnrealisedPnL: BigDecimal!
-  ethAdjustedProjectedUnrealisedPnL: BigDecimal!
+  ethAdjustedRoi: BigDecimal!  # Deprecated: equals the unadjusted value
+  ethAdjustedApr: BigDecimal!  # Deprecated: equals the unadjusted value
+  ethAdjustedUnrealisedPnL: BigDecimal!  # Deprecated: equals the unadjusted value
+  ethAdjustedProjectedUnrealisedPnL: BigDecimal!  # Deprecated: equals the unadjusted value
   
   # Metadata
   timestamp: BigInt!            # When snapshot was taken
@@ -260,6 +273,7 @@ type PendingMintPosition @entity(immutable: false) {
   poolAddress: Bytes!           # Pool address
   positionId: Bytes!            # Position ID that needs mint amounts
   recipient: Bytes!             # The recipient address (for validation)
+  startsEntry: Boolean!         # The LP mint found the row missing or closed: its Mint replaces the entry
 }
 
 # Registry to track all services for snapshot scheduling
@@ -283,16 +297,16 @@ type DailyPopulationMetric @entity(immutable: true) {
   medianProjectedUnrealisedPnLWithRewards: BigDecimal  # Median projected unrealised PnL including rewards
   
   # ETH-adjusted population metrics
-  medianEthAdjustedROI: BigDecimal!        # Median ETH-adjusted actual ROI
-  medianEthAdjustedAPR: BigDecimal!        # Median ETH-adjusted actual APR
-  medianEthAdjustedUnrealisedPnL: BigDecimal!   # Median ETH-adjusted unrealised PnL
-  medianEthAdjustedProjectedUnrealisedPnL: BigDecimal!   # Median ETH-adjusted projected unrealised PnL
+  medianEthAdjustedROI: BigDecimal!  # Deprecated: equals the unadjusted value
+  medianEthAdjustedAPR: BigDecimal!  # Deprecated: equals the unadjusted value
+  medianEthAdjustedUnrealisedPnL: BigDecimal!  # Deprecated: equals the unadjusted value
+  medianEthAdjustedProjectedUnrealisedPnL: BigDecimal!  # Deprecated: equals the unadjusted value
   
   # Lifetime Active Agents Metrics (agents with >2 positions - lifetime active vs stagnant)
   medianLifetimeActiveUnrealisedPnL: BigDecimal  # Median unrealised PnL for lifetime active agents (>2 positions)
   medianLifetimeActiveProjectedUnrealisedPnL: BigDecimal  # Median projected unrealised PnL for lifetime active agents
-  medianLifetimeActiveEthAdjustedUnrealisedPnL: BigDecimal  # Median ETH-adjusted unrealised PnL for lifetime active agents
-  medianLifetimeActiveEthAdjustedProjectedUnrealisedPnL: BigDecimal  # Median ETH-adjusted projected unrealised PnL for lifetime active agents
+  medianLifetimeActiveEthAdjustedUnrealisedPnL: BigDecimal  # Deprecated: equals the unadjusted value
+  medianLifetimeActiveEthAdjustedProjectedUnrealisedPnL: BigDecimal  # Deprecated: equals the unadjusted value
   medianLifetimeActiveAUM: BigDecimal            # Median AUM for lifetime active agents
   totalLifetimeActiveFundedAUM: BigDecimal       # Total funded AUM for lifetime active agents
   totalLifetimeActiveAgents: Int                 # Number of lifetime active agents (>2 positions)
@@ -312,16 +326,16 @@ type DailyPopulationMetric @entity(immutable: true) {
   sma7dAUM: BigDecimal!             # 7-day SMA of median AUM
   
   # 7-day Simple Moving Averages for ETH-adjusted metrics
-  sma7dEthAdjustedROI: BigDecimal!
-  sma7dEthAdjustedAPR: BigDecimal!
-  sma7dEthAdjustedUnrealisedPnL: BigDecimal!
-  sma7dEthAdjustedProjectedUnrealisedPnL: BigDecimal!
+  sma7dEthAdjustedROI: BigDecimal!  # Deprecated: equals the unadjusted value
+  sma7dEthAdjustedAPR: BigDecimal!  # Deprecated: equals the unadjusted value
+  sma7dEthAdjustedUnrealisedPnL: BigDecimal!  # Deprecated: equals the unadjusted value
+  sma7dEthAdjustedProjectedUnrealisedPnL: BigDecimal!  # Deprecated: equals the unadjusted value
   
   # 7-Day Simple Moving Averages for Lifetime Active Agents
   sma7dLifetimeActiveUnrealisedPnL: BigDecimal   # 7-day SMA of median unrealised PnL for lifetime active agents
   sma7dLifetimeActiveProjectedUnrealisedPnL: BigDecimal  # 7-day SMA of median projected unrealised PnL for lifetime active agents
-  sma7dLifetimeActiveEthAdjustedUnrealisedPnL: BigDecimal  # 7-day SMA of median ETH-adjusted unrealised PnL for lifetime active agents
-  sma7dLifetimeActiveEthAdjustedProjectedUnrealisedPnL: BigDecimal  # 7-day SMA of median ETH-adjusted projected unrealised PnL for lifetime active agents
+  sma7dLifetimeActiveEthAdjustedUnrealisedPnL: BigDecimal  # Deprecated: equals the unadjusted value
+  sma7dLifetimeActiveEthAdjustedProjectedUnrealisedPnL: BigDecimal  # Deprecated: equals the unadjusted value
   sma7dLifetimeActiveAUM: BigDecimal             # 7-day SMA of median AUM for lifetime active agents
   
   # Metadata
@@ -337,16 +351,16 @@ type DailyPopulationMetric @entity(immutable: true) {
   historicalMedianAUM: [BigDecimal!]!  # Last 7 days of median AUM values
   
   # Historical arrays for ETH-adjusted SMA calculations
-  historicalMedianEthAdjustedROI: [BigDecimal!]!
-  historicalMedianEthAdjustedAPR: [BigDecimal!]!
-  historicalMedianEthAdjustedUnrealisedPnL: [BigDecimal!]!
-  historicalMedianEthAdjustedProjectedUnrealisedPnL: [BigDecimal!]!
+  historicalMedianEthAdjustedROI: [BigDecimal!]!  # Deprecated: equals the unadjusted value
+  historicalMedianEthAdjustedAPR: [BigDecimal!]!  # Deprecated: equals the unadjusted value
+  historicalMedianEthAdjustedUnrealisedPnL: [BigDecimal!]!  # Deprecated: equals the unadjusted value
+  historicalMedianEthAdjustedProjectedUnrealisedPnL: [BigDecimal!]!  # Deprecated: equals the unadjusted value
   
   # Historical arrays for Lifetime Active Agents SMA calculations
   historicalMedianLifetimeActiveUnrealisedPnL: [BigDecimal!]  # Last 7 days of median unrealised PnL for lifetime active agents
   historicalMedianLifetimeActiveProjectedUnrealisedPnL: [BigDecimal!]  # Last 7 days of median projected unrealised PnL for lifetime active agents
-  historicalMedianLifetimeActiveEthAdjustedUnrealisedPnL: [BigDecimal!]  # Last 7 days of median ETH-adjusted unrealised PnL for lifetime active agents
-  historicalMedianLifetimeActiveEthAdjustedProjectedUnrealisedPnL: [BigDecimal!]  # Last 7 days of median ETH-adjusted projected unrealised PnL for lifetime active agents
+  historicalMedianLifetimeActiveEthAdjustedUnrealisedPnL: [BigDecimal!]  # Deprecated: equals the unadjusted value
+  historicalMedianLifetimeActiveEthAdjustedProjectedUnrealisedPnL: [BigDecimal!]  # Deprecated: equals the unadjusted value
   historicalMedianLifetimeActiveAUM: [BigDecimal!]  # Last 7 days of median AUM for lifetime active agents
 }
 
@@ -410,4 +424,38 @@ type NFTPositionMapping @entity(immutable: false) {
   id: Bytes!
   positionId: Bytes!
   protocol: String!
+}
+
+# Principal released by DecreaseLiquidity and not yet collected — Collect pays it out with the fees
+type UncollectedPrincipal @entity(immutable: false) {
+  id: Bytes!                        # "<protocol>-<tokenId>", as NFTPositionMapping
+  amount0: BigInt!
+  amount1: BigInt!
+}
+
+# A position's claimableReward as it stood before the first refresh in a block
+type ClaimableRewardBeforeBlock @entity(immutable: false) {
+  id: Bytes!                        # ProtocolPosition id
+  block: BigInt!
+  claimableReward: BigDecimal!
+}
+
+# Reward claim logs already credited to a position (one claim, one credit)
+type CreditedRewardClaim @entity(immutable: true) {
+  id: Bytes!                        # txHash + logIndex of the claim log
+}
+
+# Aero pool -> gauge, from GaugeManager GaugeCreated; read by resolveV2Gauge. CL pools get a row
+# too, unused: the CL path reads pool.gauge().
+type AeroGauge @entity(immutable: false) {
+  id: Bytes!                # pool (GaugeCreated._target)
+  gauge: Bytes!             # GaugeCreated._gauge; a later GaugeCreated for the same pool replaces it
+  createdAtBlock: BigInt!
+}
+
+# Venue of a v2 pool, written by the factory handler that created it. Pools with no row are legacy.
+type V2PoolVenue @entity(immutable: true) {
+  id: Bytes!                # pool address
+  protocol: String!         # "aero-v2"
+  stable: Boolean!          # created by the stable factory (Aero v2 pools have no stable())
 }

@@ -3,6 +3,7 @@ import {
   Burn,
   Transfer
 } from "../generated/templates/VeloV2Pool/VelodromeV2Pool"
+import { Mint as AeroV2Mint } from "../generated/templates/AeroV2Pool/AeroV2Pool"
 
 import {
   refreshVeloV2PositionWithBurnAmounts,
@@ -14,27 +15,20 @@ import { BigInt, Bytes, store } from "@graphprotocol/graph-ts"
 import { getServiceByAgent } from "./config"
 import { PendingMintPosition, ProtocolPosition } from "../generated/schema"
 import { getTokenPriceUSD } from "./priceDiscovery"
-import { getTokenDecimals } from "./tokenUtils"
-import { Address, BigDecimal } from "@graphprotocol/graph-ts"
+import { convertTokenAmount } from "./tokenUtils"
+import { initializePositionIncome, initializePositionCosts } from "./roiCalculation"
+import { Address, BigDecimal, ethereum } from "@graphprotocol/graph-ts"
 
-// Helper function to convert token amount to human readable format
-function toHumanAmount(amount: BigInt, decimals: i32): BigDecimal {
-  if (amount.equals(BigInt.zero())) {
-    return BigDecimal.zero()
-  }
-  
-  let divisor = BigInt.fromI32(10).pow(decimals as u8)
-  return amount.toBigDecimal().div(divisor.toBigDecimal())
-}
 
 // Store pending position that needs mint data
-function storePendingPosition(txHash: Bytes, poolAddress: Bytes, positionId: Bytes, recipient: Bytes): void {
+function storePendingPosition(txHash: Bytes, poolAddress: Bytes, positionId: Bytes, recipient: Bytes, startsEntry: boolean): void {
   const id = txHash.toHexString() + "-" + poolAddress.toHexString()
   let pending = new PendingMintPosition(id)
   pending.txHash = txHash
   pending.poolAddress = poolAddress
   pending.positionId = positionId
   pending.recipient = recipient
+  pending.startsEntry = startsEntry
   pending.save()
   
 }
@@ -48,6 +42,26 @@ function getPendingPosition(txHash: Bytes, poolAddress: Bytes): PendingMintPosit
     store.remove("PendingMintPosition", id)
   }
   return pending
+}
+
+// Restarts a reused v2 row as a new one (CLAUDE.md: v2 position cycles)
+function startNewCycle(pp: ProtocolPosition, event: ethereum.Event): void {
+  initializePositionIncome(pp)
+  pp.exitTxHash = null
+  pp.exitTimestamp = null
+  pp.exitAmount0 = null
+  pp.exitAmount0USD = null
+  pp.exitAmount1 = null
+  pp.exitAmount1USD = null
+  pp.exitAmountUSD = null
+  pp.entryTxHash = event.transaction.hash
+  pp.entryTimestamp = event.block.timestamp
+  pp.entryAmount0 = BigDecimal.zero()
+  pp.entryAmount0USD = BigDecimal.zero()
+  pp.entryAmount1 = BigDecimal.zero()
+  pp.entryAmount1USD = BigDecimal.zero()
+  pp.entryAmountUSD = BigDecimal.zero()
+  initializePositionCosts(pp)
 }
 
 // Handle VelodromeV2 Pool Transfer events (LP token transfers) - THIS COMES FIRST
@@ -64,7 +78,13 @@ export function handleVeloV2Transfer(event: Transfer): void {
     const service = getServiceByAgent(to)
     
     if (service != null) {
-      
+      // Read before the refresh below marks the row active again (CLAUDE.md: v2 position cycles)
+      const existing = ProtocolPosition.load(getVeloV2PositionId(to, event.address))
+      const startsEntry = existing == null || !existing.isActive
+      if (existing != null && !existing.isActive) {
+        startNewCycle(existing, event)
+      }
+
       // Create the position with placeholder amounts (will be updated by Mint event)
       refreshVeloV2Position(to, event.address, event.block, event.transaction.hash)
       
@@ -73,7 +93,8 @@ export function handleVeloV2Transfer(event: Transfer): void {
         event.transaction.hash,
         event.address,
         getVeloV2PositionId(to, event.address),
-        to
+        to,
+        startsEntry
       )
     }
     return
@@ -92,6 +113,15 @@ export function handleVeloV2Transfer(event: Transfer): void {
 
 // Handle VelodromeV2 Pool Mint events (liquidity additions) - THIS COMES SECOND
 export function handleVeloV2Mint(event: Mint): void {
+  recordMintEntryAmounts(event, event.params.amount0, event.params.amount1)
+}
+
+// Aero v2 pools emit Mint(indexed sender, indexed to, amount0, amount1).
+export function handleAeroV2Mint(event: AeroV2Mint): void {
+  recordMintEntryAmounts(event, event.params.amount0, event.params.amount1)
+}
+
+function recordMintEntryAmounts(event: ethereum.Event, amount0: BigInt, amount1: BigInt): void {
   
   // Note: In Velodrome V2, the Mint event sender is the router contract, not the actual user
   // We need to look for the pending position to determine if this mint is for a tracked service
@@ -109,13 +139,9 @@ export function handleVeloV2Mint(event: Mint): void {
     let position = ProtocolPosition.load(pending.positionId)
     
     if (position != null) {
-      // Get token decimals for conversion
-      const token0Decimals = getTokenDecimals(Address.fromBytes(position.token0!))
-      const token1Decimals = getTokenDecimals(Address.fromBytes(position.token1!))
-      
       // Convert to human amounts
-      const amount0Human = toHumanAmount(event.params.amount0, token0Decimals)
-      const amount1Human = toHumanAmount(event.params.amount1, token1Decimals)
+      const amount0Human = convertTokenAmount(amount0, Address.fromBytes(position.token0!))
+      const amount1Human = convertTokenAmount(amount1, Address.fromBytes(position.token1!))
       
       // Get USD values
       const token0Price = getTokenPriceUSD(Address.fromBytes(position.token0!), event.block.timestamp, false)
@@ -125,13 +151,23 @@ export function handleVeloV2Mint(event: Mint): void {
       const amount1USD = token1Price.times(amount1Human)
       const totalUSD = amount0USD.plus(amount1USD)
       
-      // Update entry amounts
-      position.entryAmount0 = amount0Human
-      position.entryAmount0USD = amount0USD
-      position.entryAmount1 = amount1Human
-      position.entryAmount1USD = amount1USD
-      position.entryAmountUSD = totalUSD
-      
+      // The Mint after the LP mint that found the row missing or closed starts the entry, replacing
+      // anything its refresh filled in from current amounts. Every later Mint, in this tx or another, adds
+      if (pending.startsEntry) {
+        position.entryAmount0 = amount0Human
+        position.entryAmount0USD = amount0USD
+        position.entryAmount1 = amount1Human
+        position.entryAmount1USD = amount1USD
+        position.entryAmountUSD = totalUSD
+      } else {
+        position.entryAmount0 = position.entryAmount0.plus(amount0Human)
+        position.entryAmount0USD = position.entryAmount0USD.plus(amount0USD)
+        position.entryAmount1 = position.entryAmount1.plus(amount1Human)
+        position.entryAmount1USD = position.entryAmount1USD.plus(amount1USD)
+        position.entryAmountUSD = position.entryAmountUSD.plus(totalUSD)
+      }
+      // What calculatePositionROI divides by: the cycle's entry plus its costs
+      position.investmentUSD = position.entryAmountUSD.plus(position.totalCostsUSD)
       
       position.save()
       
