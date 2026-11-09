@@ -101,6 +101,11 @@ jobs:
         working-directory: ${{ matrix.path }}
         run: yarn graph codegen
 
+      - name: Check service-registry manifests and ABI
+        if: matrix.subgraph == 'service-registry'
+        working-directory: ${{ matrix.path }}
+        run: node --test scripts/bridger-manifests.test.cjs
+
       - name: Run tests
         working-directory: ${{ matrix.path }}
         # Pin the matchstick binary version (-v) so `graph test` doesn't query the

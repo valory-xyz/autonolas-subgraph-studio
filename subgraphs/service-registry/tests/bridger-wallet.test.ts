@@ -51,11 +51,11 @@ function assertIdentity(): void {
 function terminationAndRedeployment(safe: Address): void {
   seed();
   authorize(OLD);
-  // The bridger clears authorization before the registry termination event.
-  handleAgentMultisigUpdated(changed(OLD, ZERO));
+  // ServiceManager terminates in the registry before bridger cleanup.
   let termination = changetype<TerminateService>(newMockEvent());
   termination.parameters = [new ethereum.EventParam('serviceId', ethereum.Value.fromUnsignedBigInt(SID))];
   handleTerminateService(termination);
+  handleAgentMultisigUpdated(changed(OLD, ZERO));
   assert.fieldEquals('ERC8004Agent', '77', 'agentWallet', ZERO.toHexString());
   assertIdentity();
   let creation = changetype<CreateMultisigWithAgents>(newMockEvent());
