@@ -155,8 +155,11 @@ for Pearl's consumer configuration.
 - **Native outflows from a Safe are not indexed, with two exceptions.**
   Native sent *out* surfaces only as `ExecutionSuccess` (no
   amount/recipient), so both exceptions decode the outer tx, which must
-  call the emitting Safe's `execTransaction` directly. Every shape check
-  runs before any store load (hot path).
+  call the emitting Safe's `execTransaction` directly. The shape checks
+  (emitter, selector, operation, MultiSend target) run before any store
+  load; the `TrackedAddress` role load then runs for every plain native
+  CALL, because the Pearl Safe branch needs the role before it can check
+  the recipient.
   - OPE-1965: an `AGENT_SAFE_TO_AGENT_EOA` row (SEMANTIC, `token` null, no
     `TokenBalance`) for one plain CALL, empty data, value > 0, paid to the
     tx sender, when the Safe is tracked as `AGENT`. One row per tx
@@ -167,9 +170,9 @@ for Pearl's consumer configuration.
     whose recipient is an Agent Signer of one of that Pearl Safe's services
     becomes a `MASTER_TO_AGENT` row (SEMANTIC, `agentSignerLegId` =
     `"signer:" ++ txHash ++ legIndex`) in the tx's `AgentFundingEvent`. The
-    Signer → service link is `AgentInstance`, upserted from every
-    `RegisterInstance` (latest registration wins). A MultiSend buffer that
-    does not unpack exactly is skipped with a warning.
+    Signer → service link is `AgentInstance`, written on every
+    `RegisterInstance`. A MultiSend buffer that does not unpack exactly is
+    skipped with a warning.
   `handleSafeExecutionFromModuleSuccess` stays a no-op. Consequence: **native
   withdrawals to external wallets** and relayed / module executions do not
   appear. Native *inflows* (`SafeReceived`), native transfers to an Agent
@@ -200,7 +203,7 @@ for Pearl's consumer configuration.
 `tests/staking.test.ts` (Phase 1b), `tests/phase-2a.test.ts` (Phase 2a + the
 Phase-2b stablecoin suite — all 8 (chain, token) tuples — the
 `AGENT_SAFE_TO_AGENT_EOA` decode guards, and the Pearl Safe → Agent Signer
-`MASTER_TO_AGENT` legs with `unpackMultiSend`). `yarn test`.
+`MASTER_TO_AGENT` legs with `multiSendNativeLegs`). `yarn test`.
 
 ## Development workflow
 

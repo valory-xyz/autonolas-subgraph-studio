@@ -111,10 +111,10 @@ emits no opening-balance row).
 
 ## What it does **not** cover
 
-- **Native coin leaving a Safe**, except to an Agent Signer (withdrawals to
-  external wallets, relayed and module executions) — emits no usable event;
-  accepted v1 gap. Native *inflows*, native transfers to an Agent Signer
-  and all *token* flows are covered.
+- **Native coin leaving a Safe** (withdrawals, relayed/module executions) is
+  not indexed, except direct `execTransaction` legs to an Agent Signer — it
+  emits no usable event; accepted v1 gap. Native *inflows* and all *token*
+  flows are covered.
 - **Arbitrary tokens** — only the wallet's token set is indexed (OLAS,
   wrapped-native, USDC/USDC.e/pUSD per chain).
 - In-market bet flows — the [Polymarket squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/predict-polymarket)
