@@ -1574,7 +1574,7 @@ function seedPearlService(
 
 function seedAgentInstance(signer: Address, serviceId: string): void {
   const instance = new AgentInstance(signer);
-  instance.serviceId = serviceBytes(serviceId);
+  instance.serviceEntityId = serviceBytes(serviceId);
   instance.updatedBlock = BigInt.fromI32(1);
   instance.save();
 }

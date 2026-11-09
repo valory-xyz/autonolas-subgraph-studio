@@ -462,7 +462,7 @@ describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds",
     reRegister.block.number = BigInt.fromI32(777);
     handleRegisterInstance(reRegister);
 
-    assert.fieldEquals("AgentInstance", AGENT_INSTANCE_1.toHexString(), "serviceId", OTHER_SERVICE_ID_HEX);
+    assert.fieldEquals("AgentInstance", AGENT_INSTANCE_1.toHexString(), "serviceEntityId", OTHER_SERVICE_ID_HEX);
     assert.fieldEquals("AgentInstance", AGENT_INSTANCE_1.toHexString(), "updatedBlock", "777");
   });
 
@@ -476,7 +476,7 @@ describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds",
     assert.fieldEquals(
       "AgentInstance",
       AGENT_INSTANCE_1.toHexString(),
-      "serviceId",
+      "serviceEntityId",
       SERVICE_ID_HEX
     );
 
@@ -488,7 +488,7 @@ describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds",
     assert.fieldEquals(
       "AgentInstance",
       AGENT_INSTANCE_1.toHexString(),
-      "serviceId",
+      "serviceEntityId",
       OTHER_SERVICE_ID_HEX
     );
   });

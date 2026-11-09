@@ -993,7 +993,7 @@ export function upsertAgentInstance(
   blockNumber: BigInt
 ): void {
   const instance = new AgentInstance(agentInstance);
-  instance.serviceId = serviceId;
+  instance.serviceEntityId = serviceId;
   instance.updatedBlock = blockNumber;
   instance.save();
 }

@@ -210,7 +210,7 @@ type PendingRegistration @entity(immutable: false) {
 # Not in TrackedAddress, whose rows are write-once: a Signer can re-register.
 type AgentInstance @entity(immutable: false) {
   id: Bytes!                          # Agent Signer address
-  serviceId: Bytes!                   # no Service reference: the Service may never leave the buffer
+  serviceEntityId: Bytes!             # Service.id; no Service reference: the Service may never leave the buffer
   updatedBlock: BigInt!
 }
 

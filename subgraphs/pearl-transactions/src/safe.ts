@@ -260,14 +260,14 @@ function writeAgentSignerLegs(
     const leg = legs[i];
     const instance = AgentInstance.load(leg.to);
     if (instance === null) continue;
-    const service = Service.load(instance.serviceId);
+    const service = Service.load(instance.serviceEntityId);
     if (service === null) {
-      logUnbookedSignerLeg(event, leg, instance.serviceId);
+      logUnbookedSignerLeg(event, leg, instance.serviceEntityId);
       continue;
     }
     const masterSafe = service.masterSafe;
     if (masterSafe === null || !masterSafe.equals(event.address)) {
-      logUnbookedSignerLeg(event, leg, instance.serviceId);
+      logUnbookedSignerLeg(event, leg, instance.serviceEntityId);
       continue;
     }
 

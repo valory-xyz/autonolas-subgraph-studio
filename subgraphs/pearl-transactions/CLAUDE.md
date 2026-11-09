@@ -44,7 +44,7 @@ for Pearl's consumer configuration.
   hot-path loads from 6 → 2), `TokenBalance`.
 - **Internal helpers:** `ServiceIndex`, `PendingRegistration`,
   `PendingBondCounter`, `PendingBondRow`, `AgentBondAttributionGuard`,
-  `AgentInstance` (mutable; Agent Signer → `serviceId`, written on every
+  `AgentInstance` (mutable; Agent Signer → `serviceEntityId`, written on every
   `RegisterInstance`; kept out of write-once `TrackedAddress` because a
   Signer can re-register).
 - **Enums:** `FundsCategory`, `ServiceBondType`, `FundsSource`.
