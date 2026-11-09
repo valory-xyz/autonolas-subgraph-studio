@@ -19,6 +19,7 @@ import {
   CATEGORY_MASTER_FUNDING_IN,
   CATEGORY_MASTER_TO_AGENT,
   CATEGORY_SAFE_SETUP_TRANSFER,
+  MULTISEND_V130,
   OPERATION_CALL,
   OPERATION_DELEGATECALL,
   ROLE_AGENT,
@@ -27,7 +28,6 @@ import {
   SOURCE_SEMANTIC,
 } from "./constants";
 import {
-  MULTISEND_V130,
   NativeLeg,
   addToAgentFundingEvent,
   agentSafeTopUpId,
@@ -236,6 +236,22 @@ function nativeOutflowRow(
   return row;
 }
 
+function logUnbookedSignerLeg(
+  event: ExecutionSuccessEvent,
+  leg: NativeLeg,
+  serviceId: Bytes
+): void {
+  log.debug(
+    "Pearl Safe {} leg to Agent Signer {} not booked: service {} is buffered or not this Safe's (tx={})",
+    [
+      event.address.toHexString(),
+      leg.to.toHexString(),
+      serviceId.toHexString(),
+      event.transaction.hash.toHexString(),
+    ]
+  );
+}
+
 function writeAgentSignerLegs(
   event: ExecutionSuccessEvent,
   legs: NativeLeg[]
@@ -245,9 +261,15 @@ function writeAgentSignerLegs(
     const instance = AgentInstance.load(leg.to);
     if (instance === null) continue;
     const service = Service.load(instance.serviceId);
-    if (service === null) continue;
+    if (service === null) {
+      logUnbookedSignerLeg(event, leg, instance.serviceId);
+      continue;
+    }
     const masterSafe = service.masterSafe;
-    if (masterSafe === null || !masterSafe.equals(event.address)) continue;
+    if (masterSafe === null || !masterSafe.equals(event.address)) {
+      logUnbookedSignerLeg(event, leg, instance.serviceId);
+      continue;
+    }
 
     const id = agentSignerLegId(event.transaction.hash, leg.index);
     if (FundsMovement.load(id) !== null) continue;

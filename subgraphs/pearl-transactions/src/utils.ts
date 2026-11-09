@@ -39,6 +39,7 @@ import {
   CATEGORY_SAFE_DEPLOYED,
   CATEGORY_SAFE_SETUP_TRANSFER,
   CATEGORY_STAKING_REWARD_CLAIM,
+  MULTISEND_V130,
   OPERATION_CALL,
   ROLE_AGENT,
   ROLE_AGENT_EOA,
@@ -998,17 +999,12 @@ export function upsertAgentInstance(
   instance.save();
 }
 
-// Pearl batches a Fund Agent split (Agent Signer + Agent Safe) into one Safe
-// tx that DELEGATECALLs MultiSend v1.3.0.
-export const MULTISEND_V130 = Address.fromString(
-  "0xA238CBeb142c10Ef7Ad8442C6D1f9E89e07e7761"
-);
 // multiSend(bytes)
 const MULTISEND_SELECTOR: u8[] = [0x8d, 0x80, 0xff, 0x0a];
 
 export function hasSelector(data: Bytes, selector: u8[]): boolean {
-  if (data.length < 4) return false;
-  for (let i = 0; i < 4; i++) {
+  if (data.length < selector.length) return false;
+  for (let i = 0; i < selector.length; i++) {
     if (data[i] != selector[i]) return false;
   }
   return true;

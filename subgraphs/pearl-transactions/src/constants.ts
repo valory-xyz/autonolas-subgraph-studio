@@ -47,6 +47,12 @@ export const ROLE_MASTER_EOA = "MASTER_EOA";
 export const ROLE_AGENT_EOA = "AGENT_EOA";
 export const ROLE_STAKING = "STAKING";
 
+// Pearl batches a Fund Agent split (Agent Signer + Agent Safe) into one Safe
+// tx that DELEGATECALLs MultiSend v1.3.0.
+export const MULTISEND_V130 = Address.fromString(
+  "0xA238CBeb142c10Ef7Ad8442C6D1f9E89e07e7761"
+);
+
 // Safe / MultiSend `operation` values.
 export const OPERATION_CALL: i32 = 0;
 export const OPERATION_DELEGATECALL: i32 = 1;
