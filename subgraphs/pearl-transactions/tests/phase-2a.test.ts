@@ -1505,6 +1505,7 @@ describe("pearl-transactions / AGENT_SAFE_TO_AGENT_EOA", () => {
 // ---- OPE-1979 — Pearl Safe → Agent Signer native legs ----
 
 const SIGNER = Address.fromString("0x5555555555555555555555555555555555555555");
+const OTHER_SIGNER = Address.fromString("0x7777777777777777777777777777777777777777");
 const OTHER_MASTER_SAFE = Address.fromString(
   "0x6666666666666666666666666666666666666666"
 );
@@ -1732,6 +1733,35 @@ describe("pearl-transactions / Pearl Safe → Agent Signer MASTER_TO_AGENT", () 
     fundFromPearlSafe(execTransactionInput(SIGNER, AMOUNT, NO_DATA, 0), mockTx(92));
     assert.entityCount("FundsMovement", 0);
     assert.entityCount("AgentFundingEvent", 0);
+  });
+
+  test("a skipped Signer leg does not stop the next leg from being booked", () => {
+    seedPearlFunding();
+    seedPearlService("43", OTHER_MASTER_SAFE, null);
+    seedAgentInstance(OTHER_SIGNER, "43");
+    const tx = mockTx(94);
+    fundFromPearlSafe(
+      execTransactionInput(
+        MULTISEND,
+        BigInt.zero(),
+        multiSendData(packedLeg(0, OTHER_SIGNER, AMOUNT) + packedLeg(0, SIGNER, SIGNER_SHARE)),
+        1
+      ),
+      tx
+    );
+    assert.entityCount("FundsMovement", 1);
+    assert.fieldEquals(
+      "FundsMovement",
+      signerLegId(tx, 1).toHexString(),
+      "amount",
+      SIGNER_SHARE.toString()
+    );
+    assert.fieldEquals(
+      "AgentFundingEvent",
+      agentFundingEventId(tx, MASTER_SAFE, serviceBytes(SERVICE_ID)).toHexString(),
+      "totalNativeAmount",
+      SIGNER_SHARE.toString()
+    );
   });
 
   test("Agent Signer of another Pearl Safe's service writes no row", () => {

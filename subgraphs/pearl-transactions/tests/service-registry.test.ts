@@ -480,16 +480,15 @@ describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds",
     );
 
     // The same Signer re-registered to another service: latest wins.
-    const otherService = BigInt.fromI32(43);
     handleRegisterInstance(
-      newRegisterInstance(OPERATOR, otherService, AGENT_INSTANCE_1, PEARL_AGENT_ID, mockTx(31), 0)
+      newRegisterInstance(OPERATOR, OTHER_SERVICE_ID, AGENT_INSTANCE_1, PEARL_AGENT_ID, mockTx(31), 0)
     );
     assert.entityCount("AgentInstance", 1);
     assert.fieldEquals(
       "AgentInstance",
       AGENT_INSTANCE_1.toHexString(),
       "serviceId",
-      Bytes.fromByteArray(Bytes.fromBigInt(otherService)).toHexString()
+      Bytes.fromByteArray(Bytes.fromBigInt(OTHER_SERVICE_ID)).toHexString()
     );
   });
 
