@@ -176,10 +176,12 @@ for Pearl's consumer configuration.
     Signer → service link is `AgentInstance`, written on every
     `RegisterInstance`. A MultiSend buffer that does not unpack exactly is
     skipped with a warning.
-  `handleSafeExecutionFromModuleSuccess` stays a no-op. Consequence: **native
-  withdrawals to external wallets**, txs that do not call the Safe itself
-  (e.g. relayed through a contract) and module executions are not decoded. Native *inflows* (`SafeReceived`), native transfers to an Agent
-  Signer and all *token* flows in/out are captured. Closing the rest needs
+  `handleSafeExecutionFromModuleSuccess` stays a no-op. Consequence: other
+  native outflows (**withdrawals to external wallets**, txs that do not call
+  the Safe itself such as a relay through a contract, and module
+  executions) are not indexed. Native *inflows* (`SafeReceived`), the two
+  decoded Agent Signer legs above and all *token* flows in/out are
+  captured. Closing the rest needs
   call/trace handlers (the rejected self-hosted indexer); accepted v1 gap.
 - **Token coverage is a fixed allowlist, not "any token."** A subgraph
   `Transfer` data source targets specific contracts, so we index the set the
@@ -202,7 +204,7 @@ for Pearl's consumer configuration.
 
 ## Tests
 
-92 Matchstick tests across `tests/service-registry.test.ts` (Phase 1a),
+Matchstick tests across `tests/service-registry.test.ts` (Phase 1a),
 `tests/staking.test.ts` (Phase 1b), `tests/phase-2a.test.ts` (Phase 2a + the
 Phase-2b stablecoin suite — all 8 (chain, token) tuples — the
 `AGENT_SAFE_TO_AGENT_EOA` decode guards, and the Pearl Safe → Agent Signer
