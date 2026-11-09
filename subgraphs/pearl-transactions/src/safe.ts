@@ -19,6 +19,8 @@ import {
   CATEGORY_MASTER_FUNDING_IN,
   CATEGORY_MASTER_TO_AGENT,
   CATEGORY_SAFE_SETUP_TRANSFER,
+  OPERATION_CALL,
+  OPERATION_DELEGATECALL,
   ROLE_AGENT,
   ROLE_MASTER,
   SOURCE_RAW_TRANSFER,
@@ -33,6 +35,7 @@ import {
   classifyTransfer,
   fundsMovementId,
   getOrCreateAgentFundingEvent,
+  hasSelector,
   markSetupTransferSeen,
   multiSendNativeLegs,
 } from "./utils";
@@ -109,14 +112,6 @@ const ARG_VALUE = 1;
 const ARG_DATA = 2;
 const ARG_OPERATION = 3;
 
-function hasExecTransactionSelector(input: Bytes): boolean {
-  if (input.length < 4) return false;
-  for (let i = 0; i < 4; i++) {
-    if (input[i] != EXEC_TRANSACTION_SELECTOR[i]) return false;
-  }
-  return true;
-}
-
 // handleSafeExecutionSuccess — the event has no amount or recipient, so both
 // come from decoding the outer tx. Row ids are fixed per tx, so a reentrant
 // execTransaction from the same Safe in the same tx writes no second row.
@@ -127,7 +122,7 @@ export function handleSafeExecutionSuccess(
   if (txTo === null || !txTo.equals(event.address)) return;
 
   const input = event.transaction.input;
-  if (!hasExecTransactionSelector(input)) return;
+  if (!hasSelector(input, EXEC_TRANSACTION_SELECTOR)) return;
 
   const decoded = ethereum.decode(
     EXEC_TRANSACTION_ARGS,
@@ -151,9 +146,12 @@ export function handleSafeExecutionSuccess(
   const value = args[ARG_VALUE].toBigInt();
   const target = args[ARG_TO].toAddress();
   const plainNative =
-    operation.isZero() && data.length == 0 && value.gt(BigInt.zero());
+    operation.equals(BigInt.fromI32(OPERATION_CALL)) &&
+    data.length == 0 &&
+    value.gt(BigInt.zero());
   const multiSend =
-    operation.equals(BigInt.fromI32(1)) && target.equals(MULTISEND_V130);
+    operation.equals(BigInt.fromI32(OPERATION_DELEGATECALL)) &&
+    target.equals(MULTISEND_V130);
   if (!plainNative && !multiSend) return;
 
   const tracked = TrackedAddress.load(event.address);

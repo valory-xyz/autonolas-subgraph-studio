@@ -39,6 +39,7 @@ import {
   CATEGORY_SAFE_DEPLOYED,
   CATEGORY_SAFE_SETUP_TRANSFER,
   CATEGORY_STAKING_REWARD_CLAIM,
+  OPERATION_CALL,
   ROLE_AGENT,
   ROLE_AGENT_EOA,
   ROLE_MASTER,
@@ -1005,6 +1006,14 @@ export const MULTISEND_V130 = Address.fromString(
 // multiSend(bytes)
 const MULTISEND_SELECTOR: u8[] = [0x8d, 0x80, 0xff, 0x0a];
 
+export function hasSelector(data: Bytes, selector: u8[]): boolean {
+  if (data.length < 4) return false;
+  for (let i = 0; i < 4; i++) {
+    if (data[i] != selector[i]) return false;
+  }
+  return true;
+}
+
 export class NativeLeg {
   index: i32;
   to: Address;
@@ -1031,10 +1040,7 @@ function readUint256(bytes: Bytes, start: i32): BigInt {
 // Null when `data` is not a multiSend call or its buffer does not unpack
 // exactly.
 export function multiSendNativeLegs(data: Bytes): NativeLeg[] | null {
-  if (data.length < 4) return null;
-  for (let i = 0; i < 4; i++) {
-    if (data[i] != MULTISEND_SELECTOR[i]) return null;
-  }
+  if (!hasSelector(data, MULTISEND_SELECTOR)) return null;
   const decoded = ethereum.decode(
     "bytes",
     Bytes.fromUint8Array(data.subarray(4))
@@ -1057,7 +1063,7 @@ export function multiSendNativeLegs(data: Bytes): NativeLeg[] | null {
     pos += HEAD;
     if (dataLength.gt(BigInt.fromI32(transactions.length - pos))) return null;
     pos += dataLength.toI32();
-    if (operation == 0 && dataLength.isZero() && value.gt(BigInt.zero())) {
+    if (operation == OPERATION_CALL && dataLength.isZero() && value.gt(BigInt.zero())) {
       legs.push(new NativeLeg(index, to, value));
     }
     index++;

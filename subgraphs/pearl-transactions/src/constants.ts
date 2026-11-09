@@ -47,6 +47,10 @@ export const ROLE_MASTER_EOA = "MASTER_EOA";
 export const ROLE_AGENT_EOA = "AGENT_EOA";
 export const ROLE_STAKING = "STAKING";
 
+// Safe / MultiSend `operation` values.
+export const OPERATION_CALL: i32 = 0;
+export const OPERATION_DELEGATECALL: i32 = 1;
+
 // OLAS token address resolver. Used to tag the SAFE_DEPLOYED row's
 // `token` field as null (no token) and later for raw-transfer
 // classification in Phase 2a.
