@@ -79,6 +79,9 @@ const OTHER_SERVICE_ID = BigInt.fromI32(43);
 const SERVICE_ID_HEX = Bytes.fromByteArray(
   Bytes.fromBigInt(SERVICE_ID)
 ).toHexString();
+const OTHER_SERVICE_ID_HEX = Bytes.fromByteArray(
+  Bytes.fromBigInt(OTHER_SERVICE_ID)
+).toHexString();
 
 const SECURITY_DEPOSIT = BigInt.fromString("10000000000000000000"); // 10 OLAS
 const AGENT_BOND = BigInt.fromString("30000000000000000000"); // 30 OLAS
@@ -459,8 +462,7 @@ describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds",
     reRegister.block.number = BigInt.fromI32(777);
     handleRegisterInstance(reRegister);
 
-    const otherServiceHex = Bytes.fromByteArray(Bytes.fromBigInt(OTHER_SERVICE_ID)).toHexString();
-    assert.fieldEquals("AgentInstance", AGENT_INSTANCE_1.toHexString(), "serviceId", otherServiceHex);
+    assert.fieldEquals("AgentInstance", AGENT_INSTANCE_1.toHexString(), "serviceId", OTHER_SERVICE_ID_HEX);
     assert.fieldEquals("AgentInstance", AGENT_INSTANCE_1.toHexString(), "updatedBlock", "777");
   });
 
@@ -487,7 +489,7 @@ describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds",
       "AgentInstance",
       AGENT_INSTANCE_1.toHexString(),
       "serviceId",
-      Bytes.fromByteArray(Bytes.fromBigInt(OTHER_SERVICE_ID)).toHexString()
+      OTHER_SERVICE_ID_HEX
     );
   });
 
