@@ -9,6 +9,7 @@ import {
 import {
   AgentBondAttributionGuard,
   AgentFundingEvent,
+  AgentInstance,
   AgentSafe,
   BondMovement,
   DailyServiceFunds,
@@ -38,6 +39,7 @@ import {
   CATEGORY_SAFE_DEPLOYED,
   CATEGORY_SAFE_SETUP_TRANSFER,
   CATEGORY_STAKING_REWARD_CLAIM,
+  OPERATION_CALL,
   ROLE_AGENT,
   ROLE_AGENT_EOA,
   ROLE_MASTER,
@@ -72,6 +74,12 @@ export function safeDeployedId(masterSafe: Bytes): Bytes {
 // One AGENT_SAFE_TO_AGENT_EOA row per tx (see handleSafeExecutionSuccess).
 export function agentSafeTopUpId(txHash: Bytes): Bytes {
   return Bytes.fromUTF8("topup:").concat(txHash);
+}
+
+// `legIndex` is 0 for a plain CALL, the leg's position in the MultiSend
+// otherwise.
+export function agentSignerLegId(txHash: Bytes, legIndex: i32): Bytes {
+  return Bytes.fromUTF8("signer:").concat(txHash).concatI32(legIndex);
 }
 
 // Service.id is Bytes (serviceId as Bytes) — halves FK storage / speeds
@@ -977,4 +985,83 @@ export function addToAgentFundingEvent(
     afe.totalOlasAmount = afe.totalOlasAmount.plus(amount);
   }
   afe.save();
+}
+
+export function upsertAgentInstance(
+  agentInstance: Address,
+  serviceId: Bytes,
+  blockNumber: BigInt
+): void {
+  const instance = new AgentInstance(agentInstance);
+  instance.serviceEntityId = serviceId;
+  instance.updatedBlock = blockNumber;
+  instance.save();
+}
+
+// multiSend(bytes)
+const MULTISEND_SELECTOR: u8[] = [0x8d, 0x80, 0xff, 0x0a];
+
+export function hasSelector(data: Bytes, selector: u8[]): boolean {
+  if (data.length < selector.length) return false;
+  for (let i = 0; i < selector.length; i++) {
+    if (data[i] != selector[i]) return false;
+  }
+  return true;
+}
+
+export class NativeLeg {
+  index: i32;
+  to: Address;
+  value: BigInt;
+
+  constructor(index: i32, to: Address, value: BigInt) {
+    this.index = index;
+    this.to = to;
+    this.value = value;
+  }
+}
+
+// Big-endian uint256 at `bytes[start..start+32)`. BigInt.fromUnsignedBytes
+// reads little-endian, so the slice (a copy) is reversed.
+function readUint256(bytes: Bytes, start: i32): BigInt {
+  const word = bytes.slice(start, start + 32);
+  word.reverse();
+  return BigInt.fromUnsignedBytes(Bytes.fromUint8Array(word));
+}
+
+// The plain native transfers (CALL, no data, value > 0) in `multiSend(bytes)`
+// calldata, with their leg position. Legs are packed back to back as
+// `operation uint8 | to address | value uint256 | dataLength uint256 | data`.
+// Null when `data` is not a multiSend call or its buffer does not unpack
+// exactly.
+export function multiSendNativeLegs(data: Bytes): NativeLeg[] | null {
+  if (!hasSelector(data, MULTISEND_SELECTOR)) return null;
+  const decoded = ethereum.decode(
+    "bytes",
+    Bytes.fromUint8Array(data.subarray(MULTISEND_SELECTOR.length))
+  );
+  if (decoded === null) return null;
+  const transactions = decoded.toBytes();
+
+  const HEAD = 1 + 20 + 32 + 32;
+  const legs: NativeLeg[] = [];
+  let pos = 0;
+  let index = 0;
+  while (pos < transactions.length) {
+    if (transactions.length - pos < HEAD) return null;
+    const operation = transactions[pos];
+    const to = Address.fromBytes(
+      Bytes.fromUint8Array(transactions.slice(pos + 1, pos + 21))
+    );
+    const value = readUint256(transactions, pos + 21);
+    const dataLength = readUint256(transactions, pos + 53);
+    pos += HEAD;
+    if (dataLength.gt(BigInt.fromI32(transactions.length - pos))) return null;
+    pos += dataLength.toI32();
+    if (operation == OPERATION_CALL && dataLength.isZero() && value.gt(BigInt.zero())) {
+      legs.push(new NativeLeg(index, to, value));
+    }
+    index++;
+  }
+  return legs;
 }

@@ -1,4 +1,4 @@
-import { BigInt, Bytes, ethereum, log } from "@graphprotocol/graph-ts";
+import { Address, BigInt, Bytes, ethereum, log } from "@graphprotocol/graph-ts";
 import {
   AddedOwner as AddedOwnerEvent,
   ChangedThreshold as ChangedThresholdEvent,
@@ -7,23 +7,37 @@ import {
   RemovedOwner as RemovedOwnerEvent,
   SafeReceived as SafeReceivedEvent,
 } from "../generated/templates/Safe/GnosisSafe";
-import { FundsMovement, MasterSafe, TrackedAddress } from "../generated/schema";
+import {
+  AgentInstance,
+  FundsMovement,
+  MasterSafe,
+  Service,
+  TrackedAddress,
+} from "../generated/schema";
 import {
   CATEGORY_AGENT_SAFE_TO_AGENT_EOA,
   CATEGORY_MASTER_FUNDING_IN,
   CATEGORY_MASTER_TO_AGENT,
   CATEGORY_SAFE_SETUP_TRANSFER,
+  MULTISEND_V130,
+  OPERATION_CALL,
+  OPERATION_DELEGATECALL,
   ROLE_AGENT,
+  ROLE_MASTER,
   SOURCE_RAW_TRANSFER,
   SOURCE_SEMANTIC,
 } from "./constants";
 import {
+  NativeLeg,
   addToAgentFundingEvent,
   agentSafeTopUpId,
+  agentSignerLegId,
   classifyTransfer,
   fundsMovementId,
   getOrCreateAgentFundingEvent,
+  hasSelector,
   markSetupTransferSeen,
+  multiSendNativeLegs,
 } from "./utils";
 
 // handleSafeReceived — native coin inbound. Reliable: the event
@@ -98,30 +112,9 @@ const ARG_VALUE = 1;
 const ARG_DATA = 2;
 const ARG_OPERATION = 3;
 
-function hasExecTransactionSelector(input: Bytes): boolean {
-  if (input.length < 4) return false;
-  for (let i = 0; i < 4; i++) {
-    if (input[i] != EXEC_TRANSACTION_SELECTOR[i]) return false;
-  }
-  return true;
-}
-
-// handleSafeExecutionSuccess — native top-up Agent Safe → its own Agent
-// Signer (AGENT_SAFE_TO_AGENT_EOA). ExecutionSuccess carries no amount or
-// recipient, so they come from the outer tx: it must call the emitting Safe
-// directly with one plain CALL, no data, value > 0, paying the tx sender.
-// The check proves only that the Agent Safe paid the tx sender: the Agent
-// Signer submits its own Safe txs, so that payee is taken to be the Agent
-// Signer (the signer is not a tracked address). Relayed or module
-// executions are not decoded, and every other native outflow stays
-// unindexed.
-//
-// Fires on every execution of every Safe sharing the template, so every
-// shape check runs before any store load (OPE-1965 D39).
-//
-// The row ID is one per tx: a reentrant execTransaction from the same Safe
-// (e.g. an Agent Signer with EIP-7702 code) emits a second ExecutionSuccess
-// in the same tx, which reads the same outer input and is skipped.
+// handleSafeExecutionSuccess — the event has no amount or recipient, so both
+// come from decoding the outer tx. Row ids are fixed per tx, so a reentrant
+// execTransaction from the same Safe in the same tx writes no second row.
 export function handleSafeExecutionSuccess(
   event: ExecutionSuccessEvent
 ): void {
@@ -129,7 +122,7 @@ export function handleSafeExecutionSuccess(
   if (txTo === null || !txTo.equals(event.address)) return;
 
   const input = event.transaction.input;
-  if (!hasExecTransactionSelector(input)) return;
+  if (!hasSelector(input, EXEC_TRANSACTION_SELECTOR)) return;
 
   const decoded = ethereum.decode(
     EXEC_TRANSACTION_ARGS,
@@ -149,20 +142,48 @@ export function handleSafeExecutionSuccess(
   const args = decoded.toTuple();
 
   const operation = args[ARG_OPERATION].toBigInt();
-  if (!operation.isZero()) return;
-  if (args[ARG_DATA].toBytes().length != 0) return;
+  const data = args[ARG_DATA].toBytes();
   const value = args[ARG_VALUE].toBigInt();
-  if (value.le(BigInt.zero())) return;
-  const recipient = args[ARG_TO].toAddress();
-  if (!recipient.equals(event.transaction.from)) {
+  const target = args[ARG_TO].toAddress();
+  const plainNative =
+    operation.equals(BigInt.fromI32(OPERATION_CALL)) &&
+    data.length == 0 &&
+    value.gt(BigInt.zero());
+  const multiSend =
+    operation.equals(BigInt.fromI32(OPERATION_DELEGATECALL)) &&
+    target.equals(MULTISEND_V130);
+  if (!plainNative && !multiSend) return;
+
+  const tracked = TrackedAddress.load(event.address);
+  if (tracked !== null && tracked.role == ROLE_MASTER) {
+    if (plainNative) {
+      writeAgentSignerLegs(event, [new NativeLeg(0, target, value)]);
+      return;
+    }
+    const legs = multiSendNativeLegs(data);
+    if (legs === null) {
+      log.warning(
+        "Pearl Safe {} MultiSend calldata does not unpack (tx={}, data_len={}); skipping",
+        [
+          event.address.toHexString(),
+          event.transaction.hash.toHexString(),
+          data.length.toString(),
+        ]
+      );
+      return;
+    }
+    writeAgentSignerLegs(event, legs);
+    return;
+  }
+
+  if (!plainNative) return;
+  if (!target.equals(event.transaction.from)) {
     log.debug(
       "Safe {} native CALL not paid to the tx sender (tx={}); skipping",
       [event.address.toHexString(), event.transaction.hash.toHexString()]
     );
     return;
   }
-
-  const tracked = TrackedAddress.load(event.address);
   if (tracked === null || tracked.role != ROLE_AGENT) {
     log.debug(
       "Safe {} with top-up shape is not an Agent Safe (role={}, tx={}); skipping",
@@ -178,7 +199,13 @@ export function handleSafeExecutionSuccess(
   const id = agentSafeTopUpId(event.transaction.hash);
   if (FundsMovement.load(id) !== null) return;
 
-  const row = new FundsMovement(id);
+  const row = nativeOutflowRow(
+    id,
+    event,
+    CATEGORY_AGENT_SAFE_TO_AGENT_EOA,
+    target,
+    value
+  );
   if (tracked.service !== null) {
     row.service = tracked.service!;
   }
@@ -186,16 +213,88 @@ export function handleSafeExecutionSuccess(
     row.masterSafe = tracked.masterSafe!;
   }
   row.agentSafe = tracked.id;
-  row.category = CATEGORY_AGENT_SAFE_TO_AGENT_EOA;
+  row.save();
+}
+
+// token stays null (native), and native has no TokenBalance.
+function nativeOutflowRow(
+  id: Bytes,
+  event: ExecutionSuccessEvent,
+  category: string,
+  to: Address,
+  amount: BigInt
+): FundsMovement {
+  const row = new FundsMovement(id);
+  row.category = category;
   row.source = SOURCE_SEMANTIC;
-  // token = null (native); no TokenBalance for native.
-  row.amount = value;
+  row.amount = amount;
   row.from = event.address;
-  row.to = recipient;
+  row.to = to;
   row.blockNumber = event.block.number;
   row.blockTimestamp = event.block.timestamp;
   row.transactionHash = event.transaction.hash;
-  row.save();
+  return row;
+}
+
+function logUnbookedSignerLeg(
+  event: ExecutionSuccessEvent,
+  leg: NativeLeg,
+  serviceId: Bytes
+): void {
+  log.debug(
+    "Pearl Safe {} leg to Agent Signer {} not booked: service {} is buffered or not this Safe's (tx={})",
+    [
+      event.address.toHexString(),
+      leg.to.toHexString(),
+      serviceId.toHexString(),
+      event.transaction.hash.toHexString(),
+    ]
+  );
+}
+
+function writeAgentSignerLegs(
+  event: ExecutionSuccessEvent,
+  legs: NativeLeg[]
+): void {
+  for (let i = 0; i < legs.length; i++) {
+    const leg = legs[i];
+    const instance = AgentInstance.load(leg.to);
+    if (instance === null) continue;
+    const service = Service.load(instance.serviceEntityId);
+    if (service === null) {
+      logUnbookedSignerLeg(event, leg, instance.serviceEntityId);
+      continue;
+    }
+    const masterSafe = service.masterSafe;
+    if (masterSafe === null || !masterSafe.equals(event.address)) {
+      logUnbookedSignerLeg(event, leg, instance.serviceEntityId);
+      continue;
+    }
+
+    const id = agentSignerLegId(event.transaction.hash, leg.index);
+    if (FundsMovement.load(id) !== null) continue;
+
+    const row = nativeOutflowRow(
+      id,
+      event,
+      CATEGORY_MASTER_TO_AGENT,
+      leg.to,
+      leg.value
+    );
+    row.service = service.id;
+    row.masterSafe = event.address;
+    row.agentSafe = service.agentSafe;
+
+    const afe = getOrCreateAgentFundingEvent(
+      event.transaction.hash,
+      event.address,
+      service.id,
+      event
+    );
+    row.agentFundingEvent = afe.id;
+    addToAgentFundingEvent(afe, leg.value, /* isNative = */ true);
+    row.save();
+  }
 }
 
 // handleSafeExecutionFromModuleSuccess — intentional no-op: a module

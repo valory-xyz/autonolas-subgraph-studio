@@ -207,6 +207,13 @@ type PendingRegistration @entity(immutable: false) {
   operators: [Bytes!]!
 }
 
+# Not in TrackedAddress, whose rows are write-once: a Signer can re-register.
+type AgentInstance @entity(immutable: false) {
+  id: Bytes!                          # Agent Signer address
+  serviceEntityId: Bytes!             # Service.id; no Service reference: the Service may never leave the buffer
+  updatedBlock: BigInt!
+}
+
 # Per-tx cursor for the bond-attribution queue. The SRTU TokenDeposit /
 # TokenRefund events carry no serviceId, so a token movement can only be
 # tied to a service via same-tx event order. On-chain the SRTU event

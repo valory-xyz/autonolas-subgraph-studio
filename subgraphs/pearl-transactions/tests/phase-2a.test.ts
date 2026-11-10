@@ -20,7 +20,13 @@ import {
   SafeReceived,
 } from "../generated/templates/Safe/GnosisSafe";
 import { TokenDeposit } from "../generated/ServiceRegistryTokenUtility/ServiceRegistryTokenUtility";
-import { FundsMovement, MasterSafe, TrackedAddress } from "../generated/schema";
+import {
+  AgentInstance,
+  FundsMovement,
+  MasterSafe,
+  Service,
+  TrackedAddress,
+} from "../generated/schema";
 import { handleErc20Transfer } from "../src/erc20";
 import {
   handleSafeAddedOwner,
@@ -31,7 +37,11 @@ import {
   handleSafeRemovedOwner,
 } from "../src/safe";
 import { handleTokenDeposit } from "../src/service-registry-token-utility";
-import { agentSafeTopUpId } from "../src/utils";
+import {
+  agentFundingEventId,
+  agentSafeTopUpId,
+  multiSendNativeLegs,
+} from "../src/utils";
 
 // ----------------- Fixtures -----------------
 
@@ -1489,5 +1499,418 @@ describe("pearl-transactions / AGENT_SAFE_TO_AGENT_EOA", () => {
     );
     assert.entityCount("FundsMovement", 0);
     assert.entityCount("TokenBalance", 0);
+  });
+});
+
+// ---- OPE-1979 — Pearl Safe → Agent Signer native legs ----
+
+const SIGNER = Address.fromString("0x5555555555555555555555555555555555555555");
+const OTHER_SIGNER = Address.fromString("0x7777777777777777777777777777777777777777");
+const OTHER_MASTER_SAFE = Address.fromString(
+  "0x6666666666666666666666666666666666666666"
+);
+const MULTISEND = Address.fromString("0xA238CBeb142c10Ef7Ad8442C6D1f9E89e07e7761");
+const SIGNER_SHARE = BigInt.fromString("321980789324419");
+const SAFE_SHARE = BigInt.fromString("78019210675581");
+
+function word(value: BigInt): string {
+  const hex = value.toHexString().slice(2);
+  return "0".repeat(64 - hex.length) + hex;
+}
+
+// One packed MultiSend leg: operation | to | value | dataLength | data.
+function packedLeg(operation: i32, to: Address, value: BigInt, data: string = ""): string {
+  return (
+    (operation == 0 ? "00" : "01") +
+    to.toHexString().slice(2) +
+    word(value) +
+    word(BigInt.fromI32(data.length / 2)) +
+    data
+  );
+}
+
+// multiSend(bytes) calldata, laid out by hand as real calldata is: selector,
+// offset word, length word, packed legs, zero padding to a 32-byte boundary.
+function multiSendData(legs: string): Bytes {
+  const len = legs.length / 2;
+  const pad = (32 - (len % 32)) % 32;
+  return Bytes.fromHexString(
+    "0x8d80ff0a" + word(BigInt.fromI32(32)) + word(BigInt.fromI32(len)) + legs + "00".repeat(pad)
+  );
+}
+
+// execTransaction input that DELEGATECALLs MultiSend v1.3.0 with `legs`.
+function execMultiSend(legs: string): Bytes {
+  return execTransactionInput(MULTISEND, BigInt.zero(), multiSendData(legs), 1);
+}
+
+// The shape of the ZD#1285 Fund Agent split (synthetic addresses): Agent
+// Signer leg first, then the Agent Safe leg.
+const SPLIT_LEGS = packedLeg(0, SIGNER, SIGNER_SHARE) + packedLeg(0, AGENT_SAFE, SAFE_SHARE);
+
+// Spelled out rather than built with agentSignerLegId, so the cross-indexer
+// id layout is pinned.
+function signerLegId(tx: Bytes, legIndex: i32): Bytes {
+  return Bytes.fromUTF8("signer:").concat(tx).concatI32(legIndex);
+}
+
+function seedPearlService(
+  serviceId: string,
+  masterSafe: Address | null,
+  agentSafe: Address | null
+): void {
+  const svc = new Service(serviceBytes(serviceId));
+  svc.serviceId = BigInt.fromString(serviceId);
+  svc.agentIds = [40];
+  svc.operators = masterSafe !== null ? [masterSafe] : [];
+  if (masterSafe !== null) svc.masterSafe = masterSafe;
+  if (agentSafe !== null) svc.agentSafe = agentSafe;
+  svc.state = "DEPLOYED";
+  svc.totalOlasRewardsClaimed = BigInt.zero();
+  svc.registeredTimestamp = BigInt.fromI32(1);
+  svc.updatedTimestamp = BigInt.fromI32(1);
+  svc.save();
+}
+
+function seedAgentInstance(signer: Address, serviceId: string): void {
+  const instance = new AgentInstance(signer);
+  instance.serviceEntityId = serviceBytes(serviceId);
+  instance.updatedBlock = BigInt.fromI32(1);
+  instance.save();
+}
+
+function seedPearlFunding(): void {
+  seedMasterSafe(true);
+  seedPearlService(SERVICE_ID, MASTER_SAFE, AGENT_SAFE);
+  seedTrackedAddress(AGENT_SAFE, "AGENT", MASTER_SAFE, serviceBytes(SERVICE_ID));
+  seedAgentInstance(SIGNER, SERVICE_ID);
+}
+
+function fundFromPearlSafe(input: Bytes, tx: Bytes, logIndex: i32 = 5): void {
+  handleSafeExecutionSuccess(
+    newExecutionSuccess(MASTER_SAFE, MASTER_EOA, MASTER_SAFE, input, tx, logIndex)
+  );
+}
+
+describe("pearl-transactions / Pearl Safe → Agent Signer MASTER_TO_AGENT", () => {
+  beforeEach(() => {
+    clearStore();
+    dataSourceMock.setNetwork("gnosis");
+  });
+
+  afterEach(() => {
+    clearStore();
+  });
+
+  test("MultiSend split books the Signer leg next to the Agent Safe leg", () => {
+    seedPearlFunding();
+    const tx = mockTx(80);
+    // The Agent Safe leg arrives as SafeReceived during execution.
+    handleSafeReceived(newSafeReceived(MASTER_SAFE, SAFE_SHARE, AGENT_SAFE, tx, 2));
+    fundFromPearlSafe(
+      execMultiSend(SPLIT_LEGS),
+      tx
+    );
+
+    const id = signerLegId(tx, 0).toHexString();
+    const afeId = agentFundingEventId(tx, MASTER_SAFE, serviceBytes(SERVICE_ID)).toHexString();
+    assert.entityCount("FundsMovement", 2);
+    assert.fieldEquals("FundsMovement", id, "category", "MASTER_TO_AGENT");
+    assert.fieldEquals("FundsMovement", id, "source", "SEMANTIC");
+    assert.fieldEquals("FundsMovement", id, "amount", SIGNER_SHARE.toString());
+    assert.fieldEquals("FundsMovement", id, "from", MASTER_SAFE.toHexString());
+    assert.fieldEquals("FundsMovement", id, "to", SIGNER.toHexString());
+    assert.assertTrue(FundsMovement.load(signerLegId(tx, 0))!.token === null);
+    assert.fieldEquals("FundsMovement", id, "service", serviceBytes(SERVICE_ID).toHexString());
+    assert.fieldEquals("FundsMovement", id, "masterSafe", MASTER_SAFE.toHexString());
+    assert.fieldEquals("FundsMovement", id, "agentSafe", AGENT_SAFE.toHexString());
+    assert.fieldEquals("FundsMovement", id, "agentFundingEvent", afeId);
+    assert.fieldEquals(
+      "FundsMovement",
+      tx.concatI32(2).toHexString(),
+      "agentFundingEvent",
+      afeId
+    );
+    assert.fieldEquals(
+      "AgentFundingEvent",
+      afeId,
+      "totalNativeAmount",
+      SIGNER_SHARE.plus(SAFE_SHARE).toString()
+    );
+    assert.entityCount("TokenBalance", 0);
+  });
+
+  test("Signer leg id does not collide with a SafeReceived row at logIndex 0", () => {
+    seedPearlFunding();
+    const tx = mockTx(86);
+    handleSafeReceived(newSafeReceived(MASTER_SAFE, SAFE_SHARE, AGENT_SAFE, tx, 0));
+    fundFromPearlSafe(
+      execMultiSend(SPLIT_LEGS),
+      tx
+    );
+    assert.entityCount("FundsMovement", 2);
+    assert.fieldEquals(
+      "FundsMovement",
+      signerLegId(tx, 0).toHexString(),
+      "amount",
+      SIGNER_SHARE.toString()
+    );
+    assert.fieldEquals(
+      "FundsMovement",
+      tx.concatI32(0).toHexString(),
+      "amount",
+      SAFE_SHARE.toString()
+    );
+  });
+
+  test("plain CALL to the Agent Signer creates its AgentFundingEvent", () => {
+    seedPearlFunding();
+    const tx = mockTx(81);
+    fundFromPearlSafe(execTransactionInput(SIGNER, AMOUNT, NO_DATA, 0), tx);
+
+    const id = signerLegId(tx, 0).toHexString();
+    const afeId = agentFundingEventId(tx, MASTER_SAFE, serviceBytes(SERVICE_ID)).toHexString();
+    assert.entityCount("FundsMovement", 1);
+    assert.fieldEquals("FundsMovement", id, "amount", AMOUNT.toString());
+    assert.fieldEquals("FundsMovement", id, "agentFundingEvent", afeId);
+    assert.fieldEquals("AgentFundingEvent", afeId, "totalNativeAmount", AMOUNT.toString());
+    assert.fieldEquals("AgentFundingEvent", afeId, "masterSafe", MASTER_SAFE.toHexString());
+  });
+
+  test("row id carries the leg's MultiSend position", () => {
+    seedPearlFunding();
+    const tx = mockTx(82);
+    fundFromPearlSafe(
+      execMultiSend(packedLeg(0, AGENT_SAFE, SAFE_SHARE) + packedLeg(0, SIGNER, SIGNER_SHARE)),
+      tx
+    );
+    assert.entityCount("FundsMovement", 1);
+    assert.fieldEquals(
+      "FundsMovement",
+      signerLegId(tx, 1).toHexString(),
+      "amount",
+      SIGNER_SHARE.toString()
+    );
+  });
+
+  test("reentrant ExecutionSuccess counts the legs once", () => {
+    seedPearlFunding();
+    const tx = mockTx(83);
+    const input = execMultiSend(SPLIT_LEGS);
+    fundFromPearlSafe(input, tx, 4);
+    fundFromPearlSafe(input, tx, 5);
+    assert.entityCount("FundsMovement", 1);
+    assert.fieldEquals(
+      "AgentFundingEvent",
+      agentFundingEventId(tx, MASTER_SAFE, serviceBytes(SERVICE_ID)).toHexString(),
+      "totalNativeAmount",
+      SIGNER_SHARE.toString()
+    );
+  });
+
+  test("leg is booked without an Agent Safe when the service has none yet", () => {
+    seedMasterSafe(true);
+    seedPearlService(SERVICE_ID, MASTER_SAFE, null);
+    seedAgentInstance(SIGNER, SERVICE_ID);
+    const tx = mockTx(84);
+    fundFromPearlSafe(execTransactionInput(SIGNER, AMOUNT, NO_DATA, 0), tx);
+    assert.entityCount("FundsMovement", 1);
+    assert.assertTrue(FundsMovement.load(signerLegId(tx, 0))!.agentSafe === null);
+  });
+
+  test("Agent Signer of a still-buffered service writes no row", () => {
+    seedMasterSafe(true);
+    seedAgentInstance(SIGNER, SERVICE_ID); // no Service entity yet
+    fundFromPearlSafe(execTransactionInput(SIGNER, AMOUNT, NO_DATA, 0), mockTx(91));
+    assert.entityCount("FundsMovement", 0);
+    assert.entityCount("AgentFundingEvent", 0);
+  });
+
+  test("Agent Signer of a service with no Pearl Safe yet writes no row", () => {
+    seedMasterSafe(true);
+    seedPearlService(SERVICE_ID, null, null);
+    seedAgentInstance(SIGNER, SERVICE_ID);
+    fundFromPearlSafe(execTransactionInput(SIGNER, AMOUNT, NO_DATA, 0), mockTx(92));
+    assert.entityCount("FundsMovement", 0);
+    assert.entityCount("AgentFundingEvent", 0);
+  });
+
+  test("a skipped Signer leg does not stop the next leg from being booked", () => {
+    seedPearlFunding();
+    seedPearlService("43", OTHER_MASTER_SAFE, null);
+    seedAgentInstance(OTHER_SIGNER, "43");
+    const tx = mockTx(94);
+    fundFromPearlSafe(
+      execMultiSend(packedLeg(0, OTHER_SIGNER, AMOUNT) + packedLeg(0, SIGNER, SIGNER_SHARE)),
+      tx
+    );
+    assert.entityCount("FundsMovement", 1);
+    assert.fieldEquals(
+      "FundsMovement",
+      signerLegId(tx, 1).toHexString(),
+      "amount",
+      SIGNER_SHARE.toString()
+    );
+    assert.fieldEquals(
+      "AgentFundingEvent",
+      agentFundingEventId(tx, MASTER_SAFE, serviceBytes(SERVICE_ID)).toHexString(),
+      "totalNativeAmount",
+      SIGNER_SHARE.toString()
+    );
+  });
+
+  test("a buffered Signer leg does not stop the next leg from being booked", () => {
+    seedPearlFunding();
+    seedAgentInstance(OTHER_SIGNER, "44"); // no Service 44 yet
+    const tx = mockTx(95);
+    fundFromPearlSafe(
+      execMultiSend(packedLeg(0, OTHER_SIGNER, AMOUNT) + packedLeg(0, SIGNER, SIGNER_SHARE)),
+      tx
+    );
+    assert.entityCount("FundsMovement", 1);
+    assert.fieldEquals(
+      "FundsMovement",
+      signerLegId(tx, 1).toHexString(),
+      "amount",
+      SIGNER_SHARE.toString()
+    );
+    assert.fieldEquals(
+      "AgentFundingEvent",
+      agentFundingEventId(tx, MASTER_SAFE, serviceBytes(SERVICE_ID)).toHexString(),
+      "totalNativeAmount",
+      SIGNER_SHARE.toString()
+    );
+  });
+
+  test("Agent Signer of another Pearl Safe's service writes no row", () => {
+    seedPearlFunding();
+    seedPearlService("43", OTHER_MASTER_SAFE, null);
+    seedAgentInstance(SIGNER, "43");
+    fundFromPearlSafe(
+      execMultiSend(SPLIT_LEGS),
+      mockTx(85)
+    );
+    assert.entityCount("FundsMovement", 0);
+    assert.entityCount("AgentFundingEvent", 0);
+  });
+
+  test("recipient that is not an Agent Signer writes no row", () => {
+    seedPearlFunding();
+    fundFromPearlSafe(execTransactionInput(RANDOM_EOA, AMOUNT, NO_DATA, 0), mockTx(86));
+    assert.entityCount("FundsMovement", 0);
+  });
+
+  test("legs that are not plain native transfers write no row", () => {
+    seedPearlFunding();
+    fundFromPearlSafe(
+      execMultiSend(
+        packedLeg(0, SIGNER, BigInt.zero(), "a9059cbb") + // ERC-20-shaped call
+          packedLeg(1, SIGNER, AMOUNT) // DELEGATECALL
+      ),
+      mockTx(87)
+    );
+    assert.entityCount("FundsMovement", 0);
+  });
+
+  test("a CALL to the Agent Signer carrying value and data writes no row", () => {
+    seedPearlFunding();
+    fundFromPearlSafe(
+      execMultiSend(packedLeg(0, SIGNER, AMOUNT, "a9059cbb")),
+      mockTx(93)
+    );
+    assert.entityCount("FundsMovement", 0);
+    assert.entityCount("AgentFundingEvent", 0);
+  });
+
+  test("DELEGATECALL to another contract writes no row", () => {
+    seedPearlFunding();
+    fundFromPearlSafe(
+      execTransactionInput(RANDOM_EOA, BigInt.zero(), multiSendData(SPLIT_LEGS), 1),
+      mockTx(88)
+    );
+    assert.entityCount("FundsMovement", 0);
+  });
+
+  test("truncated MultiSend buffer writes no row", () => {
+    seedPearlFunding();
+    const legs = SPLIT_LEGS.slice(0, SPLIT_LEGS.length - 20);
+    fundFromPearlSafe(
+      execMultiSend(legs),
+      mockTx(89)
+    );
+    assert.entityCount("FundsMovement", 0);
+  });
+
+  test("Agent Safe emitter with a MultiSend shape writes no row", () => {
+    seedPearlFunding();
+    handleSafeExecutionSuccess(
+      newExecutionSuccess(
+        AGENT_SAFE,
+        AGENT_EOA,
+        AGENT_SAFE,
+        execMultiSend(SPLIT_LEGS),
+        mockTx(90),
+        0
+      )
+    );
+    assert.entityCount("FundsMovement", 0);
+  });
+});
+
+describe("pearl-transactions / multiSendNativeLegs", () => {
+  test("unpacks native legs with their position", () => {
+    const legs = multiSendNativeLegs(multiSendData(SPLIT_LEGS))!;
+    assert.i32Equals(legs.length, 2);
+    assert.i32Equals(legs[0].index, 0);
+    assert.addressEquals(legs[0].to, SIGNER);
+    assert.bigIntEquals(legs[0].value, SIGNER_SHARE);
+    assert.i32Equals(legs[1].index, 1);
+    assert.addressEquals(legs[1].to, AGENT_SAFE);
+    assert.bigIntEquals(legs[1].value, SAFE_SHARE);
+  });
+
+  test("keeps positions but drops legs that are not plain native transfers", () => {
+    const legs = multiSendNativeLegs(
+      multiSendData(
+        packedLeg(0, AGENT_SAFE, BigInt.zero(), "a9059cbb") +
+          packedLeg(1, AGENT_SAFE, AMOUNT) +
+          packedLeg(0, AGENT_SAFE, BigInt.zero()) +
+          packedLeg(0, AGENT_SAFE, AMOUNT, "a9059cbb") + // value AND data
+          packedLeg(0, SIGNER, AMOUNT)
+      )
+    )!;
+    assert.i32Equals(legs.length, 1);
+    assert.i32Equals(legs[0].index, 4);
+    assert.addressEquals(legs[0].to, SIGNER);
+  });
+
+  test("an empty buffer has no legs", () => {
+    assert.i32Equals(multiSendNativeLegs(multiSendData(""))!.length, 0);
+  });
+
+  test("a truncated head is malformed", () => {
+    assert.assertTrue(
+      multiSendNativeLegs(multiSendData(SPLIT_LEGS.slice(0, SPLIT_LEGS.length - 20))) === null
+    );
+  });
+
+  test("trailing bytes are malformed", () => {
+    assert.assertTrue(multiSendNativeLegs(multiSendData(SPLIT_LEGS + "00")) === null);
+  });
+
+  test("a data length past the end is malformed", () => {
+    const leg = packedLeg(0, AGENT_SAFE, AMOUNT, "1234");
+    assert.assertTrue(multiSendNativeLegs(multiSendData(leg.slice(0, leg.length - 2))) === null);
+  });
+
+  test("calldata with another selector is not a multiSend", () => {
+    const data = multiSendData(SPLIT_LEGS).toHexString();
+    assert.assertTrue(
+      multiSendNativeLegs(Bytes.fromHexString("0x8d80ff0b" + data.slice(10))) === null
+    );
+  });
+
+  test("calldata shorter than a selector is not a multiSend", () => {
+    assert.assertTrue(multiSendNativeLegs(Bytes.fromHexString("0x8d80ff")) === null);
   });
 });

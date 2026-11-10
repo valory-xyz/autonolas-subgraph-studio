@@ -3,7 +3,7 @@
 **Status:** All phases implemented and merged to `main` (1a #131, 1b #132, 2a #133, 2b #138, plus follow-ups #143/#144/#147 and the clean-sync indexing release #148/#149). All four networks are published on The Graph; as of 2026-06-12 Gnosis is at chain head, Optimism/Base/Polygon are still backfilling (Polygon slowest — the §6.3 USDC.e density cost; remediation proposals in [`INDEXING-PERFORMANCE.md`](./INDEXING-PERFORMANCE.md)). This plan is the design-of-record.
 **Subgraph:** `subgraphs/pearl-transactions/` (renamed from `pearl-funds` per §11 #5)
 **Target networks (v1):** Gnosis, Polygon, Optimism, Base
-**Last updated:** 2026-06-12 (Rev. 9 — doc moved from `subgraphs/pearl-funds/` (the rename-orphaned directory) into `subgraphs/pearl-transactions/`; status refreshed to all-phases-shipped + four networks published; stale `pearl-funds` path/name references updated. Rev. 8 — back-propagated the clean-sync indexing release (#148 proposals #2/#3/#4/#5, PR #149) so the plan matches shipped code: `FundsMovement` flipped to `immutable: true` and the only mutated rows (SRTU bond deposit/refund) split into a new mutable `BondMovement` entity (§5.1) — the producer creates a `BondMovement` row and the consumer backfills it (§5.2), and a complete ledger is now `FundsMovement` ∪ `BondMovement`; `TrackedSafe` + `TrackedEOA` consolidated into a single immutable `TrackedAddress` (roles MASTER / AGENT / MASTER_EOA / AGENT_EOA / STAKING) so `classifyTransfer` does two hot-path loads instead of six (§6.4/§6.5); `Token` made immutable; service ids migrated to `Bytes` (`serviceEntityId`). Rev. 7 — Phase 2b token-set reconciliation: pUSD is a separate Polymarket contract `0xC011a7E1…`, not a USDC.e UI alias; §4.5 token table + §4.3 networks table rebuilt to the shipped per-chain set (USDC / USDC.e / pUSD); §6.3 records the ship-on-chain decision + Polygon USDC.e rollback condition; Polystrat funds in USDC + pUSD. Rev. 6 — back-propagated the PR #131/#132 producer/consumer fixes so the plan matches shipped code: §3.3 SRTU is indexed, §4.6 SRTU-before-SR event order, §5.1/§5.2 inverted bond-attribution entities + handlers, §5.1 FundsMovement/Token mutability, §5.2 dual NFT guard + handleServiceStaked null-check, §5.4/§7/§8 staleness, pearl-transactions path. Rev. 5 — product decisions finalised: OPENING_BALANCE rows removed, opening balances delegated to the frontend via historyFloorBlock; native → Agent EOA confirmed accepted gap; AC #3 = Path A. Rev. 4 addressed PR #130 review + §11 #6. Rev. 3 added §4.5/§4.6. Rev. 2 added SRTU bond indexing, agent-ID anti-hardcoding, Master EOA tracking. Rev. 1 addressed PR #129 feedback.)
+**Last updated:** 2026-11-09 (Rev. 10 — OPE-1979: the Pearl Safe → Agent Signer native leg is indexed by decoding the Pearl Safe's own `execTransaction` (plain CALL or MultiSend v1.3.0) into `MASTER_TO_AGENT` rows, with the new `AgentInstance` entity linking a Signer to its service; see the Rev. 10 note under the native → Agent EOA gap. Rev. 9 — 2026-06-12, doc moved from `subgraphs/pearl-funds/` (the rename-orphaned directory) into `subgraphs/pearl-transactions/`; status refreshed to all-phases-shipped + four networks published; stale `pearl-funds` path/name references updated. Rev. 8 — back-propagated the clean-sync indexing release (#148 proposals #2/#3/#4/#5, PR #149) so the plan matches shipped code: `FundsMovement` flipped to `immutable: true` and the only mutated rows (SRTU bond deposit/refund) split into a new mutable `BondMovement` entity (§5.1) — the producer creates a `BondMovement` row and the consumer backfills it (§5.2), and a complete ledger is now `FundsMovement` ∪ `BondMovement`; `TrackedSafe` + `TrackedEOA` consolidated into a single immutable `TrackedAddress` (roles MASTER / AGENT / MASTER_EOA / AGENT_EOA / STAKING) so `classifyTransfer` does two hot-path loads instead of six (§6.4/§6.5); `Token` made immutable; service ids migrated to `Bytes` (`serviceEntityId`). Rev. 7 — Phase 2b token-set reconciliation: pUSD is a separate Polymarket contract `0xC011a7E1…`, not a USDC.e UI alias; §4.5 token table + §4.3 networks table rebuilt to the shipped per-chain set (USDC / USDC.e / pUSD); §6.3 records the ship-on-chain decision + Polygon USDC.e rollback condition; Polystrat funds in USDC + pUSD. Rev. 6 — back-propagated the PR #131/#132 producer/consumer fixes so the plan matches shipped code: §3.3 SRTU is indexed, §4.6 SRTU-before-SR event order, §5.1/§5.2 inverted bond-attribution entities + handlers, §5.1 FundsMovement/Token mutability, §5.2 dual NFT guard + handleServiceStaked null-check, §5.4/§7/§8 staleness, pearl-transactions path. Rev. 5 — product decisions finalised: OPENING_BALANCE rows removed, opening balances delegated to the frontend via historyFloorBlock; native → Agent EOA confirmed accepted gap; AC #3 = Path A. Rev. 4 addressed PR #130 review + §11 #6. Rev. 3 added §4.5/§4.6. Rev. 2 added SRTU bond indexing, agent-ID anti-hardcoding, Master EOA tracking. Rev. 1 addressed PR #129 feedback.)
 
 This document scopes a new subgraph that indexes **funds movement for the
 Master Safe and Agent Safe of Pearl predict services**. It covers Phase 1
@@ -818,7 +818,9 @@ incompatible event ABIs.
   captures Master EOA OLAS transfers via the tracked-address filter
   (§6.1). **Native → Agent EOA transfers remain a confirmed accepted v1
   gap** (EOAs emit no events; only call traces expose them, which defeats
-  the §2.2 discipline).
+  the §2.2 discipline). *Superseded by OPE-1979:* the Pearl Safe → Agent
+  Signer leg is now decoded from the Pearl Safe's own `execTransaction`
+  (see the Rev. 10 note under "Known accepted gap — native → Agent EOA").
 - In-market bet flows — the predict subgraphs; join on Agent Safe address.
 
 ---
@@ -908,11 +910,21 @@ happens before the template exists and cannot be recovered by the subgraph.
    `MASTER_FUNDING_IN`.
 
 **Known accepted gap — native → Agent EOA:** Native coin transfers
-to a plain EOA emit no on-chain log. The Agent EOA gas-funding leg
-(e.g. 2 xDAI sent directly to the Agent EOA) is permanently
-unobservable from event-based subgraph indexing on
-Gnosis/Polygon/Optimism/Base, where call handlers are not supported.
-This gap is accepted for v1 and documented here.
+to a plain EOA emit no on-chain log, and call handlers are not supported
+on Gnosis/Polygon/Optimism/Base. The Agent EOA gas-funding leg (e.g.
+2 xDAI sent directly to the Agent EOA) is therefore unobservable,
+except where the Rev. 10 decode below applies.
+
+**Rev. 10 (OPE-1979) — the Pearl Safe → Agent Signer leg is indexed.**
+The leg emits no log, but the Pearl Safe's `ExecutionSuccess` does, and
+Pearl's middleware always sends it as the Master EOA calling
+`execTransaction` on the Pearl Safe itself: a plain CALL, or a
+DELEGATECALL to MultiSend v1.3.0 for a split. `handleSafeExecutionSuccess`
+decodes that outer calldata and writes each leg to an Agent Signer of one
+of the Pearl Safe's services (`AgentInstance`, from
+`RegisterInstance.agentInstance`) as a `MASTER_TO_AGENT` row in the tx's
+`AgentFundingEvent`. A tx that does not call the Safe itself (e.g.
+relayed through a contract) and module executions are not decoded.
 
 **VLOP-73 AC #3 implication** (Rev. 4 follow-up, per @rajat2502's
 self-correction on PR #130). AC #3 is verbatim:
@@ -1274,7 +1286,8 @@ CI runs `yarn graph codegen` + `yarn graph test` via the `ci.yml` matrix.
    UI renders "History starts here" at that block; opening balances are
    fetched by the frontend via archive RPC (`eth_getBalance` /
    `token.balanceOf` at `historyFloorBlock`).
-   Native → Agent EOA transfers are a confirmed accepted gap for v1.
+   Native → Agent EOA transfers are a confirmed accepted gap for v1
+   (Pearl Safe → Agent Signer since indexed, OPE-1979 / Rev. 10).
 
 ---
 
