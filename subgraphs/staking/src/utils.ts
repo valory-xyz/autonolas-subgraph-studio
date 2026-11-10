@@ -309,7 +309,8 @@ export function processUnstake(
   epoch: BigInt,
   reward: BigInt,
   contractAddress: Address,
-  rewardPaidOut: boolean
+  rewardPaidOut: boolean,
+  updateHistoryReward: boolean = true
 ): void {
   let serviceIdStr = serviceId.toString();
 
@@ -338,7 +339,7 @@ export function processUnstake(
     event.block.timestamp,
     event.transaction.hash
   );
-  history.rewardAmount = reward;
+  if (updateHistoryReward) history.rewardAmount = reward;
   history.save();
 
   // 4. Update Global

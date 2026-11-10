@@ -122,6 +122,14 @@ describe("StakingFactory instance indexing", () => {
     assert.fieldEquals("StakingContract", instance.toHexString(), "eventsIndexed", "false")
   })
 
+  test("v0.4 uses its own event template alongside legacy instances", () => {
+    let instance = Address.fromString("0x0000000000000000000000000000000000000034")
+    mockStakingProxyConfig(instance, [], null, "0.4.0")
+    handleInstanceCreated(createInstanceCreatedEvent(SENDER, instance, IMPLEMENTATION))
+    assert.fieldEquals("StakingContract", instance.toHexString(), "eventsIndexed", "true")
+    assert.dataSourceExists("StakingProxyV4", instance.toHexString())
+  })
+
   test("An externally managed 0.3.0 keeps the v1.2.x signatures and is templated", () => {
     let instance = Address.fromString("0x0000000000000000000000000000000000000027")
     // same version string, but stakingManager() marks a different contract family

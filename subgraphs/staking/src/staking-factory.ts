@@ -13,7 +13,7 @@ import {
   VerifierUpdated,
   StakingContract,
 } from "../generated/schema";
-import { StakingProxy } from "../generated/templates";
+import { StakingProxy, StakingProxyV4 } from "../generated/templates";
 import { StakingProxy as StakingProxyContract } from "../generated/templates/StakingProxy/StakingProxy";
 import { Address, BigInt, Bytes, ethereum, log } from "@graphprotocol/graph-ts";
 import { getOlasTokenAddress } from "../../../shared/constants";
@@ -86,7 +86,7 @@ export function handleInstanceCreated(event: InstanceCreatedEvent): void {
     : stakingManager.value;
   stakingContract.version = version.reverted ? null : version.value;
 
-  // The templated handlers decode the v1.2.x event signatures. From registries
+  // The legacy template decodes v1.2.x signatures; v0.4 has a separate template. From registries
   // v1.3.0, ServiceUnstaked gains a trailing bool and RewardClaimed returns
   // arrays, so neither matches while ServiceStaked still does — indexing such an
   // instance would add stakes that never get subtracted. Skip the template and
@@ -99,9 +99,12 @@ export function handleInstanceCreated(event: InstanceCreatedEvent): void {
     version.reverted ||
     versionString == "0.1.0" ||
     versionString == "0.2.0" ||
+    versionString == "0.4.0" ||
     (versionString == "0.3.0" && !stakingManager.reverted);
 
-  if (stakingContract.eventsIndexed) {
+  if (versionString == "0.4.0") {
+    StakingProxyV4.create(event.params.instance);
+  } else if (stakingContract.eventsIndexed) {
     StakingProxy.create(event.params.instance);
   } else {
     log.warning(
