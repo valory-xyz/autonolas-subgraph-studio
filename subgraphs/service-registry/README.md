@@ -90,6 +90,12 @@ commit `0e065705af0ca8df84f75f7a19b814c21fa2d083`. The existing ABI already
 contains the required event. Service termination alone is not used as evidence
 of wallet clearing: older deployments may not emit the bridger cleanup event.
 
+The configured bridger histories were checked on 10 November 2026. The
+wallet-clearing meaning of `AgentMultisigUpdated` is consistent throughout their
+indexed ranges, including the historical implementation upgrades. No additional
+block boundary or new contract address is needed for this handler. Deploy after
+merge without waiting for a ServiceManager deployment or new on-chain activity.
+
 New subscriptions require replay/backfill from before any missed events; a
 restart or graft containing stale wallet state does not repair that history.
 Studio deployments require full reindexing. Self-hosted grafts require a correct
