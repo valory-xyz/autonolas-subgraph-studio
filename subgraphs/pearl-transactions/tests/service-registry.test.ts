@@ -79,6 +79,9 @@ const OTHER_SERVICE_ID = BigInt.fromI32(43);
 const SERVICE_ID_HEX = Bytes.fromByteArray(
   Bytes.fromBigInt(SERVICE_ID)
 ).toHexString();
+const OTHER_SERVICE_ID_HEX = Bytes.fromByteArray(
+  Bytes.fromBigInt(OTHER_SERVICE_ID)
+).toHexString();
 
 const SECURITY_DEPOSIT = BigInt.fromString("10000000000000000000"); // 10 OLAS
 const AGENT_BOND = BigInt.fromString("30000000000000000000"); // 30 OLAS
@@ -435,6 +438,59 @@ describe("pearl-transactions / Phase 1a — registry + Master EOA + SRTU bonds",
     );
     assert.entityCount("AgentSafe", 1);
     assert.entityCount("ServiceIndex", 1);
+  });
+
+  test("RegisterInstance re-links the Agent Signer when its new Service already exists", () => {
+    handleRegisterInstance(
+      newRegisterInstance(OPERATOR, SERVICE_ID, AGENT_INSTANCE_1, PEARL_AGENT_ID, mockTx(32), 0)
+    );
+    handleRegisterInstance(
+      newRegisterInstance(OPERATOR, OTHER_SERVICE_ID, AGENT_INSTANCE_2, PEARL_AGENT_ID, mockTx(33), 0)
+    );
+    handleCreateMultisigWithAgents(newCreateMultisig(OTHER_SERVICE_ID, AGENT_SAFE, mockTx(33), 1));
+    // Service 43 now exists, so reRegister takes the existing-Service branch, not the buffer.
+    assert.entityCount("Service", 1);
+
+    const reRegister = newRegisterInstance(
+      OPERATOR,
+      OTHER_SERVICE_ID,
+      AGENT_INSTANCE_1,
+      PEARL_AGENT_ID,
+      mockTx(34),
+      0
+    );
+    reRegister.block.number = BigInt.fromI32(777);
+    handleRegisterInstance(reRegister);
+
+    assert.fieldEquals("AgentInstance", AGENT_INSTANCE_1.toHexString(), "serviceEntityId", OTHER_SERVICE_ID_HEX);
+    assert.fieldEquals("AgentInstance", AGENT_INSTANCE_1.toHexString(), "updatedBlock", "777");
+  });
+
+  test("RegisterInstance links a still-buffered Agent Signer to its latest service", () => {
+    const tx = mockTx(30);
+    // Buffered: the Service does not exist yet.
+    handleRegisterInstance(
+      newRegisterInstance(OPERATOR, SERVICE_ID, AGENT_INSTANCE_1, PEARL_AGENT_ID, tx, 0)
+    );
+    assert.entityCount("Service", 0);
+    assert.fieldEquals(
+      "AgentInstance",
+      AGENT_INSTANCE_1.toHexString(),
+      "serviceEntityId",
+      SERVICE_ID_HEX
+    );
+
+    // The same Signer re-registered to another service: latest wins.
+    handleRegisterInstance(
+      newRegisterInstance(OPERATOR, OTHER_SERVICE_ID, AGENT_INSTANCE_1, PEARL_AGENT_ID, mockTx(31), 0)
+    );
+    assert.entityCount("AgentInstance", 1);
+    assert.fieldEquals(
+      "AgentInstance",
+      AGENT_INSTANCE_1.toHexString(),
+      "serviceEntityId",
+      OTHER_SERVICE_ID_HEX
+    );
   });
 
   test("Agent IDs are recorded for ANY agent (no WASM-level Pearl gate)", () => {

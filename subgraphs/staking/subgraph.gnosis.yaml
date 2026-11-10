@@ -92,3 +92,58 @@ templates:
         - event: Withdraw(indexed address,uint256)
           handler: handleWithdraw
       file: ./src/staking-proxy.ts
+
+  - name: StakingProxyV4
+    kind: ethereum/contract
+    network: gnosis
+    source:
+      abi: StakingTokenV4
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Checkpoint
+        - Deposit
+        - RewardClaimed
+        - ServiceInactivityWarning
+        - ServiceStaked
+        - ServiceUnstakedV4
+        - ServicesRebaselined
+        - ServiceBaselineEvent
+        - ServiceBaselineState
+        - ServicesEvicted
+        - Withdraw
+      abis:
+        - name: StakingTokenV4
+          file: ../../abis/StakingTokenV4.json
+        - name: ServiceRegistryL2
+          file: ../../abis/ServiceRegistryL2.json
+        - name: ServiceRegistryTokenUtility
+          file: ../../abis/ServiceRegistryTokenUtility.json
+      eventHandlers:
+        - event: Checkpoint(indexed uint256,uint256,uint256[],uint256[],uint256)
+          handler: handleCheckpoint
+        - event: Deposit(indexed address,uint256,uint256,uint256)
+          handler: handleDeposit
+        - event: RewardClaimed(uint256,indexed uint256,indexed address,indexed
+            address,uint256[],address[],uint256[])
+          handler: handleRewardClaimed
+        - event: ServiceInactivityWarning(uint256,indexed uint256,uint256)
+          handler: handleServiceInactivityWarning
+        - event: ServiceStaked(uint256,indexed uint256,indexed address,indexed address,uint256[],uint256)
+          handler: handleServiceStaked
+        - event: ServiceUnstaked(uint256,indexed uint256,indexed address,indexed
+            address,uint256[],uint256,bool)
+          handler: handleServiceUnstaked
+        - event: ServicesEvicted(indexed uint256,uint256[],address[],address[],uint256[])
+          handler: handleServicesEvicted
+        - event: Withdraw(indexed address,uint256)
+          handler: handleWithdraw
+        - event: ServicesRebaselined(indexed uint256)
+          handler: handleServicesRebaselined
+        - event: ServiceBaselineMissing(indexed uint256,indexed uint256)
+          handler: handleServiceBaselineMissing
+        - event: ServiceBaselineRecovered(indexed uint256,indexed uint256)
+          handler: handleServiceBaselineRecovered
+      file: ./src/staking-v4.ts

@@ -27,6 +27,7 @@ import {
   isStakingContract,
   serviceEntityId,
   setServiceIndex,
+  upsertAgentInstance,
 } from "./utils";
 
 // handleRegisterInstance —
@@ -42,6 +43,12 @@ export function handleRegisterInstance(event: RegisterInstanceEvent): void {
   const serviceId = event.params.serviceId;
   const agentId = event.params.agentId.toI32();
   const operator = event.params.operator;
+
+  upsertAgentInstance(
+    event.params.agentInstance,
+    serviceEntityId(serviceId),
+    event.block.number
+  );
 
   const existing = Service.load(serviceEntityId(serviceId));
   if (existing != null) {
