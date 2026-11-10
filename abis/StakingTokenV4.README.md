@@ -28,8 +28,9 @@ Factory discovery selects v0.4 decoding only for `VERSION() == "0.4.0"`.
 Legacy version handling is retained, including rejection of unsupported
 implementations. New implementations use the existing factory and proxy event
 sources; no new factory address or speculative start block is introduced.
-Native-funded deployments are outside the planned rollout. Mode is excluded
-from the infra rollout and its legacy Graph indexer is unchanged.
+Native-funded deployments are outside the planned rollout. Mode is outside
+the approved v0.4 activation matrix. Its legacy Graph indexer is unchanged and
+is not v0.4-compatible.
 
 - `ServiceStaked.rewardDistributionInfo` records the emitted distribution value.
   Keep its emitted epoch: a refill checkpoint can increment it before the stake.
@@ -50,6 +51,16 @@ from the infra rollout and its legacy Graph indexer is unchanged.
   allocation for the preceding interval. Consumers must still read the contract
   for a pending rebaseline that has not executed; deposits alone are not used
   to infer that state.
+
+Epoch history preserves its existing IDs, on-chain epoch numbers, timestamps
+and zero-reward rows. `Service.totalEpochsParticipated` keeps counting unique
+service/contract/epoch history rows, including rebaseline rows; it is not a count
+of funded or reward-eligible periods. An existing row is not counted twice.
+`isRebaseline` is additive metadata, not a reason to remove or renumber history.
+Pearl's history hook uses the rows and their timestamp boundaries, not this
+counter. Baseline-aware display and streak handling belong in the separate
+Pearl delivery before v0.4 consumer activation; retain baseline timestamps when
+calculating adjacent epoch intervals.
 
 Legacy optional fields can remain null. Historical monetary totals retain their
 existing token guards. The primary staking indexer does not index wallet ERC20
