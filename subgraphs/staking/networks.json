@@ -5,12 +5,6 @@
       "startBlock": 35206806
     }
   },
-  "base": {
-    "StakingFactory": {
-      "address": "0x1cEe30D08943EB58EFF84DD1AB44a6ee6FEff63a",
-      "startBlock": 17310019
-    }
-  },
   "optimism": {
     "StakingFactory": {
       "address": "0xa45E64d13A30a51b91ae0eb182e88a40e9b18eD8",

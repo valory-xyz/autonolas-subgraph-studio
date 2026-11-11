@@ -1,12 +1,14 @@
 # New Mech Fees Subgraphs
 
+Base subgraph deployment has been retired. Use the [Infra mech-fees squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/mech-fees); its Base configuration lives there.
+
 Tracks fees for autonomous agents (mechs) across multiple payment models and networks. Indexes every fee-in (accrual) and fee-out (collection) event with USD conversion.
 
 > **Technical reference**: See [CLAUDE.md](CLAUDE.md) for full schema reference, handler details, USD conversion strategies, contract addresses, raw unit rules, and utility functions.
 
 ## Quick Overview
 
-- **7 networks**: Ethereum, Gnosis, Base, Polygon, Optimism, Arbitrum, Celo (per-network manifests: `subgraph.<network-id>.yaml`, e.g. `subgraph.mainnet.yaml`, `subgraph.matic.yaml`, `subgraph.arbitrum-one.yaml`)
+- **6 networks**: Ethereum, Gnosis, Polygon, Optimism, Arbitrum, Celo (per-network manifests: `subgraph.<network-id>.yaml`, e.g. `subgraph.mainnet.yaml`, `subgraph.matic.yaml`, `subgraph.arbitrum-one.yaml`)
 - **4 payment models**: Native, NVM (credits), Token OLAS, Token USDC
 - **Two event types**: `MechBalanceAdjusted` (fee-in) and `Withdraw` (fee-out)
 - **USD conversion**: Chainlink price feeds (native), Balancer V2 pools (OLAS), direct (xDAI/USDC)
@@ -137,7 +139,6 @@ yarn install              # Install dependencies
 yarn codegen              # Generate TypeScript (default: subgraph.matic.yaml)
 yarn build:ethereum       # Build for Ethereum (subgraph.mainnet.yaml)
 yarn build:gnosis         # Build for Gnosis
-yarn build:base           # Build for Base
 yarn build:polygon        # Build for Polygon (subgraph.matic.yaml)
 yarn build:optimism       # Build for Optimism
 yarn build:arbitrum       # Build for Arbitrum (subgraph.arbitrum-one.yaml)

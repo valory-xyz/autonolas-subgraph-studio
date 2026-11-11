@@ -19,16 +19,6 @@
       "startBlock": 147564576
     }
   },
-  "base": {
-    "ServiceRegistryL2": {
-      "address": "0x3C1fF68f5aa342D296d4DEe4Bb1cACCA912D95fE",
-      "startBlock": 10827380
-    },
-    "IdentityRegistryBridger": {
-      "address": "0x67722c823010ceb4bed5325fe109196c0f67d053",
-      "startBlock": 41675072
-    }
-  },
   "celo": {
     "ServiceRegistryL2": {
       "address": "0xE3607b00E75f6405248323A9417ff6b39B244b50",

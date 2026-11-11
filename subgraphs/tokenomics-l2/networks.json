@@ -1,10 +1,4 @@
 {
-  "base": {
-    "OLAS": {
-      "address": "0x54330d28ca3357F294334BDC454a032e7f353416",
-      "startBlock": 10622421
-    }
-  },
   "arbitrum-one": {
     "OLAS": {
       "address": "0x064F8B858C2A603e1b106a2039f5446D32dc81c1",

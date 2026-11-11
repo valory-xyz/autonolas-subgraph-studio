@@ -1,7 +1,9 @@
 # Staking Subgraph
 
+Base subgraph deployment has been retired. Use the [Infra staking squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/staking); its Base configuration lives there.
+
 Indexes OLAS staking activities and reward distributions. This source includes
-seven chain configurations; Base now uses the
+six chain configurations; Base now uses the
 [staking squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/staking),
 as does Robinhood. Current deployments and endpoints are tracked in the internal
 **[WD] Subgraph&Squids Development and Deployment Tracking** document.
@@ -10,7 +12,7 @@ as does Robinhood. Current deployments and endpoints are tracked in the internal
 
 ## Quick Overview
 
-- Tracks **StakingFactory** contracts and dynamically created **StakingProxy** instances across 7 networks (Gnosis, Base, Optimism, Ethereum, Polygon, Arbitrum, Celo)
+- Tracks **StakingFactory** contracts and dynamically created **StakingProxy** instances across 6 networks (Gnosis, Optimism, Ethereum, Polygon, Arbitrum, Celo)
 - **Epoch-based reward tracking**: Per-service reward history with zero-reward entries for services that didn't meet KPIs
 - **Service lifecycle**: Staking, unstaking, force unstaking, eviction, and cross-contract migration
 - **Daily ecosystem snapshots**: Forward-filled metrics with median reward calculations

@@ -1,5 +1,7 @@
 # BabyDegen Base Subgraph (Basius)
 
+> **Deprecated deployment:** Base Babydegen is migrating to the [Infra babydegen squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/babydegen). This subgraph remains during migration until the replacement and consumer cutover are validated.
+
 Tracks portfolio performance and population-level metrics for the **Basius** agent
 (Pearl / BabyDegen agent economy) on **Base**. It monitors the agents' DeFi activity
 on **Aerodrome** (Slipstream concentrated-liquidity + v2 stable/volatile pools) and **Aero**

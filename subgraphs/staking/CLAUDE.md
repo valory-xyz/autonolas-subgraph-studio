@@ -1,6 +1,8 @@
 # Staking Subgraph
 
-Indexes OLAS staking activities across 7 networks. Tracks staking factory contracts (StakingFactory) and dynamically created staking proxy instances (StakingProxy) to provide per-service reward tracking, epoch-based reward history, and daily ecosystem snapshots.
+Base subgraph deployment has been retired. Use the [Infra staking squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/staking); its Base configuration lives there.
+
+Indexes OLAS staking activities across 6 networks. Tracks staking factory contracts (StakingFactory) and dynamically created staking proxy instances (StakingProxy) to provide per-service reward tracking, epoch-based reward history, and daily ecosystem snapshots.
 
 ## Table of Contents
 - [Architecture Overview](#architecture-overview)
@@ -24,7 +26,7 @@ Indexes OLAS staking activities across 7 networks. Tracks staking factory contra
 subgraphs/staking/
 ├── schema.graphql
 ├── subgraph.template.yaml          # Template for network manifests
-├── subgraph.{network}.yaml         # Generated per-network manifests (7 networks)
+├── subgraph.{network}.yaml         # Generated per-network manifests (6 networks)
 ├── networks.json                   # Network addresses and start blocks
 ├── package.json                    # graph-cli 0.98.1, graph-ts 0.38.2
 ├── src/
@@ -45,7 +47,6 @@ Uses **template pattern**: `subgraph.template.yaml` + `networks.json` + `generat
 | Network | StakingFactory Address | Start Block |
 |---------|----------------------|-------------|
 | gnosis | `0xb0228CA253A88Bc8eb4ca70BCAC8f87b381f4700` | 35,206,806 |
-| base | `0x1cEe30D08943EB58EFF84DD1AB44a6ee6FEff63a` | 17,310,019 |
 | optimism | `0xa45E64d13A30a51b91ae0eb182e88a40e9b18eD8` | 124,618,633 |
 | mainnet | `0xEBdde456EA288b49f7D5975E7659bA1Ccf607efc` | 20,409,818 |
 | matic | `0x46C0D07F55d4F9B5Eed2Fc9680B5953e5fd7b461` | 62,213,142 |
@@ -463,7 +464,6 @@ yarn generate-manifests                # Regenerate network manifests from templ
 Deploy per network:
 ```bash
 yarn deploy-gnosis
-yarn deploy-base
 yarn deploy-optimism
 yarn deploy-ethereum
 yarn deploy-polygon

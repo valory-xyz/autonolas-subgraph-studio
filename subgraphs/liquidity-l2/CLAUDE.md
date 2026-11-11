@@ -1,5 +1,7 @@
 # Liquidity L2 Subgraph — Technical Reference
 
+Base subgraph deployment has been retired. Use the [Infra liquidity squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/liquidity); its Base configuration lives there.
+
 Tracks Balancer V2 pool reserves and BPT (Balancer Pool Token) supply for OLAS liquidity pools across 6 L2 chains (including 2 pools on Base in one subgraph). Uses the template pattern for multi-network deployment.
 
 Part of the broader POL (Protocol Owned Liquidity) tracking system. See [../liquidity/README.md](../liquidity/README.md) for the full POL picture.

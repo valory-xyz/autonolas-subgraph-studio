@@ -55,7 +55,7 @@ Used when networks have structural differences (e.g., different numbers of data 
 
 -   **Structure**: Shared `src/` directory with consolidated mapping files. Per-network `subgraph.<network>.yaml` manifests at the root of the subgraph directory.
 -   **Runtime dispatch**: Mapping files use `dataSource.network()` to branch logic per network.
--   **Example**: `new-mech-fees` (Gnosis/Base have 3 data sources, Polygon/Optimism have 4).
+-   **Example**: `new-mech-fees` (Gnosis has 3 data sources, Polygon/Optimism have 4).
 
 ## Adding a New Subgraph
 
@@ -158,3 +158,11 @@ The `pol-aggregation.js` script queries all 7 liquidity subgraphs + Solana RPC, 
 ## Deployment
 
 Deployment is handled via CI/CD. Each subgraph is built and deployed from its own directory automatically.
+
+## Base indexers
+
+Base deployment manifests and network entries have been retired for staking,
+service-registry, tokenomics-l2, liquidity-l2, new-mech-fees and pearl-transactions.
+Use their corresponding [Infra squids](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids).
+Babydegen Base remains available during migration and is marked deprecated.
+Marketplace Base is retained with the same migration notice in the Infra repository.
