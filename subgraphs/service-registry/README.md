@@ -72,3 +72,30 @@ Ethereum, Optimism, Polygon, Arbitrum, Celo
 
 ### Setup & Deployment
 **Check the [root README](/README.md).**
+
+
+## ERC-8004 wallet clearing
+
+Subscribe to `AgentMultisigUpdated` from each configured IdentityRegistryBridger.
+A nonzero `oldMultisig` unsets the indexed agent wallet to the zero address,
+matching explicit `AgentWalletSet(..., address(0))`. Preserve the service identity
+association and all metadata. A zero-old-multisig link does not change wallet
+authorization; only `AgentWalletSet` authorizes a replacement wallet.
+
+Verified against `IdentityRegistryBridger._updateAgentWallet` in registries
+commit `0e065705af0ca8df84f75f7a19b814c21fa2d083`. The existing ABI already
+contains the required event. Service termination alone is not used as evidence
+of wallet clearing: older deployments may not emit the bridger cleanup event.
+
+The configured bridger histories were checked on 10 November 2026. The
+wallet-clearing meaning of `AgentMultisigUpdated` is consistent throughout their
+indexed ranges, including the historical implementation upgrades. No additional
+block boundary or new contract address is needed for this handler. Deploy after
+merge without waiting for a ServiceManager deployment or new on-chain activity.
+
+New subscriptions require replay/backfill from before any missed events; a
+restart or graft containing stale wallet state does not repair that history.
+Studio deployments require full reindexing. Self-hosted grafts require a correct
+pre-event state and compatible schema; squid deployments must replay/backfill
+missed events before consumers rely on the corrected field. No schema change,
+contract address change or deployment is included in this update.

@@ -101,6 +101,11 @@ jobs:
         working-directory: ${{ matrix.path }}
         run: yarn graph codegen
 
+      - name: Check service-registry manifests and ABI
+        if: matrix.subgraph == 'service-registry'
+        working-directory: ${{ matrix.path }}
+        run: node --test scripts/bridger-manifests.test.cjs
+
       - name: Check staking v0.4 manifests and ABI
         if: matrix.subgraph == 'staking'
         working-directory: ${{ matrix.path }}
