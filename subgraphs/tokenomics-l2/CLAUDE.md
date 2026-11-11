@@ -1,5 +1,7 @@
 # Autonolas Tokenomics L2 Subgraph
 
+> **Deprecated Polygon deployment:** Polygon migration to the Infra tokenomics squid is planned; Polygon squid configuration is still required. See the [Infra tokenomics squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/tokenomics). Confirm the current deployment and consumer cutover in **[WD] Subgraph&Squids Development and Deployment Tracking** before deploying.
+
 Base subgraph deployment has been retired. Use the [Infra tokenomics squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/tokenomics); its Base configuration lives there.
 
 Tracks OLAS token transfers and holder balances across 5 Layer 2 networks. Lightweight subgraph using the template pattern for multi-network deployment.

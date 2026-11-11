@@ -1,5 +1,7 @@
 # Service Registry Subgraph
 
+> **Deprecated Polygon deployment:** Polygon migration to the Infra service-registry squid is planned; squid support is prepared. See the [Infra service-registry squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/service-registry). Confirm the current deployment and consumer cutover in **[WD] Subgraph&Squids Development and Deployment Tracking** before deploying.
+
 Base subgraph deployment has been retired. Use the [Infra service-registry squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/service-registry); its Base configuration lives there.
 
 Tracks Olas service lifecycle, multisigs, ERC-8004 identity and daily activity.

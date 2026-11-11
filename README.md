@@ -166,3 +166,12 @@ service-registry, tokenomics-l2, liquidity-l2, new-mech-fees and pearl-transacti
 Use their corresponding [Infra squids](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids).
 Babydegen Base remains available during migration and is marked deprecated.
 Marketplace Base is retained with the same migration notice in the Infra repository.
+
+## Polygon indexers
+
+Polygon subgraphs are deprecated in favour of the Infra squids. Each retained
+manifest records whether migration is documented as complete or planned.
+Check **[WD] Subgraph&Squids Development and Deployment Tracking** for the current
+deployment and consumer cutover before deploying; squid configuration alone
+does not confirm a completed migration. Polygon tokenomics still needs a squid
+chain configuration.

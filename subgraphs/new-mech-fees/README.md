@@ -1,5 +1,7 @@
 # New Mech Fees Subgraphs
 
+> **Deprecated Polygon deployment:** Polygon migration to the Infra mech-fees squid is planned; Polygon configuration is available. See the [Infra mech-fees squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/mech-fees). Confirm the current deployment and consumer cutover in **[WD] Subgraph&Squids Development and Deployment Tracking** before deploying.
+
 Base subgraph deployment has been retired. Use the [Infra mech-fees squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/mech-fees); its Base configuration lives there.
 
 Tracks fees for autonomous agents (mechs) across multiple payment models and networks. Indexes every fee-in (accrual) and fee-out (collection) event with USD conversion.

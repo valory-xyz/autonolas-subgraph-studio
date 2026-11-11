@@ -1,5 +1,7 @@
 # Service Registry Subgraph
 
+> **Deprecated Polygon deployment:** Polygon migration to the Infra service-registry squid is planned; squid support is prepared. See the [Infra service-registry squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/service-registry). Confirm the current deployment and consumer cutover in **[WD] Subgraph&Squids Development and Deployment Tracking** before deploying.
+
 Base subgraph deployment has been retired. Use the [Infra service-registry squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/service-registry); its Base configuration lives there.
 
 Tracks service lifecycle, multisigs, ERC-8004 identity and daily activity. Gnosis uses the self-hosted `autonolas-subgraph/subgraphs/service-registry` implementation; its Studio manifest and network entry have been removed. Base and Robinhood use the Infra squid. See the internal **[WD] Subgraph&Squids Development and Deployment Tracking** document for active deployments.

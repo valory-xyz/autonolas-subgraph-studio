@@ -1,5 +1,7 @@
 # Staking Subgraph
 
+> **Deprecated Polygon deployment:** Polygon migration to the Infra staking squid is planned; squid support is prepared. See the [Infra staking squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/staking). Confirm the current deployment and consumer cutover in **[WD] Subgraph&Squids Development and Deployment Tracking** before deploying.
+
 Base subgraph deployment has been retired. Use the [Infra staking squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/staking); its Base configuration lives there.
 
 Indexes OLAS staking activities across 6 networks. Tracks staking factory contracts (StakingFactory) and dynamically created staking proxy instances (StakingProxy) to provide per-service reward tracking, epoch-based reward history, and daily ecosystem snapshots.

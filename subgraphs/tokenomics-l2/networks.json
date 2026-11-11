@@ -18,6 +18,7 @@
     }
   },
   "matic": {
+    "deprecationNotice": "DEPRECATED Polygon subgraph: Polygon migration to the Infra tokenomics squid is planned; Polygon squid configuration is still required.\nCheck [WD] Subgraph&Squids Development and Deployment Tracking before deploying: confirm whether consumer migration is complete; otherwise treat it as planned.",
     "OLAS": {
       "address": "0xFEF5d947472e72Efbb2E388c730B7428406F2F95",
       "startBlock": 49574787

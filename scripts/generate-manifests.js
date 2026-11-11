@@ -109,7 +109,12 @@ function renderErc20TokenDataSources(graphNetwork, networkData) {
 
 // Generate configs
 Object.entries(networksData).forEach(([network, networkData]) => {
-  const config = replacePlaceholders(template, network, networkData);
+  let config = replacePlaceholders(template, network, networkData);
+  // Keep per-network retirement notices when regenerating a manifest.
+  if (networkData.deprecationNotice) {
+    const notice = networkData.deprecationNotice.split(/\r?\n/).map(line => `# ${line}`).join('\n');
+    config = `${notice}\n${config}`;
+  }
   const outputPath = path.join(basePath, `subgraph.${network}.yaml`);
   fs.writeFileSync(outputPath, config);
   console.log(`Generated ${outputPath}`);

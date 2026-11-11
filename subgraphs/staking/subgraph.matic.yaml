@@ -1,3 +1,5 @@
+# DEPRECATED Polygon subgraph: Polygon migration to the Infra staking squid is planned; squid support is prepared.
+# Check [WD] Subgraph&Squids Development and Deployment Tracking before deploying: confirm whether consumer migration is complete; otherwise treat it as planned.
 specVersion: 1.0.0
 indexerHints:
   prune: auto

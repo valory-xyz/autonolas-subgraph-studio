@@ -1,5 +1,7 @@
 # pearl-transactions
 
+> **Deprecated Polygon deployment:** Polygon consumers are documented as migrated to the Infra pearl-transactions squid. See the [Infra pearl-transactions squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/pearl-transactions). Confirm the current deployment and consumer cutover in **[WD] Subgraph&Squids Development and Deployment Tracking** before deploying.
+
 Base subgraph deployment has been retired. Use the [Infra pearl-transactions squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/pearl-transactions); its Base configuration lives there.
 
 Indexes **funds movement for Pearl Master Safe and Agent Safe accounts** on
