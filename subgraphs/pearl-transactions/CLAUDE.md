@@ -1,7 +1,11 @@
 # pearl-transactions
 
+> **Deprecated Polygon deployment:** Polygon consumers are documented as migrated to the Infra pearl-transactions squid. See the [Infra pearl-transactions squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/pearl-transactions). Confirm the current deployment and consumer cutover in **[WD] Subgraph&Squids Development and Deployment Tracking** before deploying.
+
+Base subgraph deployment has been retired. Use the [Infra pearl-transactions squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/pearl-transactions); its Base configuration lives there.
+
 Funds-movement subgraph for Pearl **Master Safe / Agent Safe** accounts on
-Gnosis, Polygon, Optimism, Base. Powers the Pearl wallet transaction-history
+Gnosis, Polygon and Optimism. Powers the Pearl wallet transaction-history
 view (VLOP-73): every fund movement in/out of the Master Safe, classified
 into wallet-history rows. Design-of-record:
 [`IMPLEMENTATION-PLAN.md`](./IMPLEMENTATION-PLAN.md).
@@ -200,7 +204,6 @@ for Pearl's consumer configuration.
 | gnosis | `0xcE11…9d9f` | WXDAI `0xe91D…a97d` | USDC `0xDDAfbb50…`, USDC.e `0x2a22f9c3…` |
 | matic | `0xFEF5…2F95` | WPOL `0x0d50…1270` | USDC `0x3c499c54…`, USDC.e `0x2791bca1…`, pUSD `0xC011a7E1…` |
 | optimism | `0xFC2E…E527` | WETH `0x4200…0006` | USDC `0x0b2C639c…`, USDC.e `0x7F5c764c…` |
-| base | `0x5433…3416` | WETH `0x4200…0006` | USDC `0x833589fC…` |
 
 ## Tests
 
@@ -224,8 +227,10 @@ yarn test
 ## Deployment
 
 Manual via the `Deploy Subgraph` GitHub Action (workflow_dispatch from
-`main`) or `yarn deploy-{gnosis,matic,optimism,base}`. Studio slugs:
-`pearl-{gnosis,polygon,optimism,base}-transactions`. The GH-Actions workflow
+`main`) or `yarn deploy-{gnosis,matic,optimism}`. Studio slugs:
+`pearl-{gnosis,polygon,optimism}-transactions`. Base has no deployment target
+on this branch; see the root README's Base recovery snapshot for legacy hotfixes.
+The GH-Actions workflow
 builds the **committed** per-network manifest (`subgraph.<network>.yaml`)
 as-is — it does not re-run `generate-manifests`, so if you change
 `networks.json` or the template, regenerate + commit before triggering it.

@@ -1,5 +1,9 @@
 # Service Registry Subgraph
 
+> **Deprecated Polygon deployment:** The [Infra service-registry squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/service-registry) is deployed; consumer cutover is pending. This subgraph remains available for existing consumers. Confirm the current consumer migration in **[WD] Subgraph&Squids Development and Deployment Tracking** before deploying or switching endpoints.
+
+Base subgraph deployment has been retired. Use the [Infra service-registry squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/service-registry); its Base configuration lives there.
+
 Tracks Olas service lifecycle, multisigs, ERC-8004 identity and daily activity.
 
 **Current hosting:** Ethereum, Polygon, Optimism, Arbitrum and Celo use this
@@ -9,13 +13,6 @@ Base and Robinhood use the
 [service-registry squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/service-registry).
 Retained manifests describe source coverage, not consumer routing. See the internal
 **[WD] Subgraph&Squids Development and Deployment Tracking** document for current endpoints and versions.
-
-This cleanup removes the Gnosis configuration explicitly retired from this
-repository. It does not remove every manifest whose consumers use another backend:
-Base's manifest, network entry and `deploy-base` script remain available for source
-coverage and explicit manual Studio deployment. Their presence is not a recommendation
-to switch consumers from the squid; check the deployment tracker before deploying
-or changing consumer routing. Retiring Base's Studio configuration is a separate decision.
 
 > **Technical reference**: See [CLAUDE.md](CLAUDE.md) for full schema reference, handler details, business rules, multi-network configuration, and AI context.
 
@@ -71,7 +68,7 @@ yarn test                   # Run Matchstick tests
 * `networks.json` — Contract addresses & start blocks per network
 
 ### Supported Networks
-Ethereum, Base, Optimism, Polygon, Arbitrum, Celo
+Ethereum, Optimism, Polygon, Arbitrum, Celo
 
 ### Setup & Deployment
 **Check the [root README](/README.md).**

@@ -1,6 +1,10 @@
 # Autonolas Tokenomics L2 Subgraph
 
-Tracks OLAS token transfers and holder balances across 6 Layer 2 networks. Lightweight subgraph using the template pattern for multi-network deployment.
+> **Deprecated Polygon deployment:** Polygon migration to the Infra tokenomics squid is planned; Polygon squid configuration is still required. See the [Infra tokenomics squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/tokenomics). Confirm the current deployment and consumer cutover in **[WD] Subgraph&Squids Development and Deployment Tracking** before deploying.
+
+Base subgraph deployment has been retired. Use the [Infra tokenomics squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/tokenomics); its Base configuration lives there.
+
+Tracks OLAS token transfers and holder balances across 5 Layer 2 networks. Lightweight subgraph using the template pattern for multi-network deployment.
 
 ## Table of Contents
 - [Architecture Overview](#architecture-overview)
@@ -24,7 +28,6 @@ subgraphs/tokenomics-l2/
 ├── subgraph.template.yaml           # Template with {{ network }}, {{ OLAS.address }}, {{ OLAS.startBlock }}
 ├── networks.json                    # Per-network contract addresses and start blocks
 ├── subgraph.arbitrum-one.yaml       # Generated
-├── subgraph.base.yaml              # Generated
 ├── subgraph.celo.yaml              # Generated
 ├── subgraph.gnosis.yaml            # Generated
 ├── subgraph.matic.yaml             # Generated
@@ -40,7 +43,6 @@ subgraphs/tokenomics-l2/
 | Network | OLAS Address | Start Block |
 |---------|-------------|-------------|
 | Arbitrum One | 0x064F8B858C2A603e1b106a2039f5446D32dc81c1 | 173,139,043 |
-| Base | 0x54330d28ca3357F294334BDC454a032e7f353416 | 10,622,421 |
 | Celo | 0xaCFfAe8e57Ec6E394Eb1b41939A8CF7892DbDc51 | 24,781,592 |
 | Gnosis | 0xcE11e14225575945b8E6Dc0D4F2dD4C570f79d9f | 30,254,468 |
 | Optimism | 0xFC2E6e6BCbd49ccf3A5f029c79984372DcBFE527 | 116,217,922 |

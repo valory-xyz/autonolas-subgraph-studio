@@ -1,5 +1,9 @@
 # New Mech Fees Subgraph
 
+> **Deprecated Polygon deployment:** Polygon migration to the Infra mech-fees squid is planned; Polygon configuration is available. See the [Infra mech-fees squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/mech-fees). Confirm the current deployment and consumer cutover in **[WD] Subgraph&Squids Development and Deployment Tracking** before deploying.
+
+Base subgraph deployment has been retired. Use the [Infra mech-fees squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/mech-fees); its Base configuration lives there.
+
 Tracks fees for autonomous agents (mechs) interacting with the new marketplace contracts. Indexes every fee-in (accrual via `MechBalanceAdjusted`) and fee-out (collection via `Withdraw`) event across multiple payment models and networks.
 
 ## Architecture Overview
@@ -10,7 +14,6 @@ subgraphs/new-mech-fees/
 ├── schema.graphql                    # Shared schema (all networks)
 ├── subgraph.mainnet.yaml             # Ethereum manifest (3 data sources)
 ├── subgraph.gnosis.yaml              # Gnosis manifest (3 data sources)
-├── subgraph.base.yaml                # Base manifest (4 data sources)
 ├── subgraph.matic.yaml               # Polygon manifest (4 data sources)
 ├── subgraph.optimism.yaml            # Optimism manifest (4 data sources)
 ├── subgraph.arbitrum-one.yaml        # Arbitrum manifest (3 data sources)
@@ -32,15 +35,14 @@ Per-network manifests with shared `src/` and `schema.graphql`. Each manifest def
 
 ### Networks & Contracts
 
-7 networks. Manifest filenames use the Graph Node network id (`subgraph.<network-id>.yaml`),
+6 networks. Manifest filenames use the Graph Node network id (`subgraph.<network-id>.yaml`),
 which is also what `dataSource.network()` returns at runtime: `mainnet` (Ethereum),
-`gnosis`, `base`, `matic` (Polygon), `optimism`, `arbitrum-one`, `celo`.
+`gnosis`, `matic` (Polygon), `optimism`, `arbitrum-one`, `celo`.
 
 | Network | Manifest | Native | NVM | Token OLAS | Token USDC |
 |---------|----------|:------:|:---:|:----------:|:----------:|
 | Ethereum | `subgraph.mainnet.yaml` | ✓ | | ✓ | ✓ |
 | Gnosis | `subgraph.gnosis.yaml` | ✓ | ✓ | ✓ | |
-| Base | `subgraph.base.yaml` | ✓ | ✓ | ✓ | ✓ |
 | Polygon | `subgraph.matic.yaml` | ✓ | ✓ | ✓ | ✓ |
 | Optimism | `subgraph.optimism.yaml` | ✓ | ✓ | ✓ | ✓ |
 | Arbitrum | `subgraph.arbitrum-one.yaml` | ✓ | | ✓ | ✓ |
@@ -61,15 +63,6 @@ which is also what `dataSource.network()` returns at runtime: `mainnet` (Ethereu
 | Native (xDAI) | `0x21cE6799A22A3Da84B7c44a814a9c79ab1d2A50D` | 38,662,107 |
 | NVM | `0x7D686bD1fD3CFF6E45a40165154D61043af7D67c` | 38,662,005 |
 | Token OLAS | `0x53Bd432516707a5212A70216284a99A563aAC1D1` | 38,662,275 |
-
-**Base** — 4 data sources:
-
-| Payment Model | Contract | Start Block |
-|---------------|----------|-------------|
-| Native (ETH) | `0xB3921F8D8215603f0Bd521341Ac45eA8f2d274c1` | 26,642,932 |
-| NVM | `0xaafbeef195bdab1bb6f3dc9ceba875cd72499230` | 27,585,236 |
-| Token OLAS | `0x43fB32f25dce34EB76c78C7A42C8F40F84BCD237` | 26,643,048 |
-| Token USDC | `0x0443C55e151dBA13fae079518F9dd01ff9c21CB2` | 50,775,686 |
 
 **Polygon (matic)** — 4 data sources:
 
@@ -381,7 +374,6 @@ network manifest fails the PR rather than the deploy.
 ```bash
 yarn build:ethereum   # graph build subgraph.mainnet.yaml
 yarn build:gnosis     # graph build subgraph.gnosis.yaml
-yarn build:base       # graph build subgraph.base.yaml
 yarn build:polygon    # graph build subgraph.matic.yaml
 yarn build:optimism   # graph build subgraph.optimism.yaml
 yarn build:arbitrum   # graph build subgraph.arbitrum-one.yaml

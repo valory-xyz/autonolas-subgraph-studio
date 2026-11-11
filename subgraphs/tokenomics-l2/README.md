@@ -1,6 +1,10 @@
 # Autonolas Tokenomics L2 Subgraph
 
-Tracks OLAS token transfers and holder balances across 6 Layer 2 networks using a shared codebase with per-network manifest generation.
+> **Deprecated Polygon deployment:** Polygon migration to the Infra tokenomics squid is planned; Polygon squid configuration is still required. See the [Infra tokenomics squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/tokenomics). Confirm the current deployment and consumer cutover in **[WD] Subgraph&Squids Development and Deployment Tracking** before deploying.
+
+Base subgraph deployment has been retired. Use the [Infra tokenomics squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/tokenomics); its Base configuration lives there.
+
+Tracks OLAS token transfers and holder balances across 5 Layer 2 networks using a shared codebase with per-network manifest generation.
 
 Robinhood holder tracking is deployed through the
 [Infra tokenomics squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/tokenomics),
@@ -12,7 +16,7 @@ document for current deployments and consumer migrations.
 
 ## Quick Overview
 
-- Tracks **OLAS ERC-20 Transfer events** on Arbitrum, Base, Celo, Gnosis, Optimism, and Polygon
+- Tracks **OLAS ERC-20 Transfer events** on Arbitrum, Celo, Gnosis, Optimism, and Polygon
 - **Token supply & holders**: Running supply balance (mint/burn aware) and unique holder count
 - **Transfer history**: Every transfer stored as an immutable entity
 - Uses the **template pattern**: `subgraph.template.yaml` + `networks.json` generates per-network manifests
@@ -64,7 +68,6 @@ yarn test                  # Run unit tests
 | Network | OLAS Address |
 |---------|-------------|
 | Arbitrum One | 0x064F8B858C2A603e1b106a2039f5446D32dc81c1 |
-| Base | 0x54330d28ca3357F294334BDC454a032e7f353416 |
 | Celo | 0xaCFfAe8e57Ec6E394Eb1b41939A8CF7892DbDc51 |
 | Gnosis | 0xcE11e14225575945b8E6Dc0D4F2dD4C570f79d9f |
 | Optimism | 0xFC2E6e6BCbd49ccf3A5f029c79984372DcBFE527 |

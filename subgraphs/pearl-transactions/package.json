@@ -1,13 +1,12 @@
 {
   "name": "pearl-transactions-subgraph",
   "scripts": {
-    "codegen": "graph codegen subgraph.base.yaml",
-    "build": "graph build subgraph.base.yaml",
+    "codegen": "graph codegen subgraph.gnosis.yaml",
+    "build": "graph build subgraph.gnosis.yaml",
     "generate-manifests": "node ../../scripts/generate-manifests.js --path=.",
     "deploy-gnosis": "yarn generate-manifests && graph deploy pearl-gnosis-transactions subgraph.gnosis.yaml",
     "deploy-polygon": "yarn generate-manifests && graph deploy pearl-polygon-transactions subgraph.matic.yaml",
     "deploy-optimism": "yarn generate-manifests && graph deploy pearl-optimism-transactions subgraph.optimism.yaml",
-    "deploy-base": "yarn generate-manifests && graph deploy pearl-base-transactions subgraph.base.yaml",
     "test": "ln -s subgraph.gnosis.yaml subgraph.yaml && graph test; rm -f subgraph.yaml"
   },
   "dependencies": {

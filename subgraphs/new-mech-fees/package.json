@@ -4,7 +4,6 @@
     "codegen": "graph codegen subgraph.matic.yaml",
     "build": "graph build subgraph.matic.yaml",
     "build:gnosis": "graph build subgraph.gnosis.yaml",
-    "build:base": "graph build subgraph.base.yaml",
     "build:polygon": "graph build subgraph.matic.yaml",
     "build:optimism": "graph build subgraph.optimism.yaml",
     "build:ethereum": "graph build subgraph.mainnet.yaml",
