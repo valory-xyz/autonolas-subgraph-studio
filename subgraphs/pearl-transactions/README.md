@@ -1,7 +1,11 @@
 # pearl-transactions
 
+> **Deprecated Polygon deployment:** Polygon consumers are documented as migrated to the Infra pearl-transactions squid. See the [Infra pearl-transactions squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/pearl-transactions). Confirm the current deployment and consumer cutover in **[WD] Subgraph&Squids Development and Deployment Tracking** before deploying.
+
+Base subgraph deployment has been retired. Use the [Infra pearl-transactions squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/pearl-transactions); its Base configuration lives there.
+
 Indexes **funds movement for Pearl Master Safe and Agent Safe accounts** on
-Gnosis, Polygon, Optimism, Base. The on-chain backend for the Pearl wallet
+Gnosis, Polygon and Optimism. The on-chain backend for the Pearl wallet
 transaction-history view (VLOP-73).
 
 > **Deployment:** Gnosis and Optimism use this subgraph; Base and Polygon

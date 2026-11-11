@@ -1,3 +1,5 @@
+# DEPRECATED Polygon subgraph: the Infra service-registry squid is deployed; consumer cutover is pending.
+# Retained for existing consumers. Check [WD] Subgraph&Squids Development and Deployment Tracking before deploying or switching endpoints.
 specVersion: 0.0.5
 schema:
   file: ./schema.graphql

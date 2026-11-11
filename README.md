@@ -55,7 +55,7 @@ Used when networks have structural differences (e.g., different numbers of data 
 
 -   **Structure**: Shared `src/` directory with consolidated mapping files. Per-network `subgraph.<network>.yaml` manifests at the root of the subgraph directory.
 -   **Runtime dispatch**: Mapping files use `dataSource.network()` to branch logic per network.
--   **Example**: `new-mech-fees` (Gnosis/Base have 3 data sources, Polygon/Optimism have 4).
+-   **Example**: `new-mech-fees` (Gnosis has 3 data sources, Polygon/Optimism have 4).
 
 ## Adding a New Subgraph
 
@@ -158,3 +158,42 @@ The `pol-aggregation.js` script queries all 7 liquidity subgraphs + Solana RPC, 
 ## Deployment
 
 Deployment is handled via CI/CD. Each subgraph is built and deployed from its own directory automatically.
+
+## Base indexers
+
+Base deployment manifests and network entries have been retired for staking,
+service-registry, tokenomics-l2, new-mech-fees and pearl-transactions.
+Use their corresponding [Infra squids](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids).
+Base liquidity remains deployable here: its replacement squid is not deployed
+yet, and `olas-website` and `scripts/pol-aggregation.js` still consume it. Keep
+`subgraphs/liquidity-l2/subgraph.base.yaml` (both pools and the shared Vault)
+and its deployment path until the replacement is validated and consumers switch.
+Babydegen Base remains available during migration and is marked deprecated.
+Marketplace Base is retained with the same migration notice in the Infra repository.
+
+### Recovery snapshot for retired Base configurations
+
+The last revision before these manifests were removed is
+[`f03bb21caa773eea920d62b989b0f6a8ff553243`](https://github.com/valory-xyz/autonolas-subgraph-studio/tree/f03bb21caa773eea920d62b989b0f6a8ff553243).
+It contains `subgraph.base.yaml` for staking, service-registry, tokenomics-l2,
+new-mech-fees and pearl-transactions, together with their matching source and
+configuration. Use that snapshot to recover a configuration for a legacy hotfix,
+and validate its mappings, ABIs and deployment target before publishing.
+
+Existing published Base deployments are still read by legacy clients: older
+Pearl versions use registry, staking and transactions, while marketplace and
+mech-client use registry. Removing deployment configurations does not remove
+those consumer dependencies or unpublish their endpoints. Keep the existing
+endpoints available until those consumers have migrated.
+
+## Polygon indexers
+
+Polygon subgraphs are deprecated in favour of the Infra squids. Each retained
+manifest records squid deployment and consumer migration status separately.
+The staking and service-registry squids are deployed; consumer cutover is still
+pending, so their subgraphs remain available. Pearl transactions consumers are
+documented as migrated. Liquidity and mech-fees have Polygon squid configurations
+available; Polygon tokenomics still needs a squid chain configuration.
+Check **[WD] Subgraph&Squids Development and Deployment Tracking** for the current
+deployment and consumer cutover before deploying; squid configuration alone
+does not confirm a completed migration.

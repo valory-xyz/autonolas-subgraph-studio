@@ -26,6 +26,7 @@
     ]
   },
   "matic": {
+    "deprecationNotice": "DEPRECATED Polygon subgraph: Polygon consumers are documented as migrated to the Infra pearl-transactions squid.\nCheck [WD] Subgraph&Squids Development and Deployment Tracking before deploying: confirm whether consumer migration is complete; otherwise treat it as planned.",
     "ServiceRegistryL2": {
       "address": "0xE3607b00E75f6405248323A9417ff6b39B244b50",
       "startBlock": 80360433
@@ -76,31 +77,6 @@
     "erc20Tokens": [
       { "name": "USDC", "address": "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85" },
       { "name": "USDCe", "address": "0x7F5c764cBc14f9669B88837ca1490cCa17c31607" }
-    ]
-  },
-  "base": {
-    "ServiceRegistryL2": {
-      "address": "0x3C1fF68f5aa342D296d4DEe4Bb1cACCA912D95fE",
-      "startBlock": 10827380
-    },
-    "ServiceRegistryTokenUtility": {
-      "address": "0x34C895f302D0b5cf52ec0Edd3945321EB0f83dd5",
-      "startBlock": 10827475
-    },
-    "StakingFactory": {
-      "address": "0x1cEe30D08943EB58EFF84DD1AB44a6ee6FEff63a",
-      "startBlock": 17310019
-    },
-    "OLAS": {
-      "address": "0x54330d28ca3357F294334BDC454a032e7f353416",
-      "startBlock": 10827380
-    },
-    "WrappedNative": {
-      "address": "0x4200000000000000000000000000000000000006",
-      "startBlock": 10827380
-    },
-    "erc20Tokens": [
-      { "name": "USDC", "address": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" }
     ]
   }
 }

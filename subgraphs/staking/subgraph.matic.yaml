@@ -1,3 +1,5 @@
+# DEPRECATED Polygon subgraph: the Infra staking squid is deployed; consumer cutover is pending.
+# Retained for existing consumers. Check [WD] Subgraph&Squids Development and Deployment Tracking before deploying or switching endpoints.
 specVersion: 1.0.0
 indexerHints:
   prune: auto

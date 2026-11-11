@@ -1,3 +1,5 @@
+# DEPRECATED: Base Babydegen is migrating to the Infra babydegen squid.
+# Retained during migration; switch consumers only after the replacement is validated.
 specVersion: 0.0.8
 schema:
   file: ./schema.graphql

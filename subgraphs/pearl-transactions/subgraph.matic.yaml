@@ -1,3 +1,5 @@
+# DEPRECATED Polygon subgraph: Polygon consumers are documented as migrated to the Infra pearl-transactions squid.
+# Check [WD] Subgraph&Squids Development and Deployment Tracking before deploying: confirm whether consumer migration is complete; otherwise treat it as planned.
 specVersion: 1.3.0
 indexerHints:
   prune: auto

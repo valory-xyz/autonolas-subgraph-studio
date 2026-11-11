@@ -4,6 +4,7 @@
     "generate-manifests": "node ../../scripts/generate-manifests.js --path=.",
     "codegen": "graph codegen subgraph.celo.yaml",
     "build": "graph build subgraph.celo.yaml",
+    "deploy-base": "graph deploy olas-base-liquidity subgraph.base.yaml",
     "test": "graph test"
   },
   "dependencies": {
