@@ -2,7 +2,7 @@
 
 > **Deprecated Polygon deployment:** Polygon migration to the Infra liquidity squid is planned; Polygon configuration is available. See the [Infra liquidity squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/liquidity). Confirm the current deployment and consumer cutover in **[WD] Subgraph&Squids Development and Deployment Tracking** before deploying.
 
-Base subgraph deployment has been retired. Use the [Infra liquidity squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/liquidity); its Base configuration lives there.
+Base liquidity remains active here: the replacement squid is not deployed yet, and `olas-website` and `scripts/pol-aggregation.js` still consume the published subgraph. Keep the manual dual-pool `subgraph.base.yaml` and its deployment path until the replacement is validated and those consumers have switched.
 
 Tracks Balancer V2 pool reserves and BPT (Balancer Pool Token) supply for OLAS liquidity pools across 6 L2 chains (including 2 pools on Base in one subgraph). Uses the template pattern for multi-network deployment.
 
@@ -176,14 +176,15 @@ All in `src/utils.ts`:
 
 Uses the **Template Pattern** for 4 Balancer chains, plus **manual manifests** for Base (2 pools) and Celo (Ubeswap):
 
-1. `networks.json`: Pool address and startBlock for Gnosis, Polygon, Arbitrum, Optimism, Base
+1. `networks.json`: Pool address and startBlock for Gnosis, Polygon, Arbitrum and Optimism. Base and Celo are maintained in manual manifests, outside generation.
 2. `subgraph.template.yaml`: Placeholders `{{ network }}`, `{{ BalancerPool.address }}`, `{{ BalancerPool.startBlock }}`
 3. `scripts/generate-manifests.js` (at repo root): Generates `subgraph.<network>.yaml` per network
-4. `subgraph.celo.yaml`: Written manually — uses UniswapV2Pair ABI with both `Transfer` and `Sync` event handlers
+4. `subgraph.base.yaml`: Written manually — retains both Base pools and their shared Vault. Do not replace it with the single-pool template.
+5. `subgraph.celo.yaml`: Written manually — uses UniswapV2Pair ABI with both `Transfer` and `Sync` event handlers
 
 ### Generating Manifests
 ```bash
-yarn generate-manifests    # Outputs: subgraph.gnosis.yaml, subgraph.matic.yaml, etc. (NOT celo)
+yarn generate-manifests    # Generates the four networks above; preserves manual Base/Celo manifests
 ```
 
 ---
@@ -211,9 +212,11 @@ All ABIs are included in every manifest for codegen compatibility. The Celo mani
 cd subgraphs/liquidity-l2
 yarn install               # Install dependencies
 yarn generate-manifests    # Generate per-network YAML files from template
-yarn codegen               # Generate TypeScript (uses gnosis manifest)
-yarn build                 # Compile to WebAssembly (uses gnosis manifest)
+yarn codegen               # Generate TypeScript (uses celo manifest)
+yarn build                 # Compile to WebAssembly (uses celo manifest)
 ```
+
+For Base, use `yarn graph codegen subgraph.base.yaml`, `yarn graph build subgraph.base.yaml` and `yarn deploy-base`. The `Deploy Subgraph` GitHub Action also retains the Base deployment path: folder `liquidity-l2`, name `olas-base-liquidity`, manifest `subgraph.base.yaml`.
 
 ---
 

@@ -17,17 +17,17 @@ scripts/
 shared/
   constants.ts                 # Shared constants across subgraphs
 subgraphs/
-  babydegen/                   # Baby Degen agent portfolio tracking (Optimism)
+  babydegen/                   # Baby Degen agent portfolio tracking (Optimism; deprecated Base deployment retained during migration)
   governance/                  # Governance tracking
   legacy-mech-fees/            # Legacy mech fee indexing
   liquidity/                   # Protocol Owned Liquidity — Ethereum mainnet (OLAS-ETH + bridged L2 LP tokens)
-  liquidity-l2/                # Protocol Owned Liquidity — L2 pools (6 networks; template pattern with manual overrides for Base dual-pool and Celo Ubeswap)
-  new-mech-fees/               # Multi-network mech fees (Gnosis, Base, Polygon, Optimism, Arbitrum, Celo, Ethereum — 7 networks)
-  pearl-transactions/          # Pearl Master/Agent Safe funds movement → wallet transaction history, VLOP-73 (Gnosis, Polygon, Optimism, Base — template pattern). Phases 1a/1b/2a/2b shipped; Gnosis and Optimism consumers use this subgraph; Base and Polygon use the Infra squid. Design: subgraphs/pearl-transactions/IMPLEMENTATION-PLAN.md.
-  service-registry/            # Service registry (Gnosis self-hosted; Base/Robinhood squid; hybrid: hand-crafted mainnet manifest + L2 template)
-  staking/                     # Staking contracts (7 networks, template pattern)
+  liquidity-l2/                # Protocol Owned Liquidity — L2 pools (6 networks; Base remains active for olas-website/POL aggregation; manual Base dual-pool and Celo Ubeswap manifests)
+  new-mech-fees/               # Multi-network mech fees (Gnosis, Polygon, Optimism, Arbitrum, Celo, Ethereum — 6 networks; Base deployment config retired)
+  pearl-transactions/          # Pearl Master/Agent Safe funds movement → wallet transaction history, VLOP-73 (Gnosis, Polygon, Optimism — template pattern; Base deployment config retired). Current Pearl uses this subgraph on Gnosis/Optimism and the Infra squid on Base/Polygon; older Base consumers still need the published Studio deployment. Design: subgraphs/pearl-transactions/IMPLEMENTATION-PLAN.md.
+  service-registry/            # Service registry (5 Studio configs; Gnosis self-hosted; Base/Robinhood squid; Polygon squid deployed, consumer cutover pending; hand-crafted mainnet + L2 template)
+  staking/                     # Staking contracts (6 networks, template pattern; Base deployment config retired; Polygon squid deployed, consumer cutover pending)
   tokenomics-eth/              # Tokenomics L1 (Ethereum mainnet, standalone)
-  tokenomics-l2/               # Tokenomics L2 (6 networks, template pattern)
+  tokenomics-l2/               # Tokenomics L2 (5 networks, template pattern; Base deployment config retired)
 ```
 
 ## Tech Stack
@@ -39,6 +39,8 @@ subgraphs/
 - **Deployment**: CI/CD → The Graph Studio / Alchemy
 
 ## Multi-Network Patterns
+
+Retired Base configurations remain available at the recovery SHA in README.md for legacy consumer hotfixes. Base liquidity stays deployable here until its squid replacement is live and consumers have switched.
 
 1. **Template Pattern** (staking, tokenomics-l2, liquidity-l2, pearl-transactions): `subgraph.template.yaml` + `networks.json` + `generate-manifests.js`. `liquidity-l2` additionally maintains hand-crafted manifests for Base (dual pool) and Celo (Ubeswap, not Balancer).
 2. **Per-Network Manifests** (new-mech-fees): shared `src/` with `subgraph.<network>.yaml` per network; mappings dispatch on `dataSource.network()`.

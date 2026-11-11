@@ -1,6 +1,6 @@
 # Staking Subgraph
 
-> **Deprecated Polygon deployment:** Polygon migration to the Infra staking squid is planned; squid support is prepared. See the [Infra staking squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/staking). Confirm the current deployment and consumer cutover in **[WD] Subgraph&Squids Development and Deployment Tracking** before deploying.
+> **Deprecated Polygon deployment:** The [Infra staking squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/staking) is deployed; consumer cutover is pending. This subgraph remains available for existing consumers. Confirm the current consumer migration in **[WD] Subgraph&Squids Development and Deployment Tracking** before deploying or switching endpoints.
 
 Base subgraph deployment has been retired. Use the [Infra staking squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/staking); its Base configuration lives there.
 

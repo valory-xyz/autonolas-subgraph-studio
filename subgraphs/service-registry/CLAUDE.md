@@ -1,6 +1,6 @@
 # Service Registry Subgraph
 
-> **Deprecated Polygon deployment:** Polygon migration to the Infra service-registry squid is planned; squid support is prepared. See the [Infra service-registry squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/service-registry). Confirm the current deployment and consumer cutover in **[WD] Subgraph&Squids Development and Deployment Tracking** before deploying.
+> **Deprecated Polygon deployment:** The [Infra service-registry squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/service-registry) is deployed; consumer cutover is pending. This subgraph remains available for existing consumers. Confirm the current consumer migration in **[WD] Subgraph&Squids Development and Deployment Tracking** before deploying or switching endpoints.
 
 Base subgraph deployment has been retired. Use the [Infra service-registry squid](https://github.com/valory-xyz/autonolas-subgraph/tree/main/squids/service-registry); its Base configuration lives there.
 

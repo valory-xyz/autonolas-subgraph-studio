@@ -227,8 +227,10 @@ yarn test
 ## Deployment
 
 Manual via the `Deploy Subgraph` GitHub Action (workflow_dispatch from
-`main`) or `yarn deploy-{gnosis,matic,optimism,base}`. Studio slugs:
-`pearl-{gnosis,polygon,optimism,base}-transactions`. The GH-Actions workflow
+`main`) or `yarn deploy-{gnosis,matic,optimism}`. Studio slugs:
+`pearl-{gnosis,polygon,optimism}-transactions`. Base has no deployment target
+on this branch; see the root README's Base recovery snapshot for legacy hotfixes.
+The GH-Actions workflow
 builds the **committed** per-network manifest (`subgraph.<network>.yaml`)
 as-is — it does not re-run `generate-manifests`, so if you change
 `networks.json` or the template, regenerate + commit before triggering it.
