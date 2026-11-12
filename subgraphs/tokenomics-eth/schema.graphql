@@ -344,6 +344,7 @@ type StakingIncentive @entity(immutable: false) {
 }
 
 type AddNomineeHash @entity(immutable: true) {
+  dispenser: Bytes
   id: Bytes!
   nomineeHash: Bytes! # bytes32
   blockNumber: BigInt!
@@ -360,6 +361,7 @@ type PauseDispenser @entity(immutable: true) {
 }
 
 type RemoveNomineeHash @entity(immutable: true) {
+  dispenser: Bytes
   id: Bytes!
   nomineeHash: Bytes! # bytes32
   blockNumber: BigInt!
@@ -368,6 +370,7 @@ type RemoveNomineeHash @entity(immutable: true) {
 }
 
 type Retained @entity(immutable: true) {
+  dispenser: Bytes
   id: Bytes!
   account: Bytes! # address
   returnAmount: BigInt! # uint256
@@ -438,6 +441,7 @@ type VoteWeightingUpdated @entity(immutable: true) {
 }
 
 type WithheldAmountSynced @entity(immutable: true) {
+  dispenser: Bytes
   id: Bytes!
   chainId: BigInt! # uint256
   amount: BigInt! # uint256

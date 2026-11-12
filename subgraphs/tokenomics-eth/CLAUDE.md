@@ -397,6 +397,15 @@ This source needs historical Ethereum call traces and archive contract reads,
 including calls routed through Safes or other contracts. Call inputs are paired
 with events, and accounting is applied in emitted-log order. End-of-block
 validation refuses missing traces; epoch sums must match emitted totals.
-Deploy a fresh full index, validate it, then switch consumers. Indexing supports
-both eras before activation and follows new claims automatically when enabled;
-contract activation requires no indexer address/configuration switch.
+Merge, deploy, wait for full indexing, and only then switch consumers.
+
+Withheld sync, nomination, removal and retained-return records expose the emitting
+`dispenser` on both legacy and proxy paths. The field is optional for existing
+schema compatibility; a fresh index populates it for all historical events.
+
+Open P1 review blocker: call handlers expose no ancestor-revert status. A successful
+child trace inside a reverted parent can survive RPC filtering without its event.
+Current method-order pairing is not safe for that provider behavior. Do not treat
+matching transaction status or call inputs as proof of commitment. Resolve this
+with the actual Graph Node/trace provider and replay a caught parent revert followed
+by a committed claim (including identical arguments); this has not been verified.

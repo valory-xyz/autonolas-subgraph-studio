@@ -142,6 +142,7 @@ export function handleAddNomineeHash(event: AddNomineeHashEvent): void {
   entity.blockTimestamp = event.block.timestamp;
   entity.transactionHash = event.transaction.hash;
 
+  entity.dispenser = event.address;
   entity.save();
 }
 
@@ -168,6 +169,7 @@ export function handleRemoveNomineeHash(event: RemoveNomineeHashEvent): void {
   entity.blockTimestamp = event.block.timestamp;
   entity.transactionHash = event.transaction.hash;
 
+  entity.dispenser = event.address;
   entity.save();
 }
 
@@ -182,6 +184,7 @@ export function handleRetained(event: RetainedEvent): void {
   entity.blockTimestamp = event.block.timestamp;
   entity.transactionHash = event.transaction.hash;
 
+  entity.dispenser = event.address;
   entity.save();
 }
 
@@ -392,5 +395,6 @@ export function handleWithheldAmountSynced(
   entity.blockTimestamp = event.block.timestamp;
   entity.transactionHash = event.transaction.hash;
 
+  entity.dispenser = event.address;
   entity.save();
 }
