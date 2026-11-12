@@ -1268,7 +1268,7 @@ function mockAeroProtocolAeroUsdcPool(): void {
 }
 
 // positions(tokenId) of one NFPM: DUMMY0/DUMMY1, tickSpacing 1, ticks -10..10.
-function mockCLPositions(manager: Address, liquidity: BigInt): void {
+function mockCLPositions(manager: Address, liquidity: BigInt, token0: Address = DUMMY0): void {
   createMockedFunction(
     manager,
     "positions",
@@ -1278,7 +1278,7 @@ function mockCLPositions(manager: Address, liquidity: BigInt): void {
     .returns([
       ethereum.Value.fromUnsignedBigInt(BigInt.zero()),
       ethereum.Value.fromAddress(Address.zero()),
-      ethereum.Value.fromAddress(DUMMY0),
+      ethereum.Value.fromAddress(token0),
       ethereum.Value.fromAddress(DUMMY1),
       ethereum.Value.fromI32(1),
       ethereum.Value.fromI32(-10),
@@ -1293,11 +1293,11 @@ function mockCLPositions(manager: Address, liquidity: BigInt): void {
 
 // A CL position on one venue's own contracts: its NFPM, its factory's getPool, the pool's slot0
 // (price 1) and gauge(). Only that venue is mocked, so a venue mix-up misses a mock and fails.
-function mockCLVenuePosition(manager: Address, factory: Address, pool: Address, gauge: Address): void {
-  mockCLPositions(manager, BigInt.fromString("1000000000000000000"))
+function mockCLVenuePosition(manager: Address, factory: Address, pool: Address, gauge: Address, token0: Address = DUMMY0): void {
+  mockCLPositions(manager, BigInt.fromString("1000000000000000000"), token0)
   createMockedFunction(factory, "getPool", "getPool(address,address,int24):(address)")
     .withArgs([
-      ethereum.Value.fromAddress(DUMMY0),
+      ethereum.Value.fromAddress(token0),
       ethereum.Value.fromAddress(DUMMY1),
       ethereum.Value.fromI32(1)
     ])
@@ -2504,5 +2504,116 @@ describe("refreshAllActivePositions dispatch (snapshot refresh)", () => {
 
     assert.fieldEquals("ProtocolPosition", clId.toHexString(), "claimableReward", "2")
     assert.fieldEquals("ProtocolPosition", v2Id.toHexString(), "claimableReward", "2")
+  })
+})
+
+// Review fixes on autonolas-subgraph#177 (BDMARK-2333): every Burn and decrease is exit
+// proceeds, and a CL entry links the agent's buffered swaps
+describe("Exit proceeds and CL entry swaps", () => {
+  afterEach(() => {
+    clearStore()
+    resetPoolNFTCache()
+  })
+
+  test("a second v2 Burn adds to the cycle's exit instead of replacing it", () => {
+    createService(SERVICE_SAFE)
+    saveAeroV2Venue(false)
+    mockAeroV2PoolState(AERO_V2_POOL, AERO_V2_GAUGE)
+    createMockedFunction(AERO_V2_POOL, "balanceOf", "balanceOf(address):(uint256)")
+      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
+      .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(500))])
+    const transfer = createV2TransferEvent(AERO_V2_POOL, Address.zero(), SERVICE_SAFE, BigInt.fromI32(500))
+    transfer.block = v2Block()
+    transfer.transaction.hash = TX_HASH
+    handleVeloV2Transfer(transfer)
+    const id = Bytes.fromUTF8(SERVICE_SAFE.toHex() + "-aero-v2-" + AERO_V2_POOL.toHex())
+
+    createMockedFunction(AERO_V2_POOL, "balanceOf", "balanceOf(address):(uint256)")
+      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
+      .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(250))])
+    const half = createV2BurnEvent(AERO_V2_POOL, ROUTER, SERVICE_SAFE, BigInt.fromString("1000000000000000000"), BigInt.fromString("3000000000000000000"))
+    half.block = v2Block()
+    half.transaction.hash = TX_HASH
+    handleVeloV2Burn(half)
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "isActive", "true")
+
+    createMockedFunction(AERO_V2_POOL, "balanceOf", "balanceOf(address):(uint256)")
+      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
+      .returns([ethereum.Value.fromUnsignedBigInt(BigInt.zero())])
+    const rest = createV2BurnEvent(AERO_V2_POOL, ROUTER, SERVICE_SAFE, BigInt.fromString("1000000000000000000"), BigInt.fromString("3000000000000000000"))
+    rest.block = v2Block()
+    rest.transaction.hash = TX_HASH
+    handleVeloV2Burn(rest)
+
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "isActive", "false")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "exitAmount0", "2")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "exitAmount1", "6")
+  })
+
+  test("principal from an earlier partial CL decrease is in the exit", () => {
+    createService(SERVICE_SAFE)
+    mockChainlinkEthUsd()
+    // token0 = WETH so the exit is valued: entry 1 WETH at $2000
+    mockCLVenuePosition(AERO_NFT_MANAGER, AERO_CL_FACTORY, AERO_CL_POOL, AERO_CL_GAUGE, WETH)
+    mockAeroCLStaked(false)
+    const id = openAeroCLPosition()
+
+    // Half the liquidity out at $2000; the position stays open
+    mockCLPositions(AERO_NFT_MANAGER, BigInt.fromString("500000000000000000"), WETH)
+    const partial = createDecreaseLiquidityEvent(AERO_NFT_MANAGER, AERO_TOKEN_ID, BigInt.fromString("500000000000000000"), BigInt.fromString("400000000000000000"), BigInt.fromString("1000000000000000000"))
+    partial.block = v2Block()
+    partial.transaction.hash = TX_HASH
+    handleDecreaseLiquidity(partial)
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "isActive", "true")
+
+    // The rest in a later block (past the 300 s price cache) at $3000, burning the NFT
+    createMockedFunction(ETH_USD_FEED, "latestRoundData", "latestRoundData():(uint80,int256,uint256,uint256,uint80)")
+      .withArgs([])
+      .returns([
+        ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(2)),
+        ethereum.Value.fromSignedBigInt(BigInt.fromString("300000000000")),
+        ethereum.Value.fromUnsignedBigInt(BLOCK_TIMESTAMP),
+        ethereum.Value.fromUnsignedBigInt(BLOCK_TIMESTAMP),
+        ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(2))
+      ])
+    createMockedFunction(AERO_NFT_MANAGER, "positions", "positions(uint256):(uint96,address,address,address,int24,int24,int24,uint128,uint256,uint256,uint128,uint128)")
+      .withArgs([ethereum.Value.fromUnsignedBigInt(AERO_TOKEN_ID)])
+      .reverts()
+    const full = createDecreaseLiquidityEvent(AERO_NFT_MANAGER, AERO_TOKEN_ID, BigInt.fromString("500000000000000000"), BigInt.fromString("600000000000000000"), BigInt.fromString("1000000000000000000"))
+    full.block = v2Block()
+    full.block.timestamp = BLOCK_TIMESTAMP.plus(BigInt.fromI32(600))
+    full.transaction.hash = TX_HASH
+    handleDecreaseLiquidity(full)
+
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "isActive", "false")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "exitAmount0", "1")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "exitAmount1", "2")
+    // Each decrease at its own price: 0.4 x 2000 + 0.6 x 3000 (all at the closing price would be 3000)
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "exitAmountUSD", "2600")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "positionROI", "30")
+  })
+
+  test("the first IncreaseLiquidity of a CL position takes the agent's buffered swap slippage", () => {
+    createService(SERVICE_SAFE)
+    mockChainlinkEthUsd()
+    mockAeroCLPosition()
+    mockAeroCLStaked(false)
+    const buffer = new AgentSwapBuffer(SERVICE_SAFE)
+    buffer.agent = SERVICE_SAFE
+    buffer.bucket0Swaps = BLOCK_TIMESTAMP.toString() + ",0x01,5," + BLOCK_TIMESTAMP.plus(BigInt.fromI32(1200)).toString() + ",0x01"
+    buffer.bucket1Swaps = ""
+    buffer.bucket2Swaps = ""
+    buffer.bucket3Swaps = ""
+    buffer.totalSlippageUSD = BigDecimal.fromString("5")
+    buffer.lastUpdated = BLOCK_TIMESTAMP
+    buffer.currentBucketIndex = BigInt.zero()
+    buffer.save()
+
+    const id = openAeroCLPosition()
+
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "swapSlippageUSD", "5")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "totalCostsUSD", "5")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "entryTimestamp", BLOCK_TIMESTAMP.toString())
+    assert.fieldEquals("AgentSwapBuffer", SERVICE_SAFE.toHexString(), "bucket0Swaps", "")
   })
 })
