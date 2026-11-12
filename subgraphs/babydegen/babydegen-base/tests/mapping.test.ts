@@ -2506,3 +2506,101 @@ describe("refreshAllActivePositions dispatch (snapshot refresh)", () => {
     assert.fieldEquals("ProtocolPosition", v2Id.toHexString(), "claimableReward", "2")
   })
 })
+
+// Review fixes on autonolas-subgraph#177 (BDMARK-2333): every Burn and decrease is exit
+// proceeds, and a CL entry links the agent's buffered swaps
+describe("Exit proceeds and CL entry swaps", () => {
+  afterEach(() => {
+    clearStore()
+    resetPoolNFTCache()
+  })
+
+  test("a second v2 Burn adds to the cycle's exit instead of replacing it", () => {
+    createService(SERVICE_SAFE)
+    saveAeroV2Venue(false)
+    mockAeroV2PoolState(AERO_V2_POOL, AERO_V2_GAUGE)
+    createMockedFunction(AERO_V2_POOL, "balanceOf", "balanceOf(address):(uint256)")
+      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
+      .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(500))])
+    const transfer = createV2TransferEvent(AERO_V2_POOL, Address.zero(), SERVICE_SAFE, BigInt.fromI32(500))
+    transfer.block = v2Block()
+    transfer.transaction.hash = TX_HASH
+    handleVeloV2Transfer(transfer)
+    const id = Bytes.fromUTF8(SERVICE_SAFE.toHex() + "-aero-v2-" + AERO_V2_POOL.toHex())
+
+    createMockedFunction(AERO_V2_POOL, "balanceOf", "balanceOf(address):(uint256)")
+      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
+      .returns([ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(250))])
+    const half = createV2BurnEvent(AERO_V2_POOL, ROUTER, SERVICE_SAFE, BigInt.fromString("1000000000000000000"), BigInt.fromString("3000000000000000000"))
+    half.block = v2Block()
+    half.transaction.hash = TX_HASH
+    handleVeloV2Burn(half)
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "isActive", "true")
+
+    createMockedFunction(AERO_V2_POOL, "balanceOf", "balanceOf(address):(uint256)")
+      .withArgs([ethereum.Value.fromAddress(SERVICE_SAFE)])
+      .returns([ethereum.Value.fromUnsignedBigInt(BigInt.zero())])
+    const rest = createV2BurnEvent(AERO_V2_POOL, ROUTER, SERVICE_SAFE, BigInt.fromString("1000000000000000000"), BigInt.fromString("3000000000000000000"))
+    rest.block = v2Block()
+    rest.transaction.hash = TX_HASH
+    handleVeloV2Burn(rest)
+
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "isActive", "false")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "exitAmount0", "2")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "exitAmount1", "6")
+  })
+
+  test("principal from an earlier partial CL decrease is in the exit", () => {
+    createService(SERVICE_SAFE)
+    mockChainlinkEthUsd()
+    mockAeroCLPosition()
+    mockAeroCLStaked(false)
+    const id = openAeroCLPosition()
+
+    // Half the liquidity out; the position stays open
+    mockCLPositions(AERO_NFT_MANAGER, BigInt.fromString("500000000000000000"))
+    const partial = createDecreaseLiquidityEvent(AERO_NFT_MANAGER, AERO_TOKEN_ID, BigInt.fromString("500000000000000000"), BigInt.fromString("400000000000000000"), BigInt.fromString("1000000000000000000"))
+    partial.block = v2Block()
+    partial.transaction.hash = TX_HASH
+    handleDecreaseLiquidity(partial)
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "isActive", "true")
+
+    // The rest in a later block, burning the NFT
+    createMockedFunction(AERO_NFT_MANAGER, "positions", "positions(uint256):(uint96,address,address,address,int24,int24,int24,uint128,uint256,uint256,uint128,uint128)")
+      .withArgs([ethereum.Value.fromUnsignedBigInt(AERO_TOKEN_ID)])
+      .reverts()
+    const full = createDecreaseLiquidityEvent(AERO_NFT_MANAGER, AERO_TOKEN_ID, BigInt.fromString("500000000000000000"), BigInt.fromString("600000000000000000"), BigInt.fromString("1000000000000000000"))
+    full.block = v2Block()
+    full.block.timestamp = BLOCK_TIMESTAMP.plus(BigInt.fromI32(60))
+    full.transaction.hash = TX_HASH
+    handleDecreaseLiquidity(full)
+
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "isActive", "false")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "exitAmount0", "1")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "exitAmount1", "2")
+  })
+
+  test("the first IncreaseLiquidity of a CL position takes the agent's buffered swap slippage", () => {
+    createService(SERVICE_SAFE)
+    mockChainlinkEthUsd()
+    mockAeroCLPosition()
+    mockAeroCLStaked(false)
+    const buffer = new AgentSwapBuffer(SERVICE_SAFE)
+    buffer.agent = SERVICE_SAFE
+    buffer.bucket0Swaps = BLOCK_TIMESTAMP.toString() + ",0x01,5," + BLOCK_TIMESTAMP.plus(BigInt.fromI32(1200)).toString() + ",0x01"
+    buffer.bucket1Swaps = ""
+    buffer.bucket2Swaps = ""
+    buffer.bucket3Swaps = ""
+    buffer.totalSlippageUSD = BigDecimal.fromString("5")
+    buffer.lastUpdated = BLOCK_TIMESTAMP
+    buffer.currentBucketIndex = BigInt.zero()
+    buffer.save()
+
+    const id = openAeroCLPosition()
+
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "swapSlippageUSD", "5")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "totalCostsUSD", "5")
+    assert.fieldEquals("ProtocolPosition", id.toHexString(), "entryTimestamp", BLOCK_TIMESTAMP.toString())
+    assert.fieldEquals("AgentSwapBuffer", SERVICE_SAFE.toHexString(), "bucket0Swaps", "")
+  })
+})

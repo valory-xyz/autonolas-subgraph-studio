@@ -23,7 +23,7 @@ import { isServiceAgent, getServiceByAgent } from "./config"
 import { parseTotalSlippageFromBucket, associateSwapsWithPosition } from "./helpers"
 import { getTokenSymbol, convertTokenAmount } from "./tokenUtils"
 import { initializePositionCosts, calculatePositionROI, initializePositionIncome } from "./roiCalculation"
-import { recordClaimableRewardBeforeBlock, nftPositionMappingId, closedWithNoExitThisBlock, exitClosedInBlock, recordFullExit } from "./positionIncome"
+import { recordClaimableRewardBeforeBlock, nftPositionMappingId, closedWithNoExitThisBlock, exitClosedInBlock, recordFullExit, recordDecreaseInExit, addToExit } from "./positionIncome"
 
 
 // A CL position manager and what goes with it. The legacy Slipstream NFPM and Aero's share
@@ -241,6 +241,10 @@ export function refreshVeloCLPositionWithExitAmounts(
     pp.save()
     refreshPortfolio(nftOwner, block)
   } else {
+    // A partial decrease's principal is exit proceeds too, whenever it is collected
+    if (!isFullExit && recordDecreaseInExit(pp, eventAmount0, eventAmount1, block)) {
+      pp.save()
+    }
     refreshVeloCLPosition(positionId, tokenId, block, txHash)
   }
 }
@@ -343,7 +347,8 @@ function refreshOrCreateCLPosition(
     
     // Initialize entry tracking fields
     position.entryTxHash = txHash
-    position.entryTimestamp = block.timestamp
+    // 0 until the first IncreaseLiquidity records the entry and links its buffered swaps
+    position.entryTimestamp = BigInt.zero()
     position.entryAmount0 = BigDecimal.zero()
     position.entryAmount0USD = BigDecimal.zero()
     position.entryAmount1 = BigDecimal.zero()
@@ -447,11 +452,7 @@ function refreshOrCreateCLPosition(
     if (!exitClosedInBlock(position, block)) {
       position.exitTxHash = txHash
       position.exitTimestamp = block.timestamp
-      position.exitAmount0 = amount0Human
-      position.exitAmount0USD = usd0
-      position.exitAmount1 = amount1Human
-      position.exitAmount1USD = usd1
-      position.exitAmountUSD = usd
+      addToExit(position, amount0Human, usd0, amount1Human, usd1)
     }
     position.isActive = false
     
