@@ -370,18 +370,33 @@ yarn test       # Run Matchstick tests
 11. **veOLAS tracking** is independent: Deposit/Withdraw events manage `VeolasDepositor` entities and `Global.veolasHolderCount`. Reactivation (deposit after withdrawal) correctly increments count.
 12. **Entity IDs**: Immutable event entities use `txHash.concatI32(logIndex)`. Epoch IDs are counter strings ("1", "2", ...). DevIncentive IDs are transaction hash hex. StakingIncentive IDs are `{txHash}_{chainId}_{index}`.
 
-## New Dispenser proxy (pre-activation)
+## Dispenser proxy accounting
 
-`DispenserProxy` adds Ethereum proxy `0x78Bd94F48CAe623CC74828eCbFEBE3bDF428D83D`
-from block 26397771 alongside V1/V2. ABI: tokenomics commit
-`0a5ac87da7fa557b32596e74302ea93d9f1f9f2c`, `abis/0.8.30/Dispenser.json`.
-`src/dispenser-proxy.ts` records its events and `DispenserImplementationUpdated`.
-Legacy sources/handlers remain unchanged. Shared event adapters require identical
-ABI layouts. Route chain IDs retain full uint256 precision.
+Ethereum proxy `0x78Bd94F48CAe623CC74828eCbFEBE3bDF428D83D` is indexed from
+block 26397771 alongside V1/V2. Release source: tokenomics
+`0a5ac87da7fa557b32596e74302ea93d9f1f9f2c`. The proxy ABI and
+`StakingAccountingViews.json` match that release's interfaces.
 
-New raw single/batch claims include `dispenser`; batch child IDs include source,
-transaction/log and child index. Amounts preserve staking incentive, actual
-transfer and returned inflation separately. New aggregate claims deliberately do
-not create `StakingIncentive`/`Epoch` rollups: `lastClaimedEpoch - 1` cannot attribute
-a multi-epoch claim. Epoch reconciliation is a production-cutover blocker, not a
-zero value. See `docs/DISPENSER_PROXY_INDEXING.md` for release gates.
+`dispenser-accounting.ts` combines successful call inputs with emitted claims.
+It tracks nominee cursors from nomination/removal events, uses historical epoch
+parameters and voting weights, and mirrors cap/threshold/bridge rounding.
+`StakingIncentive` records each target's allocation and return for each epoch;
+`Epoch.totalStakingIncentives` counts allocated incentives and
+`totalStakingReturns` counts allocations returned. Both reduce the original
+epoch's `availableStakingIncentives`. Retainer returns have separate
+`DispenserEpochReturn` records. Retain rounds once over its whole range; its
+per-epoch rows carry fractional remainders forward in epoch order.
+
+`Tokenomics.StakingRefunded` credits `Epoch.stakingInflationRefunds` in the epoch
+named by that event. This includes withheld-token reuse and is not deducted
+from the original allocation again. A zero-weight epoch is refunded once per
+proxy across claim and retain paths. Raw events retain incentive, actual token
+transfer and return as separate amounts.
+
+This source needs historical Ethereum call traces and archive contract reads,
+including calls routed through Safes or other contracts. Call inputs are paired
+with events, and accounting is applied in emitted-log order. End-of-block
+validation refuses missing traces; epoch sums must match emitted totals.
+Deploy a fresh full index, validate it, then switch consumers. Indexing supports
+both eras before activation and follows new claims automatically when enabled;
+contract activation requires no indexer address/configuration switch.

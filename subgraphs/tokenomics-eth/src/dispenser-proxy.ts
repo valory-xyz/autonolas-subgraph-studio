@@ -1,3 +1,5 @@
+import { queueOperation, queueNomineeChange, recordVoteWeighting, recordProcessors } from './dispenser-accounting';
+export { handleClaimCall, handleBatchClaimCall, handleRetainCall, handleAccountingBlock } from './dispenser-accounting';
 import { Address, BigInt, Bytes } from "@graphprotocol/graph-ts";
 import {
   IncentivesClaimed,
@@ -41,17 +43,20 @@ export function handlePauseDispenser(event: PauseDispenser): void {
 
 // Event layout is identical in the pinned old and deployment ABIs.
 export function handleAddNomineeHash(event: AddNomineeHash): void {
+  queueNomineeChange(event, event.params.nomineeHash, false);
   Legacy.handleAddNomineeHash(changetype<LegacyEvents.AddNomineeHash>(event));
 }
 
 // Event layout is identical in the pinned old and deployment ABIs.
 export function handleRemoveNomineeHash(event: RemoveNomineeHash): void {
+  queueNomineeChange(event, event.params.nomineeHash, true);
   Legacy.handleRemoveNomineeHash(changetype<LegacyEvents.RemoveNomineeHash>(event));
 }
 
 // Event layout is identical in the pinned old and deployment ABIs.
 export function handleRetained(event: Retained): void {
   Legacy.handleRetained(changetype<LegacyEvents.Retained>(event));
+  queueOperation(event, "retain", []);
 }
 
 // Event layout is identical in the pinned old and deployment ABIs.
@@ -61,6 +66,7 @@ export function handleTreasuryUpdated(event: TreasuryUpdated): void {
 
 // Event layout is identical in the pinned old and deployment ABIs.
 export function handleVoteWeightingUpdated(event: VoteWeightingUpdated): void {
+  recordVoteWeighting(event.address, event.params.voteWeighting);
   Legacy.handleVoteWeightingUpdated(changetype<LegacyEvents.VoteWeightingUpdated>(event));
 }
 
@@ -82,6 +88,7 @@ export function handleImplementationUpdated(event: ImplementationUpdated): void 
 }
 
 export function handleSetDepositProcessorChainIds(event: SetDepositProcessorChainIds): void {
+  recordProcessors(event.address, event.params.chainIds, event.params.depositProcessors);
   let entity = new ProcessorRoutes(event.transaction.hash.concatI32(event.logIndex.toI32()));
   entity.depositProcessors = event.params.depositProcessors.map<Bytes>((value: Address): Bytes => value);
   // Preserve uint256 chain IDs without the legacy handler's i32 narrowing.
@@ -105,8 +112,7 @@ export function handleStakingIncentivesClaimed(event: StakingIncentivesClaimed):
   entity.blockTimestamp = event.block.timestamp;
   entity.transactionHash = event.transaction.hash;
   entity.save();
-  // This event aggregates a claim range; it does not identify each epoch's share.
-  // Do not apply the legacy lastClaimedEpoch - 1 rollup to this source.
+  queueOperation(event, "single", [event.params.chainId]);
 }
 
 export function handleStakingIncentivesBatchClaimed(event: StakingIncentivesBatchClaimed): void {
@@ -130,4 +136,5 @@ export function handleStakingIncentivesBatchClaimed(event: StakingIncentivesBatc
     child.stakingIncentives = event.params.stakingIncentives[i];
     child.save();
   }
+  queueOperation(event, "batch", event.params.chainIds);
 }

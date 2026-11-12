@@ -1,3 +1,4 @@
+import { TokenomicsAccountingState, Epoch as AccountingEpoch } from '../generated/schema';
 import { BigInt } from "@graphprotocol/graph-ts";
 import {
   AgentRegistryUpdated as AgentRegistryUpdatedEvent,
@@ -189,6 +190,10 @@ export function handleEpochLengthUpdated(event: EpochLengthUpdatedEvent): void {
 }
 
 export function handleEpochSettledV2(event: EpochSettledV2Event): void {
+  let accounting = new TokenomicsAccountingState('epoch');
+  accounting.currentEpoch = event.params.epochCounter.plus(BigInt.fromI32(1));
+  accounting.save();
+
   let entity = new EpochSettled(
     event.transaction.hash.concatI32(event.logIndex.toI32())
   );
@@ -219,6 +224,10 @@ export function handleEpochSettledV2(event: EpochSettledV2Event): void {
 }
 
 export function handleEpochSettled(event: EpochSettledEvent): void {
+  let accounting = new TokenomicsAccountingState('epoch');
+  accounting.currentEpoch = event.params.epochCounter.plus(BigInt.fromI32(1));
+  accounting.save();
+
   let entity = new EpochSettled(
     event.transaction.hash.concatI32(event.logIndex.toI32())
   );
@@ -357,6 +366,15 @@ export function handleStakingParamsUpdated(
 }
 
 export function handleStakingRefunded(event: StakingRefundedEvent): void {
+  // This is the credit to current inflation, not another deduction from a
+  // historical allocation. Claim/retain accounting owns that deduction.
+  let creditedEpoch = AccountingEpoch.load(event.params.epochNumber.toString());
+  if (creditedEpoch !== null) {
+    const previous = creditedEpoch.stakingInflationRefunds;
+    creditedEpoch.stakingInflationRefunds = (previous === null ? BigInt.zero() : previous).plus(event.params.amount);
+    creditedEpoch.save();
+  }
+
   let entity = new StakingRefunded(
     event.transaction.hash.concatI32(event.logIndex.toI32())
   );

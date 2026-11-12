@@ -100,6 +100,7 @@ dataSources:
       apiVersion: 0.0.7
       language: wasm/assemblyscript
       entities:
+        - TokenomicsAccountingState
         - AgentRegistryUpdated
         - ComponentRegistryUpdated
         - DepositoryUpdated
@@ -272,6 +273,17 @@ dataSources:
       apiVersion: 0.0.7
       language: wasm/assemblyscript
       entities:
+        - Epoch
+        - StakingIncentive
+        - DispenserAccountingOperation
+        - DispenserAccountingTransaction
+        - DispenserAccountingPending
+        - DispenserAccountingConfig
+        - DispenserProcessor
+        - TokenomicsAccountingState
+        - DispenserNomineeCursor
+        - DispenserZeroWeightRefund
+        - DispenserEpochReturn
         - DispenserImplementationUpdated
         - StakingIncentivesBatch
         - AddNomineeHash
@@ -287,8 +299,19 @@ dataSources:
         - VoteWeightingUpdated
         - WithheldAmountSynced
       abis:
+        - name: StakingAccountingViews
+          file: ../../abis/StakingAccountingViews.json
         - name: DispenserProxy
           file: ../../abis/DispenserProxy.json
+      blockHandlers:
+        - handler: handleAccountingBlock
+      callHandlers:
+        - function: claimStakingIncentives(uint256,uint256,bytes32,bytes)
+          handler: handleClaimCall
+        - function: claimStakingIncentivesBatch(uint256,uint256[],bytes32[][],bytes[],uint256[])
+          handler: handleBatchClaimCall
+        - function: retain()
+          handler: handleRetainCall
       eventHandlers:
         - event: ImplementationUpdated(indexed address)
           handler: handleImplementationUpdated
