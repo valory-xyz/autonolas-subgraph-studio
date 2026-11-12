@@ -370,42 +370,28 @@ yarn test       # Run Matchstick tests
 11. **veOLAS tracking** is independent: Deposit/Withdraw events manage `VeolasDepositor` entities and `Global.veolasHolderCount`. Reactivation (deposit after withdrawal) correctly increments count.
 12. **Entity IDs**: Immutable event entities use `txHash.concatI32(logIndex)`. Epoch IDs are counter strings ("1", "2", ...). DevIncentive IDs are transaction hash hex. StakingIncentive IDs are `{txHash}_{chainId}_{index}`.
 
-## Dispenser proxy accounting
+## Dispenser proxy raw events
 
 Ethereum proxy `0x78Bd94F48CAe623CC74828eCbFEBE3bDF428D83D` is indexed from
-block 26397771 alongside V1/V2. Release source: tokenomics
-`0a5ac87da7fa557b32596e74302ea93d9f1f9f2c`. The proxy ABI and
-`StakingAccountingViews.json` match that release's interfaces.
+block 26397771 alongside V1/V2 using the ABI at tokenomics
+`0a5ac87da7fa557b32596e74302ea93d9f1f9f2c`. Legacy sources and handlers stay active.
 
-`dispenser-accounting.ts` combines successful call inputs with emitted claims.
-It tracks nominee cursors from nomination/removal events, uses historical epoch
-parameters and voting weights, and mirrors cap/threshold/bridge rounding.
-`StakingIncentive` records each target's allocation and return for each epoch;
-`Epoch.totalStakingIncentives` counts allocated incentives and
-`totalStakingReturns` counts allocations returned. Both reduce the original
-epoch's `availableStakingIncentives`. Retainer returns have separate
-`DispenserEpochReturn` records. Retain rounds once over its whole range; its
-per-epoch rows carry fractional remainders forward in epoch order.
+The new source records implementation upgrades, configuration and raw claims.
+Incentive, actual transfer and returned amounts remain separate; batch children
+include source, transaction/log and index. Nomination, removal, retained-return
+and withheld-sync records expose `dispenser` on both legacy and proxy paths.
 
-`Tokenomics.StakingRefunded` credits `Epoch.stakingInflationRefunds` in the epoch
-named by that event. This includes withheld-token reuse and is not deducted
-from the original allocation again. A zero-weight epoch is refunded once per
-proxy across claim and retain paths. Raw events retain incentive, actual token
-transfer and return as separate amounts.
+This source has no call/block handlers and needs no call traces. Exact per-epoch
+replay is deferred: Graph call handlers do not expose ancestor-revert status, and
+method-order pairing can consume a committed event for a rolled-back child call.
+Before reintroducing it, replay a caught parent revert followed by a committed
+claim with identical arguments on the intended Graph Node/provider, and verify
+that only the committed claim is paired; otherwise redesign trace commitment.
 
-This source needs historical Ethereum call traces and archive contract reads,
-including calls routed through Safes or other contracts. Call inputs are paired
-with events, and accounting is applied in emitted-log order. End-of-block
-validation refuses missing traces; epoch sums must match emitted totals.
-Merge, deploy, wait for full indexing, and only then switch consumers.
+New proxy claims are exposed in raw event entities only. `StakingIncentive` and
+`Epoch` claim rollups continue to describe legacy sources; missing proxy rollups
+must not be interpreted as zero proxy claims. Consumers needing combined exact
+epoch totals cannot migrate until the accounting follow-up is complete and
+validated. Refund events remain indexed with their existing Tokenomics behavior.
 
-Withheld sync, nomination, removal and retained-return records expose the emitting
-`dispenser` on both legacy and proxy paths. The field is optional for existing
-schema compatibility; a fresh index populates it for all historical events.
-
-Open P1 review blocker: call handlers expose no ancestor-revert status. A successful
-child trace inside a reverted parent can survive RPC filtering without its event.
-Current method-order pairing is not safe for that provider behavior. Do not treat
-matching transaction status or call inputs as proof of commitment. Resolve this
-with the actual Graph Node/trace provider and replay a caught parent revert followed
-by a committed claim (including identical arguments); this has not been verified.
+Merge, deploy a candidate, wait for full indexing and validate it, then switch consumers only after the protocol team confirms activation; until then keep production consumers on the current endpoint and Govern #494 out of production.

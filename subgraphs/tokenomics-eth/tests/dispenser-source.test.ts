@@ -4,13 +4,16 @@ import * as LegacyEvents from '../generated/DispenserV2/DispenserV2';
 import * as ProxyEvents from '../generated/DispenserProxy/DispenserProxy';
 import * as Legacy from '../src/dispenser';
 import * as Proxy from '../src/dispenser-proxy';
-import { recordNomination } from "../src/dispenser-accounting";
-import { setup, PROXY, ACCOUNT, TARGET, CHAIN, param, u } from './dispenser-accounting-utils';
+const PROXY = Address.fromString('0x78Bd94F48CAe623CC74828eCbFEBE3bDF428D83D');
+const ACCOUNT = Address.fromString('0x0000000000000000000000000000000000000001');
+const TARGET = Bytes.fromHexString('0x0000000000000000000000000000000000000000000000000000000000000001');
+const CHAIN = BigInt.fromString('5000000000');
+function param(name: string, value: ethereum.Value): ethereum.EventParam { return new ethereum.EventParam(name, value); }
+function u(value: i32): ethereum.Value { return ethereum.Value.fromUnsignedBigInt(BigInt.fromI32(value)); }
 const OLD = Address.fromString('0x5650300fCBab43A0D7D02F8Cb5d0f039402593f0');
-beforeEach(() => { clearStore(); setup(); });
+beforeEach(() => { clearStore(); });
 
 test('AddNomineeHash exposes legacy and proxy Dispensers separately', () => {
-  recordNomination(PROXY, TARGET);
   let oldEvent = changetype<LegacyEvents.AddNomineeHash>(newMockEvent());
   oldEvent.address = OLD; oldEvent.logIndex = BigInt.fromI32(1); oldEvent.parameters = [param("nomineeHash", ethereum.Value.fromFixedBytes(TARGET))];
   let newEvent = changetype<ProxyEvents.AddNomineeHash>(newMockEvent());
@@ -22,7 +25,6 @@ test('AddNomineeHash exposes legacy and proxy Dispensers separately', () => {
 });
 
 test('RemoveNomineeHash exposes legacy and proxy Dispensers separately', () => {
-  recordNomination(PROXY, TARGET);
   let oldEvent = changetype<LegacyEvents.RemoveNomineeHash>(newMockEvent());
   oldEvent.address = OLD; oldEvent.logIndex = BigInt.fromI32(1); oldEvent.parameters = [param("nomineeHash", ethereum.Value.fromFixedBytes(TARGET))];
   let newEvent = changetype<ProxyEvents.RemoveNomineeHash>(newMockEvent());
@@ -34,7 +36,6 @@ test('RemoveNomineeHash exposes legacy and proxy Dispensers separately', () => {
 });
 
 test('Retained exposes legacy and proxy Dispensers separately', () => {
-  recordNomination(PROXY, TARGET);
   let oldEvent = changetype<LegacyEvents.Retained>(newMockEvent());
   oldEvent.address = OLD; oldEvent.logIndex = BigInt.fromI32(1); oldEvent.parameters = [param("account", ethereum.Value.fromAddress(ACCOUNT)), param("returnAmount", u(10))];
   let newEvent = changetype<ProxyEvents.Retained>(newMockEvent());
@@ -46,7 +47,6 @@ test('Retained exposes legacy and proxy Dispensers separately', () => {
 });
 
 test('WithheldAmountSynced exposes legacy and proxy Dispensers separately', () => {
-  recordNomination(PROXY, TARGET);
   let oldEvent = changetype<LegacyEvents.WithheldAmountSynced>(newMockEvent());
   oldEvent.address = OLD; oldEvent.logIndex = BigInt.fromI32(1); oldEvent.parameters = [param("chainId", ethereum.Value.fromUnsignedBigInt(CHAIN)), param("amount", u(10)), param("updatedWithheldAmount", u(20)), param("batchHash", ethereum.Value.fromFixedBytes(TARGET))];
   let newEvent = changetype<ProxyEvents.WithheldAmountSynced>(newMockEvent());

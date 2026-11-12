@@ -1,4 +1,3 @@
-import { setup } from './dispenser-accounting-utils';
 import { assert, clearStore, test, beforeEach, newMockEvent } from "matchstick-as/assembly/index";
 import { Address, BigInt, Bytes, ethereum } from "@graphprotocol/graph-ts";
 import { ImplementationUpdated, StakingIncentivesClaimed, StakingIncentivesBatchClaimed, SetDepositProcessorChainIds } from "../generated/DispenserProxy/DispenserProxy";
@@ -22,7 +21,7 @@ function batch(index: i32): StakingIncentivesBatchClaimed {
   event.parameters = [param("account", ethereum.Value.fromAddress(ACCOUNT)), param("chainIds", ethereum.Value.fromUnsignedBigIntArray([CHAIN])), param("stakingTargets", ethereum.Value.fromArray([ethereum.Value.fromFixedBytesArray([TARGET])])), param("stakingIncentives", ethereum.Value.fromArray([ethereum.Value.fromUnsignedBigIntArray([BigInt.fromI32(100)])])), param("totalStakingIncentive", uint(100)), param("totalTransferAmount", uint(0)), param("totalReturnAmount", uint(100))];
   return event;
 }
-beforeEach(() => { clearStore(); setup(); });
+beforeEach(() => { clearStore(); });
 test("records proxy implementation updates from creation", () => {
   let event = changetype<ImplementationUpdated>(newMockEvent()); event.address = PROXY;
   event.parameters = [param("implementation", ethereum.Value.fromAddress(ACCOUNT))];
@@ -55,9 +54,9 @@ test("preserves multiple batches and their targets in one transaction", () => {
   assert.fieldEquals("StakingIncentivesBatch", id, "chainId", "5000000000");
   assert.fieldEquals("StakingIncentivesBatchClaimed", first.transaction.hash.concatI32(3).toHexString(), "totalReturnAmount", "100");
 });
-test("raw events wait for call inputs before writing epoch allocations", () => {
+test("does not invent a single-epoch allocation for aggregate claim events", () => {
   handleStakingIncentivesClaimed(single(1, 100, 100, 0)); handleStakingIncentivesBatchClaimed(batch(2));
-  assert.entityCount("StakingIncentive", 0); assert.entityCount("Epoch", 2);
+  assert.entityCount("StakingIncentive", 0); assert.entityCount("Epoch", 0);
 });
 test("preserves uint256 processor route chain IDs", () => {
   let event = changetype<SetDepositProcessorChainIds>(newMockEvent()); event.address = PROXY;

@@ -310,8 +310,6 @@ type Epoch @entity(immutable: false) {
   availableStakingIncentives: BigInt
   stakingIncentives: [StakingIncentive!] @derivedFrom(field: "epoch")
   totalStakingIncentives: BigInt
-  totalStakingReturns: BigInt # original-epoch allocations returned by new proxy
-  stakingInflationRefunds: BigInt # credited in this epoch by Tokenomics; not a second allocation
   createProducts: [CreateProduct!] @derivedFrom(field: "epoch")
   totalCreateProductsSupply: BigInt
   effectiveBond: BigInt
@@ -331,10 +329,6 @@ type DevIncentive @entity(immutable: false) {
 }
 
 type StakingIncentive @entity(immutable: false) {
-  dispenser: Bytes
-  returnAmount: BigInt
-  transactionHash: Bytes
-  logIndex: BigInt
   id: ID!
   epoch: Epoch!
   account: Bytes!
@@ -494,54 +488,4 @@ type DispenserImplementationUpdated @entity(immutable: true) {
   blockNumber: BigInt!
   blockTimestamp: BigInt!
   transactionHash: Bytes!
-}
-
-# Event-order snapshots paired with successful claim/retain call traces.
-type DispenserAccountingOperation @entity(immutable: false) {
-  id: Bytes!
-  kind: String!
-  nomineeHash: Bytes
-  claimedEpochs: BigInt
-  logIndex: BigInt!
-  currentEpoch: BigInt!
-  voteWeighting: Bytes!
-  decimals: [BigInt!]!
-}
-type DispenserAccountingTransaction @entity(immutable: false) {
-  id: Bytes!
-  operations: [Bytes!]!
-  nextOperation: Int!
-}
-type DispenserAccountingConfig @entity(immutable: false) {
-  id: Bytes!
-  voteWeighting: Bytes!
-}
-type DispenserProcessor @entity(immutable: false) {
-  id: ID!
-  processor: Bytes!
-}
-type TokenomicsAccountingState @entity(immutable: false) {
-  id: ID!
-  currentEpoch: BigInt!
-}
-type DispenserNomineeCursor @entity(immutable: false) {
-  id: ID!
-  nextEpoch: BigInt!
-  removedEpoch: BigInt!
-}
-type DispenserZeroWeightRefund @entity(immutable: true) {
-  id: ID!
-}
-type DispenserEpochReturn @entity(immutable: true) {
-  id: ID!
-  dispenser: Bytes!
-  epoch: Epoch!
-  amount: BigInt!
-  transactionHash: Bytes!
-  logIndex: BigInt!
-}
-
-type DispenserAccountingPending @entity(immutable: false) {
-  id: ID!
-  transactions: [Bytes!]!
 }
