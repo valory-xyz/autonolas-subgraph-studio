@@ -369,3 +369,19 @@ yarn test       # Run Matchstick tests
 10. **Nested array workaround**: `StakingIncentivesBatchClaimed` events contain nested arrays (chainIds -> stakingTargets[] -> stakingIncentives[]). Flattened to `StakingIncentivesBatch` entities per chainId.
 11. **veOLAS tracking** is independent: Deposit/Withdraw events manage `VeolasDepositor` entities and `Global.veolasHolderCount`. Reactivation (deposit after withdrawal) correctly increments count.
 12. **Entity IDs**: Immutable event entities use `txHash.concatI32(logIndex)`. Epoch IDs are counter strings ("1", "2", ...). DevIncentive IDs are transaction hash hex. StakingIncentive IDs are `{txHash}_{chainId}_{index}`.
+
+## New Dispenser proxy (pre-activation)
+
+`DispenserProxy` adds Ethereum proxy `0x78Bd94F48CAe623CC74828eCbFEBE3bDF428D83D`
+from block 26397771 alongside V1/V2. ABI: tokenomics commit
+`0a5ac87da7fa557b32596e74302ea93d9f1f9f2c`, `abis/0.8.30/Dispenser.json`.
+`src/dispenser-proxy.ts` records its events and `DispenserImplementationUpdated`.
+Legacy sources/handlers remain unchanged. Shared event adapters require identical
+ABI layouts. Route chain IDs retain full uint256 precision.
+
+New raw single/batch claims include `dispenser`; batch child IDs include source,
+transaction/log and child index. Amounts preserve staking incentive, actual
+transfer and returned inflation separately. New aggregate claims deliberately do
+not create `StakingIncentive`/`Epoch` rollups: `lastClaimedEpoch - 1` cannot attribute
+a multi-epoch claim. Epoch reconciliation is a production-cutover blocker, not a
+zero value. See `docs/DISPENSER_PROXY_INDEXING.md` for release gates.

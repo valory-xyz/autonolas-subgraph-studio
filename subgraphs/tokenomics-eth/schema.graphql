@@ -380,6 +380,7 @@ type SetDepositProcessorChainIds @entity(immutable: true) {
 }
 
 type StakingIncentivesBatchClaimed @entity(immutable: true) {
+  dispenser: Bytes # populated by the new proxy source
   id: Bytes!
   account: Bytes! # address
   stakingIncentives: [StakingIncentivesBatch!] @derivedFrom(field: "batchClaim")
@@ -400,6 +401,7 @@ type StakingIncentivesBatch @entity(immutable: false) {
 }
 
 type StakingIncentivesClaimed @entity(immutable: true) {
+  dispenser: Bytes # populated by the new proxy source
   id: Bytes!
   account: Bytes! # address
   chainId: BigInt! # uint256
@@ -472,4 +474,14 @@ type Global @entity(immutable: false) {
   id: ID!
   veolasHolderCount: Int!
   updatedAt: BigInt!
+}
+
+# Proxy upgrades are indexed from creation, even while staking claims are paused.
+type DispenserImplementationUpdated @entity(immutable: true) {
+  id: Bytes!
+  dispenser: Bytes!
+  implementation: Bytes!
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
 }
