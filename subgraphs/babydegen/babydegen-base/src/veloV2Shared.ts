@@ -18,6 +18,7 @@ import { getServiceByAgent } from "./config"
 import { parseTotalSlippageFromBucket, associateSwapsWithPosition, calculatePortfolioMetrics } from "./helpers"
 import { getTokenSymbol, convertTokenAmount } from "./tokenUtils"
 import { calculatePositionROI, initializePositionIncome } from "./roiCalculation"
+import { addToExit } from "./positionIncome"
 import { PROTOCOL_VELODROME_V2, VELO_VOTER, PROTOCOL_AERO_V2, rewardTokenFor, V2_STABLE_FEE_BPS, V2_VOLATILE_FEE_BPS, V2PoolKind } from "./constants"
 
 export function v2ProtocolFor(poolAddress: Address): string {
@@ -521,16 +522,11 @@ export function refreshVeloV2PositionWithBurnAmounts(
   
   const eventUsd0 = token0Price.times(eventAmount0Human)
   const eventUsd1 = token1Price.times(eventAmount1Human)
-  const eventUsd = eventUsd0.plus(eventUsd1)
   
-  // Update exit tracking
+  // Update exit tracking: the cycle's Burns add up (startNewCycle clears the exit)
   pp.exitTxHash = txHash
   pp.exitTimestamp = block.timestamp
-  pp.exitAmount0 = eventAmount0Human
-  pp.exitAmount0USD = eventUsd0
-  pp.exitAmount1 = eventAmount1Human
-  pp.exitAmount1USD = eventUsd1
-  pp.exitAmountUSD = eventUsd
+  addToExit(pp, eventAmount0Human, eventUsd0, eventAmount1Human, eventUsd1)
   
   //Calculate position ROI when position has exit data
   calculatePositionROI(pp)

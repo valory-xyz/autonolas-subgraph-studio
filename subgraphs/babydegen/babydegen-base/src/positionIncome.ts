@@ -414,16 +414,27 @@ export function exitClosedInBlock(pp: ProtocolPosition, block: ethereum.Block): 
   return !pp.isActive && prev !== null && prev.equals(block.timestamp) && pp.exitAmountUSD !== null
 }
 
-// Closes the position on a full-exit DecreaseLiquidity, valued from the event amounts and the
-// position's stored tokens; a second one in the same block adds to the exit. False when the
-// position has no tokens on record, so nothing can be valued
-export function recordFullExit(
-  pp: ProtocolPosition,
-  amount0: BigInt,
-  amount1: BigInt,
-  block: ethereum.Block,
-  txHash: Bytes
-): boolean {
+// Adds withdrawn amounts to the exit proceeds; the first ones start them. Every partial
+// decrease and Burn of a position (or v2 cycle) is part of its exit
+export function addToExit(pp: ProtocolPosition, amount0: BigDecimal, usd0: BigDecimal, amount1: BigDecimal, usd1: BigDecimal): void {
+  if (pp.exitAmountUSD !== null) {
+    pp.exitAmount0 = pp.exitAmount0!.plus(amount0)
+    pp.exitAmount0USD = pp.exitAmount0USD!.plus(usd0)
+    pp.exitAmount1 = pp.exitAmount1!.plus(amount1)
+    pp.exitAmount1USD = pp.exitAmount1USD!.plus(usd1)
+    pp.exitAmountUSD = pp.exitAmountUSD!.plus(usd0.plus(usd1))
+  } else {
+    pp.exitAmount0 = amount0
+    pp.exitAmount0USD = usd0
+    pp.exitAmount1 = amount1
+    pp.exitAmount1USD = usd1
+    pp.exitAmountUSD = usd0.plus(usd1)
+  }
+}
+
+// Adds a DecreaseLiquidity's amounts to the exit, valued from the position's stored tokens.
+// False when the position has no tokens on record, so nothing can be valued
+export function recordDecreaseInExit(pp: ProtocolPosition, amount0: BigInt, amount1: BigInt, block: ethereum.Block): boolean {
   let token0Bytes = pp.token0
   let token1Bytes = pp.token1
   if (!token0Bytes || !token1Bytes) {
@@ -435,18 +446,21 @@ export function recordFullExit(
   let exitAmount1 = convertTokenAmount(amount1, token1)
   let exitUsd0 = exitAmount0.times(getTokenPriceUSD(token0, block.timestamp, false))
   let exitUsd1 = exitAmount1.times(getTokenPriceUSD(token1, block.timestamp, false))
-  if (exitClosedInBlock(pp, block)) {
-    pp.exitAmount0 = pp.exitAmount0!.plus(exitAmount0)
-    pp.exitAmount0USD = pp.exitAmount0USD!.plus(exitUsd0)
-    pp.exitAmount1 = pp.exitAmount1!.plus(exitAmount1)
-    pp.exitAmount1USD = pp.exitAmount1USD!.plus(exitUsd1)
-    pp.exitAmountUSD = pp.exitAmountUSD!.plus(exitUsd0.plus(exitUsd1))
-  } else {
-    pp.exitAmount0 = exitAmount0
-    pp.exitAmount0USD = exitUsd0
-    pp.exitAmount1 = exitAmount1
-    pp.exitAmount1USD = exitUsd1
-    pp.exitAmountUSD = exitUsd0.plus(exitUsd1)
+  addToExit(pp, exitAmount0, exitUsd0, exitAmount1, exitUsd1)
+  return true
+}
+
+// Closes the position on a full-exit DecreaseLiquidity; the exit adds up every decrease of the
+// position, partial ones in earlier blocks included. False when the position has no tokens on record
+export function recordFullExit(
+  pp: ProtocolPosition,
+  amount0: BigInt,
+  amount1: BigInt,
+  block: ethereum.Block,
+  txHash: Bytes
+): boolean {
+  if (!recordDecreaseInExit(pp, amount0, amount1, block)) {
+    return false
   }
   pp.isActive = false
   pp.exitTxHash = txHash
