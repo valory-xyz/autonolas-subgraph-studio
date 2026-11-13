@@ -373,25 +373,16 @@ yarn test       # Run Matchstick tests
 ## Dispenser proxy raw events
 
 Ethereum proxy `0x78Bd94F48CAe623CC74828eCbFEBE3bDF428D83D` is indexed from
-block 26397771 alongside V1/V2 using the ABI at tokenomics
-`0a5ac87da7fa557b32596e74302ea93d9f1f9f2c`. Legacy sources and handlers stay active.
+block 26397771 alongside V1/V2, using the ABI from tokenomics
+`0a5ac87da7fa557b32596e74302ea93d9f1f9f2c`.
 
-The new source records implementation upgrades, configuration and raw claims.
-Incentive, actual transfer and returned amounts remain separate; batch children
-include source, transaction/log and index. Nomination, removal, retained-return
-and withheld-sync records expose `dispenser` on both legacy and proxy paths.
+The source records upgrades, configuration and raw claims. Shared Dispenser event
+entities expose the optional `dispenser` field for legacy and proxy emissions.
+Incentive, actual transfer and return amounts remain separate. Proxy batch-child
+IDs include transaction hash, log index and child index; legacy IDs are retained.
 
-This source has no call/block handlers and needs no call traces. Exact per-epoch
-replay is deferred: Graph call handlers do not expose ancestor-revert status, and
-method-order pairing can consume a committed event for a rolled-back child call.
-Before reintroducing it, replay a caught parent revert followed by a committed
-claim with identical arguments on the intended Graph Node/provider, and verify
-that only the committed claim is paired; otherwise redesign trace commitment.
-
-New proxy claims are exposed in raw event entities only. `StakingIncentive` and
-`Epoch` claim rollups continue to describe legacy sources; missing proxy rollups
-must not be interpreted as zero proxy claims. Consumers needing combined exact
-epoch totals cannot migrate until the accounting follow-up is complete and
-validated. Refund events remain indexed with their existing Tokenomics behavior.
-
-Merge, deploy a candidate, wait for full indexing and validate it, then switch consumers only after the protocol team confirms activation; until then keep production consumers on the current endpoint and Govern #494 out of production.
+Proxy `IncentivesClaimed` also creates `DevIncentive` records and updates
+`Epoch.devIncentivesTotalTopUp` through the shared developer-incentive handler.
+Proxy staking claims do not populate `StakingIncentive` or update
+`Epoch.totalStakingIncentives` / `Epoch.availableStakingIncentives`; those staking
+rollups cover legacy sources only. Missing proxy staking rollups are not zero claims.

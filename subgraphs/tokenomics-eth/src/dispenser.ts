@@ -41,6 +41,7 @@ export function handleIncentivesClaimed(event: IncentivesClaimedEvent): void {
   let entity = new IncentivesClaimed(
     event.transaction.hash.concatI32(event.logIndex.toI32())
   );
+  entity.dispenser = event.address;
   entity.owner = event.params.owner;
   entity.reward = event.params.reward;
   entity.topUp = event.params.topUp;
@@ -69,6 +70,7 @@ export function handleIncentivesClaimedV2(
   let entity = new IncentivesClaimed(
     event.transaction.hash.concatI32(event.logIndex.toI32())
   );
+  entity.dispenser = event.address;
   entity.owner = event.params.owner;
   entity.reward = event.params.reward;
   entity.topUp = event.params.topUp;
@@ -97,6 +99,7 @@ export function handleOwnerUpdated(event: OwnerUpdatedEvent): void {
   let entity = new OwnerUpdated(
     event.transaction.hash.concatI32(event.logIndex.toI32())
   );
+  entity.dispenser = event.address;
   entity.owner = event.params.owner;
 
   entity.blockNumber = event.block.number;
@@ -123,6 +126,7 @@ export function handleTreasuryUpdated(event: TreasuryUpdatedEvent): void {
   let entity = new TreasuryUpdated(
     event.transaction.hash.concatI32(event.logIndex.toI32())
   );
+  entity.dispenser = event.address;
   entity.treasury = event.params.treasury;
 
   entity.blockNumber = event.block.number;
@@ -150,6 +154,7 @@ export function handlePauseDispenser(event: PauseDispenserEvent): void {
   let entity = new PauseDispenser(
     event.transaction.hash.concatI32(event.logIndex.toI32())
   );
+  entity.dispenser = event.address;
   entity.pauseState = event.params.pauseState;
 
   entity.blockNumber = event.block.number;
@@ -203,9 +208,7 @@ export function handleSetDepositProcessorChainIds(
   );
 
   entity.depositProcessors = depositProcessors;
-  entity.chainIds = event.params.chainIds.map<BigInt>((value) =>
-    BigInt.fromI32(value.toI32())
-  );
+  entity.chainIds = event.params.chainIds;
 
   entity.blockNumber = event.block.number;
   entity.blockTimestamp = event.block.timestamp;
@@ -214,19 +217,23 @@ export function handleSetDepositProcessorChainIds(
   entity.save();
 }
 
-export function handleStakingIncentivesBatchClaimed(
-  event: StakingIncentivesBatchClaimedEvent
-): void {
+export function saveStakingIncentivesBatchClaimed(
+  event: StakingIncentivesBatchClaimedEvent,
+  preserveLegacyChildIds: boolean = false
+): StakingIncentivesBatchClaimed {
   let entity = new StakingIncentivesBatchClaimed(
     event.transaction.hash.concatI32(event.logIndex.toI32())
   );
+  entity.dispenser = event.address;
   entity.account = event.params.account;
 
   // It is currently impossible to handle nested arrays in event parameters.
   // Convert them to flat arrays and save them into separate entities.
   for (let i = 0; i < event.params.chainIds.length; i++) {
     let stakingIncentivesBatch = new StakingIncentivesBatch(
-      `${event.transaction.hash.toHex()}_${i}`
+      preserveLegacyChildIds
+        ? `${event.transaction.hash.toHex()}_${i}`
+        : `${entity.id.toHexString()}_${i}`
     );
     stakingIncentivesBatch.batchClaim = entity.id;
     stakingIncentivesBatch.chainId = event.params.chainIds[i];
@@ -245,6 +252,11 @@ export function handleStakingIncentivesBatchClaimed(
   entity.transactionHash = event.transaction.hash;
 
   entity.save();
+  return entity;
+}
+
+export function handleStakingIncentivesBatchClaimed(event: StakingIncentivesBatchClaimedEvent): void {
+  saveStakingIncentivesBatchClaimed(event, true);
 
   const contract = DispenserV2.bind(event.address);
 
@@ -301,12 +313,13 @@ export function handleStakingIncentivesBatchClaimed(
   }
 }
 
-export function handleStakingIncentivesClaimed(
+export function saveStakingIncentivesClaimed(
   event: StakingIncentivesClaimedEvent
-): void {
+): StakingIncentivesClaimed {
   let entity = new StakingIncentivesClaimed(
     event.transaction.hash.concatI32(event.logIndex.toI32())
   );
+  entity.dispenser = event.address;
   entity.account = event.params.account;
   entity.chainId = event.params.chainId;
   entity.stakingTarget = event.params.stakingTarget;
@@ -319,6 +332,11 @@ export function handleStakingIncentivesClaimed(
   entity.transactionHash = event.transaction.hash;
 
   entity.save();
+  return entity;
+}
+
+export function handleStakingIncentivesClaimed(event: StakingIncentivesClaimedEvent): void {
+  const entity = saveStakingIncentivesClaimed(event);
 
   // Access the last claimed epoch from the contract state for the nominee hash.
   // This value is updated when the event occurs. We can subtract 1 epoch
@@ -371,6 +389,7 @@ export function handleVoteWeightingUpdated(
   let entity = new VoteWeightingUpdated(
     event.transaction.hash.concatI32(event.logIndex.toI32())
   );
+  entity.dispenser = event.address;
   entity.voteWeighting = event.params.voteWeighting;
 
   entity.blockNumber = event.block.number;

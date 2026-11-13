@@ -48,6 +48,7 @@ type CreateProduct @entity(immutable: true) {
 }
 
 type OwnerUpdated @entity(immutable: true) {
+  dispenser: Bytes
   id: Bytes!
   owner: Bytes! # address
   blockNumber: BigInt!
@@ -74,6 +75,7 @@ type TokenomicsUpdated @entity(immutable: true) {
 }
 
 type TreasuryUpdated @entity(immutable: true) {
+  dispenser: Bytes
   id: Bytes!
   treasury: Bytes! # address
   blockNumber: BigInt!
@@ -262,6 +264,7 @@ type TokenomicsTreasuryUpdated @entity(immutable: true) {
 }
 
 type IncentivesClaimed @entity(immutable: true) {
+  dispenser: Bytes
   id: Bytes!
   owner: Bytes! # address
   reward: BigInt! # uint256
@@ -347,6 +350,7 @@ type AddNomineeHash @entity(immutable: true) {
 }
 
 type PauseDispenser @entity(immutable: true) {
+  dispenser: Bytes
   id: Bytes!
   pauseState: Int! # uint8
   blockNumber: BigInt!
@@ -383,7 +387,7 @@ type SetDepositProcessorChainIds @entity(immutable: true) {
 }
 
 type StakingIncentivesBatchClaimed @entity(immutable: true) {
-  dispenser: Bytes # populated by the new proxy source
+  dispenser: Bytes
   id: Bytes!
   account: Bytes! # address
   stakingIncentives: [StakingIncentivesBatch!] @derivedFrom(field: "batchClaim")
@@ -404,7 +408,7 @@ type StakingIncentivesBatch @entity(immutable: false) {
 }
 
 type StakingIncentivesClaimed @entity(immutable: true) {
-  dispenser: Bytes # populated by the new proxy source
+  dispenser: Bytes
   id: Bytes!
   account: Bytes! # address
   chainId: BigInt! # uint256
@@ -427,6 +431,7 @@ type DispenserV2StakingParamsUpdated @entity(immutable: true) {
 }
 
 type VoteWeightingUpdated @entity(immutable: true) {
+  dispenser: Bytes
   id: Bytes!
   voteWeighting: Bytes! # address
   blockNumber: BigInt!
@@ -480,7 +485,6 @@ type Global @entity(immutable: false) {
   updatedAt: BigInt!
 }
 
-# Proxy upgrades are indexed from creation, even while staking claims are paused.
 type DispenserImplementationUpdated @entity(immutable: true) {
   id: Bytes!
   dispenser: Bytes!
