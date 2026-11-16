@@ -1,4 +1,5 @@
 import { assert, clearStore, test, beforeEach } from "matchstick-as/assembly/index";
+import * as LegacyEvents from "../generated/DispenserV2/DispenserV2";
 import { BigInt, ethereum } from "@graphprotocol/graph-ts";
 import { ImplementationUpdated, SetDepositProcessorChainIds, IncentivesClaimed } from "../generated/DispenserProxy/DispenserProxy";
 import { handleImplementationUpdated, handleStakingIncentivesClaimed, handleStakingIncentivesBatchClaimed, handleSetDepositProcessorChainIds, handleIncentivesClaimedV2 } from "../src/dispenser-proxy";
@@ -72,7 +73,7 @@ test("proxy developer incentives create DevIncentive and update the epoch top-up
     param("unitTypes", ethereum.Value.fromUnsignedBigIntArray([BigInt.zero()])),
     param("unitIds", ethereum.Value.fromUnsignedBigIntArray([BigInt.fromI32(1)])),
   ]);
-  handleIncentivesClaimedV2(event);
+  handleIncentivesClaimedV2(changetype<LegacyEvents.IncentivesClaimed>(event));
   const id = event.transaction.hash.concatI32(1).toHexString();
   assert.fieldEquals("IncentivesClaimed", id, "dispenser", PROXY.toHexString());
   assert.entityCount("DevIncentive", 1);
@@ -88,6 +89,6 @@ test("preserves uint256 processor route chain IDs", () => {
     param("depositProcessors", ethereum.Value.fromAddressArray([ACCOUNT])),
     param("chainIds", ethereum.Value.fromUnsignedBigIntArray([CHAIN])),
   ]);
-  handleSetDepositProcessorChainIds(event);
+  handleSetDepositProcessorChainIds(changetype<LegacyEvents.SetDepositProcessorChainIds>(event));
   assert.fieldEquals("SetDepositProcessorChainIds", event.transaction.hash.concatI32(1).toHexString(), "chainIds", "[5000000000]");
 });

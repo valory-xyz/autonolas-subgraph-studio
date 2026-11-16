@@ -207,6 +207,7 @@ export function handleSetDepositProcessorChainIds(
     }
   );
 
+  entity.dispenser = event.address;
   entity.depositProcessors = depositProcessors;
   entity.chainIds = event.params.chainIds;
 
@@ -217,9 +218,11 @@ export function handleSetDepositProcessorChainIds(
   entity.save();
 }
 
+// Legacy children retain txHash_index IDs for existing rows (multiple batches can overwrite);
+// proxy children use txHash+logIndex_index IDs to preserve every batch.
 export function saveStakingIncentivesBatchClaimed(
   event: StakingIncentivesBatchClaimedEvent,
-  preserveLegacyChildIds: boolean = false
+  preserveLegacyChildIds: boolean
 ): StakingIncentivesBatchClaimed {
   let entity = new StakingIncentivesBatchClaimed(
     event.transaction.hash.concatI32(event.logIndex.toI32())

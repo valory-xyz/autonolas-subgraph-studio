@@ -27,7 +27,8 @@ subgraphs/tokenomics-eth/
 │   ├── mappings.ts                  # Epoch settlement & dev incentive logic
 │   ├── depository.ts                # Bond product & bond event handlers (V1 + V2)
 │   ├── tokenomics.ts                # Tokenomics contract event handlers (V1 + V2)
-│   ├── dispenser.ts                 # Incentive distribution handlers (V1 + V2)
+│   ├── dispenser.ts                 # Shared raw saves and legacy epoch rollups
+│   ├── dispenser-proxy.ts           # Proxy upgrades and raw staking handlers
 │   ├── veolas.ts                    # veOLAS deposit/withdrawal tracking
 │   ├── olas.ts                      # OLAS token transfer & bond claim tracking
 │   └── utils.ts                     # Epoch lookup, nominee hash, token balance helpers
@@ -50,13 +51,14 @@ subgraphs/tokenomics-eth/
 | Tokenomics | 0xc096362fa6f4A4B1a9ea68b1043416f3381ce300 | 16,699,195 |
 | DispenserV1 | 0xeED0000fE94d7cfeF4Dc0CA86a223f0F603A61B8 | 16,699,279 |
 | DispenserV2 | 0x5650300fCBab43A0D7D02F8Cb5d0f039402593f0 | 20,340,783 |
+| DispenserProxy | 0x78Bd94F48CAe623CC74828eCbFEBE3bDF428D83D | 26,397,771 |
 | OLAS | 0x0001a500a6b18995b03f44bb040a5ffc28e45cb0 | 15,050,732 |
 | veOLAS | 0x7e01A500805f8A52Fad229b3015AD130A332B7b3 | 15,050,278 |
 
 ### Core Business Rules
 
 1. **Epoch Lifecycle**: Tokenomics operates in epochs. `EpochSettled` events trigger epoch finalization and next-epoch creation. Epoch 1 has hardcoded startBlock and effectiveBond values.
-2. **V1/V2 Contract Pairs**: Depository and Dispenser each have V1 and V2 contracts with different event signatures. Both are indexed simultaneously.
+2. **V1/V2 Contract Pairs**: Depository and Dispenser each have V1 and V2 contracts with different event signatures. All legacy versions remain indexed alongside DispenserProxy.
 3. **Bond Maturity Tracking**: At each epoch settlement, all historical bonds are scanned to find those maturing within the epoch window (`prevEpochEndTimestamp < maturity <= currentEpochEndTimestamp`).
 4. **Bond Claim Detection**: OLAS transfers originating from DepositoryV1 or DepositoryV2 addresses are identified as bond claims and linked to the current epoch.
 5. **Staking Incentive Epoch Resolution**: DispenserV2 uses `mapLastClaimedStakingEpochs` contract call to determine which epoch a staking claim belongs to (claimed epoch = lastClaimed - 1).
@@ -78,11 +80,11 @@ Central entity tracking epoch settlement data.
 | blockTimestamp | `BigInt` | Settlement timestamp |
 | accountTopUps | `BigInt!` | Developer top-ups from settlement |
 | availableDevIncentives | `BigInt!` | Dev incentives available for claiming |
-| devIncentivesTotalTopUp | `BigInt` | Running sum of claimed dev topUps |
+| devIncentivesTotalTopUp | `BigInt` | Running sum of claimed dev topUps, including proxy claims |
 | devIncentives | `[DevIncentive!]` | `@derivedFrom(field: "epoch")` |
-| availableStakingIncentives | `BigInt` | Staking incentives budget |
+| availableStakingIncentives | `BigInt` | Budget reduced by legacy staking claims only |
 | stakingIncentives | `[StakingIncentive!]` | `@derivedFrom(field: "epoch")` |
-| totalStakingIncentives | `BigInt` | Running sum of claimed staking incentives |
+| totalStakingIncentives | `BigInt` | Running sum of legacy claimed staking incentives; excludes proxy |
 | createProducts | `[CreateProduct!]` | `@derivedFrom(field: "epoch")` |
 | totalCreateProductsSupply | `BigInt` | Sum of all product supply in this epoch |
 | effectiveBond | `BigInt` | Read from contract at settlement |
@@ -104,7 +106,7 @@ Developer incentive claim linked to an epoch.
 | topUp | `BigInt!` | OLAS top-up |
 
 ### StakingIncentive (mutable)
-Staking incentive claim linked to an epoch.
+Legacy Dispenser staking incentive claim linked to an epoch; proxy staking claims have no per-epoch allocation.
 
 | Field | Type | Notes |
 |-------|------|-------|
@@ -180,7 +182,7 @@ Handles the Tokenomics contract with V1/V2 event signature variants.
 
 ### Dispenser Handlers (`src/dispenser.ts`)
 
-Handles DispenserV1 and DispenserV2 incentive distribution.
+Handles DispenserV1/V2 incentive distribution and shared raw saves. `saveStakingIncentivesClaimed` and `saveStakingIncentivesBatchClaimed` persist raw claims; legacy handlers add epoch rollups. `dispenser-proxy.ts` exports shared handlers and implements upgrades and raw staking claims without staking epoch rollups.
 
 | Handler | Event Source | Key Logic |
 |---------|-------------|-----------|
@@ -255,6 +257,7 @@ The `handleEpochSave()` function in `src/mappings.ts` is the core epoch lifecycl
 | Tokenomics | 20 events (AgentRegistryUpdated through TreasuryUpdated, V1+V2 variants of EpochSettled and EffectiveBondUpdated) | `tokenomics.ts` |
 | DispenserV1 | IncentivesClaimed, OwnerUpdated, TokenomicsUpdated, TreasuryUpdated | `dispenser.ts` |
 | DispenserV2 | 14 events (AddNomineeHash through WithheldAmountSynced, including V2 IncentivesClaimed and staking batch/single claims) | `dispenser.ts` |
+| DispenserProxy | ImplementationUpdated, shared configuration/developer events and raw staking claims | `dispenser-proxy.ts` |
 | OLAS | Transfer | `olas.ts` |
 | veOLAS | Deposit, Withdraw | `veolas.ts` |
 
@@ -264,12 +267,15 @@ The `handleEpochSave()` function in `src/mappings.ts` is the core epoch lifecycl
 
 ## Testing
 
-**Framework**: Matchstick-as 0.5.0
+**Framework**: Matchstick-as 0.6.0
 
-Basic scaffold tests verifying entity creation for core events:
+Tests verify core event creation, source attribution and proxy rollup scope:
 - `depository.test.ts`: BondCalculatorUpdated event creates entity (imports from `DepositoryV2`)
 - `dispenser.test.ts`: IncentivesClaimed event creates entity (imports from `DispenserV1`)
 - `tokenomics.test.ts`: AgentRegistryUpdated event creates entity (imports from `Tokenomics`)
+- `dispenser-proxy.test.ts`: raw claims, developer aggregates, upgrades and unchanged staking aggregates
+- `dispenser-source.test.ts`: legacy/proxy attribution, payloads, processor routes and nested batches
+- `scripts/dispenser-abi.test.cjs`: CI checks positional compatibility of all shared proxy/V2 events
 
 Tests use mock events from `*-utils.ts` helper files.
 
@@ -297,6 +303,8 @@ yarn test       # Run Matchstick tests
 ## Common Queries
 
 ### Epoch Data with Bonds and Incentives
+
+Staking epoch totals and `stakingIncentives` cover legacy Dispensers only; developer totals also include proxy claims. See [Dispenser proxy raw events](#dispenser-proxy-raw-events) for proxy totals.
 ```graphql
 {
   epoch(id: "10") {
@@ -358,7 +366,7 @@ yarn test       # Run Matchstick tests
 
 ### Critical Points
 1. **All financial fields are `BigInt`** -- no BigDecimal.
-2. **7 data sources** from 7 contracts on Ethereum mainnet. V1/V2 pairs for Depository and Dispenser handle different event signatures.
+2. **8 data sources** from 8 contracts on Ethereum mainnet. V1/V2 pairs for Depository and Dispenser handle different event signatures.
 3. **Epoch 1 has hardcoded values**: startBlock 16699195, effectiveBond 376744602072265367760000.
 4. **Epoch 2 manual adjustment**: accountTopUps reduced by 877000006048735000000000 due to contract calculation error.
 5. **Next epoch pre-creation**: At settlement, the next epoch is created immediately with `effectiveBond` fetched from Tokenomics contract state.
@@ -386,3 +394,4 @@ Proxy `IncentivesClaimed` also creates `DevIncentive` records and updates
 Proxy staking claims do not populate `StakingIncentive` or update
 `Epoch.totalStakingIncentives` / `Epoch.availableStakingIncentives`; those staking
 rollups cover legacy sources only. Missing proxy staking rollups are not zero claims.
+Until exact epoch accounting is implemented, sum `StakingIncentivesClaimed.stakingIncentive` and `StakingIncentivesBatchClaimed.totalStakingIncentive` filtered by `dispenser` for source totals, paginating all rows. Do not also sum batch children: that double counts batches. These claim-range totals cannot be assigned to individual epochs.

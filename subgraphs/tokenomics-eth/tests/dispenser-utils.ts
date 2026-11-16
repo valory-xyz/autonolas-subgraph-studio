@@ -136,3 +136,27 @@ export function mockClaimEpoch(source: Address = OLD_DISPENSER, chain: BigInt = 
     .withArgs([ethereum.Value.fromFixedBytes(getNomineeHash(TARGET, chain))])
     .returns([uint(2)]);
 }
+
+export function nestedBatchClaim(source: Address, index: i32): ProxyEvents.StakingIncentivesBatchClaimed {
+  const event = batchClaim(source, index);
+  const secondTarget = Bytes.fromHexString("0x0000000000000000000000000000000000000000000000000000000000000002");
+  const thirdTarget = Bytes.fromHexString("0x0000000000000000000000000000000000000000000000000000000000000003");
+  event.parameters[1] = param("chainIds", ethereum.Value.fromUnsignedBigIntArray([BigInt.fromI32(1), BigInt.fromI32(100)]));
+  event.parameters[2] = param("stakingTargets", ethereum.Value.fromArray([
+    ethereum.Value.fromFixedBytesArray([TARGET, secondTarget]),
+    ethereum.Value.fromFixedBytesArray([thirdTarget]),
+  ]));
+  event.parameters[3] = param("stakingIncentives", ethereum.Value.fromArray([
+    ethereum.Value.fromUnsignedBigIntArray([BigInt.fromI32(30), BigInt.fromI32(70)]),
+    ethereum.Value.fromUnsignedBigIntArray([BigInt.fromI32(50)]),
+  ]));
+  event.parameters[4] = param("totalStakingIncentive", uint(150));
+  for (let i = 0; i < event.params.chainIds.length; i++) {
+    for (let j = 0; j < event.params.stakingTargets[i].length; j++) {
+      createMockedFunction(source, "mapLastClaimedStakingEpochs", "mapLastClaimedStakingEpochs(bytes32):(uint256)")
+        .withArgs([ethereum.Value.fromFixedBytes(getNomineeHash(event.params.stakingTargets[i][j], event.params.chainIds[i]))])
+        .returns([uint(2)]);
+    }
+  }
+  return event;
+}

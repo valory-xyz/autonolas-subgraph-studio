@@ -310,8 +310,10 @@ type Epoch @entity(immutable: false) {
   availableDevIncentives: BigInt!
   devIncentivesTotalTopUp: BigInt
   devIncentives: [DevIncentive!] @derivedFrom(field: "epoch")
+  """Budget reduced by legacy Dispenser staking claims only; proxy claims are excluded."""
   availableStakingIncentives: BigInt
   stakingIncentives: [StakingIncentive!] @derivedFrom(field: "epoch")
+  """Claimed staking incentives from legacy Dispensers only; proxy claims are excluded."""
   totalStakingIncentives: BigInt
   createProducts: [CreateProduct!] @derivedFrom(field: "epoch")
   totalCreateProductsSupply: BigInt
@@ -378,6 +380,7 @@ type Retained @entity(immutable: true) {
 }
 
 type SetDepositProcessorChainIds @entity(immutable: true) {
+  dispenser: Bytes
   id: Bytes!
   depositProcessors: [Bytes!]! # address[]
   chainIds: [BigInt!]! # uint256[]

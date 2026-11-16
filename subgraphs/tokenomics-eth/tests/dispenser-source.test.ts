@@ -2,10 +2,9 @@ import { assert, beforeEach, clearStore, test } from "matchstick-as/assembly/ind
 import { BigInt, ethereum } from "@graphprotocol/graph-ts";
 import * as LegacyEvents from "../generated/DispenserV2/DispenserV2";
 import * as V1Events from "../generated/DispenserV1/DispenserV1";
-import * as ProxyEvents from "../generated/DispenserProxy/DispenserProxy";
 import * as Legacy from "../src/dispenser";
 import * as Proxy from "../src/dispenser-proxy";
-import { PROXY, OLD_DISPENSER, ACCOUNT, TARGET, CHAIN, param, uint, dispenserEvent, singleClaim, batchClaim, seedDispenserEpoch, mockClaimEpoch } from "./dispenser-utils";
+import { PROXY, OLD_DISPENSER, ACCOUNT, TARGET, CHAIN, param, uint, dispenserEvent, singleClaim, batchClaim, seedDispenserEpoch, mockClaimEpoch, nestedBatchClaim } from "./dispenser-utils";
 
 beforeEach(() => {
   clearStore();
@@ -16,33 +15,45 @@ function checkSources(entity: string, params: ethereum.EventParam[]): void {
   const newEvent = dispenserEvent<ethereum.Event>(PROXY, 2, params);
   if (entity == "AddNomineeHash") {
     Legacy.handleAddNomineeHash(changetype<LegacyEvents.AddNomineeHash>(oldEvent));
-    Proxy.handleAddNomineeHash(changetype<ProxyEvents.AddNomineeHash>(newEvent));
+    Proxy.handleAddNomineeHash(changetype<LegacyEvents.AddNomineeHash>(newEvent));
   } else if (entity == "RemoveNomineeHash") {
     Legacy.handleRemoveNomineeHash(changetype<LegacyEvents.RemoveNomineeHash>(oldEvent));
-    Proxy.handleRemoveNomineeHash(changetype<ProxyEvents.RemoveNomineeHash>(newEvent));
+    Proxy.handleRemoveNomineeHash(changetype<LegacyEvents.RemoveNomineeHash>(newEvent));
   } else if (entity == "Retained") {
     Legacy.handleRetained(changetype<LegacyEvents.Retained>(oldEvent));
-    Proxy.handleRetained(changetype<ProxyEvents.Retained>(newEvent));
+    Proxy.handleRetained(changetype<LegacyEvents.Retained>(newEvent));
   } else if (entity == "WithheldAmountSynced") {
     Legacy.handleWithheldAmountSynced(changetype<LegacyEvents.WithheldAmountSynced>(oldEvent));
-    Proxy.handleWithheldAmountSynced(changetype<ProxyEvents.WithheldAmountSynced>(newEvent));
+    Proxy.handleWithheldAmountSynced(changetype<LegacyEvents.WithheldAmountSynced>(newEvent));
   } else if (entity == "PauseDispenser") {
     Legacy.handlePauseDispenser(changetype<LegacyEvents.PauseDispenser>(oldEvent));
-    Proxy.handlePauseDispenser(changetype<ProxyEvents.PauseDispenser>(newEvent));
+    Proxy.handlePauseDispenser(changetype<LegacyEvents.PauseDispenser>(newEvent));
   } else if (entity == "OwnerUpdated") {
     Legacy.handleOwnerUpdated(changetype<LegacyEvents.OwnerUpdated>(oldEvent));
-    Proxy.handleOwnerUpdated(changetype<ProxyEvents.OwnerUpdated>(newEvent));
+    Proxy.handleOwnerUpdated(changetype<LegacyEvents.OwnerUpdated>(newEvent));
   } else if (entity == "TreasuryUpdated") {
     Legacy.handleTreasuryUpdated(changetype<LegacyEvents.TreasuryUpdated>(oldEvent));
-    Proxy.handleTreasuryUpdated(changetype<ProxyEvents.TreasuryUpdated>(newEvent));
+    Proxy.handleTreasuryUpdated(changetype<LegacyEvents.TreasuryUpdated>(newEvent));
   } else if (entity == "VoteWeightingUpdated") {
     Legacy.handleVoteWeightingUpdated(changetype<LegacyEvents.VoteWeightingUpdated>(oldEvent));
-    Proxy.handleVoteWeightingUpdated(changetype<ProxyEvents.VoteWeightingUpdated>(newEvent));
-  } else {
+    Proxy.handleVoteWeightingUpdated(changetype<LegacyEvents.VoteWeightingUpdated>(newEvent));
+  } else if (entity == "SetDepositProcessorChainIds") {
+    Legacy.handleSetDepositProcessorChainIds(changetype<LegacyEvents.SetDepositProcessorChainIds>(oldEvent));
+    Proxy.handleSetDepositProcessorChainIds(changetype<LegacyEvents.SetDepositProcessorChainIds>(newEvent));
+  } else if (entity == "IncentivesClaimed") {
     seedDispenserEpoch();
     Legacy.handleIncentivesClaimedV2(changetype<LegacyEvents.IncentivesClaimed>(oldEvent));
-    Proxy.handleIncentivesClaimedV2(changetype<ProxyEvents.IncentivesClaimed>(newEvent));
+    Proxy.handleIncentivesClaimedV2(changetype<LegacyEvents.IncentivesClaimed>(newEvent));
+  } else {
+    throw new Error("Unknown Dispenser entity: " + entity);
   }
+
+  const fields = ["AddNomineeHash", "RemoveNomineeHash", "Retained", "WithheldAmountSynced", "PauseDispenser", "OwnerUpdated", "TreasuryUpdated", "VoteWeightingUpdated", "IncentivesClaimed", "SetDepositProcessorChainIds"];
+  const names = ["nomineeHash", "nomineeHash", "returnAmount", "updatedWithheldAmount", "pauseState", "owner", "treasury", "voteWeighting", "topUp", "chainIds"];
+  const values = [TARGET.toHexString(), TARGET.toHexString(), "10", "20", "2", ACCOUNT.toHexString(), ACCOUNT.toHexString(), ACCOUNT.toHexString(), "7", "[5000000000]"];
+  const index = fields.indexOf(entity);
+  assert.fieldEquals(entity, oldEvent.transaction.hash.concatI32(1).toHexString(), names[index], values[index]);
+  assert.fieldEquals(entity, newEvent.transaction.hash.concatI32(2).toHexString(), names[index], values[index]);
   assert.entityCount(entity, 2);
   assert.fieldEquals(entity, oldEvent.transaction.hash.concatI32(1).toHexString(), "dispenser", OLD_DISPENSER.toHexString());
   assert.fieldEquals(entity, newEvent.transaction.hash.concatI32(2).toHexString(), "dispenser", PROXY.toHexString());
@@ -134,4 +145,33 @@ test("legacy processor routes preserve full uint256 chain IDs too", () => {
   ]);
   Legacy.handleSetDepositProcessorChainIds(event);
   assert.fieldEquals("SetDepositProcessorChainIds", event.transaction.hash.concatI32(1).toHexString(), "chainIds", "[5000000000]");
+});
+
+test("processor routes expose legacy and proxy Dispensers separately", () => {
+  checkSources("SetDepositProcessorChainIds", [
+    param("depositProcessors", ethereum.Value.fromAddressArray([ACCOUNT])),
+    param("chainIds", ethereum.Value.fromUnsignedBigIntArray([CHAIN])),
+  ]);
+});
+
+test("nested batches preserve every chain, target and amount on both paths", () => {
+  seedDispenserEpoch();
+  const oldEvent = nestedBatchClaim(OLD_DISPENSER, 3);
+  const newEvent = nestedBatchClaim(PROXY, 4);
+  Legacy.handleStakingIncentivesBatchClaimed(changetype<LegacyEvents.StakingIncentivesBatchClaimed>(oldEvent));
+  Proxy.handleStakingIncentivesBatchClaimed(newEvent);
+  const prefixes = [oldEvent.transaction.hash.toHexString(), newEvent.transaction.hash.concatI32(4).toHexString()];
+  for (let i = 0; i < prefixes.length; i++) {
+    const first = prefixes[i] + "_0";
+    const second = prefixes[i] + "_1";
+    assert.fieldEquals("StakingIncentivesBatch", first, "chainId", "1");
+    assert.fieldEquals("StakingIncentivesBatch", first, "stakingTargets", "[0x0000000000000000000000000000000000000000000000000000000000000001, 0x0000000000000000000000000000000000000000000000000000000000000002]");
+    assert.fieldEquals("StakingIncentivesBatch", first, "stakingIncentives", "[30, 70]");
+    assert.fieldEquals("StakingIncentivesBatch", second, "chainId", "100");
+    assert.fieldEquals("StakingIncentivesBatch", second, "stakingTargets", "[0x0000000000000000000000000000000000000000000000000000000000000003]");
+    assert.fieldEquals("StakingIncentivesBatch", second, "stakingIncentives", "[50]");
+  }
+  assert.entityCount("StakingIncentivesBatch", 4);
+  assert.entityCount("StakingIncentive", 3);
+  assert.fieldEquals("Epoch", "1", "totalStakingIncentives", "175");
 });
