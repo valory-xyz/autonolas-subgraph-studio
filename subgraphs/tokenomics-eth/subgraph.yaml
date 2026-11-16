@@ -260,6 +260,64 @@ dataSources:
         - event: WithheldAmountSynced(uint256,uint256,uint256,indexed bytes32)
           handler: handleWithheldAmountSynced
       file: ./src/dispenser.ts
+  - kind: ethereum
+    name: DispenserProxy
+    network: mainnet
+    source:
+      address: "0x78Bd94F48CAe623CC74828eCbFEBE3bDF428D83D"
+      abi: DispenserProxy
+      startBlock: 26397771
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - DispenserImplementationUpdated
+        - StakingIncentivesBatch
+        - AddNomineeHash
+        - IncentivesClaimed
+        - OwnerUpdated
+        - PauseDispenser
+        - RemoveNomineeHash
+        - Retained
+        - SetDepositProcessorChainIds
+        - StakingIncentivesBatchClaimed
+        - StakingIncentivesClaimed
+        - TreasuryUpdated
+        - VoteWeightingUpdated
+        - WithheldAmountSynced
+      abis:
+        - name: DispenserProxy
+          file: ../../abis/DispenserProxy.json
+      eventHandlers:
+        - event: ImplementationUpdated(indexed address)
+          handler: handleImplementationUpdated
+        - event: AddNomineeHash(indexed bytes32)
+          handler: handleAddNomineeHash
+        - event: IncentivesClaimed(indexed address,uint256,uint256,uint256[],uint256[])
+          handler: handleIncentivesClaimedV2
+        - event: OwnerUpdated(indexed address)
+          handler: handleOwnerUpdated
+        - event: PauseDispenser(uint8)
+          handler: handlePauseDispenser
+        - event: RemoveNomineeHash(indexed bytes32)
+          handler: handleRemoveNomineeHash
+        - event: Retained(indexed address,uint256)
+          handler: handleRetained
+        - event: SetDepositProcessorChainIds(address[],uint256[])
+          handler: handleSetDepositProcessorChainIds
+        - event: StakingIncentivesBatchClaimed(indexed
+            address,uint256[],bytes32[][],uint256[][],uint256,uint256,uint256)
+          handler: handleStakingIncentivesBatchClaimed
+        - event: StakingIncentivesClaimed(indexed address,uint256,bytes32,uint256,uint256,uint256)
+          handler: handleStakingIncentivesClaimed
+        - event: TreasuryUpdated(indexed address)
+          handler: handleTreasuryUpdated
+        - event: VoteWeightingUpdated(indexed address)
+          handler: handleVoteWeightingUpdated
+        - event: WithheldAmountSynced(uint256,uint256,uint256,indexed bytes32)
+          handler: handleWithheldAmountSynced
+      file: ./src/dispenser-proxy.ts
   - kind: ethereum/contract
     name: OLAS
     network: mainnet

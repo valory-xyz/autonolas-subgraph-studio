@@ -48,6 +48,7 @@ type CreateProduct @entity(immutable: true) {
 }
 
 type OwnerUpdated @entity(immutable: true) {
+  dispenser: Bytes
   id: Bytes!
   owner: Bytes! # address
   blockNumber: BigInt!
@@ -74,6 +75,7 @@ type TokenomicsUpdated @entity(immutable: true) {
 }
 
 type TreasuryUpdated @entity(immutable: true) {
+  dispenser: Bytes
   id: Bytes!
   treasury: Bytes! # address
   blockNumber: BigInt!
@@ -262,6 +264,7 @@ type TokenomicsTreasuryUpdated @entity(immutable: true) {
 }
 
 type IncentivesClaimed @entity(immutable: true) {
+  dispenser: Bytes
   id: Bytes!
   owner: Bytes! # address
   reward: BigInt! # uint256
@@ -307,8 +310,10 @@ type Epoch @entity(immutable: false) {
   availableDevIncentives: BigInt!
   devIncentivesTotalTopUp: BigInt
   devIncentives: [DevIncentive!] @derivedFrom(field: "epoch")
+  """Budget reduced by legacy Dispenser staking claims only; proxy claims are excluded."""
   availableStakingIncentives: BigInt
   stakingIncentives: [StakingIncentive!] @derivedFrom(field: "epoch")
+  """Claimed staking incentives from legacy Dispensers only; proxy claims are excluded."""
   totalStakingIncentives: BigInt
   createProducts: [CreateProduct!] @derivedFrom(field: "epoch")
   totalCreateProductsSupply: BigInt
@@ -338,6 +343,7 @@ type StakingIncentive @entity(immutable: false) {
 }
 
 type AddNomineeHash @entity(immutable: true) {
+  dispenser: Bytes
   id: Bytes!
   nomineeHash: Bytes! # bytes32
   blockNumber: BigInt!
@@ -346,6 +352,7 @@ type AddNomineeHash @entity(immutable: true) {
 }
 
 type PauseDispenser @entity(immutable: true) {
+  dispenser: Bytes
   id: Bytes!
   pauseState: Int! # uint8
   blockNumber: BigInt!
@@ -354,6 +361,7 @@ type PauseDispenser @entity(immutable: true) {
 }
 
 type RemoveNomineeHash @entity(immutable: true) {
+  dispenser: Bytes
   id: Bytes!
   nomineeHash: Bytes! # bytes32
   blockNumber: BigInt!
@@ -362,6 +370,7 @@ type RemoveNomineeHash @entity(immutable: true) {
 }
 
 type Retained @entity(immutable: true) {
+  dispenser: Bytes
   id: Bytes!
   account: Bytes! # address
   returnAmount: BigInt! # uint256
@@ -371,6 +380,7 @@ type Retained @entity(immutable: true) {
 }
 
 type SetDepositProcessorChainIds @entity(immutable: true) {
+  dispenser: Bytes
   id: Bytes!
   depositProcessors: [Bytes!]! # address[]
   chainIds: [BigInt!]! # uint256[]
@@ -380,6 +390,7 @@ type SetDepositProcessorChainIds @entity(immutable: true) {
 }
 
 type StakingIncentivesBatchClaimed @entity(immutable: true) {
+  dispenser: Bytes
   id: Bytes!
   account: Bytes! # address
   stakingIncentives: [StakingIncentivesBatch!] @derivedFrom(field: "batchClaim")
@@ -400,6 +411,7 @@ type StakingIncentivesBatch @entity(immutable: false) {
 }
 
 type StakingIncentivesClaimed @entity(immutable: true) {
+  dispenser: Bytes
   id: Bytes!
   account: Bytes! # address
   chainId: BigInt! # uint256
@@ -422,6 +434,7 @@ type DispenserV2StakingParamsUpdated @entity(immutable: true) {
 }
 
 type VoteWeightingUpdated @entity(immutable: true) {
+  dispenser: Bytes
   id: Bytes!
   voteWeighting: Bytes! # address
   blockNumber: BigInt!
@@ -430,6 +443,7 @@ type VoteWeightingUpdated @entity(immutable: true) {
 }
 
 type WithheldAmountSynced @entity(immutable: true) {
+  dispenser: Bytes
   id: Bytes!
   chainId: BigInt! # uint256
   amount: BigInt! # uint256
@@ -472,4 +486,13 @@ type Global @entity(immutable: false) {
   id: ID!
   veolasHolderCount: Int!
   updatedAt: BigInt!
+}
+
+type DispenserImplementationUpdated @entity(immutable: true) {
+  id: Bytes!
+  dispenser: Bytes!
+  implementation: Bytes!
+  blockNumber: BigInt!
+  blockTimestamp: BigInt!
+  transactionHash: Bytes!
 }
