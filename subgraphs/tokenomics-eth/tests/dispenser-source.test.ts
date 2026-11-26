@@ -1,4 +1,5 @@
-import { assert, beforeEach, clearStore, test } from "matchstick-as/assembly/index";
+import { assert, beforeEach, clearStore, test, createMockedFunction } from "matchstick-as/assembly/index";
+import { getNomineeHash } from "../src/utils";
 import { BigInt, ethereum } from "@graphprotocol/graph-ts";
 import * as LegacyEvents from "../generated/DispenserV2/DispenserV2";
 import * as V1Events from "../generated/DispenserV1/DispenserV1";
@@ -110,7 +111,6 @@ test("single claims attribute both sources while preserving the legacy epoch rol
   seedDispenserEpoch();
   const chain = BigInt.fromI32(100);
   mockClaimEpoch(OLD_DISPENSER, chain);
-  mockClaimEpoch(PROXY, chain);
   const oldEvent = singleClaim(OLD_DISPENSER, 1, 100, 100, 0, chain);
   const newEvent = singleClaim(PROXY, 2, 100, 100, 0, chain);
   Legacy.handleStakingIncentivesClaimed(changetype<LegacyEvents.StakingIncentivesClaimed>(oldEvent));
@@ -118,15 +118,14 @@ test("single claims attribute both sources while preserving the legacy epoch rol
   assert.entityCount("StakingIncentivesClaimed", 2);
   assert.fieldEquals("StakingIncentivesClaimed", oldEvent.transaction.hash.concatI32(1).toHexString(), "dispenser", OLD_DISPENSER.toHexString());
   assert.fieldEquals("StakingIncentivesClaimed", newEvent.transaction.hash.concatI32(2).toHexString(), "dispenser", PROXY.toHexString());
-  assert.entityCount("StakingIncentive", 2);
-  assert.fieldEquals("Epoch", "1", "totalStakingIncentives", "225");
-  assert.fieldEquals("Epoch", "1", "availableStakingIncentives", "800");
+  assert.entityCount("StakingIncentive", 1);
+  assert.fieldEquals("Epoch", "1", "totalStakingIncentives", "125");
+  assert.fieldEquals("Epoch", "1", "availableStakingIncentives", "900");
 });
 test("batch claims attribute both sources and retain historical batch-child IDs", () => {
   seedDispenserEpoch();
   const chain = BigInt.fromI32(100);
   mockClaimEpoch(OLD_DISPENSER, chain);
-  mockClaimEpoch(PROXY, chain);
   const oldEvent = batchClaim(OLD_DISPENSER, 1, chain);
   const newEvent = batchClaim(PROXY, 2, chain);
   Legacy.handleStakingIncentivesBatchClaimed(changetype<LegacyEvents.StakingIncentivesBatchClaimed>(oldEvent));
@@ -137,8 +136,8 @@ test("batch claims attribute both sources and retain historical batch-child IDs"
   assert.entityCount("StakingIncentivesBatch", 2);
   assert.fieldEquals("StakingIncentivesBatch", oldEvent.transaction.hash.toHexString() + "_0", "chainId", "100");
   assert.fieldEquals("StakingIncentivesBatch", newEvent.transaction.hash.concatI32(2).toHexString() + "_0", "chainId", "100");
-  assert.entityCount("StakingIncentive", 2);
-  assert.fieldEquals("Epoch", "1", "totalStakingIncentives", "225");
+  assert.entityCount("StakingIncentive", 1);
+  assert.fieldEquals("Epoch", "1", "totalStakingIncentives", "125");
 });
 test("legacy processor routes preserve full uint256 chain IDs too", () => {
   const event = dispenserEvent<LegacyEvents.SetDepositProcessorChainIds>(OLD_DISPENSER, 1, [
@@ -174,6 +173,23 @@ test("nested batches preserve every chain, target and amount on both paths", () 
     assert.fieldEquals("StakingIncentivesBatch", second, "stakingIncentives", "[50]");
   }
   assert.entityCount("StakingIncentivesBatch", 4);
-  assert.entityCount("StakingIncentive", 6);
-  assert.fieldEquals("Epoch", "1", "totalStakingIncentives", "325");
+  assert.entityCount("StakingIncentive", 3);
+  assert.fieldEquals("Epoch", "1", "totalStakingIncentives", "175");
+});
+
+test("legacy non-positive claimed epochs keep raw claims without adding rollups", () => {
+  seedDispenserEpoch();
+  createMockedFunction(OLD_DISPENSER, "mapLastClaimedStakingEpochs", "mapLastClaimedStakingEpochs(bytes32):(uint256)")
+    .withArgs([ethereum.Value.fromFixedBytes(getNomineeHash(TARGET, CHAIN))])
+    .returns([uint(0)]);
+  Legacy.handleStakingIncentivesClaimed(changetype<LegacyEvents.StakingIncentivesClaimed>(singleClaim(OLD_DISPENSER, 20, 100, 100, 0)));
+  createMockedFunction(OLD_DISPENSER, "mapLastClaimedStakingEpochs", "mapLastClaimedStakingEpochs(bytes32):(uint256)")
+    .withArgs([ethereum.Value.fromFixedBytes(getNomineeHash(TARGET, CHAIN))])
+    .returns([uint(1)]);
+  Legacy.handleStakingIncentivesBatchClaimed(changetype<LegacyEvents.StakingIncentivesBatchClaimed>(batchClaim(OLD_DISPENSER, 21)));
+  assert.entityCount("StakingIncentivesClaimed", 1);
+  assert.entityCount("StakingIncentivesBatchClaimed", 1);
+  assert.entityCount("StakingIncentive", 0);
+  assert.fieldEquals("Epoch", "1", "totalStakingIncentives", "25");
+  assert.fieldEquals("Epoch", "1", "availableStakingIncentives", "1000");
 });

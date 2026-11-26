@@ -310,10 +310,10 @@ type Epoch @entity(immutable: false) {
   availableDevIncentives: BigInt!
   devIncentivesTotalTopUp: BigInt
   devIncentives: [DevIncentive!] @derivedFrom(field: "epoch")
-  """Budget reduced by legacy and proxy staking claims, attributed to each target's last claimed epoch."""
+  """Budget reduced by legacy Dispenser staking claims only; proxy claims are excluded."""
   availableStakingIncentives: BigInt
   stakingIncentives: [StakingIncentive!] @derivedFrom(field: "epoch")
-  """Legacy and proxy claimed staking incentives, attributed to each target's last claimed epoch; multi-epoch claims are not split."""
+  """Claimed staking incentives from legacy Dispensers only; proxy claims are excluded."""
   totalStakingIncentives: BigInt
   createProducts: [CreateProduct!] @derivedFrom(field: "epoch")
   totalCreateProductsSupply: BigInt

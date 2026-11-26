@@ -33,11 +33,11 @@ export function handleImplementationUpdated(event: ImplementationUpdated): void 
   entity.save();
 }
 
-// Apply the existing last-claimed-epoch attribution to proxy claims too.
+// Proxy staking events retain aggregate amounts without the legacy epoch rollup.
 export function handleStakingIncentivesClaimed(event: StakingIncentivesClaimed): void {
-  Legacy.processStakingIncentivesClaimed(changetype<LegacyEvents.StakingIncentivesClaimed>(event), false);
+  Legacy.saveStakingIncentivesClaimed(changetype<LegacyEvents.StakingIncentivesClaimed>(event));
 }
 
 export function handleStakingIncentivesBatchClaimed(event: StakingIncentivesBatchClaimed): void {
-  Legacy.processStakingIncentivesBatchClaimed(changetype<LegacyEvents.StakingIncentivesBatchClaimed>(event), false);
+  Legacy.saveStakingIncentivesBatchClaimed(changetype<LegacyEvents.StakingIncentivesBatchClaimed>(event), false);
 }

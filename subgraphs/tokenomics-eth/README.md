@@ -9,15 +9,14 @@ Indexes the full OLAS tokenomics system on Ethereum mainnet: epoch management, b
 - Tracks **8 contracts**: Tokenomics, DepositoryV1/V2, DispenserV1/V2/Proxy, OLAS, veOLAS
 - **Epoch lifecycle**: Settlement events trigger epoch finalization, matured bond calculation, and next-epoch creation
 - **Bond tracking**: Product creation/closure, bond creation/redemption, and OLAS bond claims detected via Transfer events
-- **Incentive distribution**: Developer incentives (V1, V2 and proxy), staking epoch rollups and raw claims from legacy and proxy Dispensers
+- **Incentive distribution**: Developer incentives (V1, V2 and proxy), legacy staking epoch rollups, and raw proxy staking claims
 - **Token stats**: OLAS supply, holder count, individual balances, and veOLAS locked amount
 
 ## Common Queries
 
 ### Epoch Data
 
-Staking epoch totals and `stakingIncentives` include both legacy and proxy Dispensers. Each target's full claim amount is attributed to `mapLastClaimedStakingEpochs(nomineeHash) - 1`, using the emitting Dispenser. This preserves the existing method: multi-epoch claims are not split, and reads reflect end-of-block state. Incentive allocations, actual transfers and returned amounts remain separate in raw claim records.
-
+Staking epoch totals and `stakingIncentives` cover legacy Dispensers only; developer totals also include proxy claims. For proxy staking totals, sum `stakingIncentivesClaimeds.stakingIncentive` and `stakingIncentivesBatchClaimeds.totalStakingIncentive`, filtered by `dispenser`, with pagination. Raw claims span claim ranges and cannot provide exact per-epoch totals. Proxy claims remain raw-only because the legacy end-of-block cursor method can misattribute even consecutive single-epoch claims for the same nominee in one block. Exact attribution requires a separate accounting implementation.
 ```graphql
 {
   epoch(id: "10") {
@@ -60,44 +59,11 @@ yarn test       # Run unit tests
 * `src/mappings.ts` -- Epoch settlement & dev incentive logic
 * `src/depository.ts` -- Bond product & bond event handlers (V1 + V2)
 * `src/tokenomics.ts` -- Tokenomics contract event handlers (V1 + V2)
-* `src/dispenser.ts` -- Shared raw claim saves and epoch rollups (V1 + V2 + proxy)
-* `src/dispenser-proxy.ts` -- Shared event exports, proxy upgrades and staking handlers
+* `src/dispenser.ts` -- Shared raw claim saves and legacy epoch rollups (V1 + V2)
+* `src/dispenser-proxy.ts` -- Shared event exports, proxy upgrades and raw staking handlers
 * `src/veolas.ts` -- veOLAS deposit/withdrawal tracking
 * `src/olas.ts` -- OLAS token transfer & bond claim tracking
 * `src/utils.ts` -- Epoch lookup, nominee hash, token balance helpers
 
 ### Setup & Deployment
 **Check the [root README](/README.md).**
-
-### Deploying the proxy staking rollup update
-
-Deploy a fresh Studio version and fully reindex to include historical proxy claims in the rollups. Merging or restarting an existing deployment does not backfill them. Validate the fresh index before switching consumers. The schema shape is unchanged; exact multi-epoch accounting remains a separate follow-up.
-
-Before cutover, query the fully indexed candidate for negative balances, including
-the epoch overlapping proxy start block 26397771 and all later epochs:
-
-```graphql
-query NegativeStakingBalances($after: Int!) {
-  _meta { deployment hasIndexingErrors block { number } }
-  epoches(
-    first: 1000
-    orderBy: counter
-    orderDirection: asc
-    where: { counter_gt: $after, availableStakingIncentives_lt: "0" }
-  ) {
-    id
-    counter
-    startBlock
-    endBlock
-    totalStakingIncentives
-    availableStakingIncentives
-  }
-}
-```
-
-Start with `after: 0`; if a page contains 1000 rows, repeat with its last counter.
-Confirm `_meta.deployment` is the candidate deployment and it has no indexing
-errors. A matching epoch has `endBlock >= 26397771`, or no end block. Record any
-negative balances for review; do not clamp them to zero or treat this check as
-proof of correct attribution. An empty result cannot detect claims assigned to
-the wrong epoch while both balances remain non-negative.
