@@ -1,5 +1,5 @@
 import { getNomineeHash } from "../src/utils";
-import { assert, clearStore, test, beforeEach } from "matchstick-as/assembly/index";
+import { assert, clearStore, test, beforeEach, createMockedFunction } from "matchstick-as/assembly/index";
 import * as LegacyEvents from "../generated/DispenserV2/DispenserV2";
 import { BigInt, ethereum } from "@graphprotocol/graph-ts";
 import { ImplementationUpdated, SetDepositProcessorChainIds, IncentivesClaimed } from "../generated/DispenserProxy/DispenserProxy";
@@ -126,4 +126,21 @@ test("proxy nested batches roll up every target without overwriting another batc
 
 test("nominee hash preserves the complete uint256 chain ID", () => {
   assert.stringEquals(getNomineeHash(TARGET, CHAIN).toHexString(), "0x74b373b812ecd1c6c584a153693425388ed8a58cf599754587f6f0eef8284408");
+});
+
+test("non-positive claimed epochs retain raw single and batch claims without rollups", () => {
+  seedDispenserEpoch();
+  createMockedFunction(PROXY, "mapLastClaimedStakingEpochs", "mapLastClaimedStakingEpochs(bytes32):(uint256)")
+    .withArgs([ethereum.Value.fromFixedBytes(getNomineeHash(TARGET, CHAIN))])
+    .returns([uint(0)]);
+  handleStakingIncentivesClaimed(singleClaim(PROXY, 20, 100, 100, 0));
+  createMockedFunction(PROXY, "mapLastClaimedStakingEpochs", "mapLastClaimedStakingEpochs(bytes32):(uint256)")
+    .withArgs([ethereum.Value.fromFixedBytes(getNomineeHash(TARGET, CHAIN))])
+    .returns([uint(1)]);
+  handleStakingIncentivesBatchClaimed(batchClaim(PROXY, 21));
+  assert.entityCount("StakingIncentivesClaimed", 1);
+  assert.entityCount("StakingIncentivesBatchClaimed", 1);
+  assert.entityCount("StakingIncentive", 0);
+  assert.fieldEquals("Epoch", "1", "totalStakingIncentives", "25");
+  assert.fieldEquals("Epoch", "1", "availableStakingIncentives", "1000");
 });

@@ -283,7 +283,7 @@ export function processStakingIncentivesBatchClaimed(
         .mapLastClaimedStakingEpochs(nomineeHash)
         .minus(BigInt.fromI32(1));
 
-      if (claimedEpoch) {
+      if (claimedEpoch.gt(BigInt.zero())) {
         const epoch = Epoch.load(claimedEpoch.toString());
 
         if (epoch) {
@@ -364,7 +364,7 @@ export function processStakingIncentivesClaimed(
     .mapLastClaimedStakingEpochs(nomineeHash)
     .minus(BigInt.fromI32(1));
 
-  if (claimedEpoch) {
+  if (claimedEpoch.gt(BigInt.zero())) {
     const epoch = Epoch.load(claimedEpoch.toString());
 
     if (epoch) {

@@ -72,3 +72,32 @@ yarn test       # Run unit tests
 ### Deploying the proxy staking rollup update
 
 Deploy a fresh Studio version and fully reindex to include historical proxy claims in the rollups. Merging or restarting an existing deployment does not backfill them. Validate the fresh index before switching consumers. The schema shape is unchanged; exact multi-epoch accounting remains a separate follow-up.
+
+Before cutover, query the fully indexed candidate for negative balances, including
+the epoch overlapping proxy start block 26397771 and all later epochs:
+
+```graphql
+query NegativeStakingBalances($after: Int!) {
+  _meta { deployment hasIndexingErrors block { number } }
+  epoches(
+    first: 1000
+    orderBy: counter
+    orderDirection: asc
+    where: { counter_gt: $after, availableStakingIncentives_lt: "0" }
+  ) {
+    id
+    counter
+    startBlock
+    endBlock
+    totalStakingIncentives
+    availableStakingIncentives
+  }
+}
+```
+
+Start with `after: 0`; if a page contains 1000 rows, repeat with its last counter.
+Confirm `_meta.deployment` is the candidate deployment and it has no indexing
+errors. A matching epoch has `endBlock >= 26397771`, or no end block. Record any
+negative balances for review; do not clamp them to zero or treat this check as
+proof of correct attribution. An empty result cannot detect claims assigned to
+the wrong epoch while both balances remain non-negative.
