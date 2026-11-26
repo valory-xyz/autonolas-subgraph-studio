@@ -110,6 +110,7 @@ test("single claims attribute both sources while preserving the legacy epoch rol
   seedDispenserEpoch();
   const chain = BigInt.fromI32(100);
   mockClaimEpoch(OLD_DISPENSER, chain);
+  mockClaimEpoch(PROXY, chain);
   const oldEvent = singleClaim(OLD_DISPENSER, 1, 100, 100, 0, chain);
   const newEvent = singleClaim(PROXY, 2, 100, 100, 0, chain);
   Legacy.handleStakingIncentivesClaimed(changetype<LegacyEvents.StakingIncentivesClaimed>(oldEvent));
@@ -117,14 +118,15 @@ test("single claims attribute both sources while preserving the legacy epoch rol
   assert.entityCount("StakingIncentivesClaimed", 2);
   assert.fieldEquals("StakingIncentivesClaimed", oldEvent.transaction.hash.concatI32(1).toHexString(), "dispenser", OLD_DISPENSER.toHexString());
   assert.fieldEquals("StakingIncentivesClaimed", newEvent.transaction.hash.concatI32(2).toHexString(), "dispenser", PROXY.toHexString());
-  assert.entityCount("StakingIncentive", 1);
-  assert.fieldEquals("Epoch", "1", "totalStakingIncentives", "125");
-  assert.fieldEquals("Epoch", "1", "availableStakingIncentives", "900");
+  assert.entityCount("StakingIncentive", 2);
+  assert.fieldEquals("Epoch", "1", "totalStakingIncentives", "225");
+  assert.fieldEquals("Epoch", "1", "availableStakingIncentives", "800");
 });
 test("batch claims attribute both sources and retain historical batch-child IDs", () => {
   seedDispenserEpoch();
   const chain = BigInt.fromI32(100);
   mockClaimEpoch(OLD_DISPENSER, chain);
+  mockClaimEpoch(PROXY, chain);
   const oldEvent = batchClaim(OLD_DISPENSER, 1, chain);
   const newEvent = batchClaim(PROXY, 2, chain);
   Legacy.handleStakingIncentivesBatchClaimed(changetype<LegacyEvents.StakingIncentivesBatchClaimed>(oldEvent));
@@ -135,8 +137,8 @@ test("batch claims attribute both sources and retain historical batch-child IDs"
   assert.entityCount("StakingIncentivesBatch", 2);
   assert.fieldEquals("StakingIncentivesBatch", oldEvent.transaction.hash.toHexString() + "_0", "chainId", "100");
   assert.fieldEquals("StakingIncentivesBatch", newEvent.transaction.hash.concatI32(2).toHexString() + "_0", "chainId", "100");
-  assert.entityCount("StakingIncentive", 1);
-  assert.fieldEquals("Epoch", "1", "totalStakingIncentives", "125");
+  assert.entityCount("StakingIncentive", 2);
+  assert.fieldEquals("Epoch", "1", "totalStakingIncentives", "225");
 });
 test("legacy processor routes preserve full uint256 chain IDs too", () => {
   const event = dispenserEvent<LegacyEvents.SetDepositProcessorChainIds>(OLD_DISPENSER, 1, [
@@ -172,6 +174,6 @@ test("nested batches preserve every chain, target and amount on both paths", () 
     assert.fieldEquals("StakingIncentivesBatch", second, "stakingIncentives", "[50]");
   }
   assert.entityCount("StakingIncentivesBatch", 4);
-  assert.entityCount("StakingIncentive", 3);
-  assert.fieldEquals("Epoch", "1", "totalStakingIncentives", "175");
+  assert.entityCount("StakingIncentive", 6);
+  assert.fieldEquals("Epoch", "1", "totalStakingIncentives", "325");
 });

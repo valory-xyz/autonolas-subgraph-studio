@@ -259,7 +259,14 @@ export function saveStakingIncentivesBatchClaimed(
 }
 
 export function handleStakingIncentivesBatchClaimed(event: StakingIncentivesBatchClaimedEvent): void {
-  saveStakingIncentivesBatchClaimed(event, true);
+  processStakingIncentivesBatchClaimed(event, true);
+}
+
+export function processStakingIncentivesBatchClaimed(
+  event: StakingIncentivesBatchClaimedEvent,
+  preserveLegacyIds: boolean
+): void {
+  const entity = saveStakingIncentivesBatchClaimed(event, preserveLegacyIds);
 
   const contract = DispenserV2.bind(event.address);
 
@@ -270,9 +277,8 @@ export function handleStakingIncentivesBatchClaimed(event: StakingIncentivesBatc
         event.params.chainIds[i]
       );
 
-      // Access the last claimed epoch from the contract state for the nominee hash.
-      // This value is updated when the event occurs. We can subtract 1 epoch
-      // to determine the epoch to which this claim belongs.
+      // Preserve the existing end-of-block cursor minus one attribution.
+      // A multi-epoch claim is assigned in full to its last claimed epoch.
       const claimedEpoch = contract
         .mapLastClaimedStakingEpochs(nomineeHash)
         .minus(BigInt.fromI32(1));
@@ -282,7 +288,9 @@ export function handleStakingIncentivesBatchClaimed(event: StakingIncentivesBatc
 
         if (epoch) {
           let stakingIncentive = new StakingIncentive(
-            `${event.transaction.hash.toHex()}_${event.params.chainIds[i]}_${j}`
+            preserveLegacyIds
+              ? `${event.transaction.hash.toHex()}_${event.params.chainIds[i]}_${j}`
+              : `${entity.id.toHexString()}_${i}_${j}`
           );
           stakingIncentive.epoch = epoch.id;
           stakingIncentive.account = event.params.account;
@@ -339,11 +347,17 @@ export function saveStakingIncentivesClaimed(
 }
 
 export function handleStakingIncentivesClaimed(event: StakingIncentivesClaimedEvent): void {
+  processStakingIncentivesClaimed(event, true);
+}
+
+export function processStakingIncentivesClaimed(
+  event: StakingIncentivesClaimedEvent,
+  preserveLegacyIds: boolean
+): void {
   const entity = saveStakingIncentivesClaimed(event);
 
-  // Access the last claimed epoch from the contract state for the nominee hash.
-  // This value is updated when the event occurs. We can subtract 1 epoch
-  // to determine the epoch to which this claim belongs.
+  // Preserve the existing end-of-block cursor minus one attribution.
+  // A multi-epoch claim is assigned in full to its last claimed epoch.
   const nomineeHash = getNomineeHash(entity.stakingTarget, entity.chainId);
   const contract = DispenserV2.bind(event.address);
   const claimedEpoch = contract
@@ -355,7 +369,7 @@ export function handleStakingIncentivesClaimed(event: StakingIncentivesClaimedEv
 
     if (epoch) {
       let stakingIncentive = new StakingIncentive(
-        event.transaction.hash.toHex()
+        preserveLegacyIds ? event.transaction.hash.toHex() : entity.id.toHexString()
       );
       stakingIncentive.epoch = epoch.id;
       stakingIncentive.account = event.params.account;

@@ -1,4 +1,4 @@
-import { BigInt, Bytes, crypto, Address } from "@graphprotocol/graph-ts";
+import { BigInt, Bytes, crypto, Address, ethereum } from "@graphprotocol/graph-ts";
 import { Epoch, Token, TokenHolder } from "../generated/schema";
 
 export function findEpochId(blockNumber: BigInt): string {
@@ -24,35 +24,12 @@ export function findEpochId(blockNumber: BigInt): string {
   return "";
 }
 
-function concat(a: Bytes, b: Bytes): Bytes {
-  let out = new Uint8Array(a.length + b.length);
-  for (let i = 0; i < a.length; i++) {
-    out[i] = a[i];
-  }
-  for (let j = 0; j < b.length; j++) {
-    out[a.length + j] = b[j];
-  }
-  return Bytes.fromUint8Array(out);
-}
-
-// Function to convert BigInt to a 32-byte Bytes
-function bigIntToBytes(value: BigInt): Bytes {
-  let byteArray = new Uint8Array(32);
-  let data = value.toI32();
-  for (let i = 0; i < 32; i++) {
-    byteArray[31 - i] = <u8>(data & 0xff);
-    data >>= 8;
-  }
-  return Bytes.fromUint8Array(byteArray);
-}
-
-// Returns keccak256 hash of stakingTarget and chainId
+// Hash abi.encode(bytes32 stakingTarget, uint256 chainId), including full-width chain IDs.
 export function getNomineeHash(stakingTarget: Bytes, chainId: BigInt): Bytes {
-  const chainIdBytes = bigIntToBytes(chainId);
-  const concatenated = concat(stakingTarget, chainIdBytes);
-  const result = crypto.keccak256(concatenated);
-
-  return Bytes.fromUint8Array(result);
+  const nominee = new ethereum.Tuple();
+  nominee.push(ethereum.Value.fromFixedBytes(stakingTarget));
+  nominee.push(ethereum.Value.fromUnsignedBigInt(chainId));
+  return Bytes.fromByteArray(crypto.keccak256(ethereum.encode(ethereum.Value.fromTuple(nominee))!));
 }
 
 const ADDRESS_ZERO = Address.zero();

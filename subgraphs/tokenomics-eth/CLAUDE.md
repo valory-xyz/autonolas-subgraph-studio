@@ -27,7 +27,7 @@ subgraphs/tokenomics-eth/
 │   ├── mappings.ts                  # Epoch settlement & dev incentive logic
 │   ├── depository.ts                # Bond product & bond event handlers (V1 + V2)
 │   ├── tokenomics.ts                # Tokenomics contract event handlers (V1 + V2)
-│   ├── dispenser.ts                 # Shared raw saves and legacy epoch rollups
+│   ├── dispenser.ts                 # Shared raw saves and epoch rollups
 │   ├── dispenser-proxy.ts           # Proxy upgrades and raw staking handlers
 │   ├── veolas.ts                    # veOLAS deposit/withdrawal tracking
 │   ├── olas.ts                      # OLAS token transfer & bond claim tracking
@@ -82,9 +82,9 @@ Central entity tracking epoch settlement data.
 | availableDevIncentives | `BigInt!` | Dev incentives available for claiming |
 | devIncentivesTotalTopUp | `BigInt` | Running sum of claimed dev topUps, including proxy claims |
 | devIncentives | `[DevIncentive!]` | `@derivedFrom(field: "epoch")` |
-| availableStakingIncentives | `BigInt` | Budget reduced by legacy staking claims only |
+| availableStakingIncentives | `BigInt` | Budget reduced by legacy and proxy staking claims |
 | stakingIncentives | `[StakingIncentive!]` | `@derivedFrom(field: "epoch")` |
-| totalStakingIncentives | `BigInt` | Running sum of legacy claimed staking incentives; excludes proxy |
+| totalStakingIncentives | `BigInt` | Running sum of legacy and proxy claimed staking incentives |
 | createProducts | `[CreateProduct!]` | `@derivedFrom(field: "epoch")` |
 | totalCreateProductsSupply | `BigInt` | Sum of all product supply in this epoch |
 | effectiveBond | `BigInt` | Read from contract at settlement |
@@ -106,7 +106,7 @@ Developer incentive claim linked to an epoch.
 | topUp | `BigInt!` | OLAS top-up |
 
 ### StakingIncentive (mutable)
-Legacy Dispenser staking incentive claim linked to an epoch; proxy staking claims have no per-epoch allocation.
+Legacy or proxy Dispenser staking incentive claim linked to the last claimed epoch. Multi-epoch amounts are not split.
 
 | Field | Type | Notes |
 |-------|------|-------|
@@ -182,7 +182,7 @@ Handles the Tokenomics contract with V1/V2 event signature variants.
 
 ### Dispenser Handlers (`src/dispenser.ts`)
 
-Handles DispenserV1/V2 incentive distribution and shared raw saves. `saveStakingIncentivesClaimed` and `saveStakingIncentivesBatchClaimed` persist raw claims; legacy handlers add epoch rollups. `dispenser-proxy.ts` exports shared handlers and implements upgrades and raw staking claims without staking epoch rollups.
+Handles DispenserV1/V2 incentive distribution and shared raw saves. `saveStakingIncentivesClaimed` and `saveStakingIncentivesBatchClaimed` persist raw claims; shared processing functions add epoch rollups for both sources. `dispenser-proxy.ts` exports shared handlers and implements upgrades and staking claims using the shared rollup functions.
 
 | Handler | Event Source | Key Logic |
 |---------|-------------|-----------|
@@ -304,7 +304,7 @@ yarn test       # Run Matchstick tests
 
 ### Epoch Data with Bonds and Incentives
 
-Staking epoch totals and `stakingIncentives` cover legacy Dispensers only; developer totals also include proxy claims. See [Dispenser proxy raw events](#dispenser-proxy-raw-events) for proxy totals.
+Staking epoch totals and `stakingIncentives` include legacy and proxy claims using last-claimed-epoch attribution. See [Dispenser proxy raw events](#dispenser-proxy-raw-events) for limitations.
 ```graphql
 {
   epoch(id: "10") {
@@ -391,7 +391,14 @@ IDs include transaction hash, log index and child index; legacy IDs are retained
 
 Proxy `IncentivesClaimed` also creates `DevIncentive` records and updates
 `Epoch.devIncentivesTotalTopUp` through the shared developer-incentive handler.
-Proxy staking claims do not populate `StakingIncentive` or update
-`Epoch.totalStakingIncentives` / `Epoch.availableStakingIncentives`; those staking
-rollups cover legacy sources only. Missing proxy staking rollups are not zero claims.
-Until exact epoch accounting is implemented, sum `StakingIncentivesClaimed.stakingIncentive` and `StakingIncentivesBatchClaimed.totalStakingIncentive` filtered by `dispenser` for source totals, paginating all rows. Do not also sum batch children: that double counts batches. These claim-range totals cannot be assigned to individual epochs.
+Proxy staking claims also populate `StakingIncentive` and update
+`Epoch.totalStakingIncentives` / `Epoch.availableStakingIncentives` through the shared
+processing functions. The full incentive is assigned to the emitting Dispenser's
+`mapLastClaimedStakingEpochs(nomineeHash) - 1`, matching the existing legacy method.
+Multi-epoch claims are not split; reads reflect end-of-block state. There are no
+call handlers or trace/event pairing. Returns and withheld amounts do not replace
+the incentive amount used in these existing rollups.
+
+Proxy rollup IDs include transaction hash and log index; batch IDs also include
+chain-array and target-array indexes. Legacy IDs remain unchanged. Fully reindex
+a fresh Studio deployment to backfill proxy staking rollups before consumer cutover.

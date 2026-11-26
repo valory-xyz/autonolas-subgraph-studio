@@ -15,3 +15,13 @@ for (const event of proxy.filter(item => item.type === 'event' && item.name !== 
     assert.deepEqual(event.inputs, matches[0].inputs);
   });
 }
+
+test('proxy epoch cursor getter matches the shared legacy binding', () => {
+  const getter = abi => abi.find(item => item.type === 'function' && item.name === 'mapLastClaimedStakingEpochs');
+  const oldGetter = getter(legacy);
+  const newGetter = getter(proxy);
+  assert.ok(oldGetter && newGetter);
+  assert.deepEqual(newGetter.inputs, oldGetter.inputs);
+  assert.deepEqual(newGetter.outputs, oldGetter.outputs);
+  assert.equal(newGetter.stateMutability, oldGetter.stateMutability);
+});
