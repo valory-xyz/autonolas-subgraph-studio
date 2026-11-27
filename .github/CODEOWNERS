@@ -1,5 +1,3 @@
-# Paths listed without owners intentionally have no assigned code owner.
-
 # CODEOWNERS for autonolas-subgraph-studio
 #
 # This file routes review of security- and supply-chain-sensitive files to
@@ -11,32 +9,32 @@
 # handle (e.g., @valory-xyz/<team>) once one is created.
 
 # Default owner: any unowned path falls back here.
-*
+*                                @atepem
 
 # Workflows, actions config, repository-level GitHub config.
-/.github/
+/.github/                        @atepem
 
 # Top-level package metadata + lockfile.
-/package.json
-/yarn.lock
+/package.json                    @atepem
+/yarn.lock                       @atepem
 
 # Node-version pin enforced by Corepack in CI.
-/.nvmrc
+/.nvmrc                          @atepem
 
 # Supply-chain controls: scripts that gate CI + allowlists they consult.
-/scripts/
-/.supply-chain/
+/scripts/                        @atepem
+/.supply-chain/                  @atepem
 
 # Disclosure + threat-model docs.
-/SECURITY.md
-/SUPPLY-CHAIN-SECURITY.md
+/SECURITY.md                     @atepem
+/SUPPLY-CHAIN-SECURITY.md        @atepem
 
 # AI / contributor onboarding context — changes here shape future agent behavior.
-/CLAUDE.md
+/CLAUDE.md                       @atepem
 
 # Per-subgraph package metadata + lockfiles. Picks up flat (subgraphs/<name>/)
 # and nested (subgraphs/babydegen/babydegen-base/, subgraphs/babydegen/babydegen-optimism/) layouts.
-/subgraphs/*/package.json
-/subgraphs/*/yarn.lock
-/subgraphs/*/*/package.json
-/subgraphs/*/*/yarn.lock
+/subgraphs/*/package.json        @atepem
+/subgraphs/*/yarn.lock           @atepem
+/subgraphs/*/*/package.json      @atepem
+/subgraphs/*/*/yarn.lock         @atepem
