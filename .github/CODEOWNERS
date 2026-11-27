@@ -1,3 +1,5 @@
+# Paths listed without owners intentionally have no assigned code owner.
+
 # CODEOWNERS for autonolas-subgraph-studio
 #
 # This file routes review of security- and supply-chain-sensitive files to
@@ -9,32 +11,32 @@
 # handle (e.g., @valory-xyz/<team>) once one is created.
 
 # Default owner: any unowned path falls back here.
-*                                @Tanya-atatakai
+*
 
 # Workflows, actions config, repository-level GitHub config.
-/.github/                        @Tanya-atatakai
+/.github/
 
 # Top-level package metadata + lockfile.
-/package.json                    @Tanya-atatakai
-/yarn.lock                       @Tanya-atatakai
+/package.json
+/yarn.lock
 
 # Node-version pin enforced by Corepack in CI.
-/.nvmrc                          @Tanya-atatakai
+/.nvmrc
 
 # Supply-chain controls: scripts that gate CI + allowlists they consult.
-/scripts/                        @Tanya-atatakai
-/.supply-chain/                  @Tanya-atatakai
+/scripts/
+/.supply-chain/
 
 # Disclosure + threat-model docs.
-/SECURITY.md                     @Tanya-atatakai
-/SUPPLY-CHAIN-SECURITY.md        @Tanya-atatakai
+/SECURITY.md
+/SUPPLY-CHAIN-SECURITY.md
 
 # AI / contributor onboarding context — changes here shape future agent behavior.
-/CLAUDE.md                       @Tanya-atatakai
+/CLAUDE.md
 
 # Per-subgraph package metadata + lockfiles. Picks up flat (subgraphs/<name>/)
 # and nested (subgraphs/babydegen/babydegen-base/, subgraphs/babydegen/babydegen-optimism/) layouts.
-/subgraphs/*/package.json        @Tanya-atatakai
-/subgraphs/*/yarn.lock           @Tanya-atatakai
-/subgraphs/*/*/package.json      @Tanya-atatakai
-/subgraphs/*/*/yarn.lock         @Tanya-atatakai
+/subgraphs/*/package.json
+/subgraphs/*/yarn.lock
+/subgraphs/*/*/package.json
+/subgraphs/*/*/yarn.lock
