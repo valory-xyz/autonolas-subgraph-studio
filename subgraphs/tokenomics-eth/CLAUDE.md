@@ -395,3 +395,12 @@ Proxy staking claims do not populate `StakingIncentive` or update
 `Epoch.totalStakingIncentives` / `Epoch.availableStakingIncentives`; those staking
 rollups cover legacy sources only. Missing proxy staking rollups are not zero claims.
 Until exact epoch accounting is implemented, sum `StakingIncentivesClaimed.stakingIncentive` and `StakingIncentivesBatchClaimed.totalStakingIncentive` filtered by `dispenser` for source totals, paginating all rows. Do not also sum batch children: that double counts batches. These claim-range totals cannot be assigned to individual epochs.
+
+
+### Epoch attribution limitation
+
+Proxy staking handlers intentionally save raw claims only. Do not route them through
+legacy staking rollups: an end-of-block cursor cannot distinguish consecutive
+single-epoch claims for the same nominee in one block. Multi-epoch claims are also
+not split by the legacy method. Same-block single and batch tests preserve both raw
+claims while leaving both seeded epochs unchanged. Exact attribution remains separate.

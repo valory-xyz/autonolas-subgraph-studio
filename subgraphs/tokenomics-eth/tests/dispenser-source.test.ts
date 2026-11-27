@@ -1,4 +1,5 @@
-import { assert, beforeEach, clearStore, test } from "matchstick-as/assembly/index";
+import { assert, beforeEach, clearStore, test, createMockedFunction } from "matchstick-as/assembly/index";
+import { getNomineeHash } from "../src/utils";
 import { BigInt, ethereum } from "@graphprotocol/graph-ts";
 import * as LegacyEvents from "../generated/DispenserV2/DispenserV2";
 import * as V1Events from "../generated/DispenserV1/DispenserV1";
@@ -174,4 +175,21 @@ test("nested batches preserve every chain, target and amount on both paths", () 
   assert.entityCount("StakingIncentivesBatch", 4);
   assert.entityCount("StakingIncentive", 3);
   assert.fieldEquals("Epoch", "1", "totalStakingIncentives", "175");
+});
+
+test("legacy non-positive claimed epochs keep raw claims without adding rollups", () => {
+  seedDispenserEpoch();
+  createMockedFunction(OLD_DISPENSER, "mapLastClaimedStakingEpochs", "mapLastClaimedStakingEpochs(bytes32):(uint256)")
+    .withArgs([ethereum.Value.fromFixedBytes(getNomineeHash(TARGET, CHAIN))])
+    .returns([uint(0)]);
+  Legacy.handleStakingIncentivesClaimed(changetype<LegacyEvents.StakingIncentivesClaimed>(singleClaim(OLD_DISPENSER, 20, 100, 100, 0)));
+  createMockedFunction(OLD_DISPENSER, "mapLastClaimedStakingEpochs", "mapLastClaimedStakingEpochs(bytes32):(uint256)")
+    .withArgs([ethereum.Value.fromFixedBytes(getNomineeHash(TARGET, CHAIN))])
+    .returns([uint(1)]);
+  Legacy.handleStakingIncentivesBatchClaimed(changetype<LegacyEvents.StakingIncentivesBatchClaimed>(batchClaim(OLD_DISPENSER, 21)));
+  assert.entityCount("StakingIncentivesClaimed", 1);
+  assert.entityCount("StakingIncentivesBatchClaimed", 1);
+  assert.entityCount("StakingIncentive", 0);
+  assert.fieldEquals("Epoch", "1", "totalStakingIncentives", "25");
+  assert.fieldEquals("Epoch", "1", "availableStakingIncentives", "1000");
 });

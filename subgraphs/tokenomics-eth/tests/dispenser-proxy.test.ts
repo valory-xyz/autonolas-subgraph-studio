@@ -1,9 +1,11 @@
+import { getNomineeHash } from "../src/utils";
+import { Epoch } from "../generated/schema";
 import { assert, clearStore, test, beforeEach } from "matchstick-as/assembly/index";
 import * as LegacyEvents from "../generated/DispenserV2/DispenserV2";
 import { BigInt, ethereum } from "@graphprotocol/graph-ts";
 import { ImplementationUpdated, SetDepositProcessorChainIds, IncentivesClaimed } from "../generated/DispenserProxy/DispenserProxy";
 import { handleImplementationUpdated, handleStakingIncentivesClaimed, handleStakingIncentivesBatchClaimed, handleSetDepositProcessorChainIds, handleIncentivesClaimedV2 } from "../src/dispenser-proxy";
-import { PROXY, ACCOUNT, CHAIN, param, uint, dispenserEvent, singleClaim, batchClaim, seedDispenserEpoch, mockClaimEpoch } from "./dispenser-utils";
+import { PROXY, ACCOUNT, CHAIN, param, uint, dispenserEvent, singleClaim, batchClaim, seedDispenserEpoch, mockClaimEpoch, TARGET } from "./dispenser-utils";
 
 beforeEach(() => {
   clearStore();
@@ -91,4 +93,59 @@ test("preserves uint256 processor route chain IDs", () => {
   ]);
   handleSetDepositProcessorChainIds(changetype<LegacyEvents.SetDepositProcessorChainIds>(event));
   assert.fieldEquals("SetDepositProcessorChainIds", event.transaction.hash.concatI32(1).toHexString(), "chainIds", "[5000000000]");
+});
+
+function seedConsecutiveEpochs(): void {
+  seedDispenserEpoch();
+  const first = Epoch.load("1")!;
+  first.totalStakingIncentives = BigInt.zero();
+  first.save();
+  const second = new Epoch("2");
+  second.counter = 2;
+  second.startBlock = BigInt.fromI32(1);
+  second.accountTopUps = BigInt.zero();
+  second.availableDevIncentives = BigInt.zero();
+  second.totalStakingIncentives = BigInt.zero();
+  second.availableStakingIncentives = BigInt.fromI32(1000);
+  second.save();
+}
+
+function assertNoProxyEpochRollups(): void {
+  assert.entityCount("StakingIncentive", 0);
+  for (let i = 1; i <= 2; i++) {
+    assert.fieldEquals("Epoch", i.toString(), "totalStakingIncentives", "0");
+    assert.fieldEquals("Epoch", i.toString(), "availableStakingIncentives", "1000");
+  }
+}
+
+test("same-block proxy single claims stay raw and do not misattribute epoch totals", () => {
+  seedConsecutiveEpochs();
+  const first = singleClaim(PROXY, 10, 100, 100, 0);
+  const second = singleClaim(PROXY, 11, 40, 40, 0);
+  assert.bigIntEquals(first.block.number, second.block.number);
+  // No cursor RPC mock: raw handlers must not read an ambiguous end-of-block cursor.
+  handleStakingIncentivesClaimed(first);
+  handleStakingIncentivesClaimed(second);
+  assert.entityCount("StakingIncentivesClaimed", 2);
+  assert.fieldEquals("StakingIncentivesClaimed", first.transaction.hash.concatI32(10).toHexString(), "stakingIncentive", "100");
+  assert.fieldEquals("StakingIncentivesClaimed", second.transaction.hash.concatI32(11).toHexString(), "stakingIncentive", "40");
+  assertNoProxyEpochRollups();
+});
+
+test("same-block proxy batch claims stay raw and preserve both batches", () => {
+  seedConsecutiveEpochs();
+  const first = batchClaim(PROXY, 12);
+  const second = batchClaim(PROXY, 13);
+  assert.bigIntEquals(first.block.number, second.block.number);
+  handleStakingIncentivesBatchClaimed(first);
+  handleStakingIncentivesBatchClaimed(second);
+  assert.entityCount("StakingIncentivesBatchClaimed", 2);
+  assert.entityCount("StakingIncentivesBatch", 2);
+  assert.fieldEquals("StakingIncentivesBatchClaimed", first.transaction.hash.concatI32(12).toHexString(), "totalStakingIncentive", "100");
+  assert.fieldEquals("StakingIncentivesBatchClaimed", second.transaction.hash.concatI32(13).toHexString(), "totalStakingIncentive", "100");
+  assertNoProxyEpochRollups();
+});
+
+test("nominee hash preserves the complete uint256 chain ID", () => {
+  assert.stringEquals(getNomineeHash(TARGET, CHAIN).toHexString(), "0x74b373b812ecd1c6c584a153693425388ed8a58cf599754587f6f0eef8284408");
 });

@@ -16,7 +16,7 @@ Indexes the full OLAS tokenomics system on Ethereum mainnet: epoch management, b
 
 ### Epoch Data
 
-Staking epoch totals and `stakingIncentives` cover legacy Dispensers only; developer totals also include proxy claims. For proxy staking totals, sum `stakingIncentivesClaimeds.stakingIncentive` and `stakingIncentivesBatchClaimeds.totalStakingIncentive`, filtered by `dispenser`, with pagination. Raw claims span claim ranges and cannot provide exact per-epoch totals.
+Staking epoch totals and `stakingIncentives` cover legacy Dispensers only; developer totals also include proxy claims. For proxy staking totals, sum `stakingIncentivesClaimeds.stakingIncentive` and `stakingIncentivesBatchClaimeds.totalStakingIncentive`, filtered by `dispenser`, with pagination. Raw claims span claim ranges and cannot provide exact per-epoch totals. Proxy claims remain raw-only because the legacy end-of-block cursor method can misattribute even consecutive single-epoch claims for the same nominee in one block. Exact attribution requires a separate accounting implementation.
 ```graphql
 {
   epoch(id: "10") {
